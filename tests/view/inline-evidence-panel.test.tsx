@@ -33,11 +33,20 @@ function PanelWidget({ findings }: { findings?: Finding[] }) {
 
 function renderPanel(findings: Finding[], statedFindings: Finding[]) {
   installInterpretation(findings);
-  const widget = { component: () => <PanelWidget findings={findings} />, widgetId: 'spill', index: 0 };
-  return render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: findings, getTaskData: undefined as never }} stated={statedFindings} />);
+  const widget = { component: () => <PanelWidget findings={findings} />, widgetId: 'spill', index: 0, findings, impactBand: 'critical' };
+  return render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: findings, getTaskData: undefined as never }} stated={statedFindings} scope={findings} />);
 }
 
 describe('in-place evidence panel', () => {
+  it('gives the widget only the findings of its scope', () => {
+    const [first, second] = [stated(), other()];
+    installInterpretation([first, second]);
+    const Widget = ({ catalog }: { catalog: Finding[] }) => <p>{catalog.map((finding) => finding.id).join(',')}</p>;
+    const widget = { component: Widget, widgetId: 'spill', index: 0, findings: [first, second], impactBand: 'critical' };
+    render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: [first, second], getTaskData: undefined as never }} scope={[first]} />);
+    expect(screen.getByText('spill-1')).toBeInTheDocument();
+  });
+
   it('renders the widget as an open, flat panel with the card heading and no disclosure control', () => {
     renderPanel([stated()], []);
     expect(screen.getByRole('heading', { name: 'Spill', level: 3 })).toBeInTheDocument();

@@ -20,7 +20,7 @@ export function StageHeader({
   if (stated && !stage?.name) return null;
   return (
     // Without its chip, the name shares a line with the dot beside it, wrapping inside its own box.
-    <div className={cn('flex flex-wrap items-center gap-2', stated && 'min-w-0 flex-1 basis-40')}>
+    <div data-panel-identity className={cn('flex flex-wrap items-center gap-2', stated && 'min-w-0 flex-1 basis-40')}>
       {stated ? null : <StagePill stageId={stageId} />}
       <span className="text-sm font-medium">{stage?.name ?? `Stage ${stageId}`}</span>
     </div>

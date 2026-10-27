@@ -17,19 +17,25 @@ const LOGS = [
   ...readdirSync(FIXTURE_DIR).filter((name) => name.endsWith('.ndjson')).map((name) => join(FIXTURE_DIR, name)),
 ];
 
-/** What a panel shows besides its title: text, or a chart or table. */
+/** What a panel shows besides its title and what names the finding (its stage chip, stage name and
+ * call site): text, or a chart or table. */
 function panelBody(panel: HTMLElement): { text: string; hasVisual: boolean } {
   const clone = panel.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll('h3').forEach((heading) => heading.remove());
+  clone.querySelectorAll('h3, [data-panel-identity], button[aria-label^="Open details for Stage"]').forEach((node) => node.remove());
   return {
     text: clone.textContent?.replace(/\s+/g, ' ').trim() ?? '',
     hasVisual: clone.querySelector('svg:not([aria-hidden="true"]), table, canvas, img') != null,
   };
 }
 
+const VIEWS = [
+  { name: 'default view', search: '' },
+  { name: 'info shown', search: '?impact=critical,warning,info' },
+];
+
 describe('every opened evidence panel shows evidence', () => {
-  it.each(LOGS)('%s', async (path) => {
-    window.history.replaceState({}, '', '/?impact=critical,warning,info');
+  it.each(LOGS.flatMap((path) => VIEWS.map((view) => [path, view.name, view.search] as const)))('%s (%s)', async (path, _name, search) => {
+    window.history.replaceState({}, '', `/${search}`);
     const { appModel } = await collectRun(path);
     const catalog = analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates);
     store.setState({ ...emptyAppModel(), appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages), status: 'ready', widgetDensity: 'basic' } as never);

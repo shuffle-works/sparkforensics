@@ -24,10 +24,19 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type NestedLoopJoinProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
+// The join behind a row, for an evidence panel: the sentence above states the output rows, not the join itself.
+function joinMeasurement(finding: FindingOf<'nestedLoopJoin'>): string {
+  const { nodeName, joinType, condition, leftRows, rightRows } = finding;
+  const join = `${nodeName}${joinType ? ` (${joinType})` : ''}, ${condition ? `condition ${condition}` : 'no join condition'}.`;
+  return leftRows != null && rightRows != null
+    ? `${join} Input rows: ${leftRows.toLocaleString('en-US')} left, ${rightRows.toLocaleString('en-US')} right.`
+    : join;
+}
+
 function NestedLoopJoinRow({ finding }: { finding: FindingOf<'nestedLoopJoin'> }) {
   const anchor = useAnchoredRow([finding]);
-  // The line above the panel already shows the stage pills, the sentence and the savings.
-  if (useStatedAbove(finding)) return null;
+  // The line above an evidence panel already shows the stage pills, the sentence and the savings.
+  const stated = useStatedAbove(finding);
 
   return (
     <li
@@ -36,12 +45,16 @@ function NestedLoopJoinRow({ finding }: { finding: FindingOf<'nestedLoopJoin'> }
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      {finding.stageIds.length > 0 ? (
+      {!stated && finding.stageIds.length > 0 ? (
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
-      <p>
-        {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
-      </p>
+      {stated ? (
+        <p className="text-xs text-muted-foreground">{joinMeasurement(finding)}</p>
+      ) : (
+        <p>
+          {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
+        </p>
+      )}
     </li>
   );
 }

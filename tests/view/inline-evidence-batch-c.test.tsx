@@ -89,6 +89,28 @@ describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra 
   });
 });
 
+describe('NestedLoopJoin join measurement', () => {
+  const make = (id: string, stageId: number): Finding =>
+    testFinding({
+      type: 'nestedLoopJoin', id, stageIds: [stageId], impactBand: 'warning', value: 9_000_000, nodeName: 'CartesianProduct', joinType: 'Inner',
+      condition: null, leftRows: 3000, rightRows: 3000, outputRows: 9_000_000, recommendation: `Measured ${id} sentence: fix it.`,
+    } as never) as Finding;
+
+  it('shows the join for the stated finding in a panel', () => {
+    const [a, b] = [make('a', 11), make('b', 22)];
+    installInterpretation([a, b]);
+    renderIn(<NestedLoopJoin catalog={[a, b]} defaultCollapsed={false} />, ['a']);
+    expect(screen.getAllByText('CartesianProduct (Inner), no join condition. Input rows: 3,000 left, 3,000 right.')).toHaveLength(1);
+  });
+
+  it('is absent outside a panel', () => {
+    const a = make('a', 11);
+    installInterpretation([a]);
+    renderIn(<NestedLoopJoin catalog={[a]} defaultCollapsed={false} />, null);
+    expect(screen.queryByText(/no join condition/)).not.toBeInTheDocument();
+  });
+});
+
 describe('SmallFiles average file size', () => {
   const make = (id: string, stageId: number): Finding =>
     testFinding({

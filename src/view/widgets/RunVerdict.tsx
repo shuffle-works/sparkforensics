@@ -27,8 +27,8 @@ export interface RunVerdictProps {
   onShowMoreFindings: () => void;
   /** How many findings the Findings tab lists under "More findings". */
   moreFindingsCount?: number;
-  /** The evidence panel for a widget the verdict owns, or null when another
-   * surface owns it. `lead` is the step's finding, which the step already states. */
+  /** The step's evidence panel for a widget, or null when the widget has no card to show.
+   * `lead` is the step's finding, which the step already states. */
   renderEvidence?: (widgetId: string, lead: Finding) => ReactNode;
   /** Step index to the widget whose evidence renders inside that step. */
   evidenceOwners?: ReadonlyMap<number, string>;
@@ -80,7 +80,7 @@ function NextStepItem({
   evidence: { widgetId: string; card: ReactNode } | null;
 }) {
   const { openStage } = useStageDetail();
-  const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null);
+  const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null, [finding]);
   const evidenceId = `next-step-${index}-evidence`;
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);

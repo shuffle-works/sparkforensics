@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -110,17 +110,17 @@ function LocationBadge({ finding, textClassName }: { finding: Finding; textClass
 export { recommendationText };
 
 
-/** How a board row shows its evidence. `widget` is the card this row owns and
- * expands in place; without it the row's button routes to the card that
- * another row or the verdict owns. */
+/** How a board row shows its evidence. `widget` is the card this row expands
+ * in place, scoped to the row's findings; without it (a type with no active
+ * card) the row's button routes. */
 export interface RowEvidence {
   widget: ActiveWidget | null;
   widgetProps: WidgetProps;
 }
 
 /** The row's single evidence control: expands the row's own card in place, or
- * routes to the card another surface owns. Renders nothing for a finding
- * with no evidence card to show. */
+ * routes when the row has none. Renders nothing for a finding with no
+ * evidence card to show. */
 function EvidenceButton({
   target,
   evidence,
@@ -161,11 +161,13 @@ function EvidencePanelRow({
   panelId,
   open,
   stated,
+  scope,
 }: {
   evidence: RowEvidence | undefined;
   panelId: string;
   open: boolean;
   stated: readonly Finding[];
+  scope: readonly Finding[];
 }): ReactNode {
   if (!open || !evidence?.widget) return null;
   return (
@@ -174,7 +176,7 @@ function EvidencePanelRow({
       <TableCell colSpan={2} className="whitespace-normal max-sm:w-full">
         {/* w-0 min-w-full: a wide table or chart in the panel scrolls inside it instead of stretching the row. */}
         <div id={panelId} className="w-0 min-w-full">
-          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} stated={stated} />
+          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} stated={stated} scope={scope} />
         </div>
       </TableCell>
     </TableRow>
@@ -201,7 +203,8 @@ export function FindingRow({
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   const stepCode = useStepCodes().byFinding.get(finding) ?? null;
-  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null);
+  const scope = useMemo(() => [finding], [finding]);
+  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null, scope);
   const panelId = `finding-evidence-${finding.id}`;
   return (
     <>
@@ -229,7 +232,7 @@ export function FindingRow({
         </span>
       </TableCell>
     </TableRow>
-    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={[finding]} />
+    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={scope} scope={scope} />
     </>
   );
 }
@@ -329,7 +332,7 @@ export function TypeGroupRow({
   const label = findingActionLabel(best);
   const codes = useStepCodes().byFinding;
   const stepCode = group.findings.map((finding) => codes.get(finding)).find((code) => code != null) ?? null;
-  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null);
+  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null, group.findings);
   const evidenceTarget = selectTriageTargetForFinding(best, allFindings);
   const panelId = `group-evidence-${group.key}`;
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
@@ -377,7 +380,7 @@ export function TypeGroupRow({
           </span>
         </TableCell>
       </TableRow>
-      <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={NOTHING_STATED} />
+      <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={NOTHING_STATED} scope={group.findings} />
       {expanded && pageItems.map((finding, index) => (
         <FindingInstanceRow
           key={finding.id}

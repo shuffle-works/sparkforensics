@@ -135,7 +135,12 @@ wrapper or pagination, which still apply to all three:
 A widget opened from a verdict step or a Findings row renders inside
 `InlineEvidence` (`src/view/InlineEvidence.tsx`), which provides
 `InlineEvidenceContext` (`src/view/InlineEvidenceContext.ts`). The widget is
-mounted with `defaultCollapsed={false}`, and `WidgetCard` reads the context:
+mounted with `defaultCollapsed={false}`, and `WidgetCard` reads the context.
+Every step and every row has its own panel, scoped to its findings (`scope`):
+the widget receives the catalog without its other findings of the same type,
+so each finding's evidence sits under its own line. The panel registers as a route target with
+`holds`, the findings a route may open it for (see "First investigation
+routing" in [investigation-routing](./investigation-routing.md)).
 
 - The card renders as a flat panel, not a card: a left rule in the stated
   finding's impact color (`IMPACT_BORDER_CLASS`; the context's `band`, or the
@@ -157,11 +162,15 @@ mounted with `defaultCollapsed={false}`, and `WidgetCard` reads the context:
   only the stated figure shows the measurements behind it instead: Executor
   Utilization shows the core-time breakdown and the core usage chart, Memory
   Utilization the chart, the heap peak or the allocated memory-time, Excessive
-  Small Files the average file size. A panel leaves out a core usage chart with
+  Small Files the average file size, Stragglers the straggling task count and
+  the stage's task duration spread with its histogram, Slow Executor Host the
+  deviating executor's measured amount, Nested Loop Joins the join node, type,
+  condition and input rows. A panel leaves out a core usage chart with
   fewer than 3 points. Never drop a row's own evidence to avoid a
   repeat; `tests/view/evidence-panels-not-empty.test.tsx` opens every "Show
-  evidence" button on the sample run and the public fixtures and fails on a
-  panel with nothing under its heading.
+  evidence" button on the sample run and the public fixtures, in the default
+  view and with info shown, and fails on a panel with nothing under its heading
+  besides its stage chip, stage name and call site (`data-panel-identity`).
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

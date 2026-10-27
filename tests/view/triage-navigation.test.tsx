@@ -322,13 +322,14 @@ function renderReadyWithRdd(catalog: Finding[], rddInfo: Map<number, unknown>, s
   return render(<App />);
 }
 
-// The verdict owns the top three findings and shows their evidence cards in
-// place. A step's "Show evidence" opens the card of the first step of that
-// widget; a later step on the same widget, and a Findings-tab row whose card a
-// step shows, route to it. These tests drive that routing (scroll, focus,
-// flash, pagination, cancellation), so they pair the finding under test with
-// a `leadSaving` lead that claims the card, and initiate the route from the
-// step or row that targets the finding.
+// The verdict owns the top three findings and every step, like every Findings
+// row, shows its own evidence panel scoped to its finding: its "Show evidence"
+// toggles that panel and does not route. A route (Stage Summary, the stage
+// dialog, a group row's member) opens the panel whose scope holds the target
+// finding. These tests drive that routing (scroll, focus, flash, pagination,
+// cancellation) from the Stage Summary, or from a group member's row for a
+// finding with no stage. `leadSaving` and `asLead` put a higher-ranked step
+// beside the finding under test.
 const leadSaving = { basis: 'serial', wallClock: { low: 60_000, high: 60_000 }, estimateMethod: 'measured' } as Finding['impactEstimate'];
 
 /** The same finding at another place with the biggest saving: the step that leads the verdict and owns the card. */
@@ -346,10 +347,45 @@ function stepEvidenceButton(index: number): HTMLElement {
   return within(verdictSteps()[index]).getByRole('button', { name: /^(show|hide) evidence$/i });
 }
 
+/** The evidence panel's heading inside a verdict step, steps numbered from 0. */
+function stepPanelHeading(index: number, name: string): HTMLElement {
+  return within(verdictSteps()[index]).getByRole('heading', { name });
+}
+
+/** A finding's Stage Summary route button, which is in the Full app report tab. */
+async function stageSummaryRoute(label: string): Promise<HTMLElement> {
+  await act(async () => {
+    screen.getByRole('tab', { name: 'Full app report' }).click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return screen.getByRole('button', { name: label });
+}
+
+/** Routes to a finding from its Stage Summary row. */
+async function routeFromStageSummary(label: string) {
+  const button = await stageSummaryRoute(label);
+  act(() => {
+    button.click();
+  });
+}
+
+/** Opens the evidence panel of the Findings-tab group row for `findingType`. */
+async function openGroupEvidence(findingType: string, user = userEvent.setup()) {
+  const groupRow = screen.getAllByTestId('fix-these-first-group-row').find((row) => row.dataset.findingType === findingType);
+  if (!groupRow) throw new Error(`No "fix-these-first-group-row" for type "${findingType}"`);
+  await user.click(within(groupRow).getByRole('button', { name: 'Show evidence' }));
+}
+
 /** Opens the lead step's card in place, which also lets its lazy chunk resolve. */
 async function openLeadEvidence(heading: string, user = userEvent.setup()) {
   await user.click(stepEvidenceButton(0));
   await screen.findByRole('heading', { name: heading });
+}
+
+/** Three findings of other types, each on its own stage with the biggest saving: they fill the verdict's steps. */
+function stepLeads(): Finding[] {
+  return [asLead(spillFinding(41)), asLead(skewFinding(42, 'critical')), asLead(shuffleFinding(43))];
 }
 
 /** The Findings-tab row for a finding of `findingType` and its route button. Findings
@@ -480,15 +516,15 @@ test('Strict Mode registration probing preserves a Reference route through commi
   });
 });
 
-test('an alert target opens only its exact card and leaves Full app report and Clean checks closed', async () => {
-  const user = userEvent.setup();
+test('a route opens only the exact panel of its finding and leaves Full app report and Clean checks closed', async () => {
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
 
   await waitForDashboard();
-  // The second spill step shares the lead step's card, so it routes to it.
-  await user.click(stepEvidenceButton(1));
+  await routeFromStageSummary('Investigate spill in Stage 1');
 
   const trigger = await screen.findByRole('heading', { name: 'Spill' });
+  // The lead step's panel stays closed: only the second step's holds the routed finding.
+  expect(stepPanelHeading(1, 'Spill')).toBe(trigger);
   // Spill.tsx anchors each row, so routing focuses the row itself
   // rather than the disclosure title; see the anchor-routing tests below.
   const spillCard = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
@@ -563,16 +599,17 @@ function BareSpill() {
 test('blur cleanup is ignored for unrelated widgets and clears only the route-focused widget', async () => {
   REGISTRY.spill.component = BareSpill;
   const user = userEvent.setup();
-  // Steps: the lead spill (owns the Spill card), spill Stage 1 (routes to it), skew Stage 2.
+  // Steps: the lead spill, spill Stage 1, skew Stage 2.
   const catalog = [asLead(spillFinding(90)), spillFinding(1, 'critical'), skewFinding(2, 'warning')];
   renderReady(catalog, [1, 2, 90]);
+  await waitForDashboard();
 
   // Task Skew is the real Skew widget; open its panel first so its chunk resolves before the route.
   await user.click(stepEvidenceButton(2));
   const skewTrigger = await screen.findByRole('heading', { name: 'Task Skew' });
-  await user.click(stepEvidenceButton(1));
+  await routeFromStageSummary('Investigate spill in Stage 1');
   // Spill.tsx is substituted with the (non-lazy) BareSpill double above.
-  const spillTrigger = screen.getByRole('heading', { name: 'Spill' });
+  const spillTrigger = stepPanelHeading(1, 'Spill');
   await waitFor(() => expect(spillTrigger).toHaveAttribute('data-route-focused'));
 
   fireEvent.blur(skewTrigger);
@@ -580,6 +617,26 @@ test('blur cleanup is ignored for unrelated widgets and clears only the route-fo
 
   fireEvent.blur(spillTrigger);
   await waitFor(() => expect(spillTrigger).not.toHaveAttribute('data-route-focused'));
+});
+
+test('route focus marks only the panel the route opened, not the widget\'s other open panels', async () => {
+  REGISTRY.spill.component = BareSpill;
+  const user = userEvent.setup();
+  // Steps: the lead spill, spill Stage 1, spill Stage 3: each step has its own Spill panel.
+  const catalog = [asLead(spillFinding(90)), spillFinding(1, 'critical'), spillFinding(3, 'critical')];
+  renderReady(catalog, [1, 3, 90]);
+  await waitForDashboard();
+
+  await user.click(stepEvidenceButton(1));
+  const stageOneTrigger = await screen.findByRole('heading', { name: 'Spill' });
+  await routeFromStageSummary('Investigate spill in Stage 3');
+  const stageThreeTrigger = stepPanelHeading(2, 'Spill');
+  await waitFor(() => expect(stageThreeTrigger).toHaveAttribute('data-route-focused'));
+  expect(stepPanelHeading(1, 'Spill')).toBe(stageOneTrigger);
+  expect(stageOneTrigger).not.toHaveAttribute('data-route-focused');
+
+  fireEvent.blur(stageOneTrigger);
+  expect(stageThreeTrigger).toHaveAttribute('data-route-focused');
 });
 
 test('latest request wins before commit and stale routes never scroll or move focus', async () => {
@@ -606,9 +663,10 @@ test('latest request wins before commit and stale routes never scroll or move fo
   expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
 });
 
-test('catalog replacement cancels a pending route without scrolling or moving focus', () => {
+test('catalog replacement cancels a pending route without scrolling or moving focus', async () => {
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
-  const initiator = stepEvidenceButton(1);
+  await waitForDashboard();
+  const initiator = await stageSummaryRoute('Investigate spill in Stage 1');
   initiator.focus();
 
   act(() => {
@@ -620,9 +678,10 @@ test('catalog replacement cancels a pending route without scrolling or moving fo
   expect(document.activeElement).toBe(document.body);
 });
 
-test('active-file replacement cancels a pending route without scrolling or moving focus', () => {
+test('active-file replacement cancels a pending route without scrolling or moving focus', async () => {
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
-  const initiator = stepEvidenceButton(1);
+  await waitForDashboard();
+  const initiator = await stageSummaryRoute('Investigate spill in Stage 1');
   initiator.focus();
 
   act(() => {
@@ -631,12 +690,14 @@ test('active-file replacement cancels a pending route without scrolling or movin
   });
 
   expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
-  expect(document.activeElement).toBe(initiator);
+  // The route switched to Findings, which hides the initiator; focus must not have landed on a routed row.
+  expect(document.activeElement?.closest('[data-flashed]')).toBeNull();
 });
 
-test('unmounting a pending target cancels without scrolling or moving focus', () => {
+test('unmounting a pending target cancels without scrolling or moving focus', async () => {
   const view = renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
-  const initiator = stepEvidenceButton(1);
+  await waitForDashboard();
+  const initiator = await stageSummaryRoute('Investigate spill in Stage 1');
   initiator.focus();
 
   act(() => {
@@ -674,35 +735,77 @@ test('Stage Summary routes a duplicate-tuple second occurrence with Enter and Sp
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
-test('routing preserves the target widget complete established stage order', async () => {
+test('a step\'s panel shows only the stage of its own finding', async () => {
   const user = userEvent.setup();
   // selectTriageTarget ranks by potential savings, not impact band (see
-  // src/view/triage-target.ts): give Stage 2's finding a real estimate so
-  // it's unambiguously the routed target, independent of impact band or catalog
-  // order, which is what this test is actually about.
-  const targeted: Finding = {
+  // src/view/triage-target.ts): give Stage 2's finding a real estimate so it leads.
+  const lead: Finding = {
     ...skewFinding(2, 'critical'),
     impactEstimate: { basis: 'serial', wallClock: { low: 60_000, high: 60_000 }, estimateMethod: 'measured' },
   };
-  renderReady([skewFinding(9, 'warning'), targeted], [9, 2]);
+  renderReady([skewFinding(9, 'warning'), lead], [9, 2]);
 
-  // `targeted` leads the verdict and owns the card; the Stage 9 step routes to it.
   await user.click(stepEvidenceButton(1));
 
   const trigger = await screen.findByRole('heading', { name: 'Task Skew' });
   const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]');
   if (!card) throw new Error('Task Skew should remain inside its registered grid item');
   expect(within(card).getAllByRole('button', { name: /open details for stage/i }).map((button) => button.getAttribute('aria-label')))
-    .toEqual(['Open details for Stage 2', 'Open details for Stage 9']);
+    .toEqual(['Open details for Stage 9']);
+  expect(stepEvidenceButton(0)).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('each step of a type opens its own evidence panel without routing, and both stay open', async () => {
+  const user = userEvent.setup();
+  renderReady([asLead(skewFinding(2, 'critical')), skewFinding(9, 'warning')], [2, 9]);
+  await waitForDashboard();
+
+  await user.click(stepEvidenceButton(0));
+  await user.click(stepEvidenceButton(1));
+
+  expect(await screen.findAllByRole('heading', { name: 'Task Skew' })).toHaveLength(2);
+  expect(stepEvidenceButton(0)).toHaveAttribute('aria-expanded', 'true');
+  expect(stepEvidenceButton(1)).toHaveAttribute('aria-expanded', 'true');
+  // Each panel holds only the stage of the step it sits under.
+  const stageButtons = (index: number) => within(stepPanelHeading(index, 'Task Skew').closest('section') as HTMLElement)
+    .getAllByRole('button', { name: /open details for stage/i }).map((button) => button.getAttribute('aria-label'));
+  expect(stageButtons(0)).toEqual(['Open details for Stage 2']);
+  expect(stageButtons(1)).toEqual(['Open details for Stage 9']);
+  expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+});
+
+test('a route to a finding no step or row holds opens its type\'s full card, without reordering it', async () => {
+  const user = userEvent.setup();
+  const lead: Finding = {
+    ...skewFinding(2, 'critical'),
+    impactEstimate: { basis: 'serial', wallClock: { low: 60_000, high: 60_000 }, estimateMethod: 'measured' },
+  };
+  // Evidence-unavailable findings are not rolled up, so no step or row holds this one.
+  const unlisted = { ...skewFinding(5, 'warning'), dataUnavailable: true } as Finding;
+  renderReady([skewFinding(9, 'warning'), lead, unlisted], [9, 2, 5]);
+  await waitForDashboard();
+  // Task Skew is the real Skew widget; open a step's panel first so its lazy chunk resolves.
+  await user.click(stepEvidenceButton(0));
+  await screen.findByRole('heading', { name: 'Task Skew' });
+  await user.click(stepEvidenceButton(0));
+  expect(screen.queryByRole('heading', { name: 'Task Skew' })).not.toBeInTheDocument();
+
+  await routeFromStageSummary('Investigate task skew in Stage 5');
+
+  const trigger = await screen.findByRole('heading', { name: 'Task Skew' });
+  const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
+  expect(within(card).getAllByRole('button', { name: /open details for stage/i }).map((button) => button.getAttribute('aria-label')))
+    .toEqual(['Open details for Stage 2', 'Open details for Stage 9', 'Open details for Stage 5']);
+  const row = within(card).getByRole('button', { name: 'Open details for Stage 5' }).closest('[data-flashed]');
+  await waitFor(() => expect(document.activeElement).toBe(row));
 });
 
 test('an anchored row is scrolled to center and focused instead of the disclosure title, and is flagged as flashed', async () => {
   REGISTRY.spill.component = SpillWithAnchoredRows;
   const focus = vi.spyOn(HTMLElement.prototype, 'focus');
-  const user = userEvent.setup();
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
 
-  await user.click(stepEvidenceButton(1));
+  await routeFromStageSummary('Investigate spill in Stage 1');
 
   const row = await screen.findByTestId('spill-row-1');
   await waitFor(() => expect(document.activeElement).toBe(row));
@@ -724,6 +827,7 @@ test.each<{
   title: string;
   key: string;
   heading: string;
+  routeLabel: string;
   makeFinding: () => Finding;
 }>([
   {
@@ -731,6 +835,7 @@ test.each<{
       'a real Spill.tsx row (Task 4) is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms',
     key: 'spill',
     heading: 'Spill',
+    routeLabel: 'Investigate spill in Stage 1',
     makeFinding: () => spillFinding(1),
   },
   {
@@ -738,21 +843,23 @@ test.each<{
       'a real Skew.tsx row (Task 5) is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms',
     key: 'skew',
     heading: 'Task Skew',
+    routeLabel: 'Investigate task skew in Stage 1',
     makeFinding: () => skewFinding(1, 'critical'),
   },
-])('$title', async ({ heading, makeFinding }) => {
+])('$title', async ({ heading, routeLabel, makeFinding }) => {
   renderReady([asLead(makeFinding(), { stageId: 90 }), makeFinding()], [1, 90]);
   // The lead step shows the card in place; open it so its lazy chunk resolves
   // with real timers before faking setTimeout for the flash-clear assertion.
   await openLeadEvidence(heading);
+  const routeButton = await stageSummaryRoute(routeLabel);
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    // The Stage 1 step shares the lead's card, so it routes to it.
+    // The Stage 1 step's own panel holds the routed finding.
     act(() => {
-      stepEvidenceButton(1).click();
+      routeButton.click();
     });
 
-    const trigger = screen.getByRole('heading', { name: heading });
+    const trigger = stepPanelHeading(1, heading);
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
     const row = within(card).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]') as HTMLElement;
     expect(document.activeElement).toBe(row);
@@ -773,7 +880,7 @@ test.each<{
   }
 });
 
-test('the flash clears automatically after 2000ms', () => {
+test('the flash clears automatically after 2000ms', async () => {
   REGISTRY.spill.component = SpillWithAnchoredRows;
   // Fake only setTimeout/clearTimeout (not Date/rAF) so React's own scheduling
   // and any library animation timing are unaffected; timers must be faked
@@ -786,9 +893,7 @@ test('the flash clears automatically after 2000ms', () => {
   try {
     renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
 
-    act(() => {
-      stepEvidenceButton(1).click();
-    });
+    await routeFromStageSummary('Investigate spill in Stage 1');
     const row = screen.getByTestId('spill-row-1');
     expect(row).toHaveAttribute('data-flashed', 'true');
 
@@ -810,12 +915,10 @@ test('a second anchored route supersedes an active flash, canceling the first ti
   REGISTRY.spill.component = SpillWithAnchoredRows;
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    // Stage 2 leads the verdict and owns the card; the Stage 1 step routes to it.
+    // Stage 2 leads the verdict; each step has its own panel.
     renderReady([spillFinding(1), asLead(spillFinding(2))], [1, 2]);
 
-    act(() => {
-      stepEvidenceButton(1).click();
-    });
+    await routeFromStageSummary('Investigate spill in Stage 1');
     const row1 = screen.getByTestId('spill-row-1');
     expect(row1).toHaveAttribute('data-flashed', 'true');
 
@@ -849,7 +952,7 @@ test('a second anchored route supersedes an active flash, canceling the first ti
   }
 });
 
-test('activeRouteTarget reflects the pending route while unresolved, and clears once the pending route is canceled', () => {
+test('activeRouteTarget reflects the pending route while unresolved, and clears once the pending route is canceled', async () => {
   // A widget that mounts no `WidgetCard` at all: `reportWidgetOpen` is never
   // called, so the route never resolves/clears on its own, making the pending
   // window observable deterministically instead of racing real effect flushing.
@@ -859,9 +962,10 @@ test('activeRouteTarget reflects the pending route while unresolved, and clears 
   }
   REGISTRY.spill.component = UnresponsiveSpill;
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
-  // Open the lead step's card, which mounts the double; the Stage 1 step then routes to it.
-  act(() => stepEvidenceButton(0).click());
-  const initiator = stepEvidenceButton(1);
+  await waitForDashboard();
+  // Open the Stage 1 step's card, which mounts the double; the route then targets its finding.
+  act(() => stepEvidenceButton(1).click());
+  const initiator = await stageSummaryRoute('Investigate spill in Stage 1');
 
   expect(screen.getByTestId('active-target')).toHaveTextContent('none');
 
@@ -900,15 +1004,15 @@ test('a real ShuffleIO.tsx row (Task 6) is anchor-routable: focus and the flash 
   // to a shuffle finding takes the anchor path on the real widget.
   renderReady([asLead(shuffleFinding(90)), shuffleFinding(1)], [1, 90]);
   await openLeadEvidence('Shuffle I/O');
+  const routeButton = await stageSummaryRoute('Investigate shuffle I/O in Stage 1');
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    // The Stage 1 step shares the lead's card, so it routes to it.
     act(() => {
-      stepEvidenceButton(1).click();
+      routeButton.click();
     });
 
-    const trigger = screen.getByRole('heading', { name: 'Shuffle I/O' });
+    const trigger = stepPanelHeading(1, 'Shuffle I/O');
     const row = findShuffleRow(1) as HTMLElement;
     expect(document.activeElement).toBe(row);
     expect(row).toHaveAttribute('data-flashed', 'true');
@@ -931,52 +1035,44 @@ test('a real ShuffleIO.tsx row (Task 6) is anchor-routable: focus and the flash 
 test("GcPressure.tsx (Task 7) jumps only the routed bucket's own page, leaving the other bucket's page untouched", async () => {
   // GcPressure has two independent paginated buckets (`highFindings`
   // ("GC overhead") and `lowFindings` ("Low GC (cost)")), each rendered by its
-  // own `GcSection` with its own `page` state. Build 8 flagged stages per
-  // bucket (VISIBLE_LIMIT is 6) so both sections paginate, then route to a
-  // high-bucket finding and assert only the high section's page moves: the
+  // own `GcSection` with its own `page` state. Three leads take the verdict's
+  // steps; the other findings form one group whose panel holds both buckets.
+  // Build 7 flagged stages per bucket (VISIBLE_LIMIT is 6) so both sections paginate,
+  // then route to a high-bucket finding and assert only the high section's page moves: the
   // low section's `sorted.findIndex` misses (-1) for a finding it doesn't
   // contain, so its page must stay put (the "-1 fallthrough" correctness property).
-  const highStageIds = Array.from({ length: 8 }, (_, i) => i + 1);
-  const lowStageIds = Array.from({ length: 8 }, (_, i) => i + 9);
-  // Same impact band within each bucket so `value` (descending) alone decides
-  // sort order: Stage 1 has the highest high-bucket value (sorts first, index
-  // 0), Stage 8 the lowest (sorts last, index 7): floor(7 / 6) = page 1 (the
-  // second page, "Page 2 of 2").
-  const highFindings = highStageIds.map((stageId) => gcFinding(stageId, { value: (9 - stageId) * 10 }));
-  const lowFindings = lowStageIds.map((stageId) =>
-    gcFinding(stageId, { direction: 'low', value: (17 - stageId) * 10 }),
-  );
-  renderReady([...highFindings, ...lowFindings], [...highStageIds, ...lowStageIds]);
-  await openLeadEvidence('GC Pressure');
+  const highStageIds = Array.from({ length: 7 }, (_, i) => i + 1);
+  const lowStageIds = Array.from({ length: 7 }, (_, i) => i + 8);
+  // Same impact band within each bucket, so the stages list in order: Stage 7
+  // sorts last (index 6): floor(6 / 6) = page 1 (the second page, "Page 2 of 2").
+  const highFindings = highStageIds.map((stageId) => gcFinding(stageId, { value: stageId * 10 }));
+  const lowFindings = lowStageIds.map((stageId) => gcFinding(stageId, { direction: 'low', value: stageId * 10 }));
+  const leads = [90, 91, 92].map((stageId) => asLead(gcFinding(stageId)));
+  renderReady([...leads, ...highFindings, ...lowFindings], [...highStageIds, ...lowStageIds, 90, 91, 92]);
+  await waitForDashboard();
+  await openGroupEvidence('gc');
 
-  const overheadSection = screen.getByText('GC overhead', { exact: false }).closest('section') as HTMLElement;
+  const overheadSection = (await screen.findByText('GC overhead', { exact: false })).closest('section') as HTMLElement;
   const lowSection = screen.getByText('Low GC (cost)', { exact: false }).closest('section') as HTMLElement;
 
-  // Before routing: Stage 8's row isn't in the DOM yet (page 0 only shows
+  // Before routing: Stage 7's row isn't in the DOM yet (page 0 only shows
   // Stages 1-6 of the high bucket), and both sections show page 1 of 2.
-  expect(within(overheadSection).queryByRole('button', { name: 'Open details for Stage 8' })).toBeNull();
+  expect(findShuffleRow(7)).toBeNull();
   expect(within(overheadSection).getByText('Page 1 of 2')).toBeInTheDocument();
   expect(within(lowSection).getByText('Page 1 of 2')).toBeInTheDocument();
 
   // `overheadSection`/`lowSection` must be re-queried after routing.
-  act(() => {
-    screen.getByRole('tab', { name: 'Full app report' }).click();
-  });
-  act(() => {
-    screen.getByRole('button', { name: 'Investigate GC pressure in Stage 8' }).click();
-  });
+  await routeFromStageSummary('Investigate GC pressure in Stage 7');
 
   const overheadSectionAfter = screen.getByText('GC overhead', { exact: false }).closest('section') as HTMLElement;
   const lowSectionAfter = screen.getByText('Low GC (cost)', { exact: false }).closest('section') as HTMLElement;
 
-  // Only the high-GC section's page jumped to reveal Stage 8; the low-GC
+  // Only the high-GC section's page jumped to reveal Stage 7; the low-GC
   // section's page is untouched.
   expect(within(overheadSectionAfter).getByText('Page 2 of 2')).toBeInTheDocument();
   expect(within(lowSectionAfter).getByText('Page 1 of 2')).toBeInTheDocument();
 
-  const row = within(overheadSectionAfter)
-    .getByRole('button', { name: 'Open details for Stage 8' })
-    .closest('[data-flashed]') as HTMLElement;
+  const row = findShuffleRow(7) as HTMLElement;
   expect(row).not.toBeNull();
   expect(document.activeElement).toBe(row);
   expect(row).toHaveAttribute('data-flashed', 'true');
@@ -994,6 +1090,7 @@ test.each<{
   title: string;
   key: string;
   heading: string;
+  routeLabel: string;
   makeFinding: () => Finding;
 }>([
   {
@@ -1001,6 +1098,7 @@ test.each<{
       'a real GcPressure.tsx row (Task 7) is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms',
     key: 'gc',
     heading: 'GC Pressure',
+    routeLabel: 'Investigate GC pressure in Stage 1',
     makeFinding: () => gcFinding(1),
   },
   {
@@ -1008,6 +1106,7 @@ test.each<{
       'a real TaskFailures.tsx row (Task 8) is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms',
     key: 'failures',
     heading: 'Failed Tasks',
+    routeLabel: 'Investigate failed tasks in Stage 1',
     makeFinding: () => taskFailuresFinding(1),
   },
   {
@@ -1015,6 +1114,7 @@ test.each<{
       'a real RetryWaste.tsx row (Task 8) is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms',
     key: 'retryWaste',
     heading: 'Retry Waste',
+    routeLabel: 'Investigate retry waste in Stage 1',
     makeFinding: () => retryWasteFinding(1),
   },
   {
@@ -1022,20 +1122,21 @@ test.each<{
       'a real SlowHost.tsx row is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms',
     key: 'slowHost',
     heading: 'Slow Executor Host',
+    routeLabel: 'Investigate slow executor host in Stage 1',
     makeFinding: () => slowHostFinding(1),
   },
-])('$title', async ({ heading, makeFinding }) => {
+])('$title', async ({ heading, routeLabel, makeFinding }) => {
   renderReady([asLead(makeFinding(), { stageId: 90 }), makeFinding()], [1, 90]);
   await openLeadEvidence(heading);
+  const routeButton = await stageSummaryRoute(routeLabel);
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    // The Stage 1 step shares the lead's card, so it routes to it.
     act(() => {
-      stepEvidenceButton(1).click();
+      routeButton.click();
     });
 
-    const trigger = screen.getByRole('heading', { name: heading });
+    const trigger = stepPanelHeading(1, heading);
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
     const row = within(card).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]') as HTMLElement;
     expect(row).not.toBeNull();
@@ -1104,10 +1205,13 @@ test('a real CachingOpportunity.tsx row (Task 11) is anchor-routable: focus and 
   // on `[finding]`, so routing to a `cachingOpportunity` finding takes the
   // anchor path on the real widget. `cachingFinding()` has `stageId: null`, so
   // the stable locator is the relation name text, not an "Open details" button.
-  // Both findings share the app-level step, which shows the card; the other
-  // finding is a Findings-tab row that routes to it.
-  renderReady([asLead(cachingFinding('lead', 1024)), cachingFinding('orders', 1024)]);
-  await openLeadEvidence('Caching Opportunities');
+  // The lead takes the verdict's step; the other two form a group whose member
+  // row routes to the finding and opens the group's panel.
+  renderReady([asLead(cachingFinding('lead', 1024)), cachingFinding('orders', 1024), cachingFinding('items', 1024)]);
+  await waitForDashboard();
+  // Open the group's panel so the widget's lazy chunk resolves with real timers.
+  await openGroupEvidence('cachingOpportunity');
+  await screen.findByRole('heading', { name: 'Caching Opportunities' });
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
@@ -1139,20 +1243,17 @@ test('a real CachingOpportunity.tsx row (Task 11) is anchor-routable: focus and 
 test('CachingOpportunity.tsx (widget-ui-unification Task 11) jumps its own pagination to the page containing a route target beyond the first page', async () => {
   // usePagedRows's page size is VISIBLE_LIMIT (6, packages/core/src/format-utils.ts). The
   // `cachingOpportunity` detector always emits `impactBand: 'info'`
-  // (packages/core/src/detectors.ts), so with an all-cachingOpportunity catalog,
-  // `selectTriageTarget`'s impact-band/widget-order tie-breaks are all equal and
-  // it falls through to catalog index: `target` (catalog[0]) is what "Start
-  // with..." routes to. Giving `target` the smallest `totalReadBytes` makes
-  // the widget's own descending-bytes sort push it to the *last* rendered
-  // position (index 6 of 7, i.e. page 2), so this only passes if the page
-  // jump actually fires, not merely if the target happens to already be
-  // visible on page 1.
-  // The verdict's step leads with the biggest saving (`rel-5`) and shows the card;
-  // `target` is a Findings-tab row that routes to it.
+  // (packages/core/src/detectors.ts). The lead takes the verdict's step and the other
+  // eight findings form a group whose panel paginates. Giving `target` the smallest
+  // `totalReadBytes` makes the widget's own descending-bytes sort push it to the *last*
+  // rendered position (page 2), so this only passes if the page jump actually fires,
+  // not merely if the target happens to already be visible on page 1.
   const target = cachingFinding('rel-target', 1);
-  const others = Array.from({ length: 6 }, (_, i) => cachingFinding(`rel-${i}`, (i + 1) * 1_000));
-  renderReady([target, ...others.slice(0, 5), asLead(others[5])]);
-  await openLeadEvidence('Caching Opportunities');
+  const others = Array.from({ length: 7 }, (_, i) => cachingFinding(`rel-${i}`, (i + 1) * 1_000));
+  renderReady([asLead(cachingFinding('lead', 1)), target, ...others]);
+  await waitForDashboard();
+  await openGroupEvidence('cachingOpportunity');
+  expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument();
 
   act(() => {
     boardRowRoute('cachingOpportunity', 0, 'rel-target').click();
@@ -1172,9 +1273,8 @@ test('CachingOpportunity.tsx (widget-ui-unification Task 11) jumps its own pagin
     .getByRole('heading', { name: 'Caching Opportunities' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   // Page jumped to page 2 of 2 to reveal the target: pagination shows a fixed
-  // window (only that page's one row).
+  // window (only that page's remaining rows).
   expect(within(card).getByText('Page 2 of 2')).toBeInTheDocument();
-  expect(within(card).getAllByRole('row')).toHaveLength(1 + 1);
 });
 
 test('MemoryUtilization.tsx (final whole-branch review fix) jumps its own pagination to the page containing a route target beyond the first page', async () => {
@@ -1183,25 +1283,21 @@ test('MemoryUtilization.tsx (final whole-branch review fix) jumps its own pagina
   // exceeds VISIBLE_LIMIT (6).
   //
   // Its list sorts purely by impact band, so giving `target` the least severe
-  // band among 7 findings pushes it to the last position (page 2). `target`
-  // also gets a real `stageId` so exactly one Stage Summary route button exists,
-  // routing to it by object identity (the other 6 stay `stageId: null`).
-  const target = memoryBandFinding('target', 'warning', 1);
-  const others = Array.from({ length: 6 }, (_, i) => memoryBandFinding(i, 'critical'));
-  renderReady([target, ...others], [1]);
-  await openLeadEvidence('Memory Utilization');
+  // band among the group's findings pushes it to the last position (page 2).
+  // The lead takes the verdict's step; the group's panel holds the other ten, and the
+  // member row for `target` routes to it.
+  const target = memoryBandFinding('target', 'warning');
+  const others = Array.from({ length: 9 }, (_, i) => memoryBandFinding(i, 'critical'));
+  renderReady([asLead(memoryBandFinding('lead', 'critical')), target, ...others]);
+  await waitForDashboard();
 
   act(() => {
-    screen.getByRole('tab', { name: 'Full app report' }).click();
+    boardRowRoute('memoryUtilization', 0, 'target').click();
   });
 
-  act(() => {
-    screen.getByRole('button', { name: 'Investigate memory utilization in Stage 1' }).click();
-  });
-
-  const row = screen.getByText('Executor target').closest('[data-flashed]') as HTMLElement;
+  const row = (await screen.findByText('Executor target')).closest('[data-flashed]') as HTMLElement;
   expect(row).not.toBeNull();
-  expect(document.activeElement).toBe(row);
+  await waitFor(() => expect(document.activeElement).toBe(row));
   expect(row).toHaveAttribute('data-flashed', 'true');
   expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
     behavior: 'smooth',
@@ -1230,10 +1326,13 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
   // letting this test prove routing hits a specific object by reference,
   // independent of the widget's sort order. DuplicatePlanSubtree never reads
   // `finding.stageId`, so the extra field doesn't affect rendering.
+  // Three other findings take the verdict's steps; `first` and `target` form a group, whose panel lists both.
   const first = duplicatePlanSubtreeFinding([3], 'Consolidate subtree A.', { impactBand: 'critical' });
   const target = duplicatePlanSubtreeFinding([7], 'Consolidate subtree B.', { impactBand: 'warning', stageId: 7 });
-  renderReady([first, target], [7]);
-  await openLeadEvidence('Redundant Plan Subtree');
+  renderReady([...stepLeads(), first, target], [7, 41, 42, 43]);
+  await waitForDashboard();
+  await openGroupEvidence('duplicatePlanSubtree');
+  await screen.findByRole('heading', { name: 'Redundant Plan Subtree' });
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
@@ -1286,8 +1385,8 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
 // RetryWaste.tsx), plus basic coverage for ConfigAudit.tsx/CacheUtilization.tsx's own findings list.
 
 // Each widget's own sort comparator (or, absent a tiebreak, plain
-// `Array.prototype.sort` stability) pushes Stage 8 to the list's last
-// rendered position (index 7 of 8: floor(7 / 6) = page 1, "Page 2 of 2") when
+// `Array.prototype.sort` stability) pushes Stage 12 to the panel's last
+// rendered position (index 8 of 9: floor(8 / 6) = page 1, "Page 2 of 2") when
 // every finding shares the same impact band, so this only passes if the
 // route's page jump actually fires, not merely if the target happens to
 // already be visible on page 1. `findShuffleRow` (defined above) isn't
@@ -1295,70 +1394,70 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
 // a `[data-flashed]` row, a convention every widget below follows.
 test.each<{
   title: string;
+  type: string;
   heading: string;
-  routeLabel: string;
   makeFinding: (stageId: number) => Finding;
 }>([
   {
     title:
       'ShuffleIO.tsx (Task 6) jumps its own page to reveal a route target that is not on the currently-visible page',
+    type: 'shuffle',
     heading: 'Shuffle I/O',
-    routeLabel: 'Investigate shuffle I/O in Stage 8',
-    makeFinding: (stageId) => shuffleFinding(stageId, 'critical', (9 - stageId) * 100),
+    makeFinding: (stageId) => shuffleFinding(stageId, 'critical', (13 - stageId) * 100),
   },
   {
     title:
       'TaskFailures.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
+    type: 'failures',
     heading: 'Failed Tasks',
-    routeLabel: 'Investigate failed tasks in Stage 8',
     makeFinding: (stageId) => taskFailuresFinding(stageId, 'critical'),
   },
   {
     title:
       'RetryWaste.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
+    type: 'retryWaste',
     heading: 'Retry Waste',
-    routeLabel: 'Investigate retry waste in Stage 8',
     makeFinding: (stageId) => retryWasteFinding(stageId, 'critical'),
   },
   {
     title: 'Spill.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
+    type: 'spill',
     heading: 'Spill',
-    routeLabel: 'Investigate spill in Stage 8',
-    makeFinding: (stageId) => ({ ...spillFinding(stageId, 'critical'), value: (9 - stageId) * 1024 ** 3 }) as Finding,
+    makeFinding: (stageId) => ({ ...spillFinding(stageId, 'critical'), value: (13 - stageId) * 1024 ** 3 }) as Finding,
   },
   {
     title: 'Skew.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
+    type: 'skew',
     heading: 'Task Skew',
-    routeLabel: 'Investigate task skew in Stage 8',
     makeFinding: (stageId) => skewFinding(stageId, 'critical'),
   },
   {
     title:
       'SlowHost.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
+    type: 'slowHost',
     heading: 'Slow Executor Host',
-    routeLabel: 'Investigate slow executor host in Stage 8',
     makeFinding: (stageId) => slowHostFinding(stageId, 'critical'),
   },
-])('$title', async ({ title: _title, heading, routeLabel, makeFinding }) => {
-  const stageIds = Array.from({ length: 8 }, (_, i) => i + 1);
+])('$title', async ({ type, makeFinding }) => {
+  const stageIds = Array.from({ length: 12 }, (_, i) => i + 1);
   const findings = stageIds.map((stageId) => makeFinding(stageId));
   renderReady(findings, stageIds);
-  await openLeadEvidence(heading);
+  await waitForDashboard();
+  // The verdict's three steps take Stages 1-3. The other nine form one group, and its panel pages by six.
+  await openGroupEvidence(type);
 
-  // Before routing: Stage 8's row isn't in the DOM yet (page 0 only shows
-  // Stages 1-6), and the widget shows page 1 of 2.
-  expect(findShuffleRow(8)).toBeNull();
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+  // Before routing: Stage 12's row isn't in the DOM yet (page 0 only shows
+  // Stages 4-9), and the panel shows page 1 of 2.
+  expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument();
+  expect(findShuffleRow(12)).toBeNull();
 
+  // The group's member row for Stage 12 routes to the finding.
   act(() => {
-    screen.getByRole('tab', { name: 'Full app report' }).click();
-  });
-  act(() => {
-    screen.getByRole('button', { name: routeLabel }).click();
+    boardRowRoute(type, 0, 'Stage 12').click();
   });
 
   expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
-  const row = findShuffleRow(8) as HTMLElement;
+  const row = findShuffleRow(12) as HTMLElement;
   expect(row).not.toBeNull();
   expect(document.activeElement).toBe(row);
   expect(row).toHaveAttribute('data-flashed', 'true');
@@ -1381,8 +1480,11 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
     duplicatePlanSubtreeFinding([i + 1], `Consolidate subtree ${i}.`, { impactBand: 'critical' }),
   );
   const target = duplicatePlanSubtreeFinding([8], 'Consolidate subtree target.', { impactBand: 'critical', stageId: 8 });
-  renderReady([...others, target], [8]);
-  await openLeadEvidence('Redundant Plan Subtree');
+  renderReady([...stepLeads(), ...others, target], [8, 41, 42, 43]);
+  await waitForDashboard();
+  // Three other findings take the verdict's steps; the eight duplicates form a group whose panel paginates.
+  await openGroupEvidence('duplicatePlanSubtree');
+  await screen.findByRole('heading', { name: 'Redundant Plan Subtree' });
 
   const card = screen
     .getByRole('heading', { name: 'Redundant Plan Subtree' })
@@ -1429,16 +1531,21 @@ test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row'
     type: 'configAudit', property: 'spark.serializer', valueText: 'java', stageId: null,
     impactBand: 'warning', recommendation: 'Use KryoSerializer.',
   });
-  // The app-level step shows the Config Audit card; this second finding is a Findings-tab row that routes to it.
+  // The app-level step takes the lead; this finding and `other` form a group, whose member row routes to the finding.
+  const other: Finding = testFinding({
+    type: 'configAudit', property: 'spark.other', valueText: 'y', stageId: null,
+    impactBand: 'warning', recommendation: 'Use another setting.',
+  });
   const lead: Finding = testFinding({
     type: 'configAudit', property: 'spark.lead', valueText: 'x', stageId: null,
     impactBand: 'critical', recommendation: 'Lead setting.', impactEstimate: leadSaving,
   });
   try {
-    store.setState({ configFindings: [lead, finding] });
+    store.setState({ configFindings: [lead, finding, other] });
     renderReady([]);
     await waitForDashboard();
-    await openLeadEvidence('Config Audit');
+    await openGroupEvidence('configAudit');
+    await screen.findByRole('heading', { name: 'Config Audit' });
 
     act(() => {
       boardRowRoute('configAudit', 0, 'KryoSerializer').click();
@@ -1461,9 +1568,11 @@ test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row'
 
 test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms', async () => {
   const rddInfo = new Map([[1, rddRow(1)]]);
-  // The app-level step shows the card for `rdd-0`; `rdd-1` is a Findings-tab row that routes to it.
-  renderReadyWithRdd([asLead(cacheUtilizationFinding(0)), cacheUtilizationFinding(1)], rddInfo);
-  await openLeadEvidence('Cache Storage');
+  // The app-level step takes `rdd-0`; `rdd-1` and `rdd-2` form a group, whose member row routes to `rdd-1`.
+  renderReadyWithRdd([asLead(cacheUtilizationFinding(0)), cacheUtilizationFinding(1), cacheUtilizationFinding(2)], rddInfo);
+  await waitForDashboard();
+  await openGroupEvidence('cacheUtilization');
+  await screen.findByRole('heading', { name: 'Cache Storage' });
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
@@ -1500,9 +1609,12 @@ test('CacheUtilization.tsx jumps its own findings-list pagination to the page co
   // widget's own list and FixTheseFirst's same-criterion group ranking.
   const rddInfo = new Map([[1, rddRow(1)]]);
   const target = cacheUtilizationFinding('target', 'info');
-  const others = Array.from({ length: 6 }, (_, i) => cacheUtilizationFinding(i, 'critical'));
-  renderReadyWithRdd([target, ...others], rddInfo);
-  await openLeadEvidence('Cache Storage');
+  const others = Array.from({ length: 7 }, (_, i) => cacheUtilizationFinding(i, 'critical'));
+  renderReadyWithRdd([asLead(cacheUtilizationFinding('lead')), target, ...others], rddInfo);
+  await waitForDashboard();
+  // The lead takes the verdict's step; the other eight form a group whose panel paginates.
+  await openGroupEvidence('cacheUtilization');
+  expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument();
 
   act(() => {
     boardRowRoute('cacheUtilization', 0, 'rdd-target').click();
@@ -1538,19 +1650,18 @@ test('Basic view keeps a step\'s evidence card folded until its Show evidence is
   expect(stepEvidenceButton(0)).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('in Basic view a route to a step\'s folded evidence opens it and lands on the anchored row', async () => {
-  const user = userEvent.setup();
+test('in Basic view a route to a step\'s folded evidence opens it and lands on its row', async () => {
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90], 'basic');
   await waitForDashboard();
 
-  await user.click(stepEvidenceButton(1));
+  await routeFromStageSummary('Investigate spill in Stage 1');
 
   const trigger = await screen.findByRole('heading', { name: 'Spill' });
   const spillCard = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
   const row = within(spillCard).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]');
   await waitFor(() => expect(document.activeElement).toBe(row));
   // The evidence stays open once the route has completed.
-  expect(stepEvidenceButton(0)).toHaveAttribute('aria-expanded', 'true');
+  expect(stepEvidenceButton(1)).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('in Basic view a route from Full app report opens the folded evidence it targets', async () => {

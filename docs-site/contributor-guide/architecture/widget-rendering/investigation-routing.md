@@ -68,12 +68,18 @@ After the target card commits open, an anchored row (`useFindingAnchor`) is
 scrolled to center and focused, then flashed for 2 s; without one, the card
 wrapper scrolls with a top margin below the fixed header and its disclosure
 button receives visible, temporary route focus (using instant scrolling for
-reduced motion). Requests use a latest-request-wins token (`tokenRef`,
+reduced motion). Route focus is keyed on that card's `focusKey`, not the widget
+id, so the widget's other open panels stay unmarked. Requests use a latest-request-wins token (`tokenRef`,
 `DashboardContent`) that guards every step and revalidates; a stale,
 missing, unmounted, changed-catalog, or changed-active-file target cancels
-without redirecting, scrolling, or moving focus. `registerWidget`'s cleanup
-deletes a registration only if the map still holds that same object, so
-StrictMode double-mounts don't drop a live one.
+without redirecting, scrolling, or moving focus. A widget id can hold several
+registrations: each evidence panel scoped to some of its findings registers
+with `holds`, and `registrationFor` resolves a route to the panel that holds
+the target finding, else to the widget's unscoped card. `registerWidget`'s
+cleanup removes only its own registration, so StrictMode double-mounts don't
+drop a live one. A route to a finding that no verdict step or Findings row holds
+adds its type's full card to the Findings tab (`fullCardWidgetIds`), which the
+route then opens.
 
 This route deliberately does not cover detector/parser or threshold
 changes, Stage Detail routing, or generic

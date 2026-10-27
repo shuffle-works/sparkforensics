@@ -1,11 +1,11 @@
 import { memo, useState } from 'react';
 
-import { formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatDuration, formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { SLOW_HOST_DIMENSION_LABEL } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { useInlineEvidence, useStatedAbove } from '@/view/InlineEvidenceContext';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -44,12 +44,25 @@ function slowHostUnstatedDetail(f: SlowHostFinding): string | null {
   return f.metric === 'hostDurationShare' ? `${taskSharePct} of tasks ran on ${f.host}` : slowHostDetail(f);
 }
 
+// The measurements behind a row, for an evidence panel: the line above states the ratio or share, not the raw magnitude.
+function slowHostMeasurement(f: SlowHostFinding): string | null {
+  if (f.metric === 'execMaxMedianRatio') {
+    if (f.execMaxValue == null || !f.dimension) return null;
+    const amount = f.dimension === 'taskTime' ? formatDuration(f.execMaxValue) : formatBytes(f.execMaxValue);
+    const of = f.executorCount != null ? `, the most of ${f.executorCount} executors` : '';
+    const tasks = f.taskCount != null ? ` (${f.taskCount} tasks in the stage)` : '';
+    return `Executor ${f.executorId}: ${amount} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}${of}${tasks}.`;
+  }
+  return f.hostMeanMs != null ? `${f.host}: mean task time ${formatDuration(f.hostMeanMs)}.` : null;
+}
+
 function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
   const hasStageName = finding.stageId != null && Boolean(appModel.stages.get(finding.stageId)?.name);
   const detail = stated ? slowHostUnstatedDetail(finding) : slowHostDetail(finding);
-  if (stated && !hasStageName && !detail) return null;
+  const measurement = useInlineEvidence() ? slowHostMeasurement(finding) : null;
+  if (stated && !hasStageName && !detail && !measurement) return null;
   return (
     <li
       ref={anchor.ref}
@@ -64,6 +77,7 @@ function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel
         </div>
       )}
       {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
+      {measurement ? <p className="text-xs text-muted-foreground">{measurement}</p> : null}
       <ImpactEstimate finding={finding} />
     </li>
   );

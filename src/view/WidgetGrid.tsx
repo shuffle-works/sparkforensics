@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -9,9 +10,10 @@ import {
 } from 'react';
 
 import { cn } from '@/lib/utils';
+import type { Finding } from '@sparkforensics/core/types.ts';
 import { useStore } from '@/store/store';
 import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
-import { useRouteFocusedWidgetId, useTriageNavigation } from '@/view/TriageNavigationContext';
+import { useRouteFocusedCardKey, useTriageNavigation } from '@/view/TriageNavigationContext';
 
 interface GridCardState {
   openRequestGeneration: number;
@@ -49,15 +51,19 @@ export function WidgetGridItem({
   children,
   className,
   collapsedTile = false,
+  holds,
 }: {
   cardId: string;
   widgetId?: string;
   children: ReactNode;
   className?: string;
   collapsedTile?: boolean;
+  /** For an evidence panel scoped to some findings of the widget: which findings a route may open it for. */
+  holds?: (finding: Finding) => boolean;
 }) {
   const navigation = useTriageNavigation();
-  const focusedWidgetId = useRouteFocusedWidgetId();
+  const focusedCardKey = useRouteFocusedCardKey();
+  const focusKey = useId();
   const activeFileId = useStore((s) => s.activeFileId);
   const [openRequestGeneration, setOpenRequestGeneration] = useState(0);
   // Local mirror of the card's disclosure state, kept via `reportOpen`, so the
@@ -66,6 +72,9 @@ export function WidgetGridItem({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const disclosureButtonRef = useRef<HTMLElement | null>(null);
+  const holdsRef = useRef(holds);
+  holdsRef.current = holds;
+  const scoped = holds !== undefined;
   const gridCard = useMemo(() => ({
     openRequestGeneration,
     reportOpen: (nextOpen: boolean) => {
@@ -76,11 +85,11 @@ export function WidgetGridItem({
       disclosureButtonRef.current = button;
     },
     onDisclosureBlur: () => {
-      if (widgetId) navigation?.clearRouteFocus(widgetId);
+      navigation?.clearRouteFocus(focusKey);
     },
-    routeFocused: widgetId ? focusedWidgetId === widgetId : false,
+    routeFocused: focusedCardKey === focusKey,
     collapsedTile,
-  }), [navigation, openRequestGeneration, widgetId, focusedWidgetId, collapsedTile]);
+  }), [navigation, openRequestGeneration, widgetId, focusedCardKey, focusKey, collapsedTile]);
 
   useLayoutEffect(() => {
     if (!navigation || !widgetId || !wrapperRef.current) return;
@@ -91,8 +100,10 @@ export function WidgetGridItem({
         setOpenRequestGeneration((generation) => generation + 1);
       },
       getDisclosureButton: () => disclosureButtonRef.current,
+      holds: scoped ? (finding) => holdsRef.current?.(finding) ?? false : undefined,
+      focusKey,
     });
-  }, [navigation, widgetId]);
+  }, [navigation, widgetId, scoped, focusKey]);
 
   return (
     <WidgetGridCardContext.Provider value={gridCard}>

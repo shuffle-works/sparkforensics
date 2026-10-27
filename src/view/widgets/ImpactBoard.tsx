@@ -25,8 +25,10 @@ export interface ImpactBoardProps extends WidgetProps {
   onRoute: (target: TriageTarget) => void;
   /** The findings the verdict's steps lead with: the verdict lists them, so the board starts after them. */
   verdictLeads?: ReadonlySet<Finding>;
-  /** Widgets whose evidence card the verdict shows in place; a board row on one routes to it. */
+  /** Widgets whose evidence card the verdict shows in place; they stay out of the grid. */
   verdictWidgetIds?: ReadonlySet<string>;
+  /** Widgets whose full card is shown because a route targeted a finding no row or step holds. */
+  fullCardWidgetIds?: ReadonlySet<string>;
 }
 
 const IMPACT_BAND_LABEL: Record<Finding['impactBand'], string> = {
@@ -36,16 +38,16 @@ const IMPACT_BAND_LABEL: Record<Finding['impactBand'], string> = {
 };
 const IMPACT_BAND_ORDER_LIST: Finding['impactBand'][] = ['critical', 'warning', 'info'];
 
-/** One impact band: its recommendation rows as a compact table. Each row owns
- * at most one "Show evidence" control. The first row of a widget's type in the
- * band expands that widget's card in place; a later row of the same type, or
- * a type whose card the verdict shows, routes to the card that holds it.
- * Evidence cards no row owns stay in a grid under the table, collapsed.
+/** One impact band: its recommendation rows as a compact table. Each row has
+ * at most one "Show evidence" control, which expands that widget's card in
+ * place, scoped to the row's findings. Evidence cards no step or row shows
+ * stay in a grid under the table, collapsed.
  * Renders nothing (no heading) when the band has neither row nor card. */
 function ImpactGroup({
   impactBand,
   groups,
   widgets,
+  allWidgets,
   allFindings,
   expandedGroupKey,
   onToggleGroup,
@@ -59,7 +61,10 @@ function ImpactGroup({
 }: {
   impactBand: Finding['impactBand'];
   groups: BoardGroup[];
+  /** This band's widgets that no step or row shows in place: collapsed cards under the table. */
   widgets: ActiveWidget[];
+  /** Every active widget, whatever its band: a group's panel comes from its type's widget. */
+  allWidgets: ActiveWidget[];
   allFindings: Finding[];
   expandedGroupKey: string | null;
   onToggleGroup: (key: string) => void;
@@ -68,19 +73,16 @@ function ImpactGroup({
   subheading: boolean;
 } & WidgetProps) {
   const widgetProps: WidgetProps = { appModel, catalog, configFindings, getTaskData, activeFileId };
-  const { evidenceByGroup, unowned } = useMemo(() => {
-    const byWidget = new Map(widgets.map((widget) => [widget.widgetId, widget]));
-    const taken = new Set<string>();
-    const evidenceByGroup = new Map<string, ActiveWidget>();
+  const evidenceByGroup = useMemo(() => {
+    const byWidget = new Map(allWidgets.map((widget) => [widget.widgetId, widget]));
+    const evidence = new Map<string, ActiveWidget>();
     for (const group of groups) {
       const widgetId = triageTargetFor(group.findings[0])?.widgetId;
       const widget = widgetId ? byWidget.get(widgetId) : undefined;
-      if (!widget || taken.has(widget.widgetId)) continue;
-      taken.add(widget.widgetId);
-      evidenceByGroup.set(group.key, widget);
+      if (widget) evidence.set(group.key, widget);
     }
-    return { evidenceByGroup, unowned: widgets.filter((widget) => !taken.has(widget.widgetId)) };
-  }, [groups, widgets]);
+    return evidence;
+  }, [groups, allWidgets]);
 
   if (groups.length === 0 && widgets.length === 0) return null;
   const headingId = `impact-band-${impactBand}-heading`;
@@ -116,9 +118,9 @@ function ImpactGroup({
           </TableBody>
         </Table>
       )}
-      {unowned.length > 0 && (
+      {widgets.length > 0 && (
         <WidgetGrid>
-          {unowned.map(({ component: Widget, widgetId, index }) => (
+          {widgets.map(({ component: Widget, widgetId, index }) => (
             <WidgetGridItem key={widgetId} cardId={`alert-${index}`} widgetId={widgetId}>
               <Suspense fallback={<WidgetCardSkeleton />}>
                 <Widget {...widgetProps} defaultCollapsed />
@@ -146,6 +148,7 @@ export function ImpactBoard({
   onRoute,
   verdictLeads,
   verdictWidgetIds,
+  fullCardWidgetIds,
 }: ImpactBoardProps) {
   // Recompute the rollup/active-widget ranking only when the underlying findings
   // (or stages) change, not on every `setExpandedGroupKey` re-render.
@@ -158,10 +161,20 @@ export function ImpactBoard({
   const detectors = interpretation?.data.detectors;
   const activeWidgets = useMemo(
     () => (detectors
-      ? computeActiveWidgets(catalog, configFindings, detectors).filter((widget) => !verdictWidgetIds?.has(widget.widgetId))
+      ? computeActiveWidgets(catalog, configFindings, detectors)
       : []),
-    [catalog, configFindings, detectors, verdictWidgetIds],
+    [catalog, configFindings, detectors],
   );
+  // A widget is claimed when a verdict step or any board row shows it in place.
+  const claimedWidgetIds = useMemo(() => {
+    const claimed = new Set(verdictWidgetIds);
+    for (const group of groups) {
+      const widgetId = triageTargetFor(group.findings[0])?.widgetId;
+      if (widgetId && activeWidgets.some((widget) => widget.widgetId === widgetId)) claimed.add(widgetId);
+    }
+    fullCardWidgetIds?.forEach((widgetId) => claimed.delete(widgetId));
+    return claimed;
+  }, [groups, activeWidgets, verdictWidgetIds, fullCardWidgetIds]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   const { groupsByImpactBand, widgetsByImpactBand } = useMemo(() => {
@@ -173,11 +186,12 @@ export function ImpactBoard({
     }
     const widgetsByImpactBand = new Map<Finding['impactBand'], ActiveWidget[]>();
     for (const widget of activeWidgets) {
+      if (claimedWidgetIds.has(widget.widgetId)) continue;
       if (!widgetsByImpactBand.has(widget.impactBand)) widgetsByImpactBand.set(widget.impactBand, []);
       widgetsByImpactBand.get(widget.impactBand)!.push(widget);
     }
     return { groupsByImpactBand, widgetsByImpactBand };
-  }, [groups, activeWidgets]);
+  }, [groups, activeWidgets, claimedWidgetIds]);
 
   // With the verdict's steps taken out, "More findings" is what is left; a
   // board with nothing left says so instead of showing an empty list.
@@ -200,6 +214,7 @@ export function ImpactBoard({
           impactBand={impactBand}
           groups={groupsByImpactBand.get(impactBand) ?? []}
           widgets={widgetsByImpactBand.get(impactBand) ?? []}
+          allWidgets={activeWidgets}
           allFindings={allFindings}
           expandedGroupKey={expandedGroupKey}
           onToggleGroup={(key) => setExpandedGroupKey((current) => (current === key ? null : key))}
