@@ -1309,10 +1309,18 @@ function spillShuffleFix(stage: DetectorStage, ctx: DetectorCtx, userPartitioned
   }
   const { lever, count, key, explicitRepartition } = partitionLever(stage, ctx);
   if (lever === 'aqeCoalesced') {
-    const raisesFloor = needed > stage.taskCount;
+    const floor = count != null ? Math.min(needed, count) : needed;
+    const raisesFloor = floor > stage.taskCount;
+    const raisesCount = count != null && needed > count;
     return {
-      text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks: lower ${ADVISORY_PARTITION_SIZE_KEY} so each partition is smaller${raisesFloor ? `, set ${COALESCE_MIN_PARTITIONS_KEY} to ${needed}` : ''}${coresText}, or increase executor memory`,
-      remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY), ...(raisesFloor ? [setConf(COALESCE_MIN_PARTITIONS_KEY, needed)] : []), ...coresRemediation, memory],
+      text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks: lower ${ADVISORY_PARTITION_SIZE_KEY} so each partition is smaller${raisesFloor ? `, set ${COALESCE_MIN_PARTITIONS_KEY} to ${floor}` : ''}${raisesCount ? `, raise ${key} to ${needed}` : ''}${coresText}, or increase executor memory`,
+      remediation: [
+        decreaseConf(ADVISORY_PARTITION_SIZE_KEY),
+        ...(raisesFloor ? [setConf(COALESCE_MIN_PARTITIONS_KEY, floor)] : []),
+        ...(raisesCount ? [increaseConf(key, needed)] : []),
+        ...coresRemediation,
+        memory,
+      ],
     };
   }
   if (lever === 'ownPartitioning') {

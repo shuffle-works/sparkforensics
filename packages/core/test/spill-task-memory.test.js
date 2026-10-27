@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { FINDING_PRESENTATION } from '../src/finding-presentation.js';
 
 const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
@@ -57,6 +58,7 @@ describe('spill advice from execution memory per task slot', () => {
     const f = spillOf({ ...VOLUME, shuffleReadBytes: 0, inputBytes: 20 * GiB });
     expect(f.recommendation).toContain('this stage reads no shuffle, so lower spark.executor.cores to 2 (');
     expect(keys(f)).toEqual(['spark.executor.cores', 'spark.executor.memory']);
+    expect(FINDING_PRESENTATION.spill.genericRecommendation(f)).toContain('lower spark.executor.cores so each task gets more memory');
   });
 
   it('reads the cores from the executors when the log does not record spark.executor.cores', () => {
@@ -76,5 +78,15 @@ describe('spill advice from execution memory per task slot', () => {
     const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
     expect(f.recommendation).toContain('set spark.sql.adaptive.coalescePartitions.minPartitionNum to 320, lower spark.executor.cores to 2');
     expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.adaptive.coalescePartitions.minPartitionNum', direction: 'set', suggested: 320 });
+  });
+
+  it('caps the coalesce floor at the configured count and raises that count when it is too low', () => {
+    const sql = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
+    const app = makeApp({ config: { ...FOUR_CORES, 'spark.sql.shuffle.partitions': '200' }, sparkVersion: '3.5.0', resources: { executor: { cores: 4, memoryMB: 4096 } } });
+    const stage = makeStage({ id: 1, sqlExecutionId: 3, ...VOLUME, taskCount: 100 });
+    const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
+    expect(f.recommendation).toContain('set spark.sql.adaptive.coalescePartitions.minPartitionNum to 200, raise spark.sql.shuffle.partitions to 320, lower spark.executor.cores to 2');
+    expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.adaptive.coalescePartitions.minPartitionNum', direction: 'set', suggested: 200 });
+    expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested: 320 });
   });
 });

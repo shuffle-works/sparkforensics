@@ -244,8 +244,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     // The skew/volume classification isn't a Finding field, so one sentence covers both.
     genericRecommendation(f) {
       const skewFirst = 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise';
-      if (f.reads != null && f.reads !== 'shuffle') return `${skewFirst} increase executor memory or process less data per task.`;
       const cores = f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.executor.cores') ? ', lower spark.executor.cores so each task gets more memory,' : '';
+      if (f.reads != null && f.reads !== 'shuffle') return `${skewFirst}${cores} increase executor memory or process less data per task.`;
       switch (partitionAdviceKind(f)) {
         case 'aqe': return `${skewFirst} lower spark.sql.adaptive.advisoryPartitionSizeInBytes so AQE's merged partitions are smaller or raise spark.sql.adaptive.coalescePartitions.minPartitionNum${cores} or increase executor memory.`;
         case 'code': return `${skewFirst} raise this stage's own partition count (its repartition(n) or RDD parallelism)${cores} or increase executor memory.`;
