@@ -24,7 +24,7 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type MergeRewriteProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-// The counters behind a row, for an evidence panel: the sentence above states the headline figure only.
+// The counters behind a row: the finding text states the action only, so every row shows them.
 function mergeMeasurement(finding: FindingOf<'mergeRewrite'>): string {
   const n = (v: number) => v.toLocaleString('en-US');
   const { rewrittenRows, changedRows, filesBefore, filesAfter, partitionsScanned, partitionsTouched } = finding;
@@ -50,13 +50,12 @@ function MergeRewriteRow({ finding }: { finding: FindingOf<'mergeRewrite'> }) {
       {!stated && finding.stageIds.length > 0 ? (
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
-      {stated ? (
-        <p className="text-xs text-muted-foreground">{mergeMeasurement(finding)}</p>
-      ) : (
+      {stated ? null : (
         <p>
           {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
         </p>
       )}
+      <p className="text-xs text-muted-foreground">{mergeMeasurement(finding)}</p>
     </li>
   );
 }

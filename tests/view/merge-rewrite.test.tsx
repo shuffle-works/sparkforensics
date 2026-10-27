@@ -59,3 +59,17 @@ test('renders the PLAN card with each MERGE finding and its stage pill', () => {
   expect(screen.getByRole('button', { name: 'Open details for Stage 5' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Open details for Stage 6' })).toBeInTheDocument();
 });
+
+test('shows the counts of each MERGE when the card lists several findings', () => {
+  renderWidget([
+    finding(),
+    finding({ stageIds: [6], rewrittenRows: 1200000, changedRows: 50000, filesBefore: 40, filesAfter: 38, partitionsScanned: 30, partitionsTouched: 2 }),
+  ]);
+  expect(screen.getAllByText(/did not change/)).toHaveLength(2);
+  expect(screen.getByText(
+    '800,000 unmodified rows rewritten, 300,000 rows inserted, updated or deleted. Target files: 8 before skipping, 8 after. Partitions: 4 scanned, 4 changed.',
+  )).toBeInTheDocument();
+  expect(screen.getByText(
+    '1,200,000 unmodified rows rewritten, 50,000 rows inserted, updated or deleted. Target files: 40 before skipping, 38 after. Partitions: 30 scanned, 2 changed.',
+  )).toBeInTheDocument();
+});
