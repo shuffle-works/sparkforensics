@@ -13,10 +13,13 @@ function appModelWithStage(stageId: number): AppModel {
   return { ...emptyAppModel(), stages: new Map([[stageId, { id: stageId, name: `stage-${stageId}` }]]) as unknown as AppModel['stages'] };
 }
 
+// The cards under test never open a task histogram.
+const getTaskData = () => Promise.reject(new Error('task data is not fetched'));
+
 function renderStraggler(appModel: AppModel, catalog: Finding[], defaultCollapsed?: boolean) {
   return render(
     <StageDetailProvider>
-      <Straggler appModel={appModel} catalog={catalog} defaultCollapsed={defaultCollapsed} />
+      <Straggler appModel={appModel} catalog={catalog} getTaskData={getTaskData} defaultCollapsed={defaultCollapsed} />
     </StageDetailProvider>,
   );
 }

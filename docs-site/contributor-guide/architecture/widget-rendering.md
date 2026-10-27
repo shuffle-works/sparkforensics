@@ -115,12 +115,11 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    location adds "Also flagged here, likely the same cause: ...", and the
    summary says once that same-stage findings are grouped. A step's stage
    label opens its stage details, and its one **Show evidence** opens the
-   evidence panel the step owns in place (`verdictEvidenceOwners` in
-   `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`; see
-   "In-place evidence panel" in
-   [row-expand-contract](./widget-rendering/row-expand-contract.md)) or
-   routes to the card that holds it. The steps' lead findings
-   (`verdictLeadFindings`) and owned cards are left out of the Findings tab,
+   step's own evidence panel in place, scoped to the step's finding
+   (`verdictEvidenceOwners` in `src/view/verdict-evidence.ts`, rendered through
+   `InlineEvidence`; see "In-place evidence panel" in
+   [row-expand-contract](./widget-rendering/row-expand-contract.md)). The
+   steps' lead findings (`verdictLeadFindings`) are left out of the Findings tab,
    and a **More findings (n)** link shows that tab, with `n` the tab's own
    listed count (`listedCount` in `Dashboard.tsx`).
    Under the steps, `CostLane` lists `verdict.costSteps` ("By core time"): findings ranked by the

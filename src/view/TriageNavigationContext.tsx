@@ -11,6 +11,9 @@ export interface WidgetRegistration {
    * a static, non-collapsible `<h3>` instead. Used by route navigation to
    * scroll to and focus a widget it jumps to. */
   getDisclosureButton: () => HTMLElement | null;
+  /** Set on an evidence panel scoped to some findings of its widget: a route to one of them
+   * resolves to this registration. A registration without it takes any finding no panel holds. */
+  holds?: (finding: Finding) => boolean;
 }
 
 export interface TriageNavigation {

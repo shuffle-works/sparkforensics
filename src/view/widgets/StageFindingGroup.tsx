@@ -7,22 +7,19 @@ import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { StageHeader } from '@/view/StageHeader';
 import { useAnyStatedAbove, useInlineEvidence } from '@/view/InlineEvidenceContext';
-import { ExpandToggleButton } from '@/view/ExpandToggleButton';
-import { DurationHistogram } from '@/view/charts/DurationHistogram';
-import { IMPACT_BAND_ORDER, formatDuration, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { AppModel, Finding, ImpactBand, StageId, TaskData } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import type { SlowHostFinding, StragglerFinding } from '@sparkforensics/core/finding-types.ts';
-import { useExpandableRow } from '@/view/useExpandableRow';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
-import { useLiveTaskData } from '@/view/useLiveTaskData';
+import { StageTaskSpread } from '@/view/StageTaskSpread';
 import { useWidgetDensity } from '@/store/store';
 import { PlanExplorer } from './PlanExplorer';
 import { resolvePlanTree } from './PlanView';
@@ -67,14 +64,9 @@ interface StageFindingGroupRowProps {
 }
 
 function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingLabel }: StageFindingGroupRowProps) {
-  const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
-  const { expanded, data: taskData, error: taskDataError, toggle } = useExpandableRow(
-    liveGetTaskData ? () => liveGetTaskData(group.stageId) : undefined,
-  );
   const anchor = useAnchoredRow(group.findings);
   const inline = useInlineEvidence();
   const stageStated = useAnyStatedAbove(group.findings);
-  const stage = appModel.stages.get(group.stageId);
   const density = useWidgetDensity();
   // The line above an evidence panel states a finding's label and its stage, so a stated finding keeps
   // only its status marker (Advanced) and the other findings keep their whole line.
@@ -83,7 +75,6 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
   // tinyTask's sentence states the median task duration, so its P50 is not repeated.
   const p50Stated = entries.some(({ finding: f, stated }) => stated && f.type === 'tinyTask');
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(group.stageId, appModel);
-  const detailId = `${idPrefix}-stage-${group.stageId}-detail`;
 
   return (
     <div
@@ -111,57 +102,39 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
           ))}
         </ul>
       ) : null}
-      {stage?.taskDurationP50 != null ? (
-        <p className="text-xs text-muted-foreground">
-          {p50Stated ? null : <>P50 {formatDuration(stage.taskDurationP50)} &middot; </>}P95 {formatDuration(stage.taskDurationP95)} &middot; Max{' '}
-          {formatDuration(stage.taskDurationMax)}
-        </p>
-      ) : null}
-      {group.slowHost ? (
-        <p className="flex items-start gap-2 text-xs">
-          <ImpactDot impactBand={group.slowHost.impactBand} className="mt-1" />
-          <span>
-            <strong>Slow host:</strong> {group.slowHost.host} ({group.slowHost.value}&times; median,{' '}
-            {Math.round((group.slowHost.hostTaskShare ?? 0) * 100)}% of tasks)
-          </span>
-        </p>
-      ) : null}
-      {group.straggler ? (
-        <p className="flex items-start gap-2 text-xs">
-          <ImpactDot impactBand={group.straggler.impactBand} className="mt-1" />
-          <span>
-            <strong>Stragglers:</strong>{' '}
-            {(group.straggler.speculativeTasks ?? 0) > 0
-              ? `${group.straggler.speculativeTasks} speculative task${group.straggler.speculativeTasks === 1 ? '' : 's'}`
-              : `${group.straggler.value}% of tasks > 4× P50`}
-          </span>
-        </p>
-      ) : null}
-      <ExpandToggleButton
-        expanded={expanded}
-        onClick={toggle}
-        label="Task detail"
-        location={`Stage ${group.stageId}`}
-        controlsId={detailId}
-      />
-      {expanded ? (
-        <div id={detailId} className="space-y-3 pt-1">
-          {taskData ? (
-            <DurationHistogram
-              metrics={taskData.metrics}
-              fieldNames={taskData.fieldNames}
-              markers={{ p50: stage?.taskDurationP50, p95: stage?.taskDurationP95 }}
-            />
-          ) : exportMode ? (
-            <p className="text-xs text-muted-foreground">Task data isn&rsquo;t included in exported reports.</p>
-          ) : taskDataError ? (
-            <p className="text-xs text-muted-foreground">Task data unavailable for this stage.</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">Loading task data&hellip;</p>
-          )}
-          {showPlanExplorer ? <PlanExplorer stageId={group.stageId} appModel={appModel} /> : null}
-        </div>
-      ) : null}
+      <StageTaskSpread
+        stageId={group.stageId}
+        appModel={appModel}
+        getTaskData={getTaskData}
+        idPrefix={idPrefix}
+        p50Stated={p50Stated}
+        between={
+          <>
+            {group.slowHost ? (
+              <p className="flex items-start gap-2 text-xs">
+                <ImpactDot impactBand={group.slowHost.impactBand} className="mt-1" />
+                <span>
+                  <strong>Slow host:</strong> {group.slowHost.host} ({group.slowHost.value}&times; median,{' '}
+                  {Math.round((group.slowHost.hostTaskShare ?? 0) * 100)}% of tasks)
+                </span>
+              </p>
+            ) : null}
+            {group.straggler ? (
+              <p className="flex items-start gap-2 text-xs">
+                <ImpactDot impactBand={group.straggler.impactBand} className="mt-1" />
+                <span>
+                  <strong>Stragglers:</strong>{' '}
+                  {(group.straggler.speculativeTasks ?? 0) > 0
+                    ? `${group.straggler.speculativeTasks} speculative task${group.straggler.speculativeTasks === 1 ? '' : 's'}`
+                    : `${group.straggler.value}% of tasks > 4× P50`}
+                </span>
+              </p>
+            ) : null}
+          </>
+        }
+      >
+        {showPlanExplorer ? <PlanExplorer stageId={group.stageId} appModel={appModel} /> : null}
+      </StageTaskSpread>
     </div>
   );
 }

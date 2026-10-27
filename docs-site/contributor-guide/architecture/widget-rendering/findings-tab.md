@@ -73,16 +73,17 @@ wrapping rather than truncating, then one **Show evidence** button); and a right
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
 `formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). The
 **Show evidence** button (`EvidenceButton`), not the row, is the click
-target. The first row of a widget's type in a band owns that widget's
-evidence and opens it in place as a table row below (`EvidencePanelRow`,
-`InlineEvidence`): the panel starts at the text column, and stacks full
-width below `sm`. Any other row routes via `selectTriageTargetForFinding`
-(`src/view/triage-target.ts`), the same per-finding resolver Stage Summary
-Table's own control uses (see "First investigation routing" below), to the
-card another row or the verdict owns. A route that targets an owned card
-opens it too (`useEvidenceOpen`). A `TypeGroupRow` has the same button for
-its representative finding, and its text block is an inner button that
-toggles its expand state (`aria-expanded`). An expanded group's members (`FindingInstanceRow`) omit
+target. Every row opens its own evidence in place as a table row below
+(`EvidencePanelRow`, `InlineEvidence`), scoped to the row's findings: the
+widget renders without its other findings of the same type. The panel starts
+at the text column, and stacks full width below `sm`. A route that targets one
+of the row's findings opens that row's panel too (`useEvidenceOpen`). A
+`TypeGroupRow` has the same button, scoped to the group's members, and its
+text block is an inner button that toggles its expand state
+(`aria-expanded`). A group member's row routes via
+`selectTriageTargetForFinding` (`src/view/triage-target.ts`), the same
+per-finding resolver Stage Summary Table's own control uses (see "First
+investigation routing" below), and opens the group's panel. An expanded group's members (`FindingInstanceRow`) omit
 the badge and span its cell (`colSpan={2}`): the location line, then the
 recommendation clamped to one line, then the figure in the third column.
 `ImpactBoard` owns which single group is expanded (`expandedGroupKey`); a
@@ -97,14 +98,17 @@ findings"), and renders nothing (not even the heading) when it has neither a
 rollup row nor an active widget: a run with no critical findings has no
 "Critical" heading or section at all. Inside a band, rollup rows render
 first as the headerless `Table` described above, followed by the band's
-active `REGISTRY` widget cards that no row owns (`computeActiveWidgets`'s ranked list,
+active `REGISTRY` widget cards that no verdict step or row shows (`computeActiveWidgets`'s ranked list,
 filtered to this impact band) in their own `WidgetGrid`: every one of
 `orderedWidgets()`'s `REGISTRY` components *except* the one
 always-mounted one below, with at least one finding in `catalog` ∪
 `configFindings`. Within a band, active widgets keep `orderedWidgets()`'s
 own order: the interpretation's `DetectorInfo` sorted by region
-(`action` first), then ascending detector `order`. Those unowned cards
-render collapsed (`defaultCollapsed`) in both Basic and Advanced view.
+(`action` first), then ascending detector `order`. Those cards
+render collapsed (`defaultCollapsed`) in both Basic and Advanced view. A route
+to a finding that no step or row holds (a log note or an evidence caveat, which
+the rollup leaves out) adds its type's card to this grid, whatever else shows
+that type (`fullCardWidgetIds`, `Dashboard.tsx`).
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
 Storage, Memory Utilization, or Executor Utilization card with an active

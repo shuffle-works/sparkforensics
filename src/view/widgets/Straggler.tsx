@@ -6,7 +6,8 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StageHeader } from '@/view/StageHeader';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { useInlineEvidence, useStatedAbove } from '@/view/InlineEvidenceContext';
+import { StageTaskSpread } from '@/view/StageTaskSpread';
 import { useWidgetDensity } from '@/store/store';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -21,7 +22,7 @@ import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 
-export type StragglerProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
+export type StragglerProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;
 
 // straggler reports whichever signal drove the finding: a speculative-retry
 // count, a straggler-task percentage, or skew's duration ratio, distinguished by its `unit` field.
@@ -33,14 +34,15 @@ function stragglerDetail(f: StragglerFinding): string {
     : `${formatMetricValue('pct', value)} of tasks straggled`;
 }
 
-function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appModel: WidgetProps['appModel'] }) {
+function StragglerRow({ finding, appModel, getTaskData }: { finding: StragglerFinding; appModel: WidgetProps['appModel']; getTaskData: WidgetProps['getTaskData'] }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
+  const inPanel = useInlineEvidence() !== null;
   const density = useWidgetDensity();
   const hasStageName = finding.stageId != null && Boolean(appModel.stages.get(finding.stageId)?.name);
   const hasStatus = density === 'advanced' && Boolean(finding.confidence) && finding.confidence !== 'high';
-  // The line above an evidence panel states the stage, the straggler figure and its cause: the name and the status are left.
-  if (stated && !hasStageName && !hasStatus) return null;
+  // The line above an evidence panel states the stage, the straggler figure and its cause: the panel adds the stage's task duration spread.
+  if (stated && !hasStageName && !hasStatus && !inPanel) return null;
   const causeSummary = stated ? null : stragglerCauseSummary(finding);
   return (
     <li
@@ -62,6 +64,14 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
       </div>
       {stated ? null : <p className="text-xs text-muted-foreground">{stragglerDetail(finding)}</p>}
       {causeSummary ? <p className="text-xs text-muted-foreground">{causeSummary}</p> : null}
+      {inPanel && finding.stragglerCount > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {finding.stragglerCount} straggling task{finding.stragglerCount === 1 ? '' : 's'}, over 4&times; the stage&apos;s median task duration.
+        </p>
+      ) : null}
+      {inPanel && finding.stageId != null ? (
+        <StageTaskSpread stageId={finding.stageId} appModel={appModel} getTaskData={getTaskData} idPrefix="straggler" />
+      ) : null}
       <ImpactEstimate finding={finding} />
     </li>
   );
@@ -69,7 +79,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
 
 /** Board section for `straggler` findings: a stage where speculative
  * retries fired or a share of tasks ran far longer than the median. */
-export const Straggler = memo(function Straggler({ appModel, catalog, defaultCollapsed = true }: StragglerProps) {
+export const Straggler = memo(function Straggler({ appModel, catalog, getTaskData, defaultCollapsed = true }: StragglerProps) {
   const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
@@ -107,7 +117,7 @@ export const Straggler = memo(function Straggler({ appModel, catalog, defaultCol
         />
       }
     >
-      <ul className="space-y-2">{visible.map((f) => <StragglerRow key={f.id} finding={f} appModel={appModel} />)}</ul>
+      <ul className="space-y-2">{visible.map((f) => <StragglerRow key={f.id} finding={f} appModel={appModel} getTaskData={getTaskData} />)}</ul>
       <RowPagination
         page={effectivePage}
         totalPages={totalPages}

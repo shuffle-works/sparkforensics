@@ -279,10 +279,8 @@ test('Show evidence in the stage dialog clears the filter that hides the target,
   expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
 });
 
-test('a verdict step that routes to another step\'s card clears only the dimension that hides it, and says so', async () => {
+test('a verdict step opens its own evidence panel and leaves the board filter alone', async () => {
   const user = userEvent.setup();
-  const scrollIntoView = vi.fn();
-  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scrollIntoView });
   window.history.replaceState({}, '', '/?impact=critical&type=skew');
   const saving = (ms: number) => ({ basis: 'serial', wallClock: { low: ms, high: ms }, estimateMethod: 'modeled' }) as Finding['impactEstimate'];
   store.setState({
@@ -298,25 +296,17 @@ test('a verdict step that routes to another step\'s card clears only the dimensi
 
   const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
   expect(steps[0]).toHaveTextContent('Stage 1');
-  // The first spill step shows its card in place, which no board filter can hide: nothing is cleared.
-  await user.click(within(steps[0]).getByRole('button', { name: /show evidence/i }));
-  expect(screen.queryByText(/Cleared the .* filter/)).not.toBeInTheDocument();
-  expect(new URLSearchParams(window.location.search).get('type')).toBe('skew');
-
-  // The second spill step shares that card, so it routes to it and clears the type filter hiding spill.
   expect(steps[1]).toHaveTextContent('Stage 2');
+  // Each spill step shows its own card in place, which no board filter can hide: nothing is cleared.
+  await user.click(within(steps[0]).getByRole('button', { name: /show evidence/i }));
   await user.click(within(steps[1]).getByRole('button', { name: /show evidence/i }));
 
-  expect(screen.getByText('Cleared the task skew filter to show this finding.')).toHaveAttribute('role', 'status');
-  await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  expect(within(steps[0]).getByRole('button', { name: /hide evidence/i })).toBeInTheDocument();
+  expect(within(steps[1]).getByRole('button', { name: /hide evidence/i })).toBeInTheDocument();
+  expect(screen.queryByText(/Cleared the .* filter/)).not.toBeInTheDocument();
   const params = new URLSearchParams(window.location.search);
-  expect(params.get('type')).toBeNull();
+  expect(params.get('type')).toBe('skew');
   expect(params.get('impact')).toBe('critical');
-
-  await clickImpact(user, 'critical');
-  expect(screen.queryByText('Cleared the task skew filter to show this finding.')).not.toBeInTheDocument();
-  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
-  delete Element.prototype.scrollIntoView;
 });
 
 test('a verdict step for a Full app report widget leaves the board filter alone', async () => {
@@ -425,9 +415,11 @@ test('in Basic view, a route that clears the last active filter hides the bar an
   await waitForDashboard();
   expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
 
-  // The second skew step shares the first step's card, so it routes there and clears the impact filter.
+  // The stage dialog's Show evidence routes to the second skew step's panel and clears the impact filter.
   const secondStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[1];
-  await user.click(within(secondStep).getByRole('button', { name: /show evidence/i }));
+  await user.click(within(secondStep).getByRole('button', { name: 'Stage 2' }));
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(within(dialog).getAllByTestId('stage-finding')[0]).getByRole('button', { name: /show evidence/i }));
 
   expect(new URLSearchParams(window.location.search).get('impact')).toBeNull();
   expect(screen.queryByRole('region', { name: 'Filter findings' })).not.toBeInTheDocument();

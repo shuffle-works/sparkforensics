@@ -254,7 +254,7 @@ describe('Straggler in an evidence panel', () => {
   const run = (stated: string[] | null, model = stages) => {
     const [a, b] = [make('a', 1), make('b', 2)];
     installInterpretation([a, b]);
-    return renderIn(<Straggler appModel={appModelOf(model)} catalog={[a, b]} defaultCollapsed={false} />, stated);
+    return renderIn(<Straggler appModel={appModelOf(model)} catalog={[a, b]} getTaskData={() => Promise.reject(new Error('task data is not fetched'))} defaultCollapsed={false} />, stated);
   };
 
   it('drops the stage chip, the straggler figure and the cause of the stated finding, keeping its stage name', () => {
@@ -266,9 +266,27 @@ describe('Straggler in an evidence panel', () => {
     expect(screen.getByText('map at A.scala:1')).toBeInTheDocument();
   });
 
-  it('renders no row for a stated finding on a stage with no name', () => {
+  it('keeps the task duration spread of a stated finding on a stage with no name', () => {
     const { container } = run(['a'], { 1: {}, 2: { name: 'map at B.scala:2' } } as never);
-    expect(container.querySelectorAll('li')).toHaveLength(1);
+    expect(container.querySelectorAll('li')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /show task detail/i })).toHaveLength(2);
+  });
+
+  it('shows the straggling task count and the stage task spread only in a panel', () => {
+    const a = testFinding({
+      type: 'straggler', id: 'a', stageId: 1, impactBand: 'info', metric: 'stragglerShare', value: 12, unit: 'pct', stragglerCount: 6,
+    }) as Finding;
+    installInterpretation([a]);
+    const model = appModelOf({ 1: { name: 'map at A.scala:1', taskDurationP50: 100, taskDurationP95: 400, taskDurationMax: 900 } });
+    const ui = <Straggler appModel={model} catalog={[a]} getTaskData={() => Promise.reject(new Error('task data is not fetched'))} defaultCollapsed={false} />;
+    const { unmount } = renderIn(ui, ['a']);
+    expect(screen.getByText("6 straggling tasks, over 4\u00d7 the stage's median task duration.")).toBeInTheDocument();
+    expect(screen.getByText(/P50 100ms/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show task detail/i })).toBeInTheDocument();
+    unmount();
+    renderIn(ui, null);
+    expect(screen.queryByText(/straggling tasks/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /show task detail/i })).not.toBeInTheDocument();
   });
 
   it('keeps everything outside a panel', () => {
@@ -319,6 +337,15 @@ describe('SlowHost in an evidence panel', () => {
   it('renders no row for a stated executor-deviation finding on a stage with no name', () => {
     const { container } = run([multiDim('a', 1), multiDim('b', 2)], ['a'], { 1: {}, 2: { name: 'map at B.scala:2' } });
     expect(container.querySelectorAll('li')).toHaveLength(1);
+  });
+
+  it('shows the deviating executor\'s raw measurement only in a panel', () => {
+    const a = testFinding({
+      type: 'slowHost', id: 'a', stageId: 1, impactBand: 'warning', metric: 'execMaxMedianRatio', value: 4, executorId: '7', dimension: 'taskTime',
+      variant: 'multiDim', execMaxValue: 9000, executorCount: 3, taskCount: 200,
+    }) as Finding;
+    run([a], ['a']);
+    expect(screen.getByText('Executor 7: 9.0s of task time, the most of 3 executors (200 tasks in the stage).')).toBeInTheDocument();
   });
 
   it('keeps everything outside a panel', () => {

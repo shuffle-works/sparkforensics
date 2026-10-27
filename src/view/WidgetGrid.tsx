@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { cn } from '@/lib/utils';
+import type { Finding } from '@sparkforensics/core/types.ts';
 import { useStore } from '@/store/store';
 import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
 import { useRouteFocusedWidgetId, useTriageNavigation } from '@/view/TriageNavigationContext';
@@ -49,12 +50,15 @@ export function WidgetGridItem({
   children,
   className,
   collapsedTile = false,
+  holds,
 }: {
   cardId: string;
   widgetId?: string;
   children: ReactNode;
   className?: string;
   collapsedTile?: boolean;
+  /** For an evidence panel scoped to some findings of the widget: which findings a route may open it for. */
+  holds?: (finding: Finding) => boolean;
 }) {
   const navigation = useTriageNavigation();
   const focusedWidgetId = useRouteFocusedWidgetId();
@@ -66,6 +70,9 @@ export function WidgetGridItem({
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const disclosureButtonRef = useRef<HTMLElement | null>(null);
+  const holdsRef = useRef(holds);
+  holdsRef.current = holds;
+  const scoped = holds !== undefined;
   const gridCard = useMemo(() => ({
     openRequestGeneration,
     reportOpen: (nextOpen: boolean) => {
@@ -91,8 +98,9 @@ export function WidgetGridItem({
         setOpenRequestGeneration((generation) => generation + 1);
       },
       getDisclosureButton: () => disclosureButtonRef.current,
+      holds: scoped ? (finding) => holdsRef.current?.(finding) ?? false : undefined,
     });
-  }, [navigation, widgetId]);
+  }, [navigation, widgetId, scoped]);
 
   return (
     <WidgetGridCardContext.Provider value={gridCard}>

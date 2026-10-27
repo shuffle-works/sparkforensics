@@ -161,7 +161,7 @@ function FilteredBoard({
   const verdictWidgetIds = useMemo(() => new Set(evidenceOwners.values()), [evidenceOwners]);
   const renderVerdictEvidence = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
-    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={[lead]} /> : null;
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={[lead]} scope={[lead]} /> : null;
   }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');
@@ -186,10 +186,21 @@ function FilteredBoard({
     replaceSelection(next);
     setFilterNotice({ text: clearedFilterNotice(dimensions, selection, subject), selection: next });
   }, [selection, replaceSelection]);
+  // Every verdict step and Findings row has its own evidence panel. A finding with neither (the log
+  // note the board leaves out, a caveat) is reached through its type's full card instead.
+  const rowFindings = useMemo(() => new Set<Finding>([...verdictLeads, ...eligibleFindings(interpretation)]), [verdictLeads, interpretation]);
+  const [fullCardWidgetIds, setFullCardWidgetIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => setFullCardWidgetIds(new Set()), [activeFileId]);
+  const routeFinding = useCallback((target: TriageTarget) => {
+    if (!isAlwaysMountedType(target.finding.type) && !rowFindings.has(target.finding)) {
+      setFullCardWidgetIds((current) => new Set(current).add(target.widgetId));
+    }
+    onRoute(target);
+  }, [rowFindings, onRoute]);
   const routeToVisible = useCallback((target: TriageTarget) => {
     if (!isAlwaysMountedType(target.finding.type)) revealFinding(target.finding, 'this finding');
-    onRoute(target);
-  }, [revealFinding, onRoute]);
+    routeFinding(target);
+  }, [revealFinding, routeFinding]);
   // The top bar's count chip: reveal the band it counts (the finding needing
   // the fewest cleared dimensions), show Findings, then land on the band once
   // the tab panel is visible.
@@ -296,13 +307,14 @@ function FilteredBoard({
             <ImpactBoard
               verdictLeads={verdictLeads}
               verdictWidgetIds={verdictWidgetIds}
+              fullCardWidgetIds={fullCardWidgetIds}
               appModel={appModel}
               catalog={filteredCatalog}
               configFindings={filteredConfig}
               stages={appModel.stages}
               getTaskData={getTaskData}
               activeFileId={activeFileId}
-              onRoute={onRoute}
+              onRoute={routeFinding}
             />
           </TabsContent>
           <TabsContent value="full-report" keepMounted>
@@ -312,7 +324,7 @@ function FilteredBoard({
               getTaskData={getTaskData}
               configFindings={filteredConfig}
               activeFileId={activeFileId}
-              onRoute={onRoute}
+              onRoute={routeFinding}
             />
           </TabsContent>
         </Tabs>
@@ -353,7 +365,7 @@ function DashboardContent() {
   const tokenRef = useRef(0);
   const routeRef = useRef<RouteRequest | null>(null);
   const routeFileRef = useRef<string | null>(null);
-  const registrationsRef = useRef(new Map<string, WidgetRegistration>());
+  const registrationsRef = useRef(new Map<string, WidgetRegistration[]>());
   const findingAnchorsRef = useRef(new Map<Finding, HTMLElement>());
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -414,19 +426,25 @@ function DashboardContent() {
     setRouteRequest(next);
   }, []);
 
+  // The registration a route to `finding` opens: the evidence panel scoped to it, else the widget's full card.
+  const registrationFor = useCallback((widgetId: string, finding: Finding): WidgetRegistration | undefined => {
+    const registrations = registrationsRef.current.get(widgetId) ?? [];
+    return registrations.find((candidate) => candidate.holds?.(finding)) ?? registrations.find((candidate) => !candidate.holds);
+  }, []);
+
   const registerWidget = useCallback((widgetId: string, registration: WidgetRegistration) => {
-    registrationsRef.current.set(widgetId, registration);
+    registrationsRef.current.set(widgetId, [...(registrationsRef.current.get(widgetId) ?? []), registration]);
     // A widget mounting after the request (a Reference widget once its section
     // expands) opens here; already-mounted ones open in the layout effect below.
     const route = routeRef.current;
-    if (route?.target.widgetId === widgetId && resolveRoute(route)) registration.open();
+    if (route?.target.widgetId === widgetId && resolveRoute(route) && registrationFor(widgetId, route.target.finding) === registration) registration.open();
 
     return () => {
-      if (registrationsRef.current.get(widgetId) === registration) {
-        registrationsRef.current.delete(widgetId);
-      }
+      const remaining = (registrationsRef.current.get(widgetId) ?? []).filter((candidate) => candidate !== registration);
+      if (remaining.length > 0) registrationsRef.current.set(widgetId, remaining);
+      else registrationsRef.current.delete(widgetId);
     };
-  }, [resolveRoute]);
+  }, [resolveRoute, registrationFor]);
 
   const registerFindingAnchor = useCallback((finding: Finding, element: HTMLElement) => {
     findingAnchorsRef.current.set(finding, element);
@@ -446,7 +464,7 @@ function DashboardContent() {
       clearRoute(route.token);
       return;
     }
-    const registration = registrationsRef.current.get(widgetId);
+    const registration = registrationFor(widgetId, resolved.finding);
     if (!registration) {
       // The card mounted in the same commit as the request and its parent has not
       // registered yet. Keep the route pending; registerWidget re-fires this on
@@ -486,7 +504,7 @@ function DashboardContent() {
       setRouteFocusedWidgetId(widgetId);
     }
     clearRoute(route.token);
-  }, [clearRoute, resolveRoute]);
+  }, [clearRoute, resolveRoute, registrationFor]);
 
   const clearRouteFocus = useCallback((widgetId: string) => {
     setRouteFocusedWidgetId((current) => (current === widgetId ? null : current));
@@ -501,8 +519,8 @@ function DashboardContent() {
       clearRoute(routeRequest.token);
       return;
     }
-    registrationsRef.current.get(resolved.widgetId)?.open();
-  }, [clearRoute, resolveRoute, routeRequest]);
+    registrationFor(resolved.widgetId, resolved.finding)?.open();
+  }, [clearRoute, resolveRoute, routeRequest, registrationFor]);
 
   // Cancel a pending request when the file or catalog changes out from under it.
   useLayoutEffect(() => {

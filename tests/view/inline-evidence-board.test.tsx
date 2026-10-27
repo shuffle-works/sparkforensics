@@ -64,6 +64,29 @@ describe('evidence panel on a Findings row', () => {
     expect(within(panelRow).queryByText('SHFL')).not.toBeInTheDocument();
   });
 
+  it('gives each row of a type its own panel', async () => {
+    const resourceOnly = { basis: 'resourceOnly', wallClock: null, rawWaste: { value: 500, unit: 'ms' }, estimateMethod: 'measured' } as const;
+    const first = testFinding({
+      type: 'shuffle', id: 'shuffle-1', stageId: 1, impactBand: 'warning', value: 286 * 1024 * 1024,
+      recommendation: '286 MB shuffled in this stage.', impactEstimate: estimate,
+    });
+    const second = testFinding({
+      type: 'shuffle', id: 'shuffle-2', stageId: 1, impactBand: 'warning', value: 100 * 1024 * 1024,
+      recommendation: '100 MB shuffled in this stage.', impactEstimate: resourceOnly,
+    });
+    const onRoute = renderBoard([first, second]);
+    const buttons = screen.getAllByRole('button', { name: 'Show evidence' });
+    expect(buttons).toHaveLength(2);
+
+    await userEvent.click(buttons[0]);
+    await userEvent.click(buttons[1]);
+
+    expect(onRoute).not.toHaveBeenCalled();
+    expect(await screen.findAllByRole('heading', { name: 'Shuffle I/O' })).toHaveLength(2);
+    expect(document.getElementById('finding-evidence-shuffle-1')).not.toBeNull();
+    expect(document.getElementById('finding-evidence-shuffle-2')).not.toBeNull();
+  });
+
   it('opens the measurements behind a figure the row already states, in place and without routing', async () => {
     const utilization = testFinding({
       type: 'utilization', id: 'utilization-1', stageId: null, impactBand: 'warning', metric: 'avgUtilization', value: 33,
