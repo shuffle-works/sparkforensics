@@ -229,7 +229,9 @@ produced this," not part of identity. See
 
 The discriminators are declared per finding type (`ID_DISCRIMINATORS` in
 `analyzer.ts`, each key checked against that type's fields) and joined in the
-fixed `DISCRIMINATOR_SLOTS` order, and the value slot takes `value`, else
+fixed `DISCRIMINATOR_SLOTS` order. The `APPENDED_SLOTS` follow, only for the
+types that list them, so a new one leaves every other id unchanged
+(`joinKeyCast` lists `planNodeIds`). The value slot takes `value`, else
 `valueText`.
 
 `id` stability holds for equivalent reruns of the same schema/analyzer
