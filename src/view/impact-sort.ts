@@ -9,9 +9,9 @@ export type SortMode = 'impact' | 'stage';
 
 /** Whether a widget should render its `SortModeToggle`: the card is open (a collapsed card has
  * nothing to reorder yet), some finding in the rows has a place in the savings rank, and the stage
- * order puts the rows in a different sequence than the impact order. `items` are the widget's rows
- * in the order it passes to `orderBy`; the orders are compared by row identity over all of them, so
- * pagination doesn't matter. */
+ * order lists a different sequence of stage ids than the impact order. `items` are the widget's rows
+ * in the order it passes to `orderBy`; the orders are compared over all of them, so pagination
+ * doesn't matter. */
 export function canToggleSort<T>(
   state: InterpretationState | null,
   items: readonly T[],
@@ -20,8 +20,8 @@ export function canToggleSort<T>(
   cardOpen: boolean,
 ): boolean {
   if (!cardOpen || rankedBySavings(state, items.flatMap(getFindings)).length === 0) return false;
-  const stageOrder = [...items].sort(byStageAsc(getStageId));
-  return orderByImpact(state, items, getFindings).some((item, i) => item !== stageOrder[i]);
+  const stageOrderIds = [...items].sort(byStageAsc(getStageId)).map(getStageId);
+  return orderByImpact(state, items, getFindings).some((item, i) => getStageId(item) !== stageOrderIds[i]);
 }
 
 /** Items in the interpretation's savings rank (core's `rankBySavings`, the order of `verdict.steps`).

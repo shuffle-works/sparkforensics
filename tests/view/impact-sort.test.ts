@@ -76,14 +76,14 @@ test('canToggleSort returns false when the stage order equals the impact order',
 });
 
 test('canToggleSort returns false when every row sits on one stage', () => {
-  const rows = [onStage('gc', 3, 1, 9_000), onStage('gc', 3, 1, 1_000)];
+  const rows = [onStage('gc', 3, 1, 1_000), onStage('gc', 3, 1, 9_000)];
 
   expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
 });
 
 test('canToggleSort returns false when no row has a stage', () => {
-  const rows = [finding({ type: 'gc', stageId: null, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 9_000 } }),
-    finding({ type: 'gc', stageId: null, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 1_000 } })];
+  const rows = [finding({ type: 'gc', stageId: null, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 1_000 } }),
+    finding({ type: 'gc', stageId: null, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 9_000 } })];
 
   expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
 });

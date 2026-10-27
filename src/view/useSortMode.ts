@@ -16,7 +16,7 @@ export interface UseSortModeResult {
     getFindings: (item: T) => readonly Finding[],
     getStageId: (item: T) => number | null,
   ) => T[];
-  /** `canToggleSort` against the current interpretation: whether the two orders of `items` differ. */
+  /** `canToggleSort` against the current interpretation: whether the two orders of `items` differ in stage ids. */
   canToggleSort: <T>(
     items: readonly T[],
     getFindings: (item: T) => readonly Finding[],

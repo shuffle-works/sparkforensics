@@ -31,10 +31,10 @@ detector's own `finding.stageId` is the sort key directly; a sql-scope finding t
 several stages (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `pythonUdf`, `underBroadcast`, `overBroadcast`,
 via `stageIds`) sorts by the lowest stage id it touches (`stageIdOf`). The toggle renders
 only when `canToggleSort` holds: the card is open, a finding in the rows has a place in
-`savingsRank`, and the stage order lists the rows in a different sequence than the impact order.
-A widget passes the same rows, in the same order, that it passes to `orderBy`, with the same
-finding and stage accessors. The gate compares both orders by row identity over all rows, so
-pagination does not affect it. The toggle is hidden when the orders match, when all rows share
+`savingsRank`, and the stage order lists a different sequence of stage ids than the impact
+order. A widget passes the same rows, in the same order, that it passes to `orderBy`, with the
+same finding and stage accessors. The gate compares the stage id of each position in both orders
+over all rows, so pagination does not affect it, and rows tied on one stage never show it. The toggle is hidden when the orders match, when all rows share
 one stage or have none, and when every row has the same impact. With no ranked finding the
 impact order is the input order, so the toggle would do nothing. Rows with no
 rankable finding, and `byStageAsc` ties, keep their prior relative order
