@@ -38,6 +38,25 @@ export function adviseFailure(texts: readonly (string | null | undefined)[]): Fa
   return hit ? { id: hit.id, recommendation: hit.recommendation, remediation: hit.remediation, confirmation: hit.confirmation } : null;
 }
 
+// Spark aborts a stage that failed its maximum attempts with "<Result|ShuffleMap>Stage N (name) has
+// failed the maximum allowable number of times". The stage itself closed earlier with the reason of
+// its last attempt; the abort text reaches the job's exception and the reasons of the stages it
+// cancels.
+const MAX_ATTEMPTS_STAGE = /Stage (\d+)\b[^\n]*? has failed the maximum allowable number of times/;
+
+function maxAttemptsStageId(text: string): number | null {
+  const m = MAX_ATTEMPTS_STAGE.exec(text);
+  return m ? Number(m[1]) : null;
+}
+
+/** The advice for a failed stage, from its own failure reason and from the abort texts of its run
+ * (failed jobs' exceptions, other stages' failure reasons) that name it. An own reason that names
+ * another stage is a cancelled stage's copy of that stage's abort and gives no advice. */
+export function adviseStageFailure(stageId: number, reason: string, abortTexts: readonly string[]): FailureAdvice | null {
+  const own = (maxAttemptsStageId(reason) ?? stageId) === stageId ? [reason] : [];
+  return adviseFailure([...own, ...abortTexts.filter((t) => maxAttemptsStageId(t) === stageId)]);
+}
+
 /** The advice for one failed-task group, read from its loss reason, message and class name. */
 export function adviseFailureGroup(group: TaskFailureGroup | undefined): FailureAdvice | null {
   return group ? adviseFailure([group.lossReason, group.message, group.className]) : null;

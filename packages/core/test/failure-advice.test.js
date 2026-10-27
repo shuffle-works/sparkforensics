@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { analyze } from '../src/analyzer.js';
-import { adviseFailure, adviseFailureGroup } from '../src/failure-advice.ts';
+import { adviseFailure, adviseFailureGroup, adviseStageFailure } from '../src/failure-advice.ts';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { createState, processEvent } from '../src/parser-worker.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
@@ -47,6 +47,20 @@ describe('adviseFailure', () => {
     expect(adviseFailure(['java.lang.IllegalStateException: bad row'])).toBeNull();
     expect(adviseFailure([null, undefined])).toBeNull();
     expect(adviseFailure([])).toBeNull();
+  });
+});
+
+describe('adviseStageFailure', () => {
+  const abort = 'Job aborted due to stage failure: ShuffleMapStage 3 (map at Example.scala:5) has failed the maximum allowable number of times: 4. Most recent failure reason: fetch failed';
+
+  it('reads an abort text only for the stage it names', () => {
+    expect(adviseStageFailure(3, 'fetch failed', [abort]).id).toBe('stageMaxAttempts');
+    expect(adviseStageFailure(4, 'fetch failed', [abort])).toBeNull();
+    expect(adviseStageFailure(4, abort, [])).toBeNull();
+  });
+
+  it('ignores an abort text that names no stage', () => {
+    expect(adviseStageFailure(4, 'fetch failed', [`Task 0 in stage 3.0 failed 4 times: ${CONTAINER_KILL}`])).toBeNull();
   });
 });
 
@@ -153,10 +167,40 @@ describe('failure advice from parsed events', () => {
     expect(findings.find((f) => f.type === 'failures').failureGroups[0].lossReason).toBe(CONTAINER_KILL);
   });
 
-  it('reads a stage that failed its maximum attempts from the StageCompleted failure reason', () => {
-    const finding = parseStage({ failureReason: MAX_ATTEMPTS_REASON }).find((f) => f.type === 'stageFailed');
+  // Spark's FetchFailed path: the failing stage closes with its last attempt's fetch failure, then
+  // the abort names it in the job's exception and in the reason of any stage it cancels.
+  function abortedJob({ withSibling }) {
+    const s = createState();
+    const stageIds = withSibling ? [1, 2] : [1];
+    processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 0, 'Stage IDs': stageIds }, s);
+    for (const id of stageIds) processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': id, 'Submission Time': 0 } }, s);
+    const closeStage = (id, reason) => {
+      const info = { 'Stage ID': id, 'Completion Time': 20000, 'Failure Reason': reason };
+      return processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': info }, s).data;
+    };
+    const stages = new Map([[1, closeStage(1, FETCH_FAILED)]]);
+    if (withSibling) stages.set(2, closeStage(2, JOB_ABORTED));
+    processEvent({
+      Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 20000,
+      'Job Result': { Result: 'JobFailed', Exception: { Message: JOB_ABORTED } },
+    }, s);
+    return analyze(makeApp(), stages, [], [], s.jobs, new Map());
+  }
+  const FETCH_FAILED = 'org.apache.spark.shuffle.FetchFailedException: Failed to connect to host-a/10.0.0.1:7337';
+  const JOB_ABORTED = `Job aborted due to stage failure: ResultStage 1 (count at Example.scala:10) has failed the maximum allowable number of times: 4. Most recent failure reason:\n${FETCH_FAILED}`;
+  const stageFailedOf = (findings, id) => findings.find((f) => f.type === 'stageFailed' && f.stageId === id);
+
+  it.each([false, true])('names the max-attempts fix on the stage the job abort names (running sibling: %s)', (withSibling) => {
+    const finding = stageFailedOf(abortedJob({ withSibling }), 1);
     expect(finding.remediation).toEqual(MAX_ATTEMPTS);
-    expect(finding.valueText).toBe(MAX_ATTEMPTS_REASON);
+    expect(finding.valueText).toBe(FETCH_FAILED);
     expect(coreFindingGenericRecommendation(finding)).toMatch(/spark\.stage\.maxConsecutiveAttempts/);
+  });
+
+  it('gives the cancelled sibling no max-attempts advice', () => {
+    const sibling = stageFailedOf(abortedJob({ withSibling: true }), 2);
+    expect(sibling.valueText).toBe(JOB_ABORTED);
+    expect(sibling.remediation ?? []).toEqual([]);
+    expect(sibling.recommendation).toMatch(/Inspect the driver log/);
   });
 });

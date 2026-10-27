@@ -33,7 +33,7 @@ import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
-import { adviseFailure, adviseFailureGroup } from './failure-advice.ts';
+import { adviseFailureGroup, adviseStageFailure } from './failure-advice.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
 import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
@@ -159,6 +159,7 @@ interface DetectorExecutorRemovedEvent { executorId: string; timestamp: number; 
 interface DetectorJob {
   result: string | null;
   succeeded: boolean | null;
+  exception: unknown;
   // Nullable as on types.ts's Job: a job can lack either timestamp if the log never recorded it.
   submissionTime: number | null;
   completionTime: number | null;
@@ -2453,9 +2454,13 @@ export const DETECTORS = [
     emits: ['stageFailed'],
     docAnchor: '#bottleneck-failures',
     thresholds: {},
-    detect(stage): Finding | null {
+    detect(stage, ctx): Finding | null {
       if (stage.stageFailureReason == null) return null;
-      const advice = adviseFailure([stage.stageFailureReason]);
+      const abortTexts = [
+        ...[...ctx.jobs.values()].map((j) => j.exception),
+        ...[...ctx.stages.values()].map((s) => (s.id === stage.id ? null : s.stageFailureReason)),
+      ].filter((t): t is string => typeof t === 'string');
+      const advice = adviseStageFailure(stage.id, stage.stageFailureReason, abortTexts);
       return {
         type: 'stageFailed', stageId: stage.id, impactBand: 'critical',
         variant: 'stageFailure',
