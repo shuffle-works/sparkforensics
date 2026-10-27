@@ -99,8 +99,18 @@ describe('unprunedScan', () => {
     const findings = unprunedFindings(join);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
-      value: 8 * GIB, partitionsRead: 40, dataFilters: ['(k = 3)', '(k = 4)'], planNodeIds: ['n1', 'n2'],
+      value: 8 * GIB, partitionsRead: 20, dataFilters: ['(k = 3)', '(k = 4)'], planNodeIds: ['n1', 'n2'],
     });
+  });
+
+  it('keeps apart two tables whose paths share a last name', () => {
+    const bronze = scanNode();
+    bronze.detail = bronze.detail.replace('file:/tmp/events', 'file:/wh/bronze/events');
+    const silver = { ...scanNode({ extra: { 'size of files read': 2 * GIB } }), id: 'n2' };
+    silver.detail = silver.detail.replace('file:/tmp/events', 'file:/wh/silver/events');
+    const join = { id: 'j', name: 'SortMergeJoin', detail: '', metrics: [], children: [bronze, silver] };
+    const findings = unprunedFindings(join);
+    expect(findings.map((f) => [f.value, f.planNodeIds])).toEqual([[4 * GIB, ['n1']], [2 * GIB, ['n2']]]);
   });
 
   it('honors a lowered byte floor', () => {

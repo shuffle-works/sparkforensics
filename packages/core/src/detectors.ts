@@ -3895,8 +3895,9 @@ export const DETECTORS = [
     thresholds: { minBytesRead: GB, minPartitionsRead: 2 },
     detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
-      // One finding per table: a self-join's scans of one table share its id discriminators.
-      const byRelation = new Map<string, { nodes: PlanNode[]; bytesRead: number; partitionsRead: number; dataFilters: Set<string> }>();
+      // One finding per table: a self-join's scans of one table share its id discriminators. The
+      // relation is a path basename, so the full Location value keys the table.
+      const byTable = new Map<string, { relation: string; nodes: PlanNode[]; bytesRead: number; partitionsRead: number; dataFilters: Set<string> }>();
       walkPlanTree(sqlExec.planTree, (node) => {
         const partitionsRead = metricValue(node, 'number of partitions read');
         const bytesRead = metricValue(node, FILES_READ_BYTES);
@@ -3905,19 +3906,20 @@ export const DETECTORS = [
         if (partitionsRead < thresholds.minPartitionsRead || bytesRead < thresholds.minBytesRead) return;
         const { partitionFilters, dataFilters } = parseScanFilters(node.detail ?? '');
         if (partitionFilters.length > 0 || dataFilters.length === 0) return;
-        const group = byRelation.get(relation) ?? { nodes: [], bytesRead: 0, partitionsRead: 0, dataFilters: new Set<string>() };
+        const tableKey = `${relation}|${node.detail?.match(/Location:\s*(.*?)(?=,\s*\w+:|$)/)?.[1] ?? ''}`;
+        const group = byTable.get(tableKey) ?? { relation, nodes: [], bytesRead: 0, partitionsRead: 0, dataFilters: new Set<string>() };
         group.nodes.push(node);
         group.bytesRead += bytesRead;
-        group.partitionsRead += partitionsRead;
+        group.partitionsRead = Math.max(group.partitionsRead, partitionsRead);
         for (const f of dataFilters) group.dataFilters.add(f);
-        byRelation.set(relation, group);
+        byTable.set(tableKey, group);
       }, { dedupe: true });
-      if (byRelation.size === 0) return null;
-      return [...byRelation].map(([relation, group]): Finding => ({
+      if (byTable.size === 0) return null;
+      return [...byTable.values()].map((group): Finding => ({
         type: 'unprunedScan', executionId: sqlExec.id, stageIds: unionStageIds(group.nodes, sqlStageIds(ctx, sqlExec.id)),
         planNodeIds: group.nodes.flatMap((n) => (n.id ? [n.id] : [])), impactBand: 'info',
         metric: 'bytesRead', value: group.bytesRead, partitionsRead: group.partitionsRead, dataFilters: [...group.dataFilters],
-        relation: relation.replace(/^[a-z]+:/, ''),
+        relation: group.relation.replace(/^[a-z]+:/, ''),
         confidence: 'low',
         validationRequired: 'The plan does not name the table\'s partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.',
         recommendation: 'No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
