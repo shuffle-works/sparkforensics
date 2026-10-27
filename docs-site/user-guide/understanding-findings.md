@@ -227,7 +227,12 @@ Shuffle partitions are too large, too uneven, or too few for the work. A
 single shuffle partition over 5 GB, for example, will OOM or spill heavily:
 repartition to break it up before the stage runs. The partition-skew rule
 words its advice the same way a `SKEW` finding does, including
-`evidence.aqeSkew`.
+`evidence.aqeSkew`. When the median partition is empty and the largest holds
+at least 90% of the stage's shuffle read, one key carries the shuffle
+(`evidence.singleKey`, often NULL or a constant). More partitions and AQE
+cannot split it, so the advice is to broadcast the small side with a hint,
+filter or split out the NULL rows, or give them a random key. A stage that
+also has a missed broadcast says so.
 
 ### `SLOW`: Stage slowness {#slow}
 

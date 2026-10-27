@@ -212,7 +212,7 @@ const EVIDENCE_KEYS = {
   skew: ['origin', 'aqeSkew', 'cause', 'dataRatio'],
   stageShape: ['rule'],
   shuffle: ['partitions'],
-  partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
+  partitionSizing: ['rule', 'origin', 'aqeSkew', 'singleKey', 'partitions'],
   spill: ['spillMagnitude', 'reads', 'spillToInputRatio', 'wideRows', 'operators', 'exchanges', 'sqlDescription'],
   gc: ['direction'],
   slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'executorCount', 'taskCount'],

@@ -7,6 +7,7 @@ import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
+import { walkPlanTree } from './plan-tree-walk.ts';
 import type {
   Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
@@ -183,6 +184,41 @@ function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
   return reconciled;
 }
 
+// The stage a join reads its two shuffles in. Each side's exchange lists the stages that wrote it
+// and the one that read it, the later one. Null unless both sides name the same single reader.
+function joinReadStage(f: FindingOf<'underBroadcast'>, sql: Map<number, SqlExecution>): number | null {
+  const readers: number[][] = [];
+  walkPlanTree(sql.get(f.executionId)?.planTree, (node) => {
+    if (node.id == null || !f.planNodeIds.includes(node.id)) return;
+    const ids = node.stageIds ?? [];
+    readers.push(ids.filter((id) => id !== Math.min(...ids)));
+  });
+  const [first] = readers;
+  return readers.length === 2 && readers.every((r) => r.length === 1 && r[0] === first[0]) ? first[0] : null;
+}
+
+// A single-key shuffle stage whose join was also not broadcast: say the missed broadcast is the
+// cheapest fix, since the broadcast removes the shuffle that the key skews.
+function linkSingleKeyToBroadcast(findings: Finding[], sql: Map<number, SqlExecution>): Finding[] {
+  const missed = new Map<number, Finding>();
+  for (const f of findings) {
+    if (f.type !== 'underBroadcast') continue;
+    const joinStage = joinReadStage(f, sql);
+    if (joinStage != null && !missed.has(joinStage)) missed.set(joinStage, f);
+  }
+  if (missed.size === 0) return findings;
+  return findings.map((f) => {
+    const broadcast = f.type === 'partitionSizing' && f.singleKey && f.stageId != null ? missed.get(f.stageId) : undefined;
+    if (!broadcast || broadcast.type !== 'underBroadcast') return f;
+    const how = broadcast.broadcastThreshold === 'disabled'
+      ? 'automatic broadcast is disabled, so add a broadcast() hint or set the threshold to a positive size'
+      : broadcast.broadcastThreshold === 'notLimiting'
+        ? 'add a broadcast() hint'
+        : 'add a broadcast() hint or raise the threshold';
+    return { ...f, recommendation: `${f.recommendation ?? ''} The same stage also has a missed broadcast: ${how}.`.trim() };
+  });
+}
+
 // The run's idle core-ms (the Wasted core-hours figure), the ceiling for one stage's idle claim.
 function runIdleCoreMs(
   app: SparkAppInfo | null,
@@ -264,7 +300,7 @@ export function analyze(
         assertNever(d);
     }
   }
-  const findings = reconcileExecutorMemoryAdvice(applySuppression(out));
+  const findings = linkSingleKeyToBroadcast(reconcileExecutorMemoryAdvice(applySuppression(out)), sql);
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
   deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
