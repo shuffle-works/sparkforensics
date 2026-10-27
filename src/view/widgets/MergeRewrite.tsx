@@ -31,7 +31,7 @@ function mergeMeasurement(finding: FindingOf<'mergeRewrite'>): string {
   const rows = `${n(rewrittenRows)} unmodified rows rewritten, ${n(changedRows)} rows inserted, updated or deleted.`;
   return filesBefore != null && filesAfter != null
     ? `${rows} Target files: ${n(filesBefore)} before skipping, ${n(filesAfter)} after.${partitionsScanned != null && partitionsTouched != null
-      ? ` Partitions: ${n(partitionsScanned)} scanned, ${n(partitionsTouched)} rewritten.` : ''}`
+      ? ` Partitions: ${n(partitionsScanned)} scanned, ${n(partitionsTouched)} changed.` : ''}`
     : rows;
 }
 

@@ -56,6 +56,19 @@ describe('mergeRewrite', () => {
     expect(mergeFindings(mergeNode({ 'number of target files after skipping': 40, 'number of target partitions after skipping': 1, 'number of target partitions from which files were removed': 1 }))).toEqual([]);
   });
 
+  it('counts the partitions an insert added files to as changed', () => {
+    const kept = {
+      'number of target files after skipping': 40, 'number of target partitions after skipping': 30,
+      'number of target partitions from which files were removed': 2,
+    };
+    expect(mergeFindings(mergeNode({ ...kept, 'number of target partitions to which files were added': 30 }))).toEqual([]);
+    expect(mergeFindings(mergeNode({
+      ...kept, 'number of target partitions from which files were removed': 0, 'number of target partitions to which files were added': 30,
+    }))).toEqual([]);
+    const [f] = mergeFindings(mergeNode({ ...kept, 'number of target partitions to which files were added': 3 }));
+    expect(f).toMatchObject({ rule: 'weakSkipping', partitionsTouched: 3 });
+  });
+
   it('emits one finding per rule for a MERGE that trips both', () => {
     const rules = mergeFindings(mergeNode({
       'number of target rows rewritten unmodified': 800_000, 'number of target files after skipping': 40,

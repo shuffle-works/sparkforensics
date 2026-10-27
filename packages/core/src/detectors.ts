@@ -3832,7 +3832,7 @@ export const DETECTORS = [
     docAnchor: '#table-formats',
     // rewrittenRows: unmodified rows rewritten (at least minCopiedRows, and minCopiedToChangedRatio
     // times the rows inserted, updated and deleted). weakSkipping: at least minTargetFiles files and
-    // minFilesKeptShare of them kept after skipping, while the rewritten files sit in at most
+    // minFilesKeptShare of them kept after skipping, while the files removed and added sit in at most
     // maxTouchedPartitionShare of the partitions scanned.
     thresholds: {
       minCopiedRows: 100_000, minCopiedToChangedRatio: 2,
@@ -3849,7 +3849,11 @@ export const DETECTORS = [
         const filesBefore = metricValue(node, 'number of target files before skipping');
         const filesAfter = metricValue(node, 'number of target files after skipping');
         const partitionsScanned = metricValue(node, 'number of target partitions after skipping');
-        const partitionsTouched = metricValue(node, 'number of target partitions from which files were removed');
+        // A partition the MERGE removed files from or added files to holds a change: each counter is a
+        // lower bound on the partitions changed, so the larger one is.
+        const removedFrom = metricValue(node, 'number of target partitions from which files were removed');
+        const addedTo = metricValue(node, 'number of target partitions to which files were added');
+        const partitionsTouched = removedFrom == null || addedTo == null ? removedFrom ?? addedTo : Math.max(removedFrom, addedTo);
         const base = {
           type: 'mergeRewrite' as const, executionId: sqlExec.id, stageIds: unionStageIds([node], []),
           planNodeIds: [node.id!].filter(Boolean), impactBand: 'info' as const,
