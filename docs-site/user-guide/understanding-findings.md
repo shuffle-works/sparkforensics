@@ -498,7 +498,7 @@ this tag:
   its evidence. The card names each row by its SQL query number and, when the
   log names one, the target table or path, and merges commands with identical
   counts into one row ("2 MERGE commands (queries 4 and 7)"). Its Impact/Stage
-  sort buttons show only when a row has a stage.
+  sort buttons show only when the Stage order would change the rows' order.
 - Row-at-a-time Python UDF: a plan runs `BatchEvalPython`, which pickles
   every row to a Python worker and back. Flagged when its stages sent at
   least 64 MiB to the workers (`data sent to Python workers`) and ran for at
