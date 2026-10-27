@@ -102,7 +102,8 @@ lists the gaps.
 
 Failed-task error text is dropped rather than pseudonymized, since a message
 or stack trace can carry file paths and data values that no host pattern
-matches: every array under a key named `failureGroups` has its `message`
+matches: every array under a key named `failureGroups` or `retryFailureGroups`
+(a stage record's retried-attempt failures) has its `message`
 replaced and the message text stripped from its `stackExcerpt`
 (`redactTaskFailureGroup` in `task-failure.ts`). That covers the evidence
 report and both the findings and the stage records of the HTML export.
