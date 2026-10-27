@@ -69,7 +69,7 @@ function model(overrides: Partial<PlanGraphModel> = {}): PlanGraphModel {
       { id: 'b', sourceNodeId: 'b', label: 'SortMergeJoin', category: 'join', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 200 },
     ],
     edges: [{ id: 'a->b', source: 'a', target: 'b' }],
-    segmentIndex: 0, segmentCount: 1, scope: 'segment', segmentStageIds: new Map(),
+    segmentIndex: 0, segmentCount: 1, scope: 'segment', segmentStageIds: new Map(), stageDurations: new Map(),
     ...overrides,
   };
 }
@@ -227,6 +227,7 @@ describe('compound stage-group containers', () => {
       ],
       edges: [],
       scope: 'full',
+      stageDurations: new Map([[42, 500]]),
     });
     const segmentStageIds = new Map([[0, 42], [1, 43]]);
 
@@ -255,6 +256,7 @@ describe('compound stage-group containers', () => {
       ],
       edges: [],
       scope: 'full',
+      stageDurations: new Map([[42, 800], [43, 200]]),
     });
     const segmentStageIds = new Map([[0, 42], [1, 42], [2, 43]]);
     rerender(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={42} segmentStageIds={segmentStageIds} />);
@@ -289,6 +291,16 @@ describe('compound stage-group containers', () => {
     const single = model({ scope: 'segment' });
     render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1], [1, 1]])} />);
 
+    expect(screen.getByTestId('rf__node-segment-0').firstElementChild).not.toHaveClass('bg-primary/10');
+  });
+
+  it('shows a stage\'s full summed duration in the single-stage view, not the shown segment\'s share', () => {
+    const single = model({ scope: 'segment', stageDurations: new Map([[7, 30000]]) });
+    render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={7} segmentStageIds={new Map([[0, 7], [1, 7]])} />);
+
+    const stage7 = within(screen.getByTestId('rf__node-stage-7'));
+    expect(stage7.getByText(formatDuration(30000))).toBeInTheDocument();
+    expect(stage7.queryByText(formatDuration(300))).not.toBeInTheDocument();
     expect(screen.getByTestId('rf__node-segment-0').firstElementChild).not.toHaveClass('bg-primary/10');
   });
 

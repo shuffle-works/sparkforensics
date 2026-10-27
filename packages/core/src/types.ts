@@ -282,6 +282,10 @@ export interface PlanGraphModel {
    * stage-group container headers need this in 'full' scope too, not just to
    * resolve which component a 'segment' request refers to. */
   segmentStageIds: Map<number, number>;
+  /** Stage id -> summed exclusive duration share of every segment zipped to
+   * that stage, over the whole plan whatever `scope` renders. A stage with no
+   * measured node has no entry. */
+  stageDurations: Map<number, number>;
 }
 
 export type PlanGraphFilterMode = 'io' | 'basic' | 'advanced';

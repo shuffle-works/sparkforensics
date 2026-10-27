@@ -177,8 +177,9 @@ default single-stage view and the expanded full-plan view. The box wraps every
 Exchange-bounded segment zipped to that stage, so a stage split across several
 segments still reads as one unit of work. It is the only layer that names the
 stage and the only one that rings on selection. Its header holds the "Stage N"
-title, a duration chip with the sum of its segments' exclusive durations (omitted
-when none has an attributed duration), and one finding chip
+title, a duration chip with the sum of its segments' exclusive durations
+(`PlanGraphModel.stageDurations`, summed over the whole plan, so the single-stage
+view shows the same total; omitted when none has an attributed duration), and one finding chip
 (`PlanGraphFindingChip`) per finding on the stage, in that order. Each chip is a
 button holding a plain `TagBadge` (the ALL-CAPS tag, with no docs link)
 followed by the finding's compact magnitude and recoverable-time detail from

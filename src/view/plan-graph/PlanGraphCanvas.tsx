@@ -317,7 +317,6 @@ export function PlanGraphCanvas({
       const sId = segmentStageIds?.get(segmentIndex);
       if (sId != null) segmentsPerStage.set(sId, (segmentsPerStage.get(sId) ?? 0) + 1);
     }
-    const durationPerStage = new Map<number, number>();
 
     // Group boxes are plain background nodes in the members' coordinate space
     // (not xyflow parent/child nesting). Bounds come from the compact layout when
@@ -331,9 +330,6 @@ export function PlanGraphCanvas({
       const groupDuration = membersInGroup.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
       const hasAnyDuration = membersInGroup.some((n) => n.durationShare != null);
       const groupStageId = segmentStageIds?.get(segmentIndex) ?? null;
-      if (groupStageId != null && hasAnyDuration) {
-        durationPerStage.set(groupStageId, (durationPerStage.get(groupStageId) ?? 0) + groupDuration);
-      }
       return {
         id: group.id,
         type: 'segmentGroup',
@@ -396,7 +392,7 @@ export function PlanGraphCanvas({
           height: group.height,
           stageId: groupStageId,
           findings: findingsForStage(findings, groupStageId),
-          durationLabel: durationPerStage.has(groupStageId) ? formatDuration(durationPerStage.get(groupStageId)!) : null,
+          durationLabel: model.stageDurations.has(groupStageId) ? formatDuration(model.stageDurations.get(groupStageId)!) : null,
           segmentCount,
           // Only the full plan has other stages to focus.
           onSelect: model.scope === 'full' && onSelectStage ? () => onSelectStage(groupStageId) : undefined,

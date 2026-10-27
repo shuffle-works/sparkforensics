@@ -39,7 +39,7 @@ function makeAppModel({ stageId = 1, sqlExecutionId = 1, stageIds = [stageId], p
 describe('buildPlanGraphModel', () => {
   it('returns an empty model for a null planTree', () => {
     const model = buildPlanGraphModel(null, { scope: 'full', stageId: 1, appModel: makeAppModel({ planTree: null }) });
-    expect(model).toEqual({ nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map() });
+    expect(model).toEqual({ nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map(), stageDurations: new Map() });
   });
 
   it('builds one node per plan node and one edge per parent-child link, in full scope', () => {
@@ -120,6 +120,26 @@ describe('buildPlanGraphModel', () => {
       .reduce((total, graphNode) => total + (graphNode.durationShare ?? 0), 0);
     expect(totalForStage(1)).toBe(500);
     expect(totalForStage(2)).toBe(1000);
+  });
+
+  it('totals each stage over every segment of the plan, in single-stage scope too', () => {
+    const exchangeA = splitExchange('Exchange a', [node('Scan a')]);
+    const exchangeB = splitExchange('Exchange b', [node('Scan b')]);
+    const root = node('SortMergeJoin', [exchangeA, exchangeB]);
+    const appModel = makeAppModel({
+      planTree: root,
+      stageId: 1,
+      stageIds: [1, 2],
+      stages: { 1: { submittedAt: 0, completedAt: 10000 }, 2: { submittedAt: 10000, completedAt: 30000 } },
+    });
+
+    const full = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
+    const single = buildPlanGraphModel(root, { scope: 'segment', stageId: 2, appModel });
+
+    expect(full.stageDurations).toEqual(new Map([[1, 10000], [2, 20000]]));
+    expect(single.scope).toBe('segment');
+    expect(single.nodes.every((graphNode) => single.segmentStageIds.get(graphNode.segmentIndex) === 2)).toBe(true);
+    expect(single.stageDurations).toEqual(full.stageDurations);
   });
 
   it('routes the parent edge to the read half and the child edge to the write half, with a read->write pairing edge', () => {

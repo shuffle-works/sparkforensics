@@ -72,7 +72,7 @@ export function buildPlanGraphModel(
   },
 ): PlanGraphModel {
   const { scope, stageId, appModel, findings = [], durationMode = 'exclusive' } = opts;
-  if (!planTree) return { nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map<number, number>() };
+  if (!planTree) return { nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map<number, number>(), stageDurations: new Map<number, number>() };
 
   const stage = appModel.stages.get(stageId);
   const sqlExecutionId = stage?.sqlExecutionId ?? null;
@@ -197,8 +197,15 @@ export function buildPlanGraphModel(
     }
   }
 
+  const stageDurations = new Map<number, number>();
+  for (const n of allNodes) {
+    const sId = segmentStageIds.get(n.segmentIndex);
+    if (sId == null || n.durationShare == null) continue;
+    stageDurations.set(sId, (stageDurations.get(sId) ?? 0) + (n.exclusiveDurationShare ?? n.durationShare));
+  }
+
   if (scope === 'full') {
-    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds };
+    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds, stageDurations };
   }
 
   let targetSegmentIndex: number | null = null;
@@ -207,7 +214,7 @@ export function buildPlanGraphModel(
   }
 
   if (targetSegmentIndex === null) {
-    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds };
+    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds, stageDurations };
   }
 
   const nodeIds = new Set<string>();
@@ -218,5 +225,5 @@ export function buildPlanGraphModel(
   });
   const edges = allEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
 
-  return { nodes, edges, segmentIndex: targetSegmentIndex, segmentCount, scope: 'segment', segmentStageIds };
+  return { nodes, edges, segmentIndex: targetSegmentIndex, segmentCount, scope: 'segment', segmentStageIds, stageDurations };
 }
