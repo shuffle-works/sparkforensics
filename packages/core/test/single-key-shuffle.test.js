@@ -38,17 +38,17 @@ describe('single-key shuffle rule', () => {
 describe('single-key shuffle next to a missed broadcast', () => {
   const small = 5 * MiB;
   const large = 20 * 1024 * MiB;
-  const exchange = (bytes, id) => ({
-    name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 200)', id: `r${id}`, exchangeRole: 'read', metrics: [],
-    children: [{ name: 'Exchange', detail: '', id: `w${id}`, exchangeRole: 'write', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] }],
+  const exchange = (bytes, id, stageIds) => ({
+    name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 200)', id: `r${id}`, exchangeRole: 'read', metrics: [], stageIds,
+    children: [{ name: 'Exchange', detail: '', id: `w${id}`, exchangeRole: 'write', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [], stageIds }],
   });
-  const plan = {
+  const plan = (stageIds) => ({
     name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [b#2L], Inner', metrics: [],
-    children: [exchange(small, 'L'), exchange(large, 'R')],
-  };
-  const findings = (config) => {
+    children: [exchange(small, 'L', stageIds), exchange(large, 'R', stageIds)],
+  });
+  const findings = (config, joinStageIds = [1]) => {
     const stages = new Map([[1, makeStage({ shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [1], planTree: plan }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [1], planTree: plan(joinStageIds) }]]);
     return analyze(makeApp({ config, sparkVersion: '3.5.3' }), stages, [], [], new Map(), sql);
   };
 
@@ -62,5 +62,10 @@ describe('single-key shuffle next to a missed broadcast', () => {
   it('says automatic broadcast is disabled when the threshold is -1', () => {
     const f = skewOf(findings({ 'spark.sql.autoBroadcastJoinThreshold': '-1' }));
     expect(f.recommendation).toContain('automatic broadcast is disabled');
+  });
+  it('does not link a join whose stages are unknown, so only the whole execution is known', () => {
+    const all = findings(undefined, null);
+    expect(all.some((f) => f.type === 'underBroadcast')).toBe(true);
+    expect(skewOf(all).recommendation).not.toContain('missed broadcast');
   });
 });

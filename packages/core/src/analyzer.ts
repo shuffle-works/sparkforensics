@@ -1,4 +1,4 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, isExecutionWideStageIds, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
@@ -188,8 +188,8 @@ function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
 function linkSingleKeyToBroadcast(findings: Finding[]): Finding[] {
   const missed = new Map<number, Finding>();
   for (const f of findings) {
-    if (f.type !== 'underBroadcast') continue;
-    for (const id of f.stageIds ?? []) if (!missed.has(id)) missed.set(id, f);
+    if (f.type !== 'underBroadcast' || isExecutionWideStageIds(f.stageIds)) continue;
+    for (const id of f.stageIds) if (!missed.has(id)) missed.set(id, f);
   }
   if (missed.size === 0) return findings;
   return findings.map((f) => {
