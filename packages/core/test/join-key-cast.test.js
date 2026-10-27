@@ -106,6 +106,23 @@ describe('joinKeyCastOf', () => {
     expect(castOf(exchange('hashpartitioning(k#2, 4)', joinOf('BroadcastHashJoin [cast(k#2 as bigint)], [k#8L], Inner, BuildRight')))).toBeNull();
     expect(castOf(exchange('hashpartitioning(v#3L, 4)', joinOf(DECIMAL_JOIN)))).toBeNull();
   });
+
+  it('reports nothing when another key of the join keeps the exchange without the cast', () => {
+    const multiKey = joinOf('SortMergeJoin [cast(a#1 as decimal(20,0)), d#4], [x#7, y#8], Inner');
+    expect(castOf(exchange('hashpartitioning(a#1, 4)', multiKey))).toBeNull();
+  });
+
+  it('reports a multi-key join when the exchange covers every key of the cast side', () => {
+    const multiKey = joinOf('SortMergeJoin [cast(a#1 as decimal(20,0)), d#4], [x#7, y#8], Inner');
+    expect(castOf(exchange('hashpartitioning(d#4, a#1, 4)', multiKey))).toMatchObject({ exchangeKeys: ['a'] });
+  });
+
+  it('reports nothing for an exchange the job asked for', () => {
+    const repartition = node('Exchange', 'Exchange hashpartitioning(k#2, 4), REPARTITION_BY_COL', [
+      node('Exchange', '', [joinOf(DECIMAL_JOIN)], { exchangeRole: 'write' }),
+    ], { exchangeRole: 'read' });
+    expect(castOf(repartition)).toBeNull();
+  });
 });
 
 describe('joinKeyCast finding', () => {
