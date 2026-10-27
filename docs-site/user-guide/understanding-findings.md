@@ -493,7 +493,9 @@ this tag:
   the partitions scanned (so it needs a partitioned target). The advice is to
   filter the MERGE source to the rows that changed (for example with a
   row-hash anti-join), to repeat the partition range in the MERGE condition so
-  Delta can prune files, and to check the target's file layout.
+  Delta can prune files, and to check the target's file layout. The finding
+  text is that advice; the row counts, file counts and partition counts are in
+  its evidence.
 - Row-at-a-time Python UDF: a plan runs `BatchEvalPython`, which pickles
   every row to a Python worker and back. Flagged when its stages sent at
   least 64 MiB to the workers (`data sent to Python workers`) and ran for at

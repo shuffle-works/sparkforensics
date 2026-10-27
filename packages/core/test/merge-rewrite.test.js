@@ -35,6 +35,8 @@ describe('mergeRewrite', () => {
   it('flags unmodified rows rewritten at 2x the changed rows and over the floor', () => {
     const [f] = mergeFindings(mergeNode({ 'number of target rows rewritten unmodified': 800_000, 'number of inserted rows': 100_000, 'number of updated rows': 200_000 }));
     expect(f).toMatchObject({ rule: 'rewrittenRows', impactBand: 'info', value: 800_000, rewrittenRows: 800_000, changedRows: 300_000, planNodeIds: ['n1'] });
+    // The counts live in the evidence fields, not the text.
+    expect(f.recommendation).not.toMatch(/\d/);
   });
 
   it('skips the rows rule below the floor or below the ratio', () => {

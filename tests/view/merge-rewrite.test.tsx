@@ -27,7 +27,7 @@ function finding(overrides: Record<string, unknown> = {}): Finding {
     filesAfter: 8,
     partitionsScanned: 4,
     partitionsTouched: 4,
-    recommendation: 'MERGE rewrote 800,000 unmodified target rows to change 300,000.',
+    recommendation: 'Most rows the MERGE rewrote did not change: filter the MERGE source.',
     ...overrides,
   } as unknown as Finding;
 }

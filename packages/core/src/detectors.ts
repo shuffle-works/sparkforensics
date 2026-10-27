@@ -3862,7 +3862,7 @@ export const DETECTORS = [
         if (rows.copied >= thresholds.minCopiedRows && rows.copied >= thresholds.minCopiedToChangedRatio * changedRows) {
           out.push({
             ...base, rule: 'rewrittenRows', metric: 'rewrittenRows', value: rows.copied,
-            recommendation: `MERGE rewrote ${rows.copied.toLocaleString('en-US')} unmodified target rows to change ${changedRows.toLocaleString('en-US')}: filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
+            recommendation: `Most rows the MERGE rewrote did not change: filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
           });
         }
         if (filesBefore != null && filesAfter != null && partitionsScanned != null && partitionsTouched != null
@@ -3870,7 +3870,7 @@ export const DETECTORS = [
           && partitionsScanned > 1 && partitionsTouched <= thresholds.maxTouchedPartitionShare * partitionsScanned) {
           out.push({
             ...base, rule: 'weakSkipping', metric: 'filesKept', value: filesAfter,
-            recommendation: `MERGE kept ${filesAfter.toLocaleString('en-US')} of ${filesBefore.toLocaleString('en-US')} target files after skipping, but its changes touched ${partitionsTouched.toLocaleString('en-US')} of ${partitionsScanned.toLocaleString('en-US')} partitions scanned: repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
+            recommendation: `The MERGE kept most target files after skipping although its changes touch few partitions: repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
           });
         }
       }, { dedupe: true });
