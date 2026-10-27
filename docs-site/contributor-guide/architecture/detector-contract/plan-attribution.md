@@ -38,7 +38,7 @@ every stage per execution.
 
 ## Stage-ID attribution for Plan Advisor findings
 
-The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `pythonUdf`, `broadcastSizing`
+The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `pythonUdf`, `broadcastSizing`
 in `packages/core/src/detectors.ts`) each attribute their finding to a narrowed `stageIds` set
 rather than the whole SQL execution: `PlanNode.stageIds` is resolved once per plan
 tree at parse time by unioning, per node, every metric's accumulator ID against a
@@ -49,6 +49,7 @@ computed once and reused verbatim, and the clip prevents misattributing that oth
 execution's work. Each detector unions its implicated node(s)' `stageIds` and falls
 back to the execution-wide set only when no implicated node has any coverage;
 a finding never partially blends a narrowed set with the execution-wide one.
+`mergeRewrite` also keeps an empty `stageIds` for a MERGE command node with no stage coverage.
 `nestedLoopJoin` is the exception to the fallback: it claims the time of the stages that run
 the join, so a join node with no stage coverage gets an empty `stageIds` and no time claim
 rather than the whole execution's stages.

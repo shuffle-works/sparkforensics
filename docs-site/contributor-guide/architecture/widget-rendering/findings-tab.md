@@ -132,9 +132,9 @@ neutral rather than clean green, after the interpretation's `coverage.gaps`
 (`verdictGaps`) lines saying why
 and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
-action-region type. Caching Opportunities, Config Audit, and the six
+action-region type. Caching Opportunities, Config Audit, and the seven
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files,
-Nested Loop Join, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
+Nested Loop Join, MERGE rewrites, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
 [App- and plan-level widgets](../board-widgets.md#board-widgets-app-and-plan-widgets)).
 Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is

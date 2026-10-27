@@ -24,6 +24,7 @@ import {
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
+import { commandOf, mergeRowsOf, metricValue } from './write-targets.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
 import { duplicateSubtreeDetail, duplicateSubtreeNote, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { indexStagesBySqlExecution } from './sql-stages.ts';
@@ -3824,6 +3825,54 @@ export const DETECTORS = [
       return multiStageImpact([...wasteMsByStage.keys()], wasteMsByStage, ctx, 'modeled', rawWaste)
         ?? costOnly('modeled', rawWaste);
     },
+  }),
+  defineSqlDetector({
+    type: 'mergeRewrite', order: 135, fixEffort: 'code', version: 1,
+    emits: ['mergeRewrite'],
+    docAnchor: '#table-formats',
+    // rewrittenRows: unmodified rows rewritten (at least minCopiedRows, and minCopiedToChangedRatio
+    // times the rows inserted, updated and deleted). weakSkipping: at least minTargetFiles files and
+    // minFilesKeptShare of them kept after skipping, while the rewritten files sit in at most
+    // maxTouchedPartitionShare of the partitions scanned.
+    thresholds: {
+      minCopiedRows: 100_000, minCopiedToChangedRatio: 2,
+      minTargetFiles: 8, minFilesKeptShare: 0.9, maxTouchedPartitionShare: 0.5,
+    },
+    detect(sqlExec, _ctx, thresholds): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      const out: Finding[] = [];
+      walkPlanTree(sqlExec.planTree, (node) => {
+        const command = commandOf(node.name);
+        const rows = mergeRowsOf(command, node);
+        if (rows?.copied == null) return;
+        const changedRows = (rows.inserted ?? 0) + (rows.updated ?? 0) + (rows.deleted ?? 0);
+        const filesBefore = metricValue(node, 'number of target files before skipping');
+        const filesAfter = metricValue(node, 'number of target files after skipping');
+        const partitionsScanned = metricValue(node, 'number of target partitions after skipping');
+        const partitionsTouched = metricValue(node, 'number of target partitions from which files were removed');
+        const base = {
+          type: 'mergeRewrite' as const, executionId: sqlExec.id, stageIds: unionStageIds([node], []),
+          planNodeIds: [node.id!].filter(Boolean), impactBand: 'info' as const,
+          rewrittenRows: rows.copied, changedRows, filesBefore, filesAfter, partitionsScanned, partitionsTouched,
+        };
+        if (rows.copied >= thresholds.minCopiedRows && rows.copied >= thresholds.minCopiedToChangedRatio * changedRows) {
+          out.push({
+            ...base, rule: 'rewrittenRows', metric: 'rewrittenRows', value: rows.copied,
+            recommendation: `MERGE rewrote ${rows.copied.toLocaleString('en-US')} unmodified target rows to change ${changedRows.toLocaleString('en-US')}: filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
+          });
+        }
+        if (filesBefore != null && filesAfter != null && partitionsScanned != null && partitionsTouched != null
+          && filesBefore >= thresholds.minTargetFiles && filesAfter >= thresholds.minFilesKeptShare * filesBefore
+          && partitionsScanned > 1 && partitionsTouched <= thresholds.maxTouchedPartitionShare * partitionsScanned) {
+          out.push({
+            ...base, rule: 'weakSkipping', metric: 'filesKept', value: filesAfter,
+            recommendation: `MERGE kept ${filesAfter.toLocaleString('en-US')} of ${filesBefore.toLocaleString('en-US')} target files after skipping, but its changes touched ${partitionsTouched.toLocaleString('en-US')} of ${partitionsScanned.toLocaleString('en-US')} partitions scanned: repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
+          });
+        }
+      }, { dedupe: true });
+      return out.length > 0 ? out : null;
+    },
+    estimate: noWasteModel,
   }),
 ] as const satisfies readonly Detector[];
 
