@@ -60,7 +60,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'], mergeRewrite: ['rule'],
   pythonUdf: [],
-  nestedLoopJoin: ['nodeName'],
+  nestedLoopJoin: ['nodeName'], joinKeyCast: ['nodeName'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 

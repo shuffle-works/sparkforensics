@@ -484,6 +484,17 @@ this tag:
   of a range join and join on the bucket, or to confirm that a cross join is
   intended. It needs the executors' `number of output rows` metrics, so a join
   with no reported row counts is not flagged.
+- Join key cast: a sort-merge or shuffled hash join whose key carries a cast,
+  followed by an exchange that shuffles by the uncast column. Spark adds the
+  cast when the two key columns have different types (for example a decimal
+  column and a bigint column). Both sides are shuffled by the cast key, so the
+  join output is partitioned by the cast expression and the next operator that
+  needs the plain column (a window, a group-by, another join) shuffles again.
+  The finding is informational, since a cast between small integer types is
+  harmless. It names the join, its cast keys and the exchange, and its value
+  is the data size of that exchange. The advice is to give both join columns
+  the same type before the join. A broadcast join, a join with no exchange
+  after it, and an exchange on the cast expression itself are not flagged.
 - MERGE rewrite: a Delta `MERGE` whose command node reports one of two
   patterns, each its own informational finding. Rewritten rows: at least
   100,000 unmodified target rows rewritten (`number of target rows rewritten

@@ -480,6 +480,17 @@ export interface NestedLoopJoinEvidence extends PlanFindingEvidence {
 }
 export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>, NestedLoopJoinEvidence, PlanNodeOrigin {}
 
+/** A shuffled join whose key carries a cast (two key columns of different types), followed by an
+ * exchange on a column it cast, because the join's output is partitioned by the cast expression.
+ * `value` is the data size of that exchange in bytes (0 when the log has none). `castKeys` and
+ * `exchangeKeys` are plan expressions with expression ids removed. */
+export interface JoinKeyCastEvidence extends PlanFindingEvidence {
+  nodeName: 'SortMergeJoin' | 'ShuffledHashJoin';
+  castKeys: string[];
+  exchangeKeys: string[];
+}
+export interface JoinKeyCastFinding extends NumericFinding<'joinKeyCast'>, JoinKeyCastEvidence, PlanNodeOrigin {}
+
 /** How the effective broadcast threshold (spark.sql.autoBroadcastJoinThreshold, or its adaptive counterpart under AQE) relates to the finding: 'limits' (the
  * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
  * broadcast, so something else decided it) or 'disabled' (-1). */
@@ -532,6 +543,7 @@ export interface FindingEvidenceMap {
   mergeRewrite: MergeRewriteEvidence;
   pythonUdf: PythonUdfEvidence;
   nestedLoopJoin: NestedLoopJoinEvidence;
+  joinKeyCast: JoinKeyCastEvidence;
   underBroadcast: UnderBroadcastEvidence;
   overBroadcast: OverBroadcastEvidence;
 }
@@ -567,6 +579,7 @@ export type Finding =
   | MergeRewriteFinding
   | PythonUdfFinding
   | NestedLoopJoinFinding
+  | JoinKeyCastFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;
 
