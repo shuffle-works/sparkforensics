@@ -16,14 +16,12 @@ export const NODE_WIDTH = 220;
 export const NODE_HEIGHT = 90;
 const GROUP_PADDING = 24;
 const GROUP_HEADER_HEIGHT = 32;
-// The stage box must strictly contain its segment boxes, which reserve
-// GROUP_PADDING + GROUP_HEADER_HEIGHT = 56px above their members and
-// GROUP_PADDING (24px) elsewhere. PADDING_Y (>56) leaves 8px above the segment
-// box for the stage header, and room to wrap it onto a second row. PADDING_X
-// (>24) stays near the floor so the box doesn't balloon sideways. PADDING_BOTTOM
-// (>24) leaves the same 8px below, as nothing is painted there. HEADER stays 0:
-// the header sits inside PADDING_Y, or above the box when it wraps the whole
-// graph.
+// The stage box wraps its paired segment's plan nodes directly; that segment
+// draws no box of its own. PADDING_Y leaves 64px above the nodes for the stage
+// header, with room to wrap it onto a second row. PADDING_X (32px) stays small so
+// the box doesn't balloon sideways, and PADDING_BOTTOM (32px) matches it, as
+// nothing is painted below the nodes. HEADER stays 0: the header sits inside
+// PADDING_Y, or above the box when it wraps the whole graph.
 export const STAGE_GROUP_PADDING_X = 32;
 export const STAGE_GROUP_PADDING_Y = 64;
 export const STAGE_GROUP_PADDING_BOTTOM = 32;
@@ -200,8 +198,8 @@ export function runDagre({ nodeIds, groupIds, edges, direction, compound }: Layo
   // left-to-right data flow.
   //
   // nodesep (gap between vertically-adjacent nodes in RL) is at least twice
-  // STAGE_GROUP_PADDING_Y, or stacked stage boxes overlap. Segment boxes use the
-  // smaller GROUP_PADDING and already clear it.
+  // STAGE_GROUP_PADDING_Y, or stacked stage boxes overlap. Unmatched segment
+  // boxes use the smaller GROUP_PADDING and already clear it.
   //
   // ranker 'tight-tree' instead of 'network-simplex', which is several times
   // slower on a compound graph; plans are trees, so it assigns the same ranks

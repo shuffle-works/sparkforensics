@@ -357,13 +357,12 @@ describe('compound stage-group containers', () => {
     expect(stage7.queryByText(formatDuration(300))).not.toBeInTheDocument();
   });
 
-  it('leaves 8px between its segment and the top and bottom edges of a stage box', () => {
+  it('pads a stage box 64px above and 32px below its plan nodes', () => {
     const grouped = model({ scope: 'full' });
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1]])} />);
 
-    // A segment box is the nodes plus 24px each side and a 32px header; the stage box adds 8px above and below.
-    const segmentHeight = dagreLayout.NODE_HEIGHT + 24 + 24 + 32;
-    expect(parseFloat(screen.getByTestId('rf__node-stage-1').style.height)).toBe(segmentHeight + 16);
+    expect(parseFloat(screen.getByTestId('rf__node-stage-1').style.height))
+      .toBe(dagreLayout.NODE_HEIGHT + dagreLayout.STAGE_GROUP_PADDING_Y + dagreLayout.STAGE_GROUP_PADDING_BOTTOM);
   });
 
   it('in single-stage (segment) scope, shows the focal stage\'s findings on the stage box', () => {
