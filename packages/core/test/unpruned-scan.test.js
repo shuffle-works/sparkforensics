@@ -113,6 +113,18 @@ describe('unprunedScan', () => {
     expect(findings.map((f) => [f.value, f.planNodeIds])).toEqual([[4 * GIB, ['n1']], [2 * GIB, ['n2']]]);
   });
 
+  it('keeps both findings and names each path when same-name tables read equal bytes', () => {
+    const bronze = scanNode();
+    bronze.detail = bronze.detail.replace('file:/tmp/events', 'file:/wh/bronze/events');
+    const silver = { ...scanNode(), id: 'n2' };
+    silver.detail = silver.detail.replace('file:/tmp/events', 'file:/wh/silver/events');
+    const join = { id: 'j', name: 'SortMergeJoin', detail: '', metrics: [], children: [bronze, silver] };
+    const findings = unprunedFindings(join);
+    expect(findings.map((f) => [f.relation, f.planNodeIds])).toEqual([
+      ['file:/wh/bronze/events', ['n1']], ['file:/wh/silver/events', ['n2']],
+    ]);
+  });
+
   it('honors a lowered byte floor', () => {
     expect(unprunedFindings(scanNode({ extra: { 'size of files read': GIB / 2 } }), { unprunedScan: { minBytesRead: 1024 } })).toHaveLength(1);
   });

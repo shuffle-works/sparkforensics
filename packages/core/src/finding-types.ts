@@ -464,7 +464,7 @@ export interface UnprunedScanEvidence extends PlanFindingEvidence {
   partitionsRead: number;
   /** The scan's row filters, without the null checks Spark adds. */
   dataFilters: string[];
-  /** The scanned table or path, as the Sources list names it. */
+  /** The scanned table or path, as the Sources list names it; the full path when two tables in the execution share that name. */
   relation: string;
 }
 export interface UnprunedScanFinding extends NumericFinding<'unprunedScan'>, UnprunedScanEvidence, PlanNodeOrigin {}
