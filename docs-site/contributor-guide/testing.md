@@ -39,14 +39,16 @@ before anything renders, so the rules ban the ways a view can read its own
 rendered output and correct it afterwards:
 
 - `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
-  `innerText`, `innerHTML`, `getComputedStyle` in `src/view/`.
+  `innerText`, `innerHTML`, `outerHTML`, `getComputedStyle` in `src/view/`.
 - `no-hidden-after-render`: `hidden={flag}`, `display: none` and
   `visibility: hidden` styles, a `.hidden` or `.style.display` assignment and
   `has-[...]:hidden` in `src/`. A conditional `hidden` or `invisible` class
-  string is not matched by this rule: the behaviour tests above count that
-  output as not shown.
+  string is not matched by this rule: the behaviour tests in
+  [row-expand-contract](./architecture/widget-rendering/row-expand-contract.md)
+  count that output as not shown.
 - `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
-  widgets, `WidgetCard`, `WidgetGrid` and `InlineEvidence`.
+  widgets, `WidgetCard`, `WidgetGrid`, `InlineEvidence`, `detector-registry.tsx`
+  and `evidence-panel.ts`.
 - `content-check-is-pure`: a content check that imports React, the store or a
   context, calls a hook, or reads a global, the clock or randomness. It covers
   all of every `*.content.ts` file and `evidence-panel.ts`.
