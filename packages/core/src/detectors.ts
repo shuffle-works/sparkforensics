@@ -1,7 +1,7 @@
 import { clipAtWord, pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
-import { scanRelationId, parseJoinType } from './plan-summary.ts';
+import { scanRelationId, parseJoinType, parseScanFilters } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
@@ -3884,6 +3884,52 @@ export const DETECTORS = [
         }
       }, { dedupe: true });
       return out.length > 0 ? out : null;
+    },
+    estimate: noWasteModel,
+  }),
+  defineSqlDetector({
+    type: 'unprunedScan', order: 137, fixEffort: 'code', version: 1,
+    emits: ['unprunedScan'],
+    docAnchor: '#table-formats',
+    // A scan of a partitioned table (it reports "number of partitions read") that reads at least
+    // minPartitionsRead partitions and minBytesRead bytes with no partition filter.
+    thresholds: { minBytesRead: GB, minPartitionsRead: 2 },
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      // One finding per table: a self-join's scans of one table share its id discriminators. The
+      // relation is a path basename, so the full Location value keys the table.
+      const byTable = new Map<string, { relation: string; path: string; nodes: PlanNode[]; bytesRead: number; partitionsRead: number; dataFilters: Set<string> }>();
+      walkPlanTree(sqlExec.planTree, (node) => {
+        const partitionsRead = metricValue(node, 'number of partitions read');
+        const bytesRead = metricValue(node, FILES_READ_BYTES);
+        const relation = relationIdOf(node);
+        if (partitionsRead == null || bytesRead == null || relation === null) return;
+        if (partitionsRead < thresholds.minPartitionsRead || bytesRead < thresholds.minBytesRead) return;
+        const { partitionFilters, dataFilters } = parseScanFilters(node.detail ?? '');
+        if (partitionFilters.length > 0 || dataFilters.length === 0) return;
+        const location = node.detail?.match(/Location:\s*(.*?)(?=,\s*\w+:|$)/)?.[1] ?? '';
+        const tableKey = `${relation}|${location}`;
+        const path = location.match(/\[([^\],]+)/)?.[1].trim() ?? location;
+        const group = byTable.get(tableKey) ?? { relation, path, nodes: [], bytesRead: 0, partitionsRead: 0, dataFilters: new Set<string>() };
+        group.nodes.push(node);
+        group.bytesRead += bytesRead;
+        group.partitionsRead = Math.max(group.partitionsRead, partitionsRead);
+        for (const f of dataFilters) group.dataFilters.add(f);
+        byTable.set(tableKey, group);
+      }, { dedupe: true });
+      if (byTable.size === 0) return null;
+      // Tables that share a basename are named by full path: relation is their id discriminator.
+      const basenameCount = new Map<string, number>();
+      for (const group of byTable.values()) basenameCount.set(group.relation, (basenameCount.get(group.relation) ?? 0) + 1);
+      return [...byTable.values()].map((group): Finding => ({
+        type: 'unprunedScan', executionId: sqlExec.id, stageIds: unionStageIds(group.nodes, sqlStageIds(ctx, sqlExec.id)),
+        planNodeIds: group.nodes.flatMap((n) => (n.id ? [n.id] : [])), impactBand: 'info',
+        metric: 'bytesRead', value: group.bytesRead, partitionsRead: group.partitionsRead, dataFilters: [...group.dataFilters],
+        relation: basenameCount.get(group.relation)! > 1 ? group.path : group.relation.replace(/^[a-z]+:/, ''),
+        confidence: 'low',
+        validationRequired: 'The plan does not name the table\'s partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.',
+        recommendation: 'No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
+      }));
     },
     estimate: noWasteModel,
   }),

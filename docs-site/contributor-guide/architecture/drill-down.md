@@ -61,7 +61,7 @@ truth for the full list). These have a stage-anchored
 Details tier reachable via `StagePill`/`StagePillGroup`: Skew, StageShape,
 TinyTask, ShuffleIO, PartitionSizing, Spill, GcPressure, StageFailed,
 TaskFailures, RetryWaste, SlowHost, StageSlowness, Straggler,
-SpeculationWaste, and DuplicatePlanSubtree, SmallFiles, MergeRewrite, UnderBroadcast and
+SpeculationWaste, and DuplicatePlanSubtree, SmallFiles, MergeRewrite, UnprunedScan, UnderBroadcast and
 OverBroadcast (sql-scope, so
 they list every stage in `stageIds` as a `StagePillGroup` rather than one
 `StagePill`). The rest are app- or config-scope with no stage to

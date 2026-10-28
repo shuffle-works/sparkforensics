@@ -117,12 +117,12 @@ graph model until the dialog is confirmed. Dismissing the dialog closes it but
 does not lift that block, and a dismissed fallback does not reopen the dialog,
 because the stage has no ungated segment view to show instead.
 
-The eight Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
-`nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `pythonUdf`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
+The nine Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
+`nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `unprunedScan`, `pythonUdf`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
 `packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
 pointer to the specific plan-tree node(s) each finding is about (every node of
 each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
-scan/write node for `smallFiles`, the join node and the exchange after it for `joinKeyCast`, the join node for `nestedLoopJoin`, the MERGE command node for `mergeRewrite`, the `BatchEvalPython` nodes for `pythonUdf`, the shuffle `data size`
+scan/write node for `smallFiles`, the join node and the exchange after it for `joinKeyCast`, the join node for `nestedLoopJoin`, the MERGE command node for `mergeRewrite`, the scan nodes of one table for `unprunedScan`, the `BatchEvalPython` nodes for `pythonUdf`, the shuffle `data size`
 Exchange node under each of the two join inputs for `underBroadcast`, and the BroadcastExchange node for
 `overBroadcast`). `buildPlanGraphModel`
 indexes `findings` by `planNodeIds` and attaches each node's matches to its

@@ -113,6 +113,7 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `coreLocality` | app | cost-only | `rawWaste` in `coreMs`: `nonLocalTaskCount × NETWORK_FETCH_PENALTY_MS`, with the assumption stated in `assumptions` |
 | `autoscalingChurn` | app | cost-only | `rawWaste` in `coreHours`: `shortLivedExecutorCount × EXECUTOR_STARTUP_OVERHEAD_MS / 3.6e6` |
 | `mergeRewrite` | sql | informational-only | no waste formula: the rewrite's share of the MERGE's time is not in the log |
+| `unprunedScan` | sql | informational-only | no waste formula: the log does not say how many partitions the filter could have skipped |
 | `pythonUdf` | sql | informational-only | no waste formula: the gain from Arrow-optimized or pandas UDFs depends on how much of the stage is the UDF body, which the log does not record |
 | `configAudit` | config | informational-only | a config-drift check standing alone; no waste formula |
 | `jobFailureRate` | app | cost-only | `rawWaste` in `coreHours`: `failedJobCount × avgJobDurationMs / 3.6e6` |
