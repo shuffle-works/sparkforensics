@@ -106,7 +106,7 @@ describe('createServer routing', () => {
 });
 
 describe('/mcp route', () => {
-  it('lists all 8 tools over streamable HTTP', async () => {
+  it('lists all 9 tools over streamable HTTP', async () => {
     const port = await listen({ staticRoot: process.cwd(), fetchImpl: fetch });
     const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
     const client = new Client({ name: 'test-client', version: '1.0.0' });

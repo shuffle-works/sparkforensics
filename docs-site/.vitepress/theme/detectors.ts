@@ -17,7 +17,7 @@ export interface DetectorRecord {
   pages: { catalog: string; guide: string };
   tuning: { kind: 'page' | 'section' | 'chapter'; anchor: string; path: string } | null;
   gate: { cliFlag: string; airflowParam: string } | null;
-  example: { source: 'corpus' | 'fixture' | 'synthetic'; log: string; sparkVersion: string | null; finding: Record<string, any> } | null;
+  example: { source: 'corpus' | 'fixture' | 'synthetic'; log: string; sparkVersion: string | null; finding: Record<string, any> };
   surfaces: {
     mcp: { listCall: unknown; listResponse: unknown; docsCall: unknown; docsResponse: unknown };
     cli: { detectorsCommand: string; detectorsOutput: string; filterCommand: string; budgetCommand: string | null };

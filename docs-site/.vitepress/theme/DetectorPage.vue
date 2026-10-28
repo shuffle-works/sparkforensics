@@ -13,7 +13,7 @@ const sharedWith = computed(() =>
 );
 
 const example = computed(() => r.value.example);
-const finding = computed(() => example.value?.finding ?? null);
+const finding = computed(() => example.value.finding);
 
 // Compact text for an evidence value: scalars as is, structures as short JSON.
 function evidenceText(value: unknown): string {
@@ -22,7 +22,7 @@ function evidenceText(value: unknown): string {
   const text = JSON.stringify(value);
   return text.length > 140 ? `${text.slice(0, 137)}...` : text;
 }
-const evidenceRows = computed(() => Object.entries(finding.value?.evidence ?? {}).map(([k, v]) => [k, evidenceText(v)]));
+const evidenceRows = computed(() => Object.entries(finding.value.evidence ?? {}).map(([k, v]) => [k, evidenceText(v)]));
 
 function remediationText(step: Record<string, unknown>): string {
   if (step.kind === 'code') return String(step.hint);
@@ -73,15 +73,15 @@ const airflowSnippet = computed(() => {
     </header>
 
     <!-- Finding card, built from the real example finding. -->
-    <section v-if="finding" class="det-section" aria-labelledby="det-example">
+    <section class="det-section" aria-labelledby="det-example">
       <h2 id="det-example">An example finding</h2>
-      <p v-if="example!.source === 'synthetic'" class="det-note">
+      <p v-if="example.source === 'synthetic'" class="det-note">
         <strong>A synthetic example.</strong> A small event log built to fire this detector at its default thresholds,
-        <code>{{ example!.log }}</code>{{ example!.sparkVersion ? ` (Spark ${example!.sparkVersion})` : '' }}, read by the real analyzer.
+        <code>{{ example.log }}</code>{{ example.sparkVersion ? ` (Spark ${example.sparkVersion})` : '' }}, read by the real analyzer.
         It is not a real production run.
       </p>
       <p v-else class="det-note">
-        A finding as reported, from the public {{ example!.source === 'corpus' ? 'corpus' : 'test' }} log <code>{{ example!.log }}</code>{{ example!.sparkVersion ? ` (Spark ${example!.sparkVersion})` : '' }}.
+        A finding as reported, from the public {{ example.source === 'corpus' ? 'corpus' : 'test' }} log <code>{{ example.log }}</code>{{ example.sparkVersion ? ` (Spark ${example.sparkVersion})` : '' }}.
       </p>
       <article class="det-finding" :data-band="finding.impactBand">
         <header class="det-finding-head">
@@ -89,7 +89,7 @@ const airflowSnippet = computed(() => {
           <span class="sf-chip">{{ finding.tag }}</span>
           <strong class="det-finding-name">{{ finding.name }}</strong>
           <span class="det-band">{{ finding.impactBand }}</span>
-          <span v-if="example!.source === 'synthetic'" class="det-band">synthetic example</span>
+          <span v-if="example.source === 'synthetic'" class="det-band">synthetic example</span>
           <span v-if="finding.stageId !== undefined && finding.stageId !== null" class="det-stage">Stage {{ finding.stageId }}</span>
         </header>
         <p class="det-reco">{{ finding.recommendation }}</p>
@@ -105,15 +105,6 @@ const airflowSnippet = computed(() => {
         <dl v-if="evidenceRows.length" class="det-evidence">
           <template v-for="[key, value] in evidenceRows" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></template>
         </dl>
-      </article>
-    </section>
-    <section v-else class="det-section" aria-labelledby="det-example">
-      <h2 id="det-example">An example finding</h2>
-      <article class="det-finding det-finding-empty">
-        <header class="det-finding-head"><strong class="det-finding-name">No public example log yet</strong></header>
-        <p class="det-reco">No log in the public corpus triggers this finding, so there is no real example to show.</p>
-        <p class="det-impact"><strong>It fires when</strong> {{ r.thresholdSummary }}</p>
-        <p class="det-small">{{ r.pitch }}</p>
       </article>
     </section>
 
@@ -239,7 +230,6 @@ const airflowSnippet = computed(() => {
 .det-finding[data-band='critical'] { border-left-color: var(--sf-critical); }
 .det-finding[data-band='warning'] { border-left-color: var(--sf-warning); }
 .det-finding[data-band='info'] { border-left-color: var(--sf-info); }
-.det-finding-empty { border-left-style: dashed; background: var(--sf-surface-2); }
 .det-finding-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .det-finding-name { font-size: 16px; }
 .det-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sf-muted); flex: none; }

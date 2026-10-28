@@ -73,7 +73,7 @@ async function buildEntry(client, record, example) {
   const cli = cliDetectors(type);
   return {
     ...record,
-    example: example ?? null,
+    example,
     surfaces: {
       mcp: {
         listCall: { tool: 'list_detectors', arguments: { type } },
