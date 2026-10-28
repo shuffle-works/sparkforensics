@@ -30,9 +30,10 @@
 
 `npm install` runs the `prepare` script, which points git at `.githooks/`
 (`git config core.hooksPath .githooks`). After that, every commit runs
-`.githooks/pre-commit`: it lints any staged `.js`/`.mjs` files with eslint
-and blocks the commit if linting fails. `git commit --no-verify` skips it.
-To run the same linter by hand, use `npm run lint`.
+`.githooks/pre-commit`: it lints any staged `.js`/`.mjs` files with eslint,
+runs the structure rules when staged files are under `src/` or are rules, and
+blocks the commit if either fails. `git commit --no-verify` skips it.
+To run the same checks by hand, use `npm run lint` and `npm run lint:structure`.
 
 ## Changesets and releases
 

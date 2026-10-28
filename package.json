@@ -41,6 +41,7 @@
     "test:mcp": "npm run test:coverage --workspace packages/mcp",
     "test:server": "npm test --workspace packages/server",
     "lint": "eslint .",
+    "lint:structure": "ast-grep test --skip-snapshot-tests && ast-grep scan --error=unused-suppression --error=no-suppress-all src",
     "release": "node scripts/publish-packages.mjs",
     "local-server": "node packages/server/index.js",
     "capture-components": "node dev/component-capture/capture.mjs",
@@ -60,6 +61,7 @@
     "docs:preview": "vitepress preview docs-site"
   },
   "devDependencies": {
+    "@ast-grep/cli": "0.44.0",
     "@changesets/cli": "^3.0.3",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",

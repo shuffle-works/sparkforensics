@@ -11,8 +11,11 @@ Before opening a PR:
 2. Typecheck: `npx tsc --noEmit`.
 3. Lint: `npm run lint`. A pre-commit hook (`.githooks/pre-commit`) runs
    eslint on staged `.js`/`.mjs` files only, so run the full lint yourself
-   before committing. Neither lints `.ts`/`.tsx` (see `eslint.config.js`):
-   `tsc` is their only check.
+   before committing. It does not lint `.ts`/`.tsx` (see `eslint.config.js`):
+   `tsc` and the structure rules below check them.
+   Structure rules: `npm run lint:structure` (see
+   [Structure rules](#structure-rules)). The hook runs it when staged files are
+   under `src/` or are rules.
 4. For any UI change, verify it in a real browser (Playwright or headless
    Chrome). Unit and jsdom tests check code correctness; they don't prove a
    feature works end-to-end. Drive the app, exercise the golden path and the
@@ -26,6 +29,41 @@ private and this repo is public: never put their file names, app IDs, app
 names, tables or paths in tracked files, commits or PR text. Use the neutral `private-log-NN` labels under
 [Test fixtures](#test-fixtures), and synthetic IDs such as
 `application_0000000000000_0001`.
+
+## Structure rules
+
+`npm run lint:structure` runs the ast-grep rules in `rules/` over `src/`, after
+their tests in `rule-tests/` (`sgconfig.yml` is the config). CI runs it next to
+`npm run lint`. A decision about what to render is a value computed from data
+before anything renders, so the rules ban the ways a view can read its own
+rendered output and correct it afterwards:
+
+- `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
+  `innerText`, `innerHTML`, `outerHTML`, `getComputedStyle` in `src/view/`.
+- `no-hidden-after-render`: `hidden={flag}`, `display: none` and
+  `visibility: hidden` styles, a `.hidden` or `.style.display` assignment and
+  `has-[...]:hidden` in `src/`. A conditional `hidden` or `invisible` class
+  string is not matched by this rule: the behaviour tests in
+  [row-expand-contract](./architecture/widget-rendering/row-expand-contract.md)
+  count that output as not shown.
+- `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
+  widgets, `WidgetCard`, `WidgetGrid`, `InlineEvidence`, `detector-registry.tsx`
+  and `evidence-panel.ts`.
+- `content-check-is-pure`: a content check that imports React, the store or a
+  context, calls a hook, or reads a global, the clock or randomness. It covers
+  all of every `*.content.ts` file and `evidence-panel.ts`.
+- `content-check-is-pure-inline`: the same reads elsewhere in `src/`, inside a
+  `ContentCheck`-typed value or a registry entry's `content`. Both rules share
+  their list of reads in `rule-utils/`.
+- `no-panel-forgery`: an `EvidencePanel` made by a cast, a `type`/`rows` literal
+  or a direct `evidencePanel(...)` call outside `evidence-panel.ts` and
+  `detector-registry.tsx`.
+
+Each rule's message names the remedy. A legitimate use gets a suppression on the
+line above it, `// ast-grep-ignore: <rule-id>`, with the reason in the comment
+before it. An unused suppression and a suppression with no rule id both fail the
+scan. Each rule has valid and invalid cases in `rule-tests/`, including the
+shapes of the real workarounds; add the shape of a new workaround there.
 
 ## Testing layout
 

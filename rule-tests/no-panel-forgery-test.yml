@@ -1,0 +1,14 @@
+id: no-panel-forgery
+valid:
+  - "const panel = evidencePanelFor(widget.type, { findings, stated, density, appModel });"
+  - "const panel = evidencePanel(widgetId, lead);"
+  - "const rows = { rows: [], total: 0 };"
+  - "const typed = value as Finding;"
+  - "function Row({ panel }: { panel: AnyEvidencePanel }) { return <div>{panel.rows.length}</div>; }"
+invalid:
+  - "const panel = { type: 'overBroadcast', rows: findings } as unknown as EvidencePanel<'overBroadcast'>;"
+  - "const panel = value as AnyEvidencePanel;"
+  - "const panel = value as AnyEvidencePanel | null;"
+  - "const panel = { type, rows };"
+  - "const panel = { type: 'coldStart', rows: findings };"
+  - "const panel = evidencePanel(type, allRows, input);"

@@ -1,0 +1,40 @@
+id: no-panel-forgery
+language: tsx
+severity: error
+message: An evidence panel is built outside a widget's content check.
+note: |
+  An EvidencePanel exists only for a widget that has something to show. Get it from
+  `evidencePanelFor(type, input)` in `detector-registry.tsx`, which runs the widget's content check
+  and returns null when it keeps no rows. Do not cast a value to EvidencePanel, build one from a
+  `type` and `rows` literal, or call the `evidencePanel` constructor directly.
+rule:
+  any:
+    - kind: as_expression
+      has:
+        stopBy: end
+        kind: type_identifier
+        regex: ^(EvidencePanel|AnyEvidencePanel)$
+    - pattern: evidencePanel($TYPE, $CHECK, $INPUT)
+    - kind: object
+      all:
+        - has:
+            any:
+              - kind: pair
+                has:
+                  field: key
+                  regex: ^rows$
+              - kind: shorthand_property_identifier
+                regex: ^rows$
+        - has:
+            any:
+              - kind: pair
+                has:
+                  field: key
+                  regex: ^type$
+              - kind: shorthand_property_identifier
+                regex: ^type$
+files:
+  - src/**
+ignores:
+  - src/view/evidence-panel.ts
+  - src/view/detector-registry.tsx

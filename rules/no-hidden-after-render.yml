@@ -1,0 +1,42 @@
+id: no-hidden-after-render
+language: tsx
+severity: error
+message: An element is rendered and then hidden with a flag.
+note: |
+  Do not render an element that has nothing to show: leave it out, or return null, from a decision
+  the parent computes from data before rendering (the widget's content check). Hiding it after it
+  rendered keeps its effects and route targets alive. `hidden` stays for content that must remain
+  in the DOM, such as an inactive tab panel: suppress it with `// ast-grep-ignore: no-hidden-after-render`
+  and a reason on the line above. A conditional `hidden` or `invisible` class string is not matched
+  here: the behaviour tests (`tests/view/evidence-check.test.tsx`, `closed-evidence-panels.test.tsx`,
+  `route-focus.test.tsx`) count that output as not shown.
+rule:
+  any:
+    # hidden={flag}
+    - kind: jsx_attribute
+      all:
+        - has:
+            kind: property_identifier
+            regex: ^hidden$
+        - has:
+            kind: jsx_expression
+    # style={{ display: 'none' }}
+    - kind: pair
+      all:
+        - has:
+            field: key
+            regex: ^(display|visibility)$
+        - has:
+            field: value
+            regex: "['\"`](none|hidden)['\"`]"
+    # node.hidden = flag, node.style.display = 'none'
+    - pattern: $NODE.hidden = $VALUE
+    - pattern: $NODE.style.display = $VALUE
+    - pattern: $NODE.style.visibility = $VALUE
+    # className="has-[[data-evidence-blank]]:hidden": hidden by what a descendant rendered
+    - kind: string
+      regex: has-\[.*\]:(hidden|invisible)
+    - kind: template_string
+      regex: has-\[.*\]:(hidden|invisible)
+files:
+  - src/**

@@ -1,0 +1,40 @@
+id: content-check-is-pure-inline
+language: tsx
+severity: error
+message: A content check reads something other than its input.
+note: |
+  A content check outside `*.content.ts` (a `ContentCheck`-typed value, or a registry entry's
+  `content`) decides what a panel shows from its PanelInput (findings, stated ids, density, appModel)
+  alone. It may not call a hook, read a global such as `document` or `window`, or use the clock or
+  randomness. Move it to `<Widget>.content.ts`; if it needs a value, add that value to PanelInput.
+utils:
+  content-check-type:
+    has:
+      stopBy: end
+      kind: type_identifier
+      regex: ^ContentCheck$
+rule:
+  matches: content-check-impurity
+  inside:
+    stopBy: end
+    any:
+      # const check: ContentCheck<'x'> = ...
+      - kind: variable_declarator
+        has:
+          field: type
+          matches: content-check-type
+      # (...) satisfies ContentCheck<'x'>, (...) as ContentCheck<'x'>
+      - any:
+          - kind: satisfies_expression
+          - kind: as_expression
+        matches: content-check-type
+      # { content: ... } in the registry
+      - kind: pair
+        has:
+          field: key
+          regex: ^['"`]?content['"`]?$
+files:
+  - src/**
+ignores:
+  - src/view/widgets/*.content.ts
+  - src/view/evidence-panel.ts

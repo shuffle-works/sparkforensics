@@ -1,0 +1,11 @@
+# Structural lint for production view code: `npm run lint:structure`.
+ruleDirs:
+  - rules
+utilDirs:
+  - rule-utils
+testConfigs:
+  - testDir: rule-tests
+# One rule set for both extensions: a `language: tsx` rule skips `.ts` files unless they are parsed as tsx.
+languageGlobs:
+  tsx:
+    - "**/*.ts"

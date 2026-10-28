@@ -25,9 +25,27 @@ export function keptRows(
   return evidencePanelFor(type, input)?.rows ?? [];
 }
 
-/** Whether a rendered evidence panel shows anything besides its title: text, or a chart or a table. */
+const HIDING_CLASSES = ['hidden', 'invisible', 'hidden!', 'invisible!', '!hidden', '!invisible'];
+
+/** Whether `node` or an ancestor up to `root` is hidden from view. jsdom loads no stylesheet, so
+ * Tailwind's hiding classes are read by name. */
+export function isHidden(node: Element, root: Element): boolean {
+  for (let element: Element | null = node; element && element !== root.parentElement; element = element.parentElement) {
+    if (element.hasAttribute('hidden') || HIDING_CLASSES.some((name) => element!.classList.contains(name))) return true;
+    const style = getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden') return true;
+  }
+  return false;
+}
+
+/** Whether a rendered evidence panel shows anything besides its title: text, or a chart or a table.
+ * Output that is hidden counts as not shown. */
 export function showsEvidence(panel: HTMLElement): boolean {
   const body = panel.querySelector('section > div:last-child') as HTMLElement | null;
-  if (!body) return false;
-  return Boolean(body.textContent?.trim()) || body.querySelector('svg:not([aria-hidden="true"]), table, canvas, img') != null;
+  if (!body || isHidden(body, panel)) return false;
+  const texts = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  for (let node = texts.nextNode(); node; node = texts.nextNode()) {
+    if (node.textContent?.trim() && !isHidden(node.parentElement!, panel)) return true;
+  }
+  return [...body.querySelectorAll('svg:not([aria-hidden="true"]), table, canvas, img')].some((element) => !isHidden(element, panel));
 }

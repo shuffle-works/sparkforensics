@@ -190,10 +190,19 @@ routing" in [investigation-routing](./investigation-routing.md)).
   only `panel.rows`, so the check and the panel are one decision. A route to a
   finding with no panel still lands: the step or row registers through
   `useRouteLanding`, and the route scrolls to it and focuses its title or label.
-  `tests/view/evidence-panel-types.test.ts` holds the `@ts-expect-error` cases,
-  and `tests/view/evidence-check.test.tsx` renders every panel the checks keep
-  for every finding of every example run, in both densities, and fails on one
-  that shows nothing under its title.
+  `tests/view/evidence-panel-types.test.ts` holds the `@ts-expect-error` cases.
+  Three behaviour tests hold the decision to the data, whatever way a change
+  observes the output: `tests/view/evidence-check.test.tsx` renders every panel
+  the checks keep for every finding of every example run, in both densities,
+  with and without the finding stated above, and fails on one that shows nothing
+  under its title (hidden output counts as not shown), and checks that a row
+  offers its evidence control exactly when its check keeps a row;
+  `tests/view/closed-evidence-panels.test.tsx` renders the dashboard with every
+  panel closed and fails when a widget renders under a verdict step or a
+  Findings row; `tests/view/route-focus.test.tsx` routes to each example finding
+  and fails unless the focused element is visible and in that finding's row,
+  panel or card. The ast-grep rules in `rules/` ban the observe-and-correct
+  shapes in view code (see [Structure rules](../../testing.md#structure-rules)).
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

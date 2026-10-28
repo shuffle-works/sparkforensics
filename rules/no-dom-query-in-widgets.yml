@@ -1,0 +1,22 @@
+id: no-dom-query-in-widgets
+language: tsx
+severity: error
+message: A widget queries or measures the DOM.
+note: |
+  A widget decides what to show from its findings, never from the rendered DOM. Compute the
+  decision from data in the widget's content check. Layout facts that no data gives, such as whether
+  a table overflows its container at the current width, are the one exception: suppress the line
+  with `// ast-grep-ignore: no-dom-query-in-widgets` and a reason on the line above.
+rule:
+  any:
+    - kind: property_identifier
+      regex: ^(querySelector|querySelectorAll|getElementById|getElementsByClassName|getElementsByTagName|getElementsByName|elementFromPoint|getBoundingClientRect|getClientRects|scrollWidth|scrollHeight|clientWidth|clientHeight|offsetWidth|offsetHeight)$
+    - kind: identifier
+      regex: ^(ResizeObserver|IntersectionObserver)$
+files:
+  - src/view/widgets/**
+  - src/view/WidgetCard.tsx
+  - src/view/WidgetGrid.tsx
+  - src/view/InlineEvidence.tsx
+  - src/view/detector-registry.tsx
+  - src/view/evidence-panel.ts

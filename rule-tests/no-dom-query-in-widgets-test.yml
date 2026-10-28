@@ -1,0 +1,16 @@
+id: no-dom-query-in-widgets
+valid:
+  - "const shown = findings.filter((finding) => !stated.has(finding.id));"
+  - "const first = rows[0];"
+  - "const width = props.width;"
+invalid:
+  # The real widget measurement: the table overflow check.
+  - |
+    const container = tableAreaRef.current?.querySelector('[data-slot="table-container"]');
+    const observer = new ResizeObserver(() => setTableOverflows(container.scrollWidth > container.clientWidth));
+  - "const body = panelRef.current.querySelector('table');"
+  - "const rows = ref.current?.querySelectorAll('tr');"
+  - "const board = document.getElementById('board');"
+  - "const box = element.getBoundingClientRect();"
+  - "const observer = new IntersectionObserver(update);"
+  - "const empty = element.offsetHeight === 0;"

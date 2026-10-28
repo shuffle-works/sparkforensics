@@ -1,0 +1,25 @@
+id: no-rendered-output-probe
+language: tsx
+severity: error
+message: View code reads what React rendered, to decide what to render.
+note: |
+  A decision is a value computed from data before anything renders: compute it from the data the
+  component already has (the finding, the stated ids, the density) in the widget's content check,
+  and call that check before rendering. Do not clone, observe or read the rendered DOM and correct
+  the output afterwards. Tests may inspect the DOM; production view code may not.
+rule:
+  any:
+    - regex: ^(MutationObserver|getComputedStyle|cloneNode|textContent|innerText|innerHTML|outerHTML)$
+      any:
+        - kind: identifier
+        - kind: type_identifier
+        - kind: property_identifier
+        - kind: shorthand_property_identifier_pattern
+    # node['textContent']
+    - kind: subscript_expression
+      has:
+        field: index
+        kind: string
+        regex: ^['"](cloneNode|textContent|innerText|innerHTML|outerHTML)['"]$
+files:
+  - src/view/**

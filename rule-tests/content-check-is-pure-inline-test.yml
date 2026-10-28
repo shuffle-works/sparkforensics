@@ -1,0 +1,30 @@
+id: content-check-is-pure-inline
+valid:
+  # A widget may use React, the store and the DOM outside a content check.
+  - |
+    import { useState } from 'react';
+    import { useStore } from '@/store/store';
+    export function Widget() { const [open] = useState(false); return open ? document.title : null; }
+  - |
+    import { useStore } from '@/store/store';
+    export const retryWasteContent: ContentCheck<'retryWaste'> = ({ findings, density }) => (density === 'advanced' ? findings : []);
+    export function RetryWaste() { return useStore((state) => state.density); }
+  # The registry names its checks and may compute the rest of an entry as it likes.
+  - |
+    import { lazy } from 'react';
+    const ENTRIES = { retryWaste: { component: lazy(() => import('./RetryWaste')), content: retryWasteContent } };
+  - "const ENTRIES = { retryWaste: { content: ({ findings, density }) => (density === 'advanced' ? findings : []) } };"
+  - "return evidencePanel(type, entry.content as ContentCheck<FindingType>, input);"
+invalid:
+  # A check typed in a widget file.
+  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []);"
+  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []);"
+  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (Math.random() > 0.5 ? findings : []);"
+  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (Date.now() % 2 ? findings : []);"
+  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (new Date().getDay() === 0 ? findings : []);"
+  - "export const check = (({ findings }) => (window.innerWidth > 0 ? findings : [])) satisfies ContentCheck<'retryWaste'>;"
+  - "export const check = (({ findings }) => (window.innerWidth > 0 ? findings : [])) as ContentCheck<'retryWaste'>;"
+  # A check written inline in the registry.
+  - "const ENTRIES = { retryWaste: { content: ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []) } };"
+  - "const ENTRIES = { retryWaste: { content: ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []) } };"
+  - "const ENTRIES = { retryWaste: { 'content': ({ findings }) => (document.title ? findings : []) } };"
