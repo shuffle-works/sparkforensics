@@ -56,7 +56,7 @@ export function isLocalOnlyEntry(name) {
 // Bump whenever renderDocsContent's output changes for the same upstream
 // commit (filters, normalization, nav-index shape), so existing caches
 // regenerate instead of passing as fresh.
-export const TRANSFORM_VERSION = 2;
+export const TRANSFORM_VERSION = 3;
 export const OVERRIDE_ENV = 'SPARK_TUNING_REFERENCE_DIR';
 const CHANGESET_PACKAGES = ['sparkforensics-web', 'sparkforensics-cli', 'sparkforensics-mcp', 'sparkforensics-server'];
 const GIT_TIMEOUT_MS = 120_000;
@@ -120,8 +120,9 @@ export function projectNavIndex(manifest) {
   const out = [];
   for (const group of manifest.groups) {
     for (const entry of group.entries) {
-      const slug = basename(entry.file).replace(/\.md$/, '');
       const store = entry.file.startsWith('content/bottlenecks/') ? 'tuning' : 'chapters';
+      // Chapters keep their subfolder (native-engines/photon); tuning docs are flat.
+      const slug = (store === 'tuning' ? basename(entry.file) : entry.file.replace(/^content\//, '')).replace(/\.md$/, '');
       out.push({
         anchor: entry.anchor,
         section: group.title,
