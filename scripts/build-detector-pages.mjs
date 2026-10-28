@@ -123,6 +123,11 @@ export async function buildDetectorPages({
       if (!(record.type in examples)) {
         throw new Error(`${examplesFile} has no entry for ${record.type}. Run: node dev/detector-examples.mjs --update`);
       }
+      if (examples[record.type] === null) {
+        throw new Error(
+          `${examplesFile} has no example for ${record.type}: no log fires it. A recorded fixture or a synthetic log under packages/core/test/fixtures/synthetic must fire it, then run: node dev/detector-examples.mjs --update`,
+        );
+      }
       records.push(await buildEntry(client, record, examples[record.type]));
     }
   } finally {
