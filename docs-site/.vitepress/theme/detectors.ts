@@ -40,13 +40,6 @@ export function exampleFrameSrc(type: string): string {
   return withBase(`/detector-widget/app/docs-widget.html?type=${type}`);
 }
 
-/** Where an example's run comes from, for the sentence that introduces it. */
-export const EXAMPLE_SOURCE_LABEL: Record<DetectorRecord['example']['source'], string> = {
-  corpus: 'a public example log',
-  fixture: 'a recorded test log',
-  synthetic: 'a small synthetic log',
-};
-
 /** The dashboard words a finding name in lowercase; headings and cards start it with a capital. */
 export function sentenceCase(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);

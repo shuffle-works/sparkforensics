@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { HEIGHT_MESSAGE } from '../../../src/docs-widget/host';
 import data from '../detectors-data.json';
-import { EXAMPLE_SOURCE_LABEL, FIX_EFFORT_LABEL, SCOPE_LABEL, exampleFrameSrc, sentenceCase, siteHref, type DetectorData } from './detectors';
+import { FIX_EFFORT_LABEL, SCOPE_LABEL, exampleFrameSrc, sentenceCase, siteHref, type DetectorData } from './detectors';
 
 const props = defineProps<{ type: string }>();
 
@@ -77,7 +77,6 @@ const airflowSnippet = computed(() => {
     <!-- The dashboard's own widget for the example finding, in a frame. -->
     <section class="det-section" aria-labelledby="det-example">
       <h2 id="det-example">An example finding</h2>
-      <p class="det-small">The dashboard's own widget for this finding, drawn from a run of {{ EXAMPLE_SOURCE_LABEL[r.example.source] }}.</p>
       <iframe
         ref="frame"
         class="det-example"
