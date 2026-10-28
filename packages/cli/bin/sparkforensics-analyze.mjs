@@ -41,12 +41,14 @@ const { parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingType
 const { tunedDetectors } = await loadCore('threshold-overrides');
 const { runOutputBlocks } = await loadCore('run-output');
 const { buildEffectiveConf } = await loadCore('effective-conf');
+const { runDetectorsCommand } = await loadCore('cli/detectors-command');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id>[:<attempt>] --app-id <id>[:<attempt>]...
                               (--baseline <path> | --baseline-shs-base-url <url> --baseline-app-id <id>) [options]
+       sparkforensics-analyze detectors [options]   List what the detectors find; see "detectors --help".
 
 Options:
   --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
@@ -421,7 +423,16 @@ function outPathProblem(outPath) {
   return undefined;
 }
 
+// `detectors` is a command only as the first argument; a log with that name is passed as ./detectors.
+function runDetectors(args) {
+  const { exitCode, stdout, stderr } = runDetectorsCommand(args);
+  process.exitCode = exitCode;
+  if (stderr) process.stderr.write(stderr);
+  process.stdout.write(stdout);
+}
+
 async function runCli(argv, { fetchImpl } = {}) {
+  if (argv[0] === 'detectors') return runDetectors(argv.slice(1));
   let parsed;
   try {
     parsed = parseCliArgs(argv);

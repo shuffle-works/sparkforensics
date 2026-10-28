@@ -6,6 +6,7 @@ import { DocsProvider } from '@/view/DocsContext';
 import { CompareLanding } from '@/view/CompareLanding';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store } from '@/store/store';
+import { FINDING_PRESENTATION } from '@sparkforensics/core/finding-presentation.ts';
 
 // CompareLanding renders a real <DropZone />, which needs a DocsProvider
 // ancestor (DocsLink throws via useDocs() otherwise) and touches recent-files.ts
@@ -77,6 +78,37 @@ test('single-run landing prioritizes one Spark event log and presents next inves
   // The reference card opens the intro page itself, with no fragment to jump past its top.
   expect(within(hero).getByRole('link', { name: /spark optimization reference/i })).toHaveAttribute('href', 'docs/tuning-reference/intro.html');
   expect(docsLink.compareDocumentPosition(within(hero).getByTestId('drop-zone')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('the strip lists eight detectors after the intake and links on to the catalog', () => {
+  renderLanding();
+
+  const strip = screen.getByRole('region', { name: 'What it finds' });
+  const cards = within(strip).getAllByRole('listitem');
+  expect(cards).toHaveLength(8);
+  const types = ['skew', 'spill', 'shuffle', 'gc', 'coldStart', 'utilization', 'smallFiles', 'jobFailureRate'];
+  const hrefs = cards.map((card) => within(card).getByRole('link').getAttribute('href'));
+  expect(hrefs).toEqual(types.map((type) => `docs/detectors/${type}.html`));
+  for (const card of cards) {
+    const link = within(card).getByRole('link');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  }
+
+  const count = Object.keys(FINDING_PRESENTATION).length;
+  const all = within(strip).getByRole('link', { name: `See all ${count} detectors` });
+  expect(all).toHaveAttribute('href', 'docs/detectors/');
+
+  // The intake stays ahead of the strip so it keeps the first viewport.
+  expect(screen.getByTestId('drop-zone').compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+test('the next-steps rail has a Gate it in CI card linking to the CI guide', () => {
+  renderLanding();
+
+  const card = screen.getByRole('heading', { name: 'Gate it in CI' }).closest('article') as HTMLElement;
+  // Base UI marks the non-native button role on the <a>, so find it by its text.
+  expect(within(card).getByText(/read the ci guide/i).closest('a')).toHaveAttribute('href', 'docs/user-guide/getting-started/ci-and-automation.html');
 });
 
 test('keeps landing actions comfortable to tap and compare slots stacked below the large breakpoint', async () => {

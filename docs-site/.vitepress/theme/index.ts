@@ -3,6 +3,8 @@ import DefaultTheme from 'vitepress/theme-without-fonts';
 import { inBrowser, useData, type Theme } from 'vitepress';
 import { nextTick, watch } from 'vue';
 import TuningLanding from './TuningLanding.vue';
+import DetectorIndex from './DetectorIndex.vue';
+import DetectorPage from './DetectorPage.vue';
 import { setupCitationChips } from './citation-chips';
 // Trace fonts, self-hosted (bundled woff2): the docs make no font request.
 import '@fontsource-variable/instrument-sans/wdth.css';
@@ -60,6 +62,8 @@ const theme: Theme = {
   extends: DefaultTheme,
   enhanceApp({ app, router }) {
     app.component('TuningLanding', TuningLanding);
+    app.component('DetectorIndex', DetectorIndex);
+    app.component('DetectorPage', DetectorPage);
 
     if (!inBrowser) return; // this hook also runs during SSR's data pass
 

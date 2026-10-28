@@ -106,14 +106,14 @@ describe('createServer routing', () => {
 });
 
 describe('/mcp route', () => {
-  it('lists all 8 tools over streamable HTTP', async () => {
+  it('lists all 9 tools over streamable HTTP', async () => {
     const port = await listen({ staticRoot: process.cwd(), fetchImpl: fetch });
     const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_runs',
+      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
     ]);
     await client.close();
   });

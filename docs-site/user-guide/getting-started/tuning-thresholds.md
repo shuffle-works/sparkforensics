@@ -21,7 +21,7 @@ npx -p sparkforensics-cli sparkforensics-analyze <file|dir> --thresholds thresho
 ```
 
 The names, units and defaults are the `detectors` catalog in the CLI's JSON
-report (`thresholds` on each row): bytes are raw byte counts, times are
+report (`thresholds` on each row), or `sparkforensics-analyze detectors` with no log: bytes are raw byte counts, times are
 milliseconds, and `*Pct`/`*Rate` values are fractions (`0.05` is 5%). A tier
 list such as `slowHost.ratioTiers` takes the same number of values, in
 ascending order. The `configAudit` checks can't be tuned: they compare your

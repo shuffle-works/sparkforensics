@@ -287,3 +287,28 @@ same ratio the skew finding reports. Caveat text that names a threshold
 `broadcastSizing` over-broadcast recommendation state the value the detector
 ran with. The HTML export still renders the
 default-threshold analysis.
+
+## Detector catalog
+
+`buildDetectorCatalog()` (`packages/core/src/detector-catalog.ts`) returns one
+`DetectorCatalogRecord` per emitted finding type, with no run needed. A record
+joins the type's `DETECTORS` entries with its `FINDING_PRESENTATION` row in
+`finding-presentation.ts`, which also holds the outcome `family`
+(`DETECTOR_FAMILIES` gives the order and labels), a one-sentence `pitch` with no
+figures or names, and the `region` marker. The fields are listed in the
+[`list_detectors` reference](../../user-guide/mcp-tools/list-detectors.md).
+
+The `list_detectors` MCP tool and the `sparkforensics-analyze detectors`
+command read the same builder, so they state the same default thresholds, docs
+and gates.
+
+The docs site's `/docs/detectors/` pages are generated from the catalog by
+`scripts/build-detector-pages.mjs` (see
+[Generated and vendored files](../development-setup.md#generated-and-vendored-files)).
+Every output a page shows is captured from a real run during the script: an
+in-memory `list_detectors` and `get_finding_documentation` call, and
+`runDetectorsCommand(['--type', type, '--format', 'md'])`. The finding card comes
+from `dev/detector-examples.json`, described in
+[Detector examples](../testing.md#detector-examples). Adding a finding type adds
+its page; the type needs a `FINDING_PRESENTATION` row with a `pitch` and
+`family`, and `tests/detector-pages.test.js` fails until a log fires it.

@@ -6,10 +6,12 @@ import { fileURLToPath } from 'node:url';
 // links from the repo's root docs (AGENTS.md, README.md, CONTRIBUTING.md).
 // `vitepress build` flags a link to a missing page but not a link to a heading
 // that no longer exists, which is what moving a section breaks. Generated
-// tuning-reference pages are not committed, so links into them are skipped.
+// tuning-reference and detector catalog pages are not committed, so links into them are skipped.
 
 const ROOT_DOCS = ['AGENTS.md', 'README.md', 'CONTRIBUTING.md'];
 const PUBLISHED = /^https:\/\/shuffle-works\.github\.io\/sparkforensics\/docs\/([^#\s]*?)(?:\.html)?(#[^\s]*)?$/;
+// Docs-site folders whose pages are generated at docs build and never committed.
+const GENERATED_DIRS = ['tuning-reference', 'detectors'];
 const BLOB = /^https:\/\/github\.com\/shuffle-works\/sparkforensics\/blob\/[^/]+\/(docs-site\/[^#\s]+\.md)(#[^\s]*)?$/;
 
 // Same slug rules as VitePress's markdown-it-anchor (vitepress/dist/node).
@@ -96,7 +98,7 @@ export function checkDocAnchors(root) {
         const fragment = ((published ? published[2] : blob[2]) ?? '').slice(1);
         if (published) {
           const page = published[1].replace(/\/$/, '');
-          if (page.startsWith('tuning-reference')) continue;
+          if (GENERATED_DIRS.some((dir) => page === dir || page.startsWith(`${dir}/`))) continue;
           check(file, line, join(docsSite, page === '' ? 'index' : page) + '.md', fragment);
         } else {
           check(file, line, join(root, blob[1]), fragment);
@@ -109,7 +111,7 @@ export function checkDocAnchors(root) {
       // Root docs only matter when the link points into the docs site.
       if (!inDocs && !target.startsWith(docsSite)) continue;
       if (!target.endsWith('.md')) continue;
-      if (target.includes(`${docsSite}/tuning-reference`)) continue;
+      if (GENERATED_DIRS.some((dir) => target.startsWith(`${docsSite}/${dir}/`))) continue;
       check(file, line, target, fragment);
     }
   }

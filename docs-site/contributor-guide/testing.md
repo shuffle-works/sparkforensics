@@ -154,6 +154,41 @@ rolling-log directory (`events_<n>_*` files), which is analyzed as one run. Only
 public corpus logs belong in the snapshot: never pass private logs to
 `--update`.
 
+### Detector examples
+
+`dev/detector-examples.json` maps every finding type to one public log and the
+finding the CLI reports for it. The docs site's detector pages show it as the
+example finding card, so every type needs a log that fires it at default
+thresholds. Each entry names its `source`, and a type is read from the first
+source that fires it:
+
+1. `corpus`: the public logs named in `dev/corpus-snapshot.json`.
+2. `fixture`: the recorded logs in `packages/core/test/fixtures`.
+3. `synthetic`: the small hand-built logs in
+   `packages/core/test/fixtures/synthetic`, which the page labels as a
+   synthetic example. A new detector that no recorded log fires adds one there,
+   with a test that the real analyzer reports the type from it.
+
+Within a source the pick is the best impact band, then the highest confidence,
+then the smaller file, then the log name. The finding is the first of that type
+in the real CLI's `--redact` JSON, reduced to the fields a page renders. CI's `core` job
+regenerates it in memory and fails when it differs:
+
+```bash
+node dev/detector-examples.mjs --check
+```
+
+After a detector or corpus change that alters it, refresh it and commit the
+result with the snapshot:
+
+```bash
+node dev/detector-examples.mjs --update
+```
+
+Both need the `dev/log-corpus` submodule and say so when it is missing.
+`tests/detector-pages.test.js` builds the pages from the committed file, so it
+runs without the submodule.
+
 ### Detector and estimate tools
 
 Record before and after numbers from these in the commit that changes a

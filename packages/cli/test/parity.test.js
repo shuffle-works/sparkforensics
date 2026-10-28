@@ -453,3 +453,17 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     });
   });
 });
+
+// `detectors` and `list_detectors` are two views of one catalog builder, so one list reads the same
+// on both. No log is read, so this suite needs no corpus.
+describe('detectors command and list_detectors tool', () => {
+  it.each([
+    [[], {}],
+    [['--type', 'skew'], { type: 'skew' }],
+  ])('report the same records for %j', async (flags, args) => {
+    const cli = await cliJson(['detectors', ...flags]);
+    expect(cli.count).toBe(cli.detectors.length);
+    expect(cli.count).toBeGreaterThan(0);
+    expect(diffSurfaces(cli, await mcpCall('list_detectors', args), [])).toEqual([]);
+  });
+});

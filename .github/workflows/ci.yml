@@ -98,6 +98,10 @@ jobs:
       # docs-site/contributor-guide/testing.md#corpus-regression-snapshot).
       - name: Corpus findings match dev/corpus-snapshot.json
         run: node dev/bench-analyze.mjs --check dev/corpus-snapshot.json
+      # The docs site's detector pages show these findings; refresh with
+      # `node dev/detector-examples.mjs --update` and commit the result.
+      - name: Detector examples match dev/detector-examples.json
+        run: node dev/detector-examples.mjs --check
       - uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

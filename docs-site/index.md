@@ -13,6 +13,10 @@ features:
     details: Set up the project, read the architecture, run the tests, propose a change.
     link: /contributor-guide/development-setup
     linkText: Start contributing
+  - title: Detector catalog
+    details: Every finding SparkForensics reports, with what it means, how to see it in the dashboard, an agent, CI and Airflow, and its thresholds.
+    link: /detectors/
+    linkText: Browse the detectors
   - title: Tuning Reference
     details: Spark architecture, memory, shuffle and tuning notes behind every finding.
     link: /tuning-reference/

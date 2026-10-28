@@ -1,7 +1,9 @@
 # Understanding findings
 
 Every flagged problem carries a short ALL-CAPS tag. This page has one entry
-per tag: what it means, and what to do about it.
+per tag: what it means, and what to do about it. The
+[detector catalog](../detectors/index.md) has a page for each finding type,
+which several tags (`PLAN`, `UTIL`) cover more than one of.
 
 Each tag links to the matching section of the Spark
 [tuning reference](https://shuffle-works.github.io/spark-tuning-reference/), opened in an in-app **Reference**

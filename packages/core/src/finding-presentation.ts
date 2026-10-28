@@ -11,11 +11,31 @@ import type { ThresholdsOf } from './detectors.ts';
 import type { AqeSkewCase, ConfRemediation, Remediation, SkewOrigin } from './finding-types.ts';
 import type { FindingOf, FindingType } from './types.ts';
 
+/** The outcome a finding type is about, which groups the detector catalog. */
+export const DETECTOR_FAMILIES = [
+  { id: 'speed', label: 'Speed' },
+  { id: 'cost', label: 'Cost' },
+  { id: 'reliability', label: 'Reliability' },
+  { id: 'plan', label: 'SQL plans' },
+  { id: 'setup', label: 'Setup' },
+] as const;
+
+export type DetectorFamily = (typeof DETECTOR_FAMILIES)[number]['id'];
+
 export interface FindingPresentation<T extends FindingType> {
   /** Lowercase human-readable label ("task skew"); the evidence report Title Cases it. */
   name: string;
   /** ALL-CAPS board tag. Several types may share one (every Plan Advisor type is `PLAN`). */
   tag: string;
+  /** The outcome group of the detector catalog. */
+  family: DetectorFamily;
+  /** One generic sentence on what the finding means, in Spark terms with no figures or names, for
+   * the catalog's cards and pages. */
+  pitch: string;
+  /** Set for the types the dashboard shows in its reference region, below the action widgets
+   * (kept in step with REGISTRY in src/view/detector-registry.tsx by a test). Every other type
+   * renders in the action region. */
+  region?: 'reference';
   /** The criterion a clean check was measured against, from the emitting entry's own thresholds. */
   thresholdSummary(thresholds: ThresholdsOf<T>): string;
   /** A short imperative label for the finding's row, or undefined for a (type, discriminant)
@@ -133,6 +153,8 @@ const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   name: 'config audit',
   tag: 'CFG',
+  family: 'setup',
+  pitch: 'Spark properties that leave the cluster uncapped or the serializer slow.',
   thresholdSummary: () => 'a Spark conf value outside the recommended range',
   actionLabel(f) {
     switch (f.property) {
@@ -157,6 +179,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   incompleteRun: {
     name: 'incomplete run',
     tag: 'INCMP',
+    family: 'setup',
+    pitch: 'The event log ends before the application did, so every number is a partial view.',
     thresholdSummary: () => 'an event log missing its terminal ApplicationEnd event',
     actionLabel: () => undefined,
     genericRecommendation: () => undefined,
@@ -165,6 +189,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   skew: {
     name: 'task skew',
     tag: 'SKEW',
+    family: 'speed',
+    pitch: 'One slow task holds a whole stage back while the rest of the cluster waits.',
     thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks), and the slow tasks read correspondingly more data`,
     actionLabel: () => 'Fix task skew',
     genericRecommendation: (f) => skewJoinGeneric(f,
@@ -173,6 +199,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   stageShape: {
     name: 'stage shape',
     tag: 'SHAPE',
+    family: 'speed',
+    pitch: 'A stage runs too few tasks for its cores, or its output dwarfs its input.',
     thresholdSummary: (t) => `under ${t.pRatioMax} tasks per core, output over ${t.oiRatioMax}× input, or one task spanning over ${Math.round(t.stageShareMin * 100)}% of the stage's wall-clock at over ${t.skewWarn}× the median task`,
     actionLabel(f) {
       switch (f.rule) {
@@ -194,6 +222,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   tinyTask: {
     name: 'tiny tasks',
     tag: 'TINY',
+    family: 'speed',
+    pitch: 'Very short tasks spend more time being scheduled than running.',
     thresholdSummary: (t) => `${t.minTasks}+ tasks with a median of ${t.maxP50}ms or less and a P95 of ${t.maxP95}ms or less`,
     actionLabel: () => 'Coalesce small tasks',
     genericRecommendation(f) {
@@ -209,6 +239,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   shuffle: {
     name: 'shuffle I/O',
     tag: 'SHFL',
+    family: 'speed',
+    pitch: 'Moving data between executors takes more time than computing it.',
     thresholdSummary: (t) => `stage shuffle read above ${t.minBytes / 1048576} MiB`,
     actionLabel: () => 'Reduce shuffle size',
     genericRecommendation: (f) => {
@@ -223,6 +255,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   partitionSizing: {
     name: 'partition sizing',
     tag: 'PART',
+    family: 'speed',
+    pitch: 'Shuffle partitions are too large, too uneven or too few, so tasks spill or fail.',
     thresholdSummary: (t) => `a shuffle partition over ${t.skewRatio}× the median or over ${t.maxPartBytes / 1073741824} GiB, or ${t.lowParTotalBytes / 1073741824} GiB of shuffle on ${t.lowParMaxTasks} tasks or fewer`,
     actionLabel(f) {
       switch (f.rule) {
@@ -251,6 +285,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   spill: {
     name: 'spill',
     tag: 'SPILL',
+    family: 'speed',
+    pitch: 'Tasks run out of execution memory and write intermediate data to disk.',
     thresholdSummary: (t) => `single-task disk spill above ${t.singleTaskDiskGiB} GiB`,
     actionLabel: () => 'Reduce spill',
     // The skew/volume classification isn't a Finding field, so one sentence covers both.
@@ -275,6 +311,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   gc: {
     name: 'GC pressure',
     tag: 'GC',
+    family: 'speed',
+    pitch: 'Executors lose time to garbage collection instead of running tasks.',
     thresholdSummary: (t) => `GC above ${t.warnPct100}% (or below ${t.lowInfoPct100}%) of executor run time`,
     actionLabel: (f) => (f.direction === 'low' ? 'Right-size executor memory' : 'Reduce GC pressure'),
     genericRecommendation: (f) => (f.direction === 'low'
@@ -285,6 +323,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   stageFailed: {
     name: 'failed stage',
     tag: 'SFAIL',
+    family: 'reliability',
+    pitch: 'A stage failed and took its job down with it.',
     thresholdSummary: () => 'a stage that failed outright',
     actionLabel: () => 'Inspect stage failure',
     genericRecommendation: (f) => failureFix(f) ?? 'Inspect the driver log for the failure reason and the job that triggered it.',
@@ -292,6 +332,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   failures: {
     name: 'failed tasks',
     tag: 'FAIL',
+    family: 'reliability',
+    pitch: 'Tasks fail and run again, so the cluster pays for the same work twice.',
     thresholdSummary: (t) => `over ${shareLabel(t.warnRate)} of a stage's tasks failing`,
     actionLabel: () => 'Investigate task failures',
     genericRecommendation: (f) => failureFix(f) ?? 'Investigate driver logs for executor instability or data-driven errors.',
@@ -299,6 +341,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   retryWaste: {
     name: 'retry waste',
     tag: 'RETRY',
+    family: 'reliability',
+    pitch: 'Failed attempts are retried, and their lost time is added to the run.',
     thresholdSummary: (t) => `${t.minWasted}+ retried attempts wasting at least ${t.minWasteMs / 1000}s`,
     actionLabel: () => 'Investigate retry cause',
     genericRecommendation: (f) => failureFix(f) ?? 'Investigate executor loss or fetch failures behind the retried attempts.',
@@ -307,6 +351,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   slowHost: {
     name: 'slow executor host',
     tag: 'HOST',
+    family: 'speed',
+    pitch: 'One executor host runs its tasks far slower than the rest of the cluster.',
     thresholdSummary: (t) => `a host ${t.ratioWarn}× slower than its peers by mean task time (per-executor figures from ${t.ratioTiers[0]}×, and only when the stage's own task-time spread cannot explain the gap)`,
     actionLabel(f) {
       if (f.variant === 'durationShare') return 'Fix data locality';
@@ -325,6 +371,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   stageSlowness: {
     name: 'slow stage',
     tag: 'SLOW',
+    family: 'speed',
+    pitch: 'A stage runs for a long stretch of the job with no single cause flagged on it.',
     thresholdSummary: () => 'a stage running far longer than its peers, not attributable to a single slow host',
     actionLabel: () => 'Profile slow stage',
     genericRecommendation(f) {
@@ -341,6 +389,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   straggler: {
     name: 'straggling task',
     tag: 'STRAG',
+    family: 'speed',
+    pitch: 'A few tasks run far longer than their peers, and the stage waits for them.',
     thresholdSummary: () => 'one or more tasks finishing far after the rest of their stage, for a reason other than reading more data',
     actionLabel: () => 'Fix stragglers',
     genericRecommendation: (f) => f.cause === 'data' ? `Uneven data volume drives the slow tasks: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`
@@ -353,6 +403,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   speculationWaste: {
     name: 'speculation waste',
     tag: 'SPEC',
+    family: 'speed',
+    pitch: 'Speculative copies of slow tasks use cores without finishing the stage sooner.',
     thresholdSummary: (t) => `${t.minWasted}+ discarded speculative attempts wasting at least ${t.minWasteMs / 1000}s`,
     actionLabel: () => 'Tune speculation settings',
     genericRecommendation: () => 'If task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.',
@@ -360,6 +412,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   coldStart: {
     name: 'cold start',
     tag: 'COLD',
+    family: 'speed',
+    pitch: 'The job waits for its first executors before any task can run.',
     thresholdSummary: (t) => `the first stage waiting over ${t.gapSeconds}s for an executor`,
     actionLabel: () => 'Pre-warm cluster',
     genericRecommendation: (f) => (f.dynamicAllocation === 'off'
@@ -370,6 +424,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   memoryUtilization: {
     name: 'memory utilization',
     tag: 'MEM',
+    family: 'cost',
+    pitch: 'Executors reserve far more memory than tasks use, or run close to their limit.',
+    region: 'reference',
     thresholdSummary: () => 'executor heap usage outside the configured band',
     actionLabel(f) {
       switch (f.variant) {
@@ -397,6 +454,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   utilization: {
     name: 'executor utilization',
     tag: 'UTIL',
+    family: 'cost',
+    pitch: 'Executors sit idle for much of the run, so the cluster is larger than the work needs.',
+    region: 'reference',
     thresholdSummary: (t) => `average executor utilization below ${shareLabel(t.minUtil)}`,
     actionLabel: () => 'Reduce cluster size',
     genericRecommendation: idleCapacityRecommendation,
@@ -404,6 +464,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   rightSizing: {
     name: 'right-sized cluster',
     tag: 'UTIL',
+    family: 'cost',
+    pitch: 'A smaller cluster would run the same stages in about the same time.',
     thresholdSummary: (t) => `the model finds the stages run within ${t.tolerancePct}% of their real time on at most ${shareLabel(t.maxCoreShare)} of the peak cores (model error under ${t.maxModelErrorPct}%)`,
     actionLabel: () => 'Right-size cluster',
     genericRecommendation: idleCapacityRecommendation,
@@ -411,6 +473,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   coreLocality: {
     name: 'core locality',
     tag: 'LOCAL',
+    family: 'cost',
+    pitch: 'Tasks often run away from the data they read.',
+    region: 'reference',
     thresholdSummary: () => 'task placement missing data-local core assignment',
     actionLabel: () => 'Fix data locality',
     genericRecommendation: (f) => (f.remediation != null && !f.remediation.some((r) => r.kind === 'conf' && r.key === 'spark.locality.wait')
@@ -420,6 +485,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   cachingOpportunity: {
     name: 'caching opportunity',
     tag: 'CACHE',
+    family: 'cost',
+    pitch: 'The same data is read more than once and is never cached.',
     thresholdSummary: () => 'a dataset re-read from source multiple times with no cache/persist',
     actionLabel: (f) => (f.variant === 'composite' ? 'Cache repeated result' : 'Cache shared table'),
     genericRecommendation: (f) => (f.variant === 'composite'
@@ -429,6 +496,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   cacheUtilization: {
     name: 'cache utilization',
     tag: 'CSTOR',
+    family: 'cost',
+    pitch: 'A cached dataset does not fit in memory or spills to disk.',
+    region: 'reference',
     thresholdSummary: () => 'cached partitions evicted or spilled to disk',
     actionLabel: (f) => (f.dataUnavailable ? 'Enable block-update logging' : 'Increase cache memory'),
     genericRecommendation(f) {
@@ -442,6 +512,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   jobFailureRate: {
     name: 'job failure rate',
     tag: 'JOBS',
+    family: 'reliability',
+    pitch: 'A large share of the jobs in the application fail.',
     thresholdSummary: (t) => `at least ${shareLabel(t.infoRate)} of jobs failing`,
     actionLabel: () => 'Investigate failed jobs',
     genericRecommendation: () => 'Inspect the driver log for the failed job(s) and the stage failures that triggered them.',
@@ -449,6 +521,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   autoscalingChurn: {
     name: 'autoscaling churn',
     tag: 'CHRN',
+    family: 'cost',
+    pitch: 'Dynamic allocation adds and removes executors again and again.',
     thresholdSummary: (t) => `over ${shareLabel(t.warningPct)} of removed executors living under ${t.shortLivedMs / 60000} minutes`,
     actionLabel: () => 'Reduce autoscaling churn',
     genericRecommendation: (f) => (f.dynamicAllocation === 'off'
@@ -461,6 +535,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   duplicatePlanSubtree: {
     name: 'duplicate plan subtree',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'The query plan computes the same subtree more than once.',
     thresholdSummary: () => 'the same physical plan subtree executed more than once',
     actionLabel: () => 'Dedupe repeated subtree',
     // isExchangeRoot isn't a Finding field, so one sentence covers both cases.
@@ -471,6 +547,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   smallFiles: {
     name: 'small files',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A write produces many tiny files that slow every later read.',
     thresholdSummary: (t) => `over ${t.minFiles} files averaging under ${t.maxAvgFileSizeMB} MiB`,
     actionLabel: (f) => (f.direction === 'write' ? 'Coalesce output files' : 'Compact small files'),
     genericRecommendation: (f) => (f.direction === 'write'
@@ -480,6 +558,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   pythonUdf: {
     name: 'row-at-a-time Python UDF',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'Row-at-a-time Python functions slow a stage that vectorized code would speed up.',
     thresholdSummary: (t) => `over ${t.minBytesSent / 1048576} MiB sent to Python workers by stages running over ${t.minStageMs / 1000} s`,
     actionLabel: () => 'Vectorize Python UDF',
     genericRecommendation: () => 'Use Arrow-optimized Python UDFs (spark.sql.execution.pythonUDF.arrow.enabled, Spark 3.4 and later) or a pandas UDF instead of a row-at-a-time Python UDF.',
@@ -487,6 +567,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   nestedLoopJoin: {
     name: 'nested loop join',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A join with no usable key compares every row with every row and multiplies its output.',
     thresholdSummary: (t) => `a nested-loop or cartesian join with over ${groupThousands(t.minOutputRows)} output rows, at least ${t.minExpansion}x its larger input`,
     actionLabel: (f) => (f.condition == null ? 'Confirm cross join' : 'Add an equi-join key'),
     genericRecommendation: (f) => (f.condition == null
@@ -496,6 +578,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   joinKeyCast: {
     name: 'cast on a join key',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A cast on a join key forces another shuffle.',
     thresholdSummary: () => 'a shuffled join with a cast in its key, followed by an exchange on the uncast column',
     actionLabel: () => 'Match join key types',
     genericRecommendation: () => 'Give both join columns the same type before the join, so Spark adds no cast to the key and the join output keeps its partitioning.',
@@ -503,6 +587,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   mergeRewrite: {
     name: 'MERGE rewrite',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A Delta MERGE rewrites most of the rows it did not change.',
     thresholdSummary: (t) => `a MERGE that rewrote at least ${groupThousands(t.minCopiedRows)} unmodified rows, at least ${t.minCopiedToChangedRatio}x the rows it changed, or kept ${shareLabel(t.minFilesKeptShare)} of at least ${t.minTargetFiles} target files after skipping while changing at most ${shareLabel(t.maxTouchedPartitionShare)} of the partitions it scanned`,
     actionLabel: (f) => (f.rule === 'weakSkipping' ? 'Prune MERGE target files' : 'Filter MERGE source'),
     genericRecommendation: (f) => (f.rule === 'weakSkipping'
@@ -512,6 +598,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   unprunedScan: {
     name: 'unpruned partitioned scan',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A filtered scan with no partition filter reads every partition of the table.',
     thresholdSummary: (t) => `a filtered scan of a partitioned table with no partition filter that read at least ${t.minPartitionsRead} partitions and ${t.minBytesRead / 1073741824} GiB`,
     actionLabel: () => 'Filter on partition columns',
     genericRecommendation: () => 'Add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
@@ -519,6 +607,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   underBroadcast: {
     name: 'missed broadcast join',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A shuffle join could broadcast its small side and skip the shuffle.',
     thresholdSummary: (t) => `a join side its type can broadcast, between ${t.minSmallerSideBytes / 1048576} MiB and ${t.overBroadcastBytes / 1073741824} GiB, that skipped broadcast`,
     actionLabel: () => 'Use broadcast join',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'
@@ -528,6 +618,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   overBroadcast: {
     name: 'oversized broadcast join',
     tag: 'PLAN',
+    family: 'plan',
+    pitch: 'A broadcast join ships a table too large to broadcast.',
     thresholdSummary: (t) => `a broadcast over ${t.overBroadcastBytes / 1073741824} GiB`,
     actionLabel: () => 'Fix oversized broadcast',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'

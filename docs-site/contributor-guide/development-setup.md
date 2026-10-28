@@ -106,6 +106,11 @@ npm run docs:preview   # serves the built docs site locally
   `docs:dev`, `docs:build`, the vitest globalSetup and `prepack` regenerate it
   when it differs from the guide, so nothing is committed or run by hand. To
   regenerate on demand: `npm run split-detection-docs`.
+- `docs-site/detectors/` and `docs-site/.vitepress/detectors-data.json`
+  (gitignored) are the detector catalog pages and the data the Vue components
+  render, written by `scripts/build-detector-pages.mjs` from the catalog in
+  `packages/core` and `dev/detector-examples.json`. `docs:dev` and `docs:build`
+  run it; to regenerate on demand: `node scripts/build-detector-pages.mjs`.
 - `packages/{cli,mcp,server}/vendor-core/` (gitignored) is rebuilt only at
   `prepack`. In the monorepo the bins load `packages/core/src/load-vendored.js`,
   which uses a leftover `vendor-core/` only while its `core-source-hash.txt`

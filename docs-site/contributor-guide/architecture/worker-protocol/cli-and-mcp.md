@@ -91,7 +91,7 @@ absolute budgets and the `run-complete` check apply to the candidate run; the MC
 
 ## MCP server
 
-`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 8 tools:
+`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 9 tools:
 `list_runs` (candidate runs in a local directory or on a Spark History Server, to
 pick one before diagnosing it), `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`
@@ -105,7 +105,8 @@ of the CLI's `evaluateBudgets()` gating), `get_finding_evidence` (raw
 evidence bundle for one finding, for drill-down after `diagnose_run`),
 `get_finding_documentation` (detection/tuning reference docs for one
 finding type, independent of any run), and `get_reference_doc` (a full
-tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). None
+tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). `list_detectors` (the detector catalog, no run needed; the CLI's `detectors` subcommand prints the same
+records from `buildDetectorCatalog()` in `packages/core/src/detector-catalog.ts`). None
 re-implement detector logic: `list_runs` lists candidates
 (`packages/core/src/list-runs.ts`), and the rest repackage
 `analyze`/`buildEvidenceReport`/`compareRuns`/`captureSnapshot`/`evaluateBudgets`
