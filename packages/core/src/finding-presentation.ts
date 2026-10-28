@@ -509,6 +509,13 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Repeat the target partition range in the MERGE condition so Delta can prune files, and check the target\'s file layout.'
       : 'Filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target\'s file layout.'),
   },
+  unprunedScan: {
+    name: 'unpruned partitioned scan',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `a filtered scan of a partitioned table with no partition filter that read at least ${t.minPartitionsRead} partitions and ${t.minBytesRead / 1073741824} GiB`,
+    actionLabel: () => 'Filter on partition columns',
+    genericRecommendation: () => 'Add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
+  },
   underBroadcast: {
     name: 'missed broadcast join',
     tag: 'PLAN',

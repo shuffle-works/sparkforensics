@@ -242,6 +242,7 @@ const EVIDENCE_KEYS = {
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
   mergeRewrite: ['executionId', 'stageIds', 'rule', 'rewrittenRows', 'changedRows', 'filesBefore', 'filesAfter', 'partitionsScanned', 'partitionsTouched', 'target'],
+  unprunedScan: ['executionId', 'stageIds', 'relation', 'partitionsRead', 'dataFilters'],
   pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
   nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
   joinKeyCast: ['executionId', 'stageIds', 'nodeName', 'castKeys', 'exchangeKeys'],
