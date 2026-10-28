@@ -4,6 +4,7 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
 import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { rightSizingRowShows } from '@/view/widgets/right-sizing-evidence';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -23,8 +24,7 @@ function RightSizingRow({ finding }: { finding: FindingOf<'rightSizing'> }) {
   const { value, observedCores, observedActiveMs, modeledActiveMs, modelErrorPct } = finding;
   const stated = useStatedAbove(finding);
   const advanced = useWidgetDensity() === 'advanced';
-  // The line above states the core counts and both durations; only the model error is new.
-  if (stated && !advanced) return null;
+  if (!rightSizingRowShows(stated, advanced)) return null;
 
   return (
     <div

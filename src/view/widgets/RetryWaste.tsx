@@ -5,6 +5,7 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { retryWasteRowShows } from '@/view/widgets/retry-waste-evidence';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -37,8 +38,7 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
   const advanced = useWidgetDensity() === 'advanced';
-  // The line above states the wasted time, so only the Advanced extension remains.
-  if (stated && !(advanced && finding.extended)) return null;
+  if (!retryWasteRowShows(finding, stated, advanced)) return null;
   return (
     <li
       ref={anchor.ref}

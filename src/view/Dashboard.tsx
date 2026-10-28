@@ -9,7 +9,7 @@ import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from 
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
-import { InlineEvidence } from '@/view/InlineEvidence';
+import { InlineEvidence, widgetHasEvidence } from '@/view/InlineEvidence';
 import { verdictEvidenceOwners, verdictLeadFindings } from '@/view/verdict-evidence';
 import { computeActiveWidgets, SUGGESTED_IMPROVEMENTS_ANCHOR_ID } from '@/view/widgets/Alerts';
 import {
@@ -168,6 +168,11 @@ function FilteredBoard({
     const scope = verdictScopes.get(lead) ?? [lead];
     return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={scope} scope={scope} /> : null;
   }, [evidenceWidgets, verdictScopes, appModel, catalog, configFindings, getTaskData, activeFileId]);
+  const verdictHasEvidence = useCallback((widgetId: string, lead: Finding) => {
+    const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
+    const scope = verdictScopes.get(lead) ?? [lead];
+    return widgetHasEvidence(widget, appModel, scope, scope, density === 'advanced');
+  }, [evidenceWidgets, verdictScopes, appModel, density]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');
     requestAnimationFrame(() => {
@@ -266,6 +271,7 @@ function FilteredBoard({
           moreFindingsCount={listedCount}
           evidenceOwners={evidenceOwners}
           renderEvidence={renderVerdictEvidence}
+          hasEvidence={verdictHasEvidence}
         /> : null}
       {interpretation ? <Scorecard interpretation={interpretation.data} catalog={filteredCatalog} /> : null}
       {/* Filtering is a power control: Advanced mode shows it, and so does an

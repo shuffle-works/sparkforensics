@@ -4,7 +4,7 @@ import type { Finding } from '@sparkforensics/core/types.ts';
 import type { TriageTarget } from './triage-target';
 
 export interface WidgetRegistration {
-  wrapperElement: HTMLDivElement;
+  wrapperElement: HTMLElement;
   open: () => void;
   /** Returns the card's actual disclosure button (WidgetCard.tsx's
    * CollapsibleTrigger) when the card is collapsible, or null when it renders
@@ -69,12 +69,6 @@ export function TriageNavigationProvider({
       </RouteFocusContext.Provider>
     </TriageNavigationContext.Provider>
   );
-}
-
-/** Cuts `children` off from route navigation when `enabled` is false: nothing inside registers. */
-export function TriageNavigationScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
-  const navigation = useContext(TriageNavigationContext);
-  return <TriageNavigationContext.Provider value={enabled ? navigation : null}>{children}</TriageNavigationContext.Provider>;
 }
 
 export function useTriageNavigation() {

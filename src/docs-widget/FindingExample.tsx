@@ -5,7 +5,7 @@ import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { EvidenceInitiallyOpenContext } from '@/view/InlineEvidenceContext';
 import { StepCodesShownContext } from '@/view/StepCode';
-import { InlineEvidence } from '@/view/InlineEvidence';
+import { InlineEvidence, useHasEvidence } from '@/view/InlineEvidence';
 import { eligibleFindings, findingAt, useInterpretation } from '@/view/interpretation';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
 import { FindingRow } from '@/view/widgets/FixTheseFirst';
@@ -31,6 +31,9 @@ export function FindingExample({ findingId }: { findingId: string }) {
       : undefined
   ), [finding, interpretation, catalog, configFindings]);
 
+  const scope = useMemo(() => (finding ? [finding] : []), [finding]);
+  const hasEvidence = useHasEvidence(widget, appModel, scope, scope);
+
   if (!finding || !interpretation) return <p role="alert">This run has no finding {findingId}.</p>;
 
   const widgetProps = { appModel, catalog, configFindings, getTaskData, activeFileId };
@@ -40,7 +43,7 @@ export function FindingExample({ findingId }: { findingId: string }) {
   let body: ReactNode;
   if (stepIndex >= 0) {
     const evidence = widget
-      ? { widgetId: widget.widgetId, card: <InlineEvidence widget={widget} widgetProps={widgetProps} stated={[finding]} scope={[finding]} /> }
+      ? { widgetId: widget.widgetId, card: <InlineEvidence widget={widget} widgetProps={widgetProps} stated={[finding]} scope={[finding]} />, hasEvidence }
       : null;
     body = (
       <section className="rounded-xl border border-border bg-card px-4 pt-5 pb-1 sm:px-5">

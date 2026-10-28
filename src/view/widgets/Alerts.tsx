@@ -5,6 +5,7 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
+import type { EvidenceCheck } from '@/view/evidence-check';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
@@ -53,6 +54,9 @@ export interface ActiveWidget {
   index: number;
   findings: Finding[];
   impactBand: Finding['impactBand'];
+  /** Whether the widget has anything to show for a finding beyond what the line above states.
+   * Absent, it always has. */
+  hasEvidence: EvidenceCheck | undefined;
 }
 
 /** Every `REGISTRY` component except the always-mounted one(s), ranked by
@@ -69,9 +73,9 @@ export function computeActiveWidgets(
 
   const componentWidgets = orderedWidgets(detectors)
     .filter(({ type }) => !isAlwaysMountedType(type))
-    .map(({ component, widgetId, type }, index) => {
+    .map(({ component, widgetId, type, hasEvidence }, index) => {
       const findings = combined.filter((finding) => finding.type === type);
-      return { component, widgetId, index, findings, impactBand: worstImpactBand(findings) };
+      return { component, widgetId, index, findings, impactBand: worstImpactBand(findings), hasEvidence };
     });
 
   return componentWidgets

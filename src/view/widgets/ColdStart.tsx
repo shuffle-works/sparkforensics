@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 
 import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { unstatedRowShows } from '@/view/evidence-check';
 import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -26,7 +27,7 @@ function IssueRow({ finding }: { finding: Finding }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
   // The wait is the whole row, and the line above states it.
-  if (stated) return null;
+  if (!unstatedRowShows(stated)) return null;
   return (
     <li
       ref={anchor.ref}

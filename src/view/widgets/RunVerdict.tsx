@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CircleX, CopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -13,8 +13,7 @@ import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
-import { useEvidenceOpen } from '@/view/InlineEvidence';
-import { EvidencePanelOwnerContext } from '@/view/InlineEvidenceContext';
+import { useEvidenceOpen, useRouteLanding } from '@/view/InlineEvidence';
 import { StepCode, useStepCodesShown } from '@/view/StepCode';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
@@ -31,6 +30,9 @@ export interface RunVerdictProps {
   /** The step's evidence panel for a widget, or null when the widget has no card to show.
    * `lead` is the step's finding, which the step already states. */
   renderEvidence?: (widgetId: string, lead: Finding) => ReactNode;
+  /** Whether the widget has anything to show for a step's lead finding beyond the step itself.
+   * Absent, every step with a card has evidence. */
+  hasEvidence?: (widgetId: string, lead: Finding) => boolean;
   /** Step index to the widget whose evidence renders inside that step. */
   evidenceOwners?: ReadonlyMap<number, string>;
 }
@@ -77,11 +79,18 @@ export function NextStepItem({
   interpretation: InterpretationState;
   index: number;
   onRoute: (target: TriageTarget) => void;
-  /** The card this step shows in place, when it owns one. */
-  evidence: { widgetId: string; card: ReactNode } | null;
+  /** The card this step shows in place, when it owns one. When `hasEvidence` is false the card has
+   * nothing to show beyond the step: the step offers no evidence control, and a route to it lands
+   * on the step. */
+  evidence: { widgetId: string; card: ReactNode; hasEvidence: boolean } | null;
 }) {
   const { openStage } = useStageDetail();
   const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null, [finding]);
+  const bare = evidence != null && !evidence.hasEvidence;
+  const scope = useMemo(() => [finding], [finding]);
+  const stepRef = useRef<HTMLLIElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useRouteLanding(bare ? evidence.widgetId : null, scope, stepRef, titleRef);
   const evidenceId = `next-step-${index}-evidence`;
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
@@ -94,13 +103,18 @@ export function NextStepItem({
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
-    <li className={cn('verdict-step', !codeShown && 'verdict-step--plain')} data-testid="next-step" aria-labelledby={titleId}>
+    <li ref={stepRef} className={cn('verdict-step', !codeShown && 'verdict-step--plain')} data-testid="next-step" aria-labelledby={titleId}>
       {/* The step code (F1, F2, ...) also marks this step's Findings row, its
           bar on the stage strip and its Stage Summary row. */}
       <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 [overflow-wrap:anywhere]">
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
-        <h3 id={titleId} className="text-[0.9375rem] font-semibold">
+        <h3
+          ref={titleRef}
+          id={titleId}
+          tabIndex={bare ? -1 : undefined}
+          className={cn('text-[0.9375rem] font-semibold', bare && 'rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring')}
+        >
           {findingActionLabel(finding)}
           {step.stageId != null ? (
             <>
@@ -157,8 +171,7 @@ export function NextStepItem({
             Also flagged here, likely the same cause: {step.relatedTypes.map(findingName).join(', ')}.
           </p>
         ) : null}
-        {evidence && !evidenceState.available ? null : (
-        <div className="flex flex-wrap items-center gap-1 pt-1">
+        {bare ? null : <div className="flex flex-wrap items-center gap-1 pt-1">
           <Button
             size="sm"
             variant={index === 0 ? 'soft' : 'outline'}
@@ -183,13 +196,8 @@ export function NextStepItem({
               <ArrowRight aria-hidden="true" />
             )}
           </Button>
-        </div>
-        )}
-        {evidence && evidenceState.mounted ? (
-          <EvidencePanelOwnerContext.Provider value={evidenceState.owner}>
-            <div id={evidenceId} hidden={!evidenceState.owner.shown} className="pt-2">{evidence.card}</div>
-          </EvidencePanelOwnerContext.Provider>
-        ) : null}
+        </div>}
+        {evidence && !bare && evidenceState.open ? <div id={evidenceId} className="pt-2">{evidence.card}</div> : null}
       </div>
     </li>
   );
@@ -308,7 +316,7 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, renderEvidence, evidenceOwners }: RunVerdictProps) {
+export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, renderEvidence, hasEvidence, evidenceOwners }: RunVerdictProps) {
   const { title, summary, failed, clean, failureReason, copyText, idleLine } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
@@ -317,7 +325,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
   const evidenceFor = (index: number, lead: Finding) => {
     const widgetId = evidenceOwners?.get(index);
     const card = widgetId ? renderEvidence?.(widgetId, lead) : null;
-    return widgetId && card ? { widgetId, card } : null;
+    return widgetId && card ? { widgetId, card, hasEvidence: hasEvidence?.(widgetId, lead) ?? true } : null;
   };
 
   return (

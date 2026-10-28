@@ -1,6 +1,10 @@
 import { lazy, type ComponentType } from 'react';
 
 import { warmLazy } from '@/lib/warm-lazy';
+import { evidenceCheck, UNSTATED_EVIDENCE, type EvidenceCheck } from '@/view/evidence-check';
+import { retryWasteRowShows } from '@/view/widgets/retry-waste-evidence';
+import { rightSizingRowShows } from '@/view/widgets/right-sizing-evidence';
+import { stageSlownessRowShows } from '@/view/widgets/stage-slowness-evidence';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types.ts';
 
@@ -145,6 +149,10 @@ export interface RegistryEntry {
   region: WidgetRegion;
   widgetId: string;
   routeable: boolean;
+  /** Whether the widget has anything to show for a finding beyond what the line above its evidence
+   * panel states. A widget whose rows may render nothing exports its row rule next to its display
+   * code and builds this from it; absent, the widget always has evidence. */
+  hasEvidence?: EvidenceCheck;
 }
 
 /**
@@ -156,7 +164,7 @@ export interface RegistryEntry {
  * `FindingType`.
  */
 export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
-  incompleteRun: { component: IncompleteRun, region: 'action', widgetId: 'incomplete-run', routeable: true },
+  incompleteRun: { component: IncompleteRun, region: 'action', widgetId: 'incomplete-run', routeable: true, hasEvidence: UNSTATED_EVIDENCE },
 
   skew: { component: Skew, region: 'action', widgetId: 'skew', routeable: true },
   stageShape: { component: StageShape, region: 'action', widgetId: 'stage-shape', routeable: true },
@@ -171,17 +179,26 @@ export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
 
   stageFailed: { component: StageFailed, region: 'action', widgetId: 'stage-failed', routeable: true },
   failures: { component: TaskFailures, region: 'action', widgetId: 'task-failures', routeable: true },
-  retryWaste: { component: RetryWaste, region: 'action', widgetId: 'retry-waste', routeable: true },
+  retryWaste: {
+    component: RetryWaste, region: 'action', widgetId: 'retry-waste', routeable: true,
+    hasEvidence: evidenceCheck((finding, stated, { advanced }) => retryWasteRowShows(finding, stated, advanced)),
+  },
 
   slowHost: { component: SlowHost, region: 'action', widgetId: 'slow-host', routeable: true },
-  stageSlowness: { component: StageSlowness, region: 'action', widgetId: 'stage-slowness', routeable: true },
+  stageSlowness: {
+    component: StageSlowness, region: 'action', widgetId: 'stage-slowness', routeable: true,
+    hasEvidence: evidenceCheck((finding, stated, { appModel }) => stageSlownessRowShows(finding, stated, appModel.stages)),
+  },
   straggler: { component: Straggler, region: 'action', widgetId: 'straggler', routeable: true },
   speculationWaste: { component: SpeculationWaste, region: 'action', widgetId: 'speculation-waste', routeable: true },
-  coldStart: { component: ColdStart, region: 'action', widgetId: 'cold-start', routeable: true },
+  coldStart: { component: ColdStart, region: 'action', widgetId: 'cold-start', routeable: true, hasEvidence: UNSTATED_EVIDENCE },
 
   memoryUtilization: { component: MemoryUtilization, region: 'reference', widgetId: 'memory-utilization', routeable: true },
   utilization: { component: ExecutorUtilization, region: 'reference', widgetId: 'executor-utilization', routeable: true },
-  rightSizing: { component: RightSizing, region: 'action', widgetId: 'right-sizing', routeable: true },
+  rightSizing: {
+    component: RightSizing, region: 'action', widgetId: 'right-sizing', routeable: true,
+    hasEvidence: evidenceCheck((_finding, stated, { advanced }) => rightSizingRowShows(stated, advanced)),
+  },
   coreLocality: { component: CoreUsageArea, region: 'reference', widgetId: 'core-usage-area', routeable: true },
   cachingOpportunity: { component: CachingOpportunity, region: 'action', widgetId: 'caching-opportunity', routeable: true },
   cacheUtilization: { component: CacheUtilization, region: 'reference', widgetId: 'cache-utilization', routeable: true },
@@ -190,15 +207,15 @@ export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
 
   configAudit: { component: ConfigAudit, region: 'action', widgetId: 'config-audit', routeable: true },
 
-  duplicatePlanSubtree: { component: DuplicatePlanSubtree, region: 'action', widgetId: 'duplicate-plan-subtree', routeable: true },
+  duplicatePlanSubtree: { component: DuplicatePlanSubtree, region: 'action', widgetId: 'duplicate-plan-subtree', routeable: true, hasEvidence: UNSTATED_EVIDENCE },
   smallFiles: { component: SmallFiles, region: 'action', widgetId: 'small-files', routeable: true },
-  pythonUdf: { component: PythonUdf, region: 'action', widgetId: 'python-udf', routeable: true },
+  pythonUdf: { component: PythonUdf, region: 'action', widgetId: 'python-udf', routeable: true, hasEvidence: UNSTATED_EVIDENCE },
   mergeRewrite: { component: MergeRewrite, region: 'action', widgetId: 'merge-rewrite', routeable: true },
   unprunedScan: { component: UnprunedScan, region: 'action', widgetId: 'unpruned-scan', routeable: true },
   nestedLoopJoin: { component: NestedLoopJoin, region: 'action', widgetId: 'nested-loop-join', routeable: true },
   joinKeyCast: { component: JoinKeyCast, region: 'action', widgetId: 'join-key-cast', routeable: true },
-  underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', routeable: true },
-  overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', routeable: true },
+  underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', routeable: true, hasEvidence: UNSTATED_EVIDENCE },
+  overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', routeable: true, hasEvidence: UNSTATED_EVIDENCE },
 } satisfies Record<FindingType, RegistryEntry>;
 
 const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
@@ -214,7 +231,7 @@ const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
  */
 export function orderedWidgets(
   detectors: Record<string, DetectorInfo>,
-): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId'> & { type: string }> {
+): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId'> & { type: string; hasEvidence?: EvidenceCheck | undefined }> {
   return Object.entries(detectors)
     .filter(([type]) => REGISTRY[type] !== undefined)
     .map(([type, { order }]) => ({ entry: REGISTRY[type], type, order }))
@@ -224,6 +241,7 @@ export function orderedWidgets(
       region: entry.region,
       widgetId: entry.widgetId,
       type,
+      hasEvidence: entry.hasEvidence,
     }));
 }
 

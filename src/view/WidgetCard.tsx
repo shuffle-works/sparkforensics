@@ -13,7 +13,6 @@ import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';
-import { isBlankPanelBody } from '@/view/panel-body';
 import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 
 export interface WidgetCardProps {
@@ -80,24 +79,6 @@ export function WidgetCard({
   const coordinatorRouteFocused = routeFocused ?? gridCard?.routeFocused ?? false;
   const [hasRouteFocus, setHasRouteFocus] = useState(coordinatorRouteFocused);
   const handledOpenRequestRef = useRef(0);
-  const flatBodyRef = useRef<HTMLDivElement>(null);
-  const [flatBodyBlank, setFlatBodyBlank] = useState(false);
-  const reportBlank = inlineEvidence?.reportBlank;
-
-  // A row the line above already states renders nothing, so the panel can end up as a bare title.
-  useLayoutEffect(() => {
-    const element = flatBodyRef.current;
-    if (!flat || !element) return;
-    const update = () => {
-      const blank = isBlankPanelBody(element);
-      setFlatBodyBlank(blank);
-      reportBlank?.(blank);
-    };
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(element, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
-  }, [flat, reportBlank]);
 
   // The line above an in-place evidence panel already states the fix.
   const fixes = flat ? [] : [...new Set(fixFor.map(coreFindingGenericRecommendation).filter((fix) => fix !== undefined))];
@@ -194,12 +175,7 @@ export function WidgetCard({
   if (flat) {
     const ruleBand = inlineEvidence.band ?? impactBand;
     return (
-      <section
-        ref={cardRef}
-        id={id}
-        hidden={flatBodyBlank}
-        className={cn('border-l-[3px] pl-3', ruleBand ? IMPACT_BORDER_CLASS[ruleBand] : 'border-border')}
-      >
+      <section ref={cardRef} id={id} className={cn('border-l-[3px] pl-3', ruleBand ? IMPACT_BORDER_CLASS[ruleBand] : 'border-border')}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-tight">
           <h3
             ref={(heading) => gridCard?.setDisclosureButton(heading)}
@@ -214,7 +190,7 @@ export function WidgetCard({
           {statusBadge}
         </div>
         {subtitle ? <p className="font-mono text-xs text-muted-foreground">{subtitle}</p> : null}
-        <div ref={flatBodyRef} className="mt-2">{body}</div>
+        <div className="mt-2">{body}</div>
       </section>
     );
   }

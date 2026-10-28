@@ -173,15 +173,25 @@ routing" in [investigation-routing](./investigation-routing.md)).
   evidence" button on the sample run and the public fixtures, in the default
   view and with info shown, and fails on a panel with nothing under its heading
   besides its stage chip, stage name and call site (`data-panel-identity`).
-- A panel that still has nothing under its heading is not shown. The flat
-  `WidgetCard` checks its body with `isBlankPanelBody`
-  (`src/view/panel-body.ts`, the same rule as that test), sets `hidden` on its
-  section and reports the result to the verdict step or Findings row that owns
-  the panel (`EvidencePanelOwnerContext`). The owner renders a closed panel off
-  screen, cut off from route navigation, until that first report, then uses the
-  one result for both its toggle and its panel: a blank panel offers no "Show
-  evidence" button and never shows. `tests/view/evidence-panel-blank.test.tsx`
-  checks this on three synthetic logs where every row is stated above.
+- A step or row whose widget has nothing to show beyond the line above offers
+  no evidence control and no panel. The decision is data, not a render: a
+  `REGISTRY` entry may carry `hasEvidence` (`EvidenceCheck`,
+  `src/view/evidence-check.ts`), which takes the findings, the stated ids, the
+  density and the `appModel`. A widget whose rows may render nothing exports its
+  row rule next to its display code (`retry-waste-evidence.ts`,
+  `right-sizing-evidence.ts`, `stage-slowness-evidence.ts`, and
+  `unstatedRowShows` for a row that is only the stated figure). The row returns
+  nothing exactly when the rule says so, and `evidenceCheck(rowShows)` builds
+  the registry's check from the same rule. A widget without `hasEvidence` always
+  has evidence. `widgetHasEvidence` / `useHasEvidence` (`InlineEvidence.tsx`)
+  give the verdict step, the Findings row and the group row the answer, and it
+  re-runs when the density changes. A route to a finding that has no panel
+  still lands: the step or row registers through `useRouteLanding`, and the
+  route scrolls to it and focuses its title or label.
+  `tests/view/evidence-check.test.tsx` renders every finding of every example
+  run in both densities and fails when the check and the panel disagree
+  (empty panel exactly when the check says false). A new widget with a row
+  that can render nothing needs a check, or that test fails.
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.
