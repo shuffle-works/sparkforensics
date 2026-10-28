@@ -15,7 +15,7 @@ export interface DetectorRecord {
   thresholdSummary: string;
   detectors: Array<{ detector: string; version: number; thresholds: Record<string, unknown>; suppressedBy?: string }>;
   pages: { catalog: string; guide: string };
-  tuning: { kind: 'page' | 'section' | 'chapter'; anchor: string; path: string } | null;
+  tuning: { kind: 'page' | 'shared' | 'section' | 'chapter'; anchor: string; path: string } | null;
   gate: { cliFlag: string; airflowParam: string } | null;
   example: { source: 'corpus' | 'fixture' | 'synthetic'; log: string; sparkVersion: string | null; finding: Record<string, any> };
   surfaces: {

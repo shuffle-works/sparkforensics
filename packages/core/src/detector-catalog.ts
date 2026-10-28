@@ -28,10 +28,10 @@ const BUDGET_GATES: { readonly [T in FindingType]?: BudgetGate } = {
   failures: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
 };
 
-/** Where a type's tuning documentation lives: its own bottleneck page, a section of another
- * page, or a general chapter. */
+/** Where a type's tuning documentation lives: its own bottleneck page, a bottleneck page it
+ * shares with other types, a section of another page, or a general chapter. */
 export interface TuningDocRef {
-  kind: 'page' | 'section' | 'chapter';
+  kind: 'page' | 'shared' | 'section' | 'chapter';
   anchor: string;
   /** The docs path under the site root, with the anchor. */
   path: string;
@@ -85,11 +85,15 @@ function tuningDocRef(type: string): TuningDocRef | null {
 export function buildDetectorCatalog(): DetectorCatalogRecord[] {
   const types = [...ENTRY_BY_TYPE.keys()] as FindingType[];
   const typesByTag = new Map<string, FindingType[]>();
+  const typeCountByAnchor = new Map<string, number>();
   for (const type of types) {
     const { tag } = FINDING_PRESENTATION[type];
     typesByTag.set(tag, [...(typesByTag.get(tag) ?? []), type]);
+    const anchor = docAnchorForType(type);
+    if (anchor) typeCountByAnchor.set(anchor, (typeCountByAnchor.get(anchor) ?? 0) + 1);
   }
   return types.map((type) => {
+    const tuning = tuningDocRef(type);
     const presentation = FINDING_PRESENTATION[type];
     const first = ENTRY_BY_TYPE.get(type)!;
     return {
@@ -110,7 +114,7 @@ export function buildDetectorCatalog(): DetectorCatalogRecord[] {
         ...(entry.suppressedBy ? { suppressedBy: entry.suppressedBy } : {}),
       })),
       pages: { catalog: detectorPageUrl(type), guide: findingGuideUrl(type) },
-      tuning: tuningDocRef(type),
+      tuning: tuning?.kind === 'page' && typeCountByAnchor.get(tuning.anchor)! > 1 ? { ...tuning, kind: 'shared' } : tuning,
       gate: BUDGET_GATES[type] ?? null,
     };
   });

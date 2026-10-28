@@ -36,8 +36,12 @@ describe('detector catalog coverage', () => {
 });
 
 describe('detector catalog special cases', () => {
-  it('says where the tuning docs live: a page, a section of another page, a chapter, or nowhere', () => {
+  it('says where the tuning docs live: a page, a shared page, a section of another page, a chapter, or nowhere', () => {
     expect(byType('skew').tuning).toMatchObject({ kind: 'page', anchor: '#bottleneck-skew' });
+    expect(byType('rightSizing').tuning).toMatchObject({ kind: 'shared', anchor: '#bottleneck-utilization' });
+    expect(byType('utilization').tuning).toMatchObject({ kind: 'shared', anchor: '#bottleneck-utilization' });
+    for (const type of ['failures', 'stageFailed']) expect(byType(type).tuning).toMatchObject({ kind: 'shared', anchor: '#bottleneck-failures' });
+    for (const type of ['overBroadcast', 'underBroadcast']) expect(byType(type).tuning).toMatchObject({ kind: 'shared', anchor: '#bottleneck-broadcast-sizing' });
     expect(byType('stageShape').tuning).toMatchObject({ kind: 'section', anchor: '#bottleneck-stage-shape' });
     expect(byType('stageShape').tuning.path).toContain('bottleneck-skew.html');
     expect(byType('pythonUdf').tuning).toMatchObject({ kind: 'chapter', anchor: '#pyspark' });

@@ -35,7 +35,7 @@ const json = (value: unknown) => JSON.stringify(value, null, 2);
 const tuningLink = computed(() => {
   const t = r.value.tuning;
   if (!t) return null;
-  const lead = { page: 'This finding has its own tuning page', section: 'This finding is covered in a section of a tuning page', chapter: 'This finding is covered in a general tuning chapter' }[t.kind];
+  const lead = { page: 'This finding has its own tuning page', shared: 'This finding shares a tuning page with related findings', section: 'This finding is covered in a section of a tuning page', chapter: 'This finding is covered in a general tuning chapter' }[t.kind];
   return { lead, href: siteHref(t.path) };
 });
 

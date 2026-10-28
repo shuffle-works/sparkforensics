@@ -107,6 +107,9 @@ describe('special cases', () => {
     expect(entry('stageShape').tuning.kind).toBe('section');
     expect(entry('pythonUdf').tuning.kind).toBe('chapter');
     expect(entry('skew').tuning.kind).toBe('page');
+    for (const type of ['rightSizing', 'utilization', 'failures', 'stageFailed', 'overBroadcast', 'underBroadcast']) {
+      expect(entry(type).tuning.kind).toBe('shared');
+    }
   });
 
   it('carries a tag shared by two types', () => {
