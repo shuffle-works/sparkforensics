@@ -2,7 +2,6 @@
   "autoscalingChurn": {
     "source": "synthetic",
     "log": "autoscaling-churn.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "13977064",
       "type": "autoscalingChurn",
@@ -44,7 +43,6 @@
   "cacheUtilization": {
     "source": "corpus",
     "log": "cache-memory-and-disk.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "f3e080ff",
       "type": "cacheUtilization",
@@ -83,7 +81,6 @@
   "cachingOpportunity": {
     "source": "corpus",
     "log": "delta-update.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "d19dbed2",
       "type": "cachingOpportunity",
@@ -116,7 +113,6 @@
   "coldStart": {
     "source": "corpus",
     "log": "pairwise-05.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "943e0d98",
       "type": "coldStart",
@@ -140,7 +136,6 @@
   "configAudit": {
     "source": "corpus",
     "log": "external-local-1426533911241.ndjson",
-    "sparkVersion": null,
     "finding": {
       "id": "6650899b",
       "type": "configAudit",
@@ -168,7 +163,6 @@
   "coreLocality": {
     "source": "synthetic",
     "log": "core-locality.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "a0ca4ae7",
       "type": "coreLocality",
@@ -201,7 +195,6 @@
   "duplicatePlanSubtree": {
     "source": "corpus",
     "log": "external-sql-duplicate-exchange-eventlog.ndjson",
-    "sparkVersion": null,
     "finding": {
       "id": "d68aa318",
       "type": "duplicatePlanSubtree",
@@ -232,7 +225,6 @@
   "failures": {
     "source": "corpus",
     "log": "failure-stage-abort.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "07e63228",
       "type": "failures",
@@ -266,7 +258,6 @@
   "gc": {
     "source": "corpus",
     "log": "pairwise-03.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "ecdba273",
       "type": "gc",
@@ -297,7 +288,6 @@
   "incompleteRun": {
     "source": "corpus",
     "log": "failure-killed-run.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "1d473001",
       "type": "incompleteRun",
@@ -316,7 +306,6 @@
   "jobFailureRate": {
     "source": "corpus",
     "log": "external-failed-eventlog.ndjson",
-    "sparkVersion": null,
     "finding": {
       "id": "e1a1cfc6",
       "type": "jobFailureRate",
@@ -342,7 +331,6 @@
   "joinKeyCast": {
     "source": "fixture",
     "log": "join-key-cast-spark-3.5.3.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "8784b424",
       "type": "joinKeyCast",
@@ -379,7 +367,6 @@
   "memoryUtilization": {
     "source": "corpus",
     "log": "external-application_1578436911597_0052.ndjson",
-    "sparkVersion": "3.0.0-SNAPSHOT",
     "finding": {
       "id": "89cacd2d",
       "type": "memoryUtilization",
@@ -416,7 +403,6 @@
   "mergeRewrite": {
     "source": "corpus",
     "log": "delta-merge-sql.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "af708bbf",
       "type": "mergeRewrite",
@@ -446,7 +432,6 @@
   "nestedLoopJoin": {
     "source": "fixture",
     "log": "nested-loop-join-spark-3.5.9.ndjson",
-    "sparkVersion": "3.5.9",
     "finding": {
       "id": "674a79b9",
       "type": "nestedLoopJoin",
@@ -486,7 +471,6 @@
   "overBroadcast": {
     "source": "synthetic",
     "log": "over-broadcast.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "de4ac17a",
       "type": "overBroadcast",
@@ -514,7 +498,6 @@
   "partitionSizing": {
     "source": "corpus",
     "log": "pairwise-03.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "d16d9a88",
       "type": "partitionSizing",
@@ -545,7 +528,6 @@
   "pythonUdf": {
     "source": "synthetic",
     "log": "python-udf.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "11d38720",
       "type": "pythonUdf",
@@ -579,7 +561,6 @@
   "retryWaste": {
     "source": "corpus",
     "log": "failure-task-retry.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "a7a57dec",
       "type": "retryWaste",
@@ -646,7 +627,6 @@
   "rightSizing": {
     "source": "synthetic",
     "log": "right-sizing.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "8a2b006e",
       "type": "rightSizing",
@@ -685,7 +665,6 @@
   "shuffle": {
     "source": "corpus",
     "log": "pairwise-02.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "bace057c",
       "type": "shuffle",
@@ -709,7 +688,6 @@
   "skew": {
     "source": "corpus",
     "log": "cache-memory-only.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "a9608309",
       "type": "skew",
@@ -741,7 +719,6 @@
   "slowHost": {
     "source": "corpus",
     "log": "pairwise-03.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "5e49db43",
       "type": "slowHost",
@@ -772,7 +749,6 @@
   "smallFiles": {
     "source": "corpus",
     "log": "eventlog-zstd.zstd",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "ff9608f1",
       "type": "smallFiles",
@@ -802,7 +778,6 @@
   "speculationWaste": {
     "source": "corpus",
     "log": "pairwise-01.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "ea58fb74",
       "type": "speculationWaste",
@@ -838,7 +813,6 @@
   "spill": {
     "source": "corpus",
     "log": "pairwise-03.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "f690f47b",
       "type": "spill",
@@ -887,7 +861,6 @@
   "stageFailed": {
     "source": "corpus",
     "log": "external-failed-eventlog.ndjson",
-    "sparkVersion": null,
     "finding": {
       "id": "f49acbc4",
       "type": "stageFailed",
@@ -911,7 +884,6 @@
   "stageShape": {
     "source": "corpus",
     "log": "external-local-1430917381536.ndjson",
-    "sparkVersion": "3.5.2",
     "finding": {
       "id": "76f147b2",
       "type": "stageShape",
@@ -932,7 +904,6 @@
   "stageSlowness": {
     "source": "synthetic",
     "log": "stage-slowness.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "c3c5fd6d",
       "type": "stageSlowness",
@@ -960,7 +931,6 @@
   "straggler": {
     "source": "corpus",
     "log": "external-application_1628109047826_1317105.ndjson",
-    "sparkVersion": "3.1.1.119",
     "finding": {
       "id": "92c6a172",
       "type": "straggler",
@@ -990,7 +960,6 @@
   "tinyTask": {
     "source": "corpus",
     "log": "eventlog-zstd.zstd",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "f9875107",
       "type": "tinyTask",
@@ -1021,7 +990,6 @@
   "underBroadcast": {
     "source": "corpus",
     "log": "delta-merge-sql.ndjson",
-    "sparkVersion": "4.2.0",
     "finding": {
       "id": "72860c2a",
       "type": "underBroadcast",
@@ -1061,7 +1029,6 @@
   "unprunedScan": {
     "source": "synthetic",
     "log": "unpruned-scan.ndjson",
-    "sparkVersion": "3.5.3",
     "finding": {
       "id": "acb13e23",
       "type": "unprunedScan",
@@ -1092,7 +1059,6 @@
   "utilization": {
     "source": "corpus",
     "log": "external-application_1578436911597_0052.ndjson",
-    "sparkVersion": "3.0.0-SNAPSHOT",
     "finding": {
       "id": "ab40a29c",
       "type": "utilization",

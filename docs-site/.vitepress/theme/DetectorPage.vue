@@ -75,21 +75,12 @@ const airflowSnippet = computed(() => {
     <!-- Finding card, built from the real example finding. -->
     <section class="det-section" aria-labelledby="det-example">
       <h2 id="det-example">An example finding</h2>
-      <p v-if="example.source === 'synthetic'" class="det-note">
-        <strong>A synthetic example.</strong> A small event log built to fire this detector at its default thresholds,
-        <code>{{ example.log }}</code>{{ example.sparkVersion ? ` (Spark ${example.sparkVersion})` : '' }}, read by the real analyzer.
-        It is not a real production run.
-      </p>
-      <p v-else class="det-note">
-        A finding as reported, from the public {{ example.source === 'corpus' ? 'corpus' : 'test' }} log <code>{{ example.log }}</code>{{ example.sparkVersion ? ` (Spark ${example.sparkVersion})` : '' }}.
-      </p>
       <article class="det-finding" :data-band="finding.impactBand">
         <header class="det-finding-head">
           <span class="det-dot" :data-band="finding.impactBand" aria-hidden="true"></span>
           <span class="sf-chip">{{ finding.tag }}</span>
           <strong class="det-finding-name">{{ finding.name }}</strong>
           <span class="det-band">{{ finding.impactBand }}</span>
-          <span v-if="example.source === 'synthetic'" class="det-band">synthetic example</span>
           <span v-if="finding.stageId !== undefined && finding.stageId !== null" class="det-stage">Stage {{ finding.stageId }}</span>
         </header>
         <p class="det-reco">{{ finding.recommendation }}</p>
@@ -222,7 +213,6 @@ const airflowSnippet = computed(() => {
 .det-section { margin-top: 36px; }
 .det-section h2 { margin: 0 0 12px; padding-top: 0; border-top: 0; font-size: 22px; }
 .det-section h3 { margin: 28px 0 8px; font-size: 17px; }
-.det-note { margin: 0 0 12px; font-size: 14px; color: var(--sf-muted); }
 .det-label { margin: 14px 0 4px; font-size: 13px; color: var(--sf-muted); }
 .det-small { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--sf-muted); }
 

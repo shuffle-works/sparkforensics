@@ -95,7 +95,7 @@ function ndjsonIn(dir) {
   return readdirSync(dir).filter((n) => n.endsWith('.ndjson')).sort().map((name) => ({ name, path: join(dir, name) }));
 }
 
-/** Regenerates the examples in memory: { <type>: { source, log, sparkVersion, finding } | null }. */
+/** Regenerates the examples in memory: { <type>: { source, log, finding } | null }. */
 export function buildExamples() {
   const snapshot = JSON.parse(readFileSync(SNAPSHOT_FILE, 'utf8'));
   const corpus = snapshot.logs.filter((l) => !l.error).map((l) => l.name).sort().map((name) => {
@@ -111,22 +111,12 @@ export function buildExamples() {
       if (!best.has(type)) best.set(type, candidate);
     }
   }
-  const versions = new Map();
-  const sparkVersionOf = (c) => {
-    if (!versions.has(c.path)) {
-      const report = analyze(c.path, { redact: false });
-      if (!report) die(`The CLI failed on ${c.log}.`);
-      versions.set(c.path, report.summary?.app?.sparkVersion ?? null);
-    }
-    return versions.get(c.path);
-  };
   const out = {};
   for (const type of types) {
     const c = best.get(type);
     out[type] = c ? {
       source: c.source,
       log: c.log,
-      sparkVersion: sparkVersionOf(c),
       finding: Object.fromEntries(KEPT_FIELDS.filter((k) => c.finding[k] !== undefined).map((k) => [k, c.finding[k]])),
     } : null;
   }
