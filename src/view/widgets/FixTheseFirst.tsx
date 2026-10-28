@@ -16,6 +16,7 @@ import { StepCode } from '@/view/StepCode';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
 import { InlineEvidence, useEvidenceOpen } from '@/view/InlineEvidence';
+import { EvidencePanelOwnerContext } from '@/view/InlineEvidenceContext';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { ActiveWidget } from '@/view/widgets/Alerts';
 import { Button } from '@/components/ui/button';
@@ -120,7 +121,7 @@ export interface RowEvidence {
 
 /** The row's single evidence control: expands the row's own card in place, or
  * routes when the row has none. Renders nothing for a finding with no
- * evidence card to show. */
+ * evidence card to show, or whose card has nothing to show in place. */
 function EvidenceButton({
   target,
   evidence,
@@ -136,6 +137,7 @@ function EvidenceButton({
 }) {
   if (!target || !evidence) return null;
   const inline = evidence.widget != null;
+  if (inline && !state.available) return null;
   return (
     <Button
       variant="outline"
@@ -159,19 +161,20 @@ function EvidenceButton({
 function EvidencePanelRow({
   evidence,
   panelId,
-  open,
+  state,
   stated,
   scope,
 }: {
   evidence: RowEvidence | undefined;
   panelId: string;
-  open: boolean;
+  state: ReturnType<typeof useEvidenceOpen>;
   stated: readonly Finding[];
   scope: readonly Finding[];
 }): ReactNode {
-  if (!open || !evidence?.widget) return null;
+  if (!state.mounted || !evidence?.widget) return null;
   return (
-    <TableRow className="hover:bg-transparent max-sm:flex has-[[data-evidence-blank]]:hidden">
+    <EvidencePanelOwnerContext.Provider value={state.owner}>
+    <TableRow hidden={!state.owner.shown} className="hover:bg-transparent max-sm:flex">
       <TableCell className="w-px p-0 max-sm:hidden" />
       <TableCell colSpan={2} className="whitespace-normal max-sm:w-full">
         {/* w-0 min-w-full: a wide table or chart in the panel scrolls inside it instead of stretching the row. */}
@@ -180,6 +183,7 @@ function EvidencePanelRow({
         </div>
       </TableCell>
     </TableRow>
+    </EvidencePanelOwnerContext.Provider>
   );
 }
 
@@ -232,7 +236,7 @@ export function FindingRow({
         </span>
       </TableCell>
     </TableRow>
-    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={scope} scope={scope} />
+    <EvidencePanelRow evidence={evidence} panelId={panelId} state={evidenceState} stated={scope} scope={scope} />
     </>
   );
 }
@@ -380,7 +384,7 @@ export function TypeGroupRow({
           </span>
         </TableCell>
       </TableRow>
-      <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={NOTHING_STATED} scope={group.findings} />
+      <EvidencePanelRow evidence={evidence} panelId={panelId} state={evidenceState} stated={NOTHING_STATED} scope={group.findings} />
       {expanded && pageItems.map((finding, index) => (
         <FindingInstanceRow
           key={finding.id}

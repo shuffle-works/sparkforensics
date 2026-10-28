@@ -961,16 +961,19 @@ test('activeRouteTarget reflects the pending route while unresolved, and clears 
     return <span data-testid="active-target">{target?.widgetId ?? 'none'}</span>;
   }
   REGISTRY.spill.component = UnresponsiveSpill;
+  // A panel off screen keeps rendering the double too, since it never reports whether it is blank.
+  const shownTarget = () => screen.getAllByTestId('active-target').filter((element) => element.closest('[hidden]') === null);
   renderReady([asLead(spillFinding(90)), spillFinding(1)], [1, 90]);
   await waitForDashboard();
   // Open the Stage 1 step's card, which mounts the double; the route then targets its finding.
   act(() => stepEvidenceButton(1).click());
   const initiator = await stageSummaryRoute('Investigate spill in Stage 1');
 
-  expect(screen.getByTestId('active-target')).toHaveTextContent('none');
+  expect(shownTarget()).toHaveLength(1);
+  expect(shownTarget()[0]).toHaveTextContent('none');
 
   act(() => initiator.click());
-  expect(screen.getByTestId('active-target')).toHaveTextContent('spill');
+  expect(shownTarget()[0]).toHaveTextContent('spill');
 
   // Active-file replacement cancels the pending route (existing cancellation
   // path, see "active-file replacement cancels a pending route..." above);
@@ -980,7 +983,7 @@ test('activeRouteTarget reflects the pending route while unresolved, and clears 
   act(() => {
     store.setState({ activeFileId: 'file-b' });
   });
-  expect(screen.getByTestId('active-target')).toHaveTextContent('none');
+  expect(shownTarget()[0]).toHaveTextContent('none');
 });
 
 // ShuffleIO renders every flagged stage's `StagePill` a second time in its

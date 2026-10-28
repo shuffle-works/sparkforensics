@@ -71,6 +71,12 @@ export function TriageNavigationProvider({
   );
 }
 
+/** Cuts `children` off from route navigation when `enabled` is false: nothing inside registers. */
+export function TriageNavigationScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  const navigation = useContext(TriageNavigationContext);
+  return <TriageNavigationContext.Provider value={enabled ? navigation : null}>{children}</TriageNavigationContext.Provider>;
+}
+
 export function useTriageNavigation() {
   return useContext(TriageNavigationContext);
 }

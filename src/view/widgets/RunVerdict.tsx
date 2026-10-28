@@ -14,6 +14,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useEvidenceOpen } from '@/view/InlineEvidence';
+import { EvidencePanelOwnerContext } from '@/view/InlineEvidenceContext';
 import { StepCode, useStepCodesShown } from '@/view/StepCode';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
@@ -156,6 +157,7 @@ export function NextStepItem({
             Also flagged here, likely the same cause: {step.relatedTypes.map(findingName).join(', ')}.
           </p>
         ) : null}
+        {evidence && !evidenceState.available ? null : (
         <div className="flex flex-wrap items-center gap-1 pt-1">
           <Button
             size="sm"
@@ -182,7 +184,12 @@ export function NextStepItem({
             )}
           </Button>
         </div>
-        {evidence && evidenceState.open ? <div id={evidenceId} className="pt-2 has-[[data-evidence-blank]]:hidden">{evidence.card}</div> : null}
+        )}
+        {evidence && evidenceState.mounted ? (
+          <EvidencePanelOwnerContext.Provider value={evidenceState.owner}>
+            <div id={evidenceId} hidden={!evidenceState.owner.shown} className="pt-2">{evidence.card}</div>
+          </EvidencePanelOwnerContext.Provider>
+        ) : null}
       </div>
     </li>
   );

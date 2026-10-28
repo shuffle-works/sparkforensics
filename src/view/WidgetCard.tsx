@@ -82,17 +82,22 @@ export function WidgetCard({
   const handledOpenRequestRef = useRef(0);
   const flatBodyRef = useRef<HTMLDivElement>(null);
   const [flatBodyBlank, setFlatBodyBlank] = useState(false);
+  const reportBlank = inlineEvidence?.reportBlank;
 
   // A row the line above already states renders nothing, so the panel can end up as a bare title.
   useLayoutEffect(() => {
     const element = flatBodyRef.current;
     if (!flat || !element) return;
-    const update = () => setFlatBodyBlank(isBlankPanelBody(element));
+    const update = () => {
+      const blank = isBlankPanelBody(element);
+      setFlatBodyBlank(blank);
+      reportBlank?.(blank);
+    };
     update();
     const observer = new MutationObserver(update);
     observer.observe(element, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
-  }, [flat]);
+  }, [flat, reportBlank]);
 
   // The line above an in-place evidence panel already states the fix.
   const fixes = flat ? [] : [...new Set(fixFor.map(coreFindingGenericRecommendation).filter((fix) => fix !== undefined))];
@@ -193,7 +198,6 @@ export function WidgetCard({
         ref={cardRef}
         id={id}
         hidden={flatBodyBlank}
-        data-evidence-blank={flatBodyBlank ? '' : undefined}
         className={cn('border-l-[3px] pl-3', ruleBand ? IMPACT_BORDER_CLASS[ruleBand] : 'border-border')}
       >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-tight">
