@@ -4,6 +4,7 @@ import { Table, TableBody } from '@/components/ui/table';
 import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { EvidenceInitiallyOpenContext } from '@/view/InlineEvidenceContext';
+import { StepCodesShownContext } from '@/view/StepCode';
 import { InlineEvidence } from '@/view/InlineEvidence';
 import { eligibleFindings, findingAt, useInterpretation } from '@/view/interpretation';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
@@ -69,8 +70,10 @@ export function FindingExample({ findingId }: { findingId: string }) {
   }
 
   return (
-    <EvidenceInitiallyOpenContext.Provider value>
-      {body}
-    </EvidenceInitiallyOpenContext.Provider>
+    <StepCodesShownContext.Provider value={false}>
+      <EvidenceInitiallyOpenContext.Provider value>
+        {body}
+      </EvidenceInitiallyOpenContext.Provider>
+    </StepCodesShownContext.Provider>
   );
 }

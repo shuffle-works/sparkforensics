@@ -171,7 +171,7 @@ function EvidencePanelRow({
 }): ReactNode {
   if (!open || !evidence?.widget) return null;
   return (
-    <TableRow className="hover:bg-transparent max-sm:flex">
+    <TableRow className="hover:bg-transparent max-sm:flex has-[[data-evidence-blank]]:hidden">
       <TableCell className="w-px p-0 max-sm:hidden" />
       <TableCell colSpan={2} className="whitespace-normal max-sm:w-full">
         {/* w-0 min-w-full: a wide table or chart in the panel scrolls inside it instead of stretching the row. */}

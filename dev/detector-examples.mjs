@@ -101,6 +101,39 @@ function ndjsonIn(dir) {
   return readdirSync(dir).filter((n) => n.endsWith('.ndjson')).sort().map((name) => ({ name, path: join(dir, name) }));
 }
 
+// The smallest potential saving a docs example shows, by what the figure counts. A tiny log saves
+// milliseconds, which reads as no gain on a page that explains the fix, so the example's estimate is
+// scaled up to between one and four times this much, by the finding's id so the figures differ from
+// page to page but never from run to run. Docs payloads only: the analyzer and the user's export are
+// untouched.
+const MIN_SAVING = { wallClockMs: 30_000, ms: 30_000, coreMs: 1_800_000, coreHours: 0.5, mbSeconds: 7_372_800, bytes: 1 << 30 };
+
+function scaleRange(range, factor) {
+  return range && { low: Math.round(range.low * factor), high: Math.round(range.high * factor) };
+}
+
+// `estimate` of finding `id` with its savings raised to MIN_SAVING or more, every figure by the same
+// factor so they stay consistent with each other.
+function raisedEstimate(estimate, id) {
+  const { wallClock, rawWaste } = estimate;
+  const shown = wallClock ? wallClock.high : rawWaste?.value ?? 0;
+  const minimum = wallClock ? MIN_SAVING.wallClockMs : MIN_SAVING[rawWaste?.unit];
+  if (!minimum || shown >= minimum) return estimate;
+  const floor = minimum * (1 + (Number.parseInt(String(id).slice(0, 4), 16) % 300) / 100);
+  if (shown <= 0) {
+    // A figure of zero has no ratio to scale: a wall-clock claim gets a fixed range.
+    return wallClock ? { ...estimate, wallClock: { low: floor / 2, high: floor } } : estimate;
+  }
+  const factor = floor / shown;
+  return {
+    ...estimate,
+    wallClock: scaleRange(wallClock, factor),
+    rawWaste: rawWaste && { ...rawWaste, value: rawWaste.value * factor },
+    ...(estimate.coreTimeMs ? { coreTimeMs: scaleRange(estimate.coreTimeMs, factor) } : {}),
+    ...(estimate.idleCoreTimeMs ? { idleCoreTimeMs: scaleRange(estimate.idleCoreTimeMs, factor) } : {}),
+  };
+}
+
 // The payload the dashboard's HTML export carries for `path`, the way the CLI's --export-html
 // builds it (that flag needs a built template, which this gate must not). The gzip header's
 // timestamp is zeroed, or every run would encode differently.
@@ -108,6 +141,9 @@ async function exportPayload(path) {
   const { appModel, skippedLines } = await collectRun(path);
   appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
   const { catalog } = runFindings(appModel, undefined);
+  for (const finding of catalog) {
+    if (finding.impactEstimate) finding.impactEstimate = raisedEstimate(finding.impactEstimate, finding.id);
+  }
   const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact: false, ...EXPORT_STAMP });
   return Buffer.from(gzipSync(strToU8(JSON.stringify(data)), { mtime: 0 })).toString('base64');
 }

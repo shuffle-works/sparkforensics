@@ -176,8 +176,11 @@ Within a source the pick is the best impact band, then the highest confidence,
 then the smaller file, then the log name. The finding is the first of that type
 in the real CLI's JSON report. The run is built in process the way
 `--export-html` builds it. Neither is redacted: every source is public, and the
-widgets show the names and values the dashboard shows for the same log. CI's
-`core` job regenerates both files in memory and fails when either differs,
+widgets show the names and values the dashboard shows for the same log. One
+change applies to the docs payloads only: each finding's savings estimate is
+scaled up to between one and four times 30 seconds of run time (or a matching
+floor for a core, memory or byte figure), chosen from the finding's id, because a small log saves milliseconds and that reads as
+no gain. The analyzer and the user's export are untouched. CI's `core` job regenerates both files in memory and fails when either differs,
 naming each changed type or log:
 
 ```bash

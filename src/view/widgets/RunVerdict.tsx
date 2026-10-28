@@ -14,7 +14,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useEvidenceOpen } from '@/view/InlineEvidence';
-import { StepCode } from '@/view/StepCode';
+import { StepCode, useStepCodesShown } from '@/view/StepCode';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 
@@ -88,11 +88,12 @@ export function NextStepItem({
   const meaning = savings?.meaning ?? null;
   const titleId = `next-step-${index}-title`;
   const advanced = useWidgetDensity() === 'advanced';
+  const codeShown = useStepCodesShown();
   const provenance = advanced ? (savings?.provenance ?? null) : null;
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
-    <li className="verdict-step" data-testid="next-step" aria-labelledby={titleId}>
+    <li className={cn('verdict-step', !codeShown && 'verdict-step--plain')} data-testid="next-step" aria-labelledby={titleId}>
       {/* The step code (F1, F2, ...) also marks this step's Findings row, its
           bar on the stage strip and its Stage Summary row. */}
       <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
@@ -181,7 +182,7 @@ export function NextStepItem({
             )}
           </Button>
         </div>
-        {evidence && evidenceState.open ? <div id={evidenceId} className="pt-2">{evidence.card}</div> : null}
+        {evidence && evidenceState.open ? <div id={evidenceId} className="pt-2 has-[[data-evidence-blank]]:hidden">{evidence.card}</div> : null}
       </div>
     </li>
   );

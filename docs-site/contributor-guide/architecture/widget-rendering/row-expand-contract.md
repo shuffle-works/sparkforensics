@@ -173,6 +173,13 @@ routing" in [investigation-routing](./investigation-routing.md)).
   evidence" button on the sample run and the public fixtures, in the default
   view and with info shown, and fails on a panel with nothing under its heading
   besides its stage chip, stage name and call site (`data-panel-identity`).
+- A panel that still has nothing under its heading is not shown. The flat
+  `WidgetCard` checks its body with `isBlankPanelBody`
+  (`src/view/panel-body.ts`, the same rule as that test) and sets `hidden` and
+  `data-evidence-blank` on its section. The verdict step's evidence block and
+  the Findings table's panel row hide with it (`has-[[data-evidence-blank]]:hidden`).
+  `tests/view/evidence-panel-blank.test.tsx` opens the panels of three
+  synthetic logs where every row is stated above.
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

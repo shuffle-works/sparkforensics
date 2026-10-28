@@ -42,13 +42,18 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
   expect(finding).toBeDefined();
 
-  render(<DocsWidgetApp findingId={example.finding.id} />);
+  const { container } = render(<DocsWidgetApp findingId={example.finding.id} />);
 
   // A step or a row is titled by its action label; a type the board shows only as a card, by its name.
   const titles = [findingActionLabel(finding), findingName(finding.type)].map((t) => t.toLowerCase());
   const shown = await screen.findAllByText((text) => titles.includes(text.trim().toLowerCase()), {}, { timeout: 10_000 });
   expect(shown.length).toBeGreaterThan(0);
   expect(screen.queryByRole('alert')).toBeNull();
+  // The step labels tie a step to the rest of the dashboard, which the page does not show.
+  expect(container.querySelector('[data-step-code]')).toBeNull();
+  // A run-time saving is large enough to weigh.
+  const wallClock = finding.impactEstimate?.wallClock;
+  if (wallClock) expect(wallClock.high).toBeGreaterThanOrEqual(30_000);
 });
 
 test('says so when the run has no such finding', () => {
