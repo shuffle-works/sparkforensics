@@ -4,7 +4,6 @@ import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { useStatedAbove } from '@/view/InlineEvidenceContext';
-import { stageSlownessRowShows } from '@/view/widgets/stage-slowness-evidence';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -26,7 +25,6 @@ function metricLabel(f: Finding): string {
 function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
-  if (!stageSlownessRowShows(finding, stated, appModel.stages)) return null;
   return (
     <li
       ref={anchor.ref}

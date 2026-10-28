@@ -6,6 +6,7 @@ import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import type { AnyEvidencePanel } from '@/view/evidence-panel';
 import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
 import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
@@ -27,12 +28,11 @@ export interface RunVerdictProps {
   onShowMoreFindings: () => void;
   /** How many findings the Findings tab lists under "More findings". */
   moreFindingsCount?: number;
-  /** The step's evidence panel for a widget, or null when the widget has no card to show.
-   * `lead` is the step's finding, which the step already states. */
-  renderEvidence?: (widgetId: string, lead: Finding) => ReactNode;
-  /** Whether the widget has anything to show for a step's lead finding beyond the step itself.
-   * Absent, every step with a card has evidence. */
-  hasEvidence?: (widgetId: string, lead: Finding) => boolean;
+  /** The evidence panel a widget shows for a step's lead finding, which the step already states,
+   * or null when the widget has nothing to show beyond the step. */
+  evidencePanel?: (widgetId: string, lead: Finding) => AnyEvidencePanel | null;
+  /** The card that shows `panel` in place. */
+  renderEvidence?: (panel: AnyEvidencePanel) => ReactNode;
   /** Step index to the widget whose evidence renders inside that step. */
   evidenceOwners?: ReadonlyMap<number, string>;
 }
@@ -65,6 +65,13 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
 /** The verdict step's small bordered actions; the first step's evidence button is the soft primary. */
 const STEP_ACTION = 'h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent';
 
+/** What a step shows in place of its widget's card. A `panel` step has evidence to show and offers
+ * the control for it. A `bare` step has nothing beyond the step line: no control, and a route to
+ * it lands on the step. No evidence at all (null) means the step routes to the widget's card. */
+export type StepEvidence =
+  | { kind: 'panel'; widgetId: string; panel: AnyEvidencePanel; card: ReactNode }
+  | { kind: 'bare'; widgetId: string };
+
 export function NextStepItem({
   step,
   finding,
@@ -79,18 +86,16 @@ export function NextStepItem({
   interpretation: InterpretationState;
   index: number;
   onRoute: (target: TriageTarget) => void;
-  /** The card this step shows in place, when it owns one. When `hasEvidence` is false the card has
-   * nothing to show beyond the step: the step offers no evidence control, and a route to it lands
-   * on the step. */
-  evidence: { widgetId: string; card: ReactNode; hasEvidence: boolean } | null;
+  evidence: StepEvidence | null;
 }) {
   const { openStage } = useStageDetail();
   const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null, [finding]);
-  const bare = evidence != null && !evidence.hasEvidence;
+  const bare = evidence?.kind === 'bare';
+  const shown = evidence?.kind === 'panel' ? evidence : null;
   const scope = useMemo(() => [finding], [finding]);
   const stepRef = useRef<HTMLLIElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
-  useRouteLanding(bare ? evidence.widgetId : null, scope, stepRef, titleRef);
+  useRouteLanding(evidence?.kind === 'bare' ? evidence.widgetId : null, scope, stepRef, titleRef);
   const evidenceId = `next-step-${index}-evidence`;
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
@@ -178,10 +183,10 @@ export function NextStepItem({
             variant={index === 0 ? 'soft' : 'outline'}
             className={cn(STEP_ACTION, index === 0 && 'border-transparent bg-accent-soft dark:bg-accent-soft')}
             data-shortcut-target
-            aria-expanded={evidence ? evidenceState.open : undefined}
-            aria-controls={evidence ? evidenceId : undefined}
+            aria-expanded={shown ? evidenceState.open : undefined}
+            aria-controls={shown ? evidenceId : undefined}
             onClick={() => {
-              if (evidence) {
+              if (shown) {
                 evidenceState.toggle();
                 return;
               }
@@ -190,15 +195,15 @@ export function NextStepItem({
               if (target) onRoute(target);
             }}
           >
-            {evidence && evidenceState.open ? 'Hide evidence' : 'Show evidence'}
-            {evidence ? (
+            {shown && evidenceState.open ? 'Hide evidence' : 'Show evidence'}
+            {shown ? (
               evidenceState.open ? <ChevronUpIcon aria-hidden="true" /> : <ChevronDownIcon aria-hidden="true" />
             ) : (
               <ArrowRight aria-hidden="true" />
             )}
           </Button>
         </div>}
-        {evidence && !bare && evidenceState.open ? <div id={evidenceId} className="pt-2">{evidence.card}</div> : null}
+        {shown && evidenceState.open ? <div id={evidenceId} className="pt-2">{shown.card}</div> : null}
       </div>
     </li>
   );
@@ -317,16 +322,17 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, renderEvidence, hasEvidence, evidenceOwners }: RunVerdictProps) {
+export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, evidencePanel, renderEvidence, evidenceOwners }: RunVerdictProps) {
   const { title, summary, failed, clean, failureReason, copyText, idleLine } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
-  const evidenceFor = (index: number, lead: Finding) => {
+  const evidenceFor = (index: number, lead: Finding): StepEvidence | null => {
     const widgetId = evidenceOwners?.get(index);
-    const card = widgetId ? renderEvidence?.(widgetId, lead) : null;
-    return widgetId && card ? { widgetId, card, hasEvidence: hasEvidence?.(widgetId, lead) ?? true } : null;
+    if (!widgetId || !evidencePanel) return null;
+    const panel = evidencePanel(widgetId, lead);
+    return panel ? { kind: 'panel', widgetId, panel, card: renderEvidence?.(panel) } : { kind: 'bare', widgetId };
   };
 
   return (

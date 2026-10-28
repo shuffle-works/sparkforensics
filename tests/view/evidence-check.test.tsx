@@ -9,7 +9,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { InlineEvidence, widgetHasEvidence } from '@/view/InlineEvidence';
+import { evidencePanelOf, InlineEvidence } from '@/view/InlineEvidence';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS): the runs are the HTML export's.
@@ -42,15 +42,16 @@ function showsEvidence(panel: HTMLElement): boolean {
   return Boolean(body.textContent?.trim()) || body.querySelector('svg:not([aria-hidden="true"]), table, canvas, img') != null;
 }
 
-// A widget's evidence check and what its panel renders are two reads of one row rule: a panel the
-// check calls empty renders nothing under its title, and any other renders evidence. A check that
-// drifts from its widget fails here, in both densities, for every finding of every example run.
-test.each(logs)('%s: the evidence check matches what each finding\'s panel renders', async (log) => {
+// A widget renders only the rows its content check keeps, so a panel exists exactly when the check
+// keeps a row. What can still drift is a kept row that renders nothing under its title (a widget
+// that leaves out more than its check does), which would show an evidence control that opens an
+// empty panel. This fails for it, in both densities, for every finding of every example run.
+test.each(logs)('%s: every panel a content check keeps renders evidence', async (log) => {
   expect(loadExportPayload(runs[log])).toBeNull();
   const { appModel, catalog, configFindings, interpretation } = store.getState();
   const widgets = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors);
   const widgetProps = { appModel, catalog, configFindings, getTaskData: vi.fn(), activeFileId: null };
-  const disagreements: string[] = [];
+  const empty: string[] = [];
 
   for (const widget of widgets) {
     for (const finding of widget.findings) {
@@ -58,26 +59,26 @@ test.each(logs)('%s: the evidence check matches what each finding\'s panel rende
         store.setState({ widgetDensity: density });
         // A step or a row states its own finding; a group row states none.
         for (const stated of [[finding], []]) {
-          const expected = widgetHasEvidence(widget, appModel, [finding], stated, density === 'advanced');
+          const panel = evidencePanelOf(widget, appModel, [finding], stated, density);
+          // No panel: nothing renders, and the host offers no evidence control.
+          if (!panel) continue;
           const { container, unmount } = render(
             <ThemeProvider>
               <DocsProvider>
                 <StageDetailProvider>
                   <EvidenceAvailabilityProvider>
-                    <InlineEvidence widget={widget} widgetProps={widgetProps} stated={stated} scope={[finding]} />
+                    <InlineEvidence widget={widget} widgetProps={widgetProps} stated={stated} panel={panel} />
                   </EvidenceAvailabilityProvider>
                 </StageDetailProvider>
               </DocsProvider>
             </ThemeProvider>,
           );
           await waitFor(() => expect(container.querySelector('section h3')).not.toBeNull());
-          if (showsEvidence(container) !== expected) {
-            disagreements.push(`${finding.type} ${finding.id} (${density}, ${stated.length ? 'stated' : 'unstated'}): check ${expected}, panel ${!expected}`);
-          }
+          if (!showsEvidence(container)) empty.push(`${finding.type} ${finding.id} (${density}, ${stated.length ? 'stated' : 'unstated'})`);
           unmount();
         }
       }
     }
   }
-  expect(disagreements).toEqual([]);
+  expect(empty).toEqual([]);
 }, 120_000);

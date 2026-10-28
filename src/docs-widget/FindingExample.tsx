@@ -1,17 +1,19 @@
 import { useMemo, type ReactNode } from 'react';
 
+import type { Finding } from '@sparkforensics/core/types.ts';
 import { Table, TableBody } from '@/components/ui/table';
 import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { EvidenceInitiallyOpenContext } from '@/view/InlineEvidenceContext';
 import { StepCodesShownContext } from '@/view/StepCode';
-import { InlineEvidence, useHasEvidence } from '@/view/InlineEvidence';
+import { InlineEvidence, useEvidencePanel } from '@/view/InlineEvidence';
 import { eligibleFindings, findingAt, useInterpretation } from '@/view/interpretation';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
 import { FindingRow } from '@/view/widgets/FixTheseFirst';
-import { NextStepItem } from '@/view/widgets/RunVerdict';
+import { NextStepItem, type StepEvidence } from '@/view/widgets/RunVerdict';
 
 const NO_ROUTE = () => {};
+const NOTHING_STATED: readonly Finding[] = [];
 
 /** One finding of the loaded run, drawn the way the dashboard draws it: as a verdict step when the
  * run's verdict leads with it, else as a Findings row, with its evidence panel open. */
@@ -32,7 +34,10 @@ export function FindingExample({ findingId }: { findingId: string }) {
   ), [finding, interpretation, catalog, configFindings]);
 
   const scope = useMemo(() => (finding ? [finding] : []), [finding]);
-  const hasEvidence = useHasEvidence(widget, appModel, scope, scope);
+  // A step or row states its finding, so its panel shows what the line leaves out, or nothing. A
+  // finding shown by its card alone states nothing.
+  const panel = useEvidencePanel(widget, appModel, scope, scope);
+  const cardPanel = useEvidencePanel(widget, appModel, scope, NOTHING_STATED);
 
   if (!finding || !interpretation) return <p role="alert">This run has no finding {findingId}.</p>;
 
@@ -42,13 +47,15 @@ export function FindingExample({ findingId }: { findingId: string }) {
 
   let body: ReactNode;
   if (stepIndex >= 0) {
-    const evidence = widget
-      ? { widgetId: widget.widgetId, card: <InlineEvidence widget={widget} widgetProps={widgetProps} stated={[finding]} scope={[finding]} />, hasEvidence }
-      : null;
+    let evidence: StepEvidence | null = null;
+    if (widget) {
+      evidence = panel
+        ? { kind: 'panel', widgetId: widget.widgetId, panel, card: <InlineEvidence widget={widget} widgetProps={widgetProps} stated={scope} panel={panel} /> }
+        : { kind: 'bare', widgetId: widget.widgetId };
+    }
     body = (
-      <section className="rounded-xl border border-border bg-card px-4 pt-5 pb-1 sm:px-5">
-        <p className="trace-eyebrow">Next step</p>
-        <ol aria-label="Next step" className="verdict-steps">
+      <section className="rounded-xl border border-border bg-card px-4 pb-1 sm:px-5">
+        <ol aria-label="Next step" className="verdict-steps" style={{ marginTop: 0, borderTop: 0 }}>
           <NextStepItem
             step={interpretation.data.verdict.steps[stepIndex]}
             finding={finding}
@@ -69,7 +76,7 @@ export function FindingExample({ findingId }: { findingId: string }) {
       </Table>
     );
   } else {
-    body = widget ? <InlineEvidence widget={widget} widgetProps={widgetProps} scope={[finding]} /> : null;
+    body = widget && cardPanel ? <InlineEvidence widget={widget} widgetProps={widgetProps} panel={cardPanel} /> : null;
   }
 
   return (

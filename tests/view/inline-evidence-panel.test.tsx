@@ -3,13 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 
 import { ImpactEstimate } from '@/view/ImpactEstimate';
 import { InlineEvidence } from '@/view/InlineEvidence';
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { installInterpretation } from './_shared/interpretation';
+import { allRowsPanel } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';
 
 const estimate = { basis: 'serial', wallClock: { low: 1200, high: 1200 }, estimateMethod: 'measured', rawWaste: { value: 1200, unit: 'ms' } } as const;
@@ -34,7 +35,7 @@ function PanelWidget({ findings }: { findings?: Finding[] }) {
 function renderPanel(findings: Finding[], statedFindings: Finding[]) {
   installInterpretation(findings);
   const widget = { component: () => <PanelWidget findings={findings} />, widgetId: 'spill', index: 0, findings, impactBand: 'critical' };
-  return render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: findings, getTaskData: undefined as never }} stated={statedFindings} scope={findings} />);
+  return render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: findings, getTaskData: undefined as never }} stated={statedFindings} panel={allRowsPanel('spill', findings as FindingOf<'spill'>[])} />);
 }
 
 describe('in-place evidence panel', () => {
@@ -43,7 +44,7 @@ describe('in-place evidence panel', () => {
     installInterpretation([first, second]);
     const Widget = ({ catalog }: { catalog: Finding[] }) => <p>{catalog.map((finding) => finding.id).join(',')}</p>;
     const widget = { component: Widget, widgetId: 'spill', index: 0, findings: [first, second], impactBand: 'critical' };
-    render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: [first, second], getTaskData: undefined as never }} scope={[first]} />);
+    render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: [first, second], getTaskData: undefined as never }} panel={allRowsPanel('spill', [first])} />);
     expect(screen.getByText('spill-1')).toBeInTheDocument();
   });
 

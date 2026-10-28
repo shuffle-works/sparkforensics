@@ -314,8 +314,8 @@ finding and `dev/detector-example-runs.json` holds its run, described in
 app (`docs-widget.html`, `src/docs-widget/`), built from the HTML export's graph
 and guard. It draws the finding as the dashboard does, as a verdict step when
 the run's verdict leads with it and as a Findings row otherwise, with its
-evidence panel open, and without the step labels (`StepCodesShownContext`) that
-tie a step to the rest of the dashboard. It follows the docs page's theme and
+evidence panel open, and without the "Next step" header or the step labels
+(`StepCodesShownContext`) that tie a step to the rest of the dashboard. It follows the docs page's theme and
 reports its height to the page. Adding a finding type adds
 its page; the type needs a `FINDING_PRESENTATION` row with a `pitch` and
 `family`, and `tests/detector-pages.test.js` fails until a log fires it.

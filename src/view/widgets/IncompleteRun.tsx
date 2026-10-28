@@ -1,7 +1,5 @@
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { TagBadge } from '@/view/ImpactBadge';
-import { unstatedRowShows } from '@/view/evidence-check';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
@@ -10,9 +8,6 @@ import type { Finding } from '@sparkforensics/core/types.ts';
  * always one row (no pagination). */
 function IncompleteRunRow({ finding }: { finding: Finding }) {
   const { recommendation } = finding;
-  // The line above states the missing event and the recommendation.
-  if (!unstatedRowShows(useStatedAbove(finding))) return null;
-
   return (
     <div className="flex flex-col gap-1 transition-colors">
       <p className="text-xs text-muted-foreground">

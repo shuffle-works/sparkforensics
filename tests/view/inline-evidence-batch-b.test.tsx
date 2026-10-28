@@ -19,6 +19,7 @@ import { StageFailed } from '@/view/widgets/StageFailed';
 import { TaskFailures } from '@/view/widgets/TaskFailures';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { keptRows } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';
 
 const getTaskData = async (): Promise<TaskData> => ({ metrics: [], fieldNames: [] });
@@ -125,12 +126,11 @@ describe('RetryWaste', () => {
     expect(container.textContent).toContain('Wasted 50.0s of executor time.');
   });
 
-  it('renders no row for a stated finding at Basic, and only its Advanced extension at Advanced', () => {
+  it('keeps no row for a stated finding at Basic, and only its Advanced extension at Advanced', () => {
     const findings = [catalog()[0]];
     installInterpretation(findings);
-    const basic = renderPanel(<RetryWaste appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['rw-3']);
-    expect(basic.container.querySelector('li')).toBeNull();
-    basic.unmount();
+    expect(keptRows('retryWaste', findings, ['rw-3'])).toEqual([]);
+    expect(keptRows('retryWaste', findings, ['rw-3'], { density: 'advanced' })).toEqual(findings);
     store.getState().setWidgetDensity('advanced');
     const advanced = renderPanel(<RetryWaste appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['rw-3']);
     expect(advanced.container.textContent).toContain('5 task attempts were superseded by a later retry.');
@@ -178,13 +178,10 @@ describe('ColdStart', () => {
     testFinding({ type: 'coldStart', stageId: null, impactBand: 'info', id: 'cs-2', value: 20 }),
   ];
 
-  it('renders no row for a stated finding; the other finding keeps its wait', () => {
+  it('keeps no row for a stated finding; the other finding keeps its wait', () => {
     const findings = catalog();
-    installInterpretation(findings);
-    const { container } = renderPanel(<ColdStart appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['cs-1']);
-    expect(screen.queryByText('45s')).not.toBeInTheDocument();
-    expect(screen.getByText('20s')).toBeInTheDocument();
-    expect(container.querySelectorAll('li')).toHaveLength(1);
+    expect(keptRows('coldStart', findings, ['cs-1'])).toEqual([findings[1]]);
+    expect(keptRows('coldStart', findings, ['cs-1', 'cs-2'])).toEqual([]);
   });
 
   it('is unchanged outside the panel', () => {
@@ -201,11 +198,8 @@ describe('IncompleteRun', () => {
     testFinding({ type: 'incompleteRun', stageId: null, impactBand: 'warning', id: 'ir', recommendation: 'This event log never recorded an ApplicationEnd event.' }),
   ];
 
-  it('renders no body for a stated finding', () => {
-    const findings = catalog();
-    installInterpretation(findings);
-    const { container } = renderPanel(<IncompleteRun appModel={emptyAppModel()} catalog={findings} getTaskData={getTaskData} defaultCollapsed={false} />, ['ir']);
-    expect(container.textContent).not.toContain('ApplicationEnd event');
+  it('keeps no row for a stated finding', () => {
+    expect(keptRows('incompleteRun', catalog(), ['ir'])).toEqual([]);
   });
 
   it('keeps the event line and the recommendation when not stated, and outside the panel', () => {

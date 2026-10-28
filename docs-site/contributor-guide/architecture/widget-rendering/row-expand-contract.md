@@ -174,24 +174,26 @@ routing" in [investigation-routing](./investigation-routing.md)).
   view and with info shown, and fails on a panel with nothing under its heading
   besides its stage chip, stage name and call site (`data-panel-identity`).
 - A step or row whose widget has nothing to show beyond the line above offers
-  no evidence control and no panel. The decision is data, not a render: a
-  `REGISTRY` entry may carry `hasEvidence` (`EvidenceCheck`,
-  `src/view/evidence-check.ts`), which takes the findings, the stated ids, the
-  density and the `appModel`. A widget whose rows may render nothing exports its
-  row rule next to its display code (`retry-waste-evidence.ts`,
-  `right-sizing-evidence.ts`, `stage-slowness-evidence.ts`, and
-  `unstatedRowShows` for a row that is only the stated figure). The row returns
-  nothing exactly when the rule says so, and `evidenceCheck(rowShows)` builds
-  the registry's check from the same rule. A widget without `hasEvidence` always
-  has evidence. `widgetHasEvidence` / `useHasEvidence` (`InlineEvidence.tsx`)
-  give the verdict step, the Findings row and the group row the answer, and it
-  re-runs when the density changes. A route to a finding that has no panel
-  still lands: the step or row registers through `useRouteLanding`, and the
-  route scrolls to it and focuses its title or label.
-  `tests/view/evidence-check.test.tsx` renders every finding of every example
-  run in both densities and fails when the check and the panel disagree
-  (empty panel exactly when the check says false). A new widget with a row
-  that can render nothing needs a check, or that test fails.
+  no evidence control and no panel. The decision is data, never a render. Every
+  `REGISTRY` entry has a typed `content: ContentCheck<T>`
+  (`src/view/evidence-panel.ts`) that takes the findings, the stated ids, the
+  density and the `appModel` and returns the rows the panel shows; a missing
+  check is a compile error. A check that keeps every row is `allRows`; a widget
+  whose rows are only the stated figure uses `unstatedRows`; any other lives in
+  `<Widget>.content.ts` beside the lazy-loaded widget (`RetryWaste.content.ts`,
+  `RightSizing.content.ts`, `StageSlowness.content.ts`). `evidencePanelFor`
+  (`detector-registry.tsx`) turns the check into an `EvidencePanel`, a branded
+  value that is null when no row is kept. The verdict step, the Findings row and
+  the group row take the panel from `evidencePanelOf` / `useEvidencePanel`
+  (`InlineEvidence.tsx`), which follows the density; the evidence control, the
+  panel row and `InlineEvidence` accept only that value, and the widget renders
+  only `panel.rows`, so the check and the panel are one decision. A route to a
+  finding with no panel still lands: the step or row registers through
+  `useRouteLanding`, and the route scrolls to it and focuses its title or label.
+  `tests/view/evidence-panel-types.test.ts` holds the `@ts-expect-error` cases,
+  and `tests/view/evidence-check.test.tsx` renders every panel the checks keep
+  for every finding of every example run, in both densities, and fails on one
+  that shows nothing under its title.
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

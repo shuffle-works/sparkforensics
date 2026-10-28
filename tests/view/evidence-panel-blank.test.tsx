@@ -9,6 +9,7 @@ import { TriageNavigationProvider, type WidgetRegistration } from '@/view/Triage
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import { installInterpretation } from './_shared/interpretation';
+import { allRowsPanel } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';
 
 const appModel = () => ({ ...emptyAppModel(), app: { startTime: 0, endTime: 60_000 } });
@@ -106,8 +107,8 @@ describe('a step or row whose widget has nothing to show beyond it', () => {
         onRoute={vi.fn()}
         onShowMoreFindings={vi.fn()}
         evidenceOwners={new Map([[0, 'cold-start']])}
+        evidencePanel={() => null}
         renderEvidence={() => <p>card</p>}
-        hasEvidence={() => false}
       />,
     );
 
@@ -129,8 +130,8 @@ describe('a step or row whose widget has nothing to show beyond it', () => {
         onRoute={vi.fn()}
         onShowMoreFindings={vi.fn()}
         evidenceOwners={new Map([[0, 'cold-start']])}
+        evidencePanel={() => allRowsPanel('coldStart', [coldStart])}
         renderEvidence={() => <p>card</p>}
-        hasEvidence={() => true}
       />,
     );
     expect(screen.getByRole('button', { name: 'Show evidence' })).toBeInTheDocument();

@@ -16,8 +16,6 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
-import { unstatedRowShows } from '@/view/evidence-check';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { RowPagination } from '@/view/RowPagination';
@@ -27,9 +25,6 @@ export type DuplicatePlanSubtreeProps = Pick<WidgetProps, 'catalog' | 'defaultCo
 
 function DuplicatePlanSubtreeRow({ finding }: { finding: FindingOf<'duplicatePlanSubtree'> }) {
   const anchor = useAnchoredRow([finding]);
-  // The line above the panel already shows the stage pills, the sentence and the savings.
-  if (!unstatedRowShows(useStatedAbove(finding))) return null;
-
   return (
     <li
       ref={anchor.ref}

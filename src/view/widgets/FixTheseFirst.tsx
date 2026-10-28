@@ -15,7 +15,8 @@ import { boardRollup, useFindingSavings, useStepCodes, type BoardGroup } from '@
 import { StepCode } from '@/view/StepCode';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
-import { InlineEvidence, useEvidenceOpen, useHasEvidence, useRouteLanding } from '@/view/InlineEvidence';
+import type { AnyEvidencePanel } from '@/view/evidence-panel';
+import { InlineEvidence, useEvidenceOpen, useEvidencePanel, useRouteLanding } from '@/view/InlineEvidence';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { ActiveWidget } from '@/view/widgets/Alerts';
 import { Button } from '@/components/ui/button';
@@ -118,24 +119,27 @@ export interface RowEvidence {
   widgetProps: WidgetProps;
 }
 
-/** The row's single evidence control: expands the row's own card in place, or
- * routes when the row has none. Renders nothing for a finding with no
- * evidence card to show. */
+/** The row's single evidence control: expands the row's own panel in place, or
+ * routes when the row has no card. Renders nothing for a row whose card has
+ * nothing to show (`panel` null), so the control exists only with a panel. */
 function EvidenceButton({
   target,
   evidence,
+  panel,
   state,
   panelId,
   onRoute,
 }: {
   target: TriageTarget | null;
   evidence: RowEvidence | undefined;
+  panel: AnyEvidencePanel | null;
   state: ReturnType<typeof useEvidenceOpen>;
   panelId: string;
   onRoute: (target: TriageTarget) => void;
 }) {
   if (!target || !evidence) return null;
-  const inline = evidence.widget != null;
+  if (evidence.widget && !panel) return null;
+  const inline = panel != null;
   return (
     <Button
       variant="outline"
@@ -158,25 +162,25 @@ function EvidenceButton({
  * the line above it already describes. */
 function EvidencePanelRow({
   evidence,
+  panel,
   panelId,
   open,
   stated,
-  scope,
 }: {
   evidence: RowEvidence | undefined;
+  panel: AnyEvidencePanel | null;
   panelId: string;
   open: boolean;
   stated: readonly Finding[];
-  scope: readonly Finding[];
 }): ReactNode {
-  if (!open || !evidence?.widget) return null;
+  if (!open || !evidence?.widget || !panel) return null;
   return (
     <TableRow className="hover:bg-transparent max-sm:flex">
       <TableCell className="w-px p-0 max-sm:hidden" />
       <TableCell colSpan={2} className="whitespace-normal max-sm:w-full">
         {/* w-0 min-w-full: a wide table or chart in the panel scrolls inside it instead of stretching the row. */}
         <div id={panelId} className="w-0 min-w-full">
-          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} stated={stated} scope={scope} />
+          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} stated={stated} panel={panel} />
         </div>
       </TableCell>
     </TableRow>
@@ -206,10 +210,10 @@ export function FindingRow({
   const scope = useMemo(() => [finding], [finding]);
   const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null, scope);
   const panelId = `finding-evidence-${finding.id}`;
-  // A row whose card has nothing to show beyond the row offers no evidence control and no panel;
-  // a route to it lands on the row.
-  const bare = !useHasEvidence(evidence?.widget, evidence?.widgetProps.appModel, scope, scope);
-  const shownEvidence = bare ? undefined : evidence;
+  // A row whose card has nothing to show beyond the row has no panel: no evidence control, and a
+  // route to it lands on the row.
+  const panel = useEvidencePanel(evidence?.widget, evidence?.widgetProps.appModel, scope, scope);
+  const bare = evidence?.widget != null && panel == null;
   const rowRef = useRef<HTMLTableRowElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   useRouteLanding(bare ? (evidence?.widget?.widgetId ?? null) : null, scope, rowRef, labelRef);
@@ -222,7 +226,7 @@ export function FindingRow({
       <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
         <span ref={labelRef} tabIndex={bare ? -1 : undefined} data-shortcut-target={bare ? '' : undefined} className="block rounded-sm text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</span>
         <span className="mt-tight block text-[0.8125rem] text-muted-foreground">{text}</span>
-        <EvidenceButton target={target} evidence={shownEvidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />
+        <EvidenceButton target={target} evidence={evidence} panel={panel} state={evidenceState} panelId={panelId} onRoute={onRoute} />
       </TableCell>
       {/* flex, not one joined string: as one truncated nowrap string, the
           right-side truncation would hide the important impact figure first.
@@ -239,7 +243,7 @@ export function FindingRow({
         </span>
       </TableCell>
     </TableRow>
-    <EvidencePanelRow evidence={shownEvidence} panelId={panelId} open={evidenceState.open} stated={scope} scope={scope} />
+    <EvidencePanelRow evidence={evidence} panel={panel} panelId={panelId} open={evidenceState.open} stated={scope} />
     </>
   );
 }
@@ -340,8 +344,8 @@ export function TypeGroupRow({
   const codes = useStepCodes().byFinding;
   const stepCode = group.findings.map((finding) => codes.get(finding)).find((code) => code != null) ?? null;
   const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null, group.findings);
-  const bare = !useHasEvidence(evidence?.widget, evidence?.widgetProps.appModel, group.findings, NOTHING_STATED);
-  const shownEvidence = bare ? undefined : evidence;
+  const panel = useEvidencePanel(evidence?.widget, evidence?.widgetProps.appModel, group.findings, NOTHING_STATED);
+  const bare = evidence?.widget != null && panel == null;
   const rowRef = useRef<HTMLTableRowElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   useRouteLanding(bare ? (evidence?.widget?.widgetId ?? null) : null, group.findings, rowRef, toggleRef);
@@ -378,7 +382,7 @@ export function TypeGroupRow({
             {title ? <span className="mt-tight block text-[0.8125rem] text-muted-foreground">{title}</span> : null}
           </button>
           <div>
-            <EvidenceButton target={evidenceTarget} evidence={shownEvidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />
+            <EvidenceButton target={evidenceTarget} evidence={evidence} panel={panel} state={evidenceState} panelId={panelId} onRoute={onRoute} />
           </div>
         </TableCell>
         <TableCell className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}>
@@ -393,7 +397,7 @@ export function TypeGroupRow({
           </span>
         </TableCell>
       </TableRow>
-      <EvidencePanelRow evidence={shownEvidence} panelId={panelId} open={evidenceState.open} stated={NOTHING_STATED} scope={group.findings} />
+      <EvidencePanelRow evidence={evidence} panel={panel} panelId={panelId} open={evidenceState.open} stated={NOTHING_STATED} />
       {expanded && pageItems.map((finding, index) => (
         <FindingInstanceRow
           key={finding.id}
