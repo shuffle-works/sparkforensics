@@ -15,4 +15,9 @@ describe('projectNavIndex', () => {
       { anchor: 'bottleneck-skew', section: 'Bottleneck Reference', title: 'Data Skew', brief: '', keywords: [], store: 'tuning', slug: 'skew' },
     ]);
   });
+
+  it('keeps the subfolder in a chapter slug', () => {
+    const manifest = { groups: [{ title: 'Native Engines', entries: [{ file: 'content/native-engines/photon.md', anchor: 'native-photon', title: 'Photon' }] }] };
+    expect(projectNavIndex(manifest)[0]).toMatchObject({ store: 'chapters', slug: 'native-engines/photon' });
+  });
 });
