@@ -1,0 +1,32 @@
+id: no-rendered-output-probe
+valid:
+  - "const rows = findings.filter((finding) => !stated.has(finding.id));"
+  - "const label = node.dataset.label;"
+  - "const observer = new ResizeObserver(update);"
+  - "const { text } = props;"
+invalid:
+  # The probe that reads a panel body: clone it, strip the identity, read the text.
+  - |
+    export function isBlankPanelBody(body: HTMLElement): boolean {
+      const clone = body.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('[data-panel-identity]').forEach((node) => node.remove());
+      return !clone.textContent?.trim() && clone.querySelector('svg, table') == null;
+    }
+  # The observer that re-measured the body after every render and set a flag.
+  - |
+    useLayoutEffect(() => {
+      const update = () => setFlatBodyBlank(isBlankPanelBody(element));
+      const observer = new MutationObserver(update);
+      observer.observe(element, { childList: true, subtree: true, characterData: true });
+      return () => observer.disconnect();
+    }, [flat]);
+  - "const text = node.textContent;"
+  - "const text = node?.textContent;"
+  - "const { textContent } = node;"
+  - "const text = node['textContent'];"
+  - "const text = node.innerText;"
+  - "const markup = node.innerHTML;"
+  - "const markup = node.outerHTML;"
+  - "const style = window.getComputedStyle(node);"
+  - "const observerRef = useRef<MutationObserver | null>(null);"
+  - "const copy = node.cloneNode(true);"

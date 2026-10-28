@@ -19,7 +19,8 @@ npm run dev           # Vite dev server for the app itself
 npm run build         # production build, outputs dist/ (plus dist/export-template.html, the HTML download's template)
 npm run preview       # serves dist/ locally
 npx tsc --noEmit      # typecheck (strict TypeScript across src/, tests/view/ and packages/core/src/)
-npm run lint          # eslint over the repo's JS (.ts/.tsx are covered only by tsc)
+npm run lint          # eslint over the repo's JS (.ts/.tsx are covered by tsc and lint:structure)
+npm run lint:structure  # ast-grep structure rules over src/ (rules/, tested by rule-tests/)
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
 
@@ -36,7 +37,8 @@ use `npm run build && npm run preview` to try it.
 
 `npm install` also runs the `prepare` script, which points git at
 `.githooks/`. After that, a pre-commit hook lints staged JS files on every
-commit. Fix what it reports, or skip it with `git commit --no-verify`.
+commit, and runs `npm run lint:structure` when staged files are under `src/` or
+are structure rules. Fix what it reports, or skip it with `git commit --no-verify`.
 
 The tuning reference under `packages/core/src/docs-content/{chapters,tuning,diagrams}`
 isn't committed. It's generated from the `shuffle-works/spark-tuning-reference`

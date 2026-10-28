@@ -1,0 +1,29 @@
+id: content-check-is-pure
+language: tsx
+severity: error
+message: A content check reads something other than its input.
+note: |
+  A content check (`*.content.ts`, and the shared checks in `evidence-panel.ts`) decides what a
+  panel shows from its PanelInput (findings, stated ids, density, appModel) alone. It may not import
+  React, the store or a context, call a hook, read a global such as `document` or `window`, or use
+  the clock or randomness. If it needs a value, add that value to PanelInput.
+rule:
+  any:
+    - kind: import_statement
+      has:
+        field: source
+        kind: string
+        regex: ^['"](react|react-dom|zustand)(/.*)?['"]$|@/store/|Context['"]$|@/view/use[A-Z]
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: ^use[A-Z]
+    - kind: identifier
+      regex: ^(document|window|globalThis|navigator|localStorage|sessionStorage|performance|console|fetch|setTimeout|setInterval|requestAnimationFrame)$
+    - pattern: Math.random()
+    - pattern: Date.now()
+    - pattern: new Date()
+files:
+  - src/view/widgets/*.content.ts
+  - src/view/evidence-panel.ts

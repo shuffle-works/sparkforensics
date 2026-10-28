@@ -53,6 +53,7 @@ jobs:
           parallel: true
       - run: npx tsc --noEmit
       - run: npm run lint
+      - run: npm run lint:structure
       - uses: dorny/paths-filter@v4
         id: docs-filter
         with:

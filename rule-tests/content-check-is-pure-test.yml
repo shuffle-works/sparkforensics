@@ -1,0 +1,22 @@
+id: content-check-is-pure
+valid:
+  - |
+    import { isStated, type ContentCheck } from '@/view/evidence-panel';
+    export const check: ContentCheck<'coldStart'> = ({ findings, stated }) => (
+      findings.filter((finding) => !isStated(finding, stated))
+    );
+  - |
+    import type { Finding } from '@sparkforensics/core/types.ts';
+    export const total = (findings: Finding[]) => findings.length;
+  - "const useless = 1;"
+invalid:
+  - "import { useState } from 'react';"
+  - "import { useStore } from '@/store/store';"
+  - "import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';"
+  - "import { useWidgetDensity } from '@/view/useWidgetDensity';"
+  - "export const check = ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []);"
+  - "export const check = ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []);"
+  - "export const check = ({ findings }) => (window.matchMedia('(min-width: 1px)').matches ? findings : []);"
+  - "export const check = ({ findings }) => (Math.random() > 0.5 ? findings : []);"
+  - "export const check = ({ findings }) => (Date.now() % 2 ? findings : []);"
+  - "export const check = ({ findings }) => (new Date().getDay() === 0 ? findings : []);"

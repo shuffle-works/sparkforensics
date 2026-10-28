@@ -391,12 +391,16 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
   }
 
   // The scroll hint shows only while the table is wider than its container (always where that
-  // can't be measured).
+  // can't be measured). Overflow depends on the viewport width and fonts, which no finding data
+  // gives, so this is the one widget measurement.
   const tableAreaRef = useRef<HTMLDivElement>(null);
   const [tableOverflows, setTableOverflows] = useState(true);
   useLayoutEffect(() => {
+    // ast-grep-ignore: no-dom-query-in-widgets
     const container = tableAreaRef.current?.querySelector('[data-slot="table-container"]');
+    // ast-grep-ignore: no-dom-query-in-widgets
     if (!container?.firstElementChild || typeof ResizeObserver === 'undefined') return;
+    // ast-grep-ignore: no-dom-query-in-widgets
     const observer = new ResizeObserver(() => setTableOverflows(container.scrollWidth > container.clientWidth));
     observer.observe(container);
     observer.observe(container.firstElementChild);

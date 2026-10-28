@@ -1,12 +1,17 @@
 #!/bin/sh
-# Lints staged JS files before commit. Wired via `git config core.hooksPath .githooks`
-# (done automatically by the "prepare" npm script: see package.json).
-staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.js' '*.mjs')
-[ -z "$staged" ] && exit 0
+# Lints staged files before commit: ESLint on JS, and the ast-grep structure rules (`npm run
+# lint:structure`) when view code or the rules change. Wired via `git config core.hooksPath
+# .githooks` (done automatically by the "prepare" npm script: see package.json).
+status=0
 
-npx eslint $staged
-status=$?
-if [ $status -ne 0 ]; then
-  echo "eslint failed: fix the errors above or 'git commit --no-verify' to skip." >&2
+staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.js' '*.mjs')
+if [ -n "$staged" ]; then
+  npx eslint $staged || { echo "eslint failed: fix the errors above or 'git commit --no-verify' to skip." >&2; status=1; }
 fi
+
+structure=$(git diff --cached --name-only --diff-filter=ACMD -- 'src/*.ts' 'src/*.tsx' 'rules/*' 'rule-tests/*' sgconfig.yml)
+if [ -n "$structure" ]; then
+  npm run --silent lint:structure || { echo "lint:structure failed: fix the errors above or 'git commit --no-verify' to skip." >&2; status=1; }
+fi
+
 exit $status

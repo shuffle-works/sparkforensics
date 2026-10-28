@@ -1,0 +1,24 @@
+id: no-hidden-after-render
+valid:
+  - "function A({ rows }) { return rows.length > 0 ? <section>{rows}</section> : null; }"
+  - "<div aria-hidden=\"true\" />"
+  - "<div className=\"hidden sm:inline\" />"
+  - "<div className=\"data-[state=closed]:hidden\" />"
+  - "<div style={{ display: 'flex' }} />"
+  - "const hidden = findings.filter((finding) => finding.impactBand === 'info');"
+invalid:
+  # The real shapes: the flat panel and the table row hidden by the flag the probe set.
+  - |
+    <section ref={cardRef} id={id} hidden={flatBodyBlank} data-evidence-blank={flatBodyBlank ? '' : undefined}>
+      {body}
+    </section>
+  - "<TableRow hidden={!state.owner.shown} className=\"hover:bg-transparent\" />"
+  - "<div id={evidenceId} hidden={!evidenceState.owner.shown} className=\"pt-2\">{evidence.card}</div>"
+  - "<TableRow className=\"hover:bg-transparent max-sm:flex has-[[data-evidence-blank]]:hidden\" />"
+  - "<div className=\"pt-2 has-[[data-evidence-blank]]:hidden\">{evidence.card}</div>"
+  - "<div className={blank ? 'hidden' : 'pt-2'} />"
+  - "<div className={cn('pt-2', blank && 'hidden')} />"
+  - "<div style={{ display: blank ? 'none' : undefined }} />"
+  - "<div style={{ display: 'none' }} />"
+  - "element.hidden = blank;"
+  - "element.style.display = 'none';"
