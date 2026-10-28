@@ -493,6 +493,13 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
       : 'Add an equi-join key so Spark can use a hash or sort-merge join; for a range condition, bucket the range and join on the bucket as well.'),
   },
+  joinKeyCast: {
+    name: 'cast on a join key',
+    tag: 'PLAN',
+    thresholdSummary: () => 'a shuffled join with a cast in its key, followed by an exchange on the uncast column',
+    actionLabel: () => 'Match join key types',
+    genericRecommendation: () => 'Give both join columns the same type before the join, so Spark adds no cast to the key and the join output keeps its partitioning.',
+  },
   mergeRewrite: {
     name: 'MERGE rewrite',
     tag: 'PLAN',

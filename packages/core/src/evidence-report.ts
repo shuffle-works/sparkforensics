@@ -245,6 +245,7 @@ const EVIDENCE_KEYS = {
   unprunedScan: ['executionId', 'stageIds', 'relation', 'partitionsRead', 'dataFilters'],
   pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
   nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
+  joinKeyCast: ['executionId', 'stageIds', 'nodeName', 'castKeys', 'exchangeKeys'],
   underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'joinType', 'buildSide', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
 } as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };

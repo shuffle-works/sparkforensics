@@ -24,6 +24,7 @@ import {
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
+import { joinKeyCastOf } from './join-key-cast.ts';
 import { commandOf, mergeRowsOf, metricValue } from './write-targets.ts';
 import { indexByRoot, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
@@ -3887,7 +3888,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineSqlDetector({
-    type: 'unprunedScan', order: 136, fixEffort: 'code', version: 1,
+    type: 'unprunedScan', order: 137, fixEffort: 'code', version: 1,
     emits: ['unprunedScan'],
     docAnchor: '#table-formats',
     // A scan of a partitioned table (it reports "number of partitions read") that reads at least
@@ -3929,6 +3930,38 @@ export const DETECTORS = [
         validationRequired: 'The plan does not name the table\'s partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.',
         recommendation: 'No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
       }));
+    },
+    estimate: noWasteModel,
+  }),
+  defineSqlDetector({
+    type: 'joinKeyCast', order: 136, fixEffort: 'code', version: 1,
+    emits: ['joinKeyCast'],
+    docAnchor: '#joins',
+    thresholds: {},
+    detect(sqlExec): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      const parents = new Map<PlanNode, PlanNode | null>();
+      const joins: PlanNode[] = [];
+      walkPlanTree(sqlExec.planTree, (node, parent) => {
+        parents.set(node, parent);
+        if (/Join/.test(node.name)) joins.push(node);
+      }, { dedupe: true });
+      const out: Finding[] = [];
+      for (const join of joins) {
+        const cast = joinKeyCastOf(join, parents);
+        if (!cast) continue;
+        const bytes = shuffleBytes(joinSideShuffle(cast.exchange) ?? cast.exchange);
+        const advice = 'Give both join columns the same type before the join, so Spark adds no cast to the key and the join output keeps its partitioning.';
+        out.push({
+          type: 'joinKeyCast', executionId: sqlExec.id, stageIds: unionStageIds([cast.exchange], []),
+          planNodeIds: [join.id!, cast.exchange.id!].filter(Boolean), impactBand: 'info',
+          metric: 'shuffleBytes', value: bytes,
+          nodeName: cast.operator, castKeys: cast.castKeys, exchangeKeys: cast.exchangeKeys,
+          recommendation: `${cast.operator} joins on ${cast.castKeys.join(' and ')}, so its output is partitioned by the cast key and the exchange after it shuffles${bytes > 0 ? ` ${formatBytes(bytes)}` : ''} again by ${cast.exchangeKeys.join(', ')}. ${advice}`,
+          remediation: [codeFix(advice)],
+        });
+      }
+      return out.length > 0 ? out : null;
     },
     estimate: noWasteModel,
   }),

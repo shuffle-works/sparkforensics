@@ -461,7 +461,7 @@ shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ### `PLAN`: Plan advisor {#plan}
 
-Flags patterns in the SQL execution plan worth reviewing. Eight checks share
+Flags patterns in the SQL execution plan worth reviewing. Nine checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
@@ -484,6 +484,24 @@ this tag:
   of a range join and join on the bucket, or to confirm that a cross join is
   intended. It needs the executors' `number of output rows` metrics, so a join
   with no reported row counts is not flagged.
+- Join key cast: a sort-merge or shuffled hash join whose key carries a cast,
+  followed by an exchange that shuffles by the uncast column. Spark adds the
+  cast when the two key columns have different types (for example a decimal
+  column and a bigint column). Both sides are shuffled by the cast key, so the
+  join output is partitioned by the cast expression and the next operator that
+  needs the plain column (a window, a group-by, another join) shuffles again.
+  The finding is informational, since a cast between small integer types is
+  harmless. It names the join, its cast keys and the exchange, and its value
+  is the data size of that exchange. The advice is to give both join columns
+  the same type before the join. Not flagged: a broadcast join, a join with no
+  exchange after it, an exchange on the cast expression itself, an exchange
+  the job asked for (a repartition or rebalance), an exchange whose keys do
+  not cover every key of the cast side (it would stay without the cast), an
+  exchange before a later join whose keys are not exactly the cast side's
+  keys, an expand (rollup, cube) or union between the join and the exchange,
+  a full outer join, and a cast only on the side whose partitioning the join
+  does not keep (the right side of a left outer, semi or anti join, the left
+  side of a right outer join).
 - MERGE rewrite: a Delta `MERGE` whose command node reports one of two
   patterns, each its own informational finding. Rewritten rows: at least
   100,000 unmodified target rows rewritten (`number of target rows rewritten

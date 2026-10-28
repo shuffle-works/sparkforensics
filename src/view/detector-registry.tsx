@@ -38,6 +38,7 @@ const DuplicatePlanSubtree = lazy(() => import('./widgets/DuplicatePlanSubtree')
 const PythonUdf = lazy(() => import('./widgets/PythonUdf').then((m) => ({ default: m.PythonUdf })));
 const MergeRewrite = lazy(() => import('./widgets/MergeRewrite').then((m) => ({ default: m.MergeRewrite })));
 const UnprunedScan = lazy(() => import('./widgets/UnprunedScan').then((m) => ({ default: m.UnprunedScan })));
+const JoinKeyCast = lazy(() => import('./widgets/JoinKeyCast').then((m) => ({ default: m.JoinKeyCast })));
 const NestedLoopJoin = lazy(() => import('./widgets/NestedLoopJoin').then((m) => ({ default: m.NestedLoopJoin })));
 const SmallFiles = lazy(() => import('./widgets/SmallFiles').then((m) => ({ default: m.SmallFiles })));
 const UnderBroadcast = lazy(() => import('./widgets/UnderBroadcast').then((m) => ({ default: m.UnderBroadcast })));
@@ -86,6 +87,7 @@ setDisplayName(SmallFiles, 'SmallFiles');
 setDisplayName(MergeRewrite, 'MergeRewrite');
 setDisplayName(UnprunedScan, 'UnprunedScan');
 setDisplayName(NestedLoopJoin, 'NestedLoopJoin');
+setDisplayName(JoinKeyCast, 'JoinKeyCast');
 setDisplayName(UnderBroadcast, 'UnderBroadcast');
 setDisplayName(OverBroadcast, 'OverBroadcast');
 setDisplayName(CacheUtilization, 'CacheUtilization');
@@ -194,6 +196,7 @@ export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
   mergeRewrite: { component: MergeRewrite, region: 'action', widgetId: 'merge-rewrite', routeable: true },
   unprunedScan: { component: UnprunedScan, region: 'action', widgetId: 'unpruned-scan', routeable: true },
   nestedLoopJoin: { component: NestedLoopJoin, region: 'action', widgetId: 'nested-loop-join', routeable: true },
+  joinKeyCast: { component: JoinKeyCast, region: 'action', widgetId: 'join-key-cast', routeable: true },
   underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', routeable: true },
   overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', routeable: true },
 } satisfies Record<FindingType, RegistryEntry>;

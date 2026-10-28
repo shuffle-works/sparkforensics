@@ -217,7 +217,10 @@ A finding's `id` is a stable hash of its `type`, its location (stage, SQL execut
 config property), `metric`, `value` and the per-type discriminator fields in `ID_DISCRIMINATORS`
 (`packages/core/src/analyzer.ts`): the fields that tell apart sibling findings sharing a location
 and metric. Reordering or renaming a discriminator slot changes every id and needs an
-`EVIDENCE_SCHEMA_VERSION` bump.
+`EVIDENCE_SCHEMA_VERSION` bump, and so does adding one to `DISCRIMINATOR_SLOTS`. A new slot goes
+in `APPENDED_SLOTS` instead: those are joined after the fixed slots only for the types that list
+them, so other ids stay the same. `joinKeyCast` uses `planNodeIds` there, since two cast joins of
+one operator in one execution can share a value.
 
 ## Cross-detector suppression
 
