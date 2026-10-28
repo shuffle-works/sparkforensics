@@ -9,7 +9,8 @@ import { DocsWidgetApp } from '@/docs-widget/DocsWidgetApp';
 import { HEIGHT_MESSAGE, followHostTheme, hostTheme, reportHeight } from '@/docs-widget/host';
 import { loadExportPayload } from '@/export/hydrate-store';
 import { store } from '@/store/store';
-import { showsEvidence } from './_shared/evidence-panel';
+import { eligibleFindings, findingAt } from '@/view/interpretation';
+import { keptRows, showsEvidence } from './_shared/evidence-panel';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS): the example app is built from
 // the export graph.
@@ -52,18 +53,31 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   expect(screen.queryByRole('alert')).toBeNull();
   // The step labels tie a step to the rest of the dashboard, which the page does not show.
   expect(container.querySelector('[data-step-code]')).toBeNull();
-  // The evidence control shows only with the widget's panel, which the page opens: no control routes
-  // away from the page, and every control's panel holds the widget's card with evidence under its title.
-  expect(screen.queryByRole('button', { name: /show evidence/i })).toBeNull();
-  for (const control of screen.queryAllByRole('button', { name: /hide evidence/i })) {
-    const panel = container.querySelector<HTMLElement>(`[id="${control.getAttribute('aria-controls')}"]`);
-    expect(panel).not.toBeNull();
-    await within(panel!).findByRole('heading', { level: 3 }, { timeout: 10_000 });
-    expect(showsEvidence(panel!)).toBe(true);
-  }
   // A run-time saving is large enough to weigh.
   const wallClock = finding.impactEstimate?.wallClock;
   if (wallClock) expect(wallClock.high).toBeGreaterThanOrEqual(30_000);
+  // The widget's content check decides what the page shows. A step or row states its finding, so it
+  // offers the evidence control, opened, exactly when the check keeps a row beyond it; a finding shown
+  // by its card alone needs the check to keep a row, or the page would show nothing. Either way the
+  // panel has evidence under its title, and no control routes away from the page.
+  const { appModel, interpretation, widgetDensity } = store.getState();
+  const isLine = eligibleFindings(interpretation).includes(finding)
+    || interpretation!.data.verdict.steps.some((step) => findingAt(interpretation!, step.leadIndex) === finding);
+  const kept = keptRows(finding.type, [finding], isLine ? [example.finding.id] : [], { density: widgetDensity, appModel });
+  expect(screen.queryByRole('button', { name: /show evidence/i })).toBeNull();
+  const controls = screen.queryAllByRole('button', { name: /hide evidence/i });
+  let panel: HTMLElement | null = container;
+  if (isLine) {
+    expect(controls).toHaveLength(kept.length > 0 ? 1 : 0);
+    if (kept.length === 0) return;
+    panel = container.querySelector<HTMLElement>(`[id="${controls[0].getAttribute('aria-controls')}"]`);
+    expect(panel).not.toBeNull();
+  } else {
+    expect(kept.length).toBeGreaterThan(0);
+    expect(controls).toHaveLength(0);
+  }
+  await within(panel!).findByRole('heading', { level: 3 }, { timeout: 10_000 });
+  expect(showsEvidence(panel!)).toBe(true);
 });
 
 test('says so when the run has no such finding', () => {
