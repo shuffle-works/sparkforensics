@@ -41,9 +41,9 @@ rendered output and correct it afterwards:
 - `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
   `innerText`, `innerHTML`, `getComputedStyle` in `src/view/`.
 - `no-hidden-after-render`: `hidden={flag}`, `display: none` styles, a
-  conditional `hidden` or `invisible` class (in any quote style, with or
-  without the `!` important modifier, or as a `cn({ hidden: flag })` key) and
-  `has-[...]:hidden` in `src/`.
+  conditional `hidden` or `invisible` class token in a class list (in any
+  quote style or template, with or without the `!` important modifier, or as a
+  `cn({ hidden: flag })` key) and `has-[...]:hidden` in `src/`.
 - `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
   widgets, `WidgetCard`, `WidgetGrid` and `InlineEvidence`.
 - `content-check-is-pure`: a content check that imports React, the store or a

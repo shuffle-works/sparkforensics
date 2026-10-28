@@ -14,6 +14,10 @@ valid:
   - "const state = { hidden: false };"
   - "const label = band === 'hidden' ? 'Hidden' : 'Shown';"
   - "const note = muted > 0 ? `${count} findings, info notes hidden` : `${count} findings`;"
+  - "<p>{muted > 0 ? 'info notes hidden' : 'all shown'}</p>"
+  - "<div className={cn('hidden sm:block', compact && 'pt-2')} />"
+  - "<div className={cn('data-[state=closed]:hidden', compact && 'pt-2')} />"
+  - "<div className={open ? `${base} data-[state=closed]:hidden` : base} />"
 invalid:
   # The real shapes: the flat panel and the table row hidden by the flag the probe set.
   - |
@@ -39,6 +43,14 @@ invalid:
   - "<div className={cn('pt-2', blank && '!invisible')} />"
   - "<div className={cn('pt-2', { 'hidden!': blank })} />"
   - "<div className={cn('pt-2', { '!invisible': blank })} />"
+  - "<div className={blank ? `${base} hidden` : base} />"
+  - "<div className={blank ? `pt-2 ${'x'} hidden` : 'pt-2'} />"
+  - "<div className={blank ? `hidden! ${base}` : base} />"
+  - "<div className={`${base} ${blank ? 'invisible' : ''}`} />"
+  - "<div className={cn('pt-2', blank && 'hidden [&>p]:pt-1')} />"
+  - "<div className={cn('pt-2', { 'hidden [&>p]:pt-1': blank })} />"
+  - "const rowClass = blank ? 'hidden' : 'table-row';"
+  - "const props = { className: blank ? 'pt-2 invisible' : 'pt-2' };"
   - "<div style={{ display: blank ? 'none' : undefined }} />"
   - "<div style={{ display: 'none' }} />"
   - "element.hidden = blank;"

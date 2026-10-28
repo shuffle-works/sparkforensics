@@ -8,6 +8,29 @@ note: |
   rendered keeps its effects and route targets alive. `hidden` stays for content that must remain
   in the DOM, such as an inactive tab panel: suppress it with `// ast-grep-ignore: no-hidden-after-render`
   and a reason on the line above.
+utils:
+  # A value that ends up in a class list: a className attribute or property, a cn/clsx call, or a
+  # variable named for a class.
+  in-class-list:
+    inside:
+      stopBy: end
+      any:
+        - kind: jsx_attribute
+          has:
+            kind: property_identifier
+            regex: ^(className|class)$
+        - kind: pair
+          has:
+            field: key
+            regex: ^['"`]?className['"`]?$
+        - kind: call_expression
+          has:
+            field: function
+            regex: ^(cn|clsx)$
+        - kind: variable_declarator
+          has:
+            field: name
+            regex: (?i)class
 rule:
   any:
     # hidden={flag}
@@ -36,21 +59,22 @@ rule:
       regex: has-\[.*\]:(hidden|invisible)
     - kind: template_string
       regex: has-\[.*\]:(hidden|invisible)
-    # className={flag ? 'hidden' : '...'}, cn('pt-2', flag && "invisible"), `${flag ? `hidden` : ''}`
+    # className={flag ? 'hidden' : '...'}, cn('pt-2', flag && "invisible"), `${base} ${flag ? 'hidden!' : ''}`
     - any:
         - kind: string
         - kind: template_string
-      regex: ^['"`]([\w:/.\[\]!-]+\s+)*!?(hidden|invisible)!?(\s+[\w:/.\[\]!-]+)*['"`]$
+      regex: (^['"`]|\s|\})!?(hidden|invisible)!?(['"`]$|\s|\$\{)
       inside:
         any:
           - kind: ternary_expression
           - pattern: $FLAG && $CLASS
           - pattern: $FLAG || $CLASS
+      matches: in-class-list
     # cn('pt-2', { hidden: flag })
     - kind: pair
       has:
         field: key
-        regex: ^['"`]?([\w:/.\[\]!-]+\s+)*!?(hidden|invisible)!?(\s+[\w:/.\[\]!-]+)*['"`]?$
+        regex: (^['"`]?|\s)!?(hidden|invisible)!?(['"`]?$|\s)
       inside:
         stopBy: end
         kind: call_expression
