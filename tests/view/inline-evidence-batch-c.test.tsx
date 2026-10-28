@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ComponentType } from 'react';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingType } from '@sparkforensics/core/types.ts';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
@@ -20,6 +20,7 @@ import { PythonUdf } from '@/view/widgets/PythonUdf';
 import { SmallFiles } from '@/view/widgets/SmallFiles';
 import { UnderBroadcast } from '@/view/widgets/UnderBroadcast';
 import { installInterpretation } from './_shared/interpretation';
+import { keptRows } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';
 
 type CatalogWidget = ComponentType<{ catalog: Finding[]; defaultCollapsed?: boolean }>;
@@ -51,6 +52,8 @@ const SQL_WIDGETS: Array<{ name: string; Widget: CatalogWidget; type: string; ex
   },
 ];
 
+const UNSTATED = new Set(['pythonUdf', 'underBroadcast', 'overBroadcast', 'duplicatePlanSubtree']);
+
 describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra }) => {
   const make = (id: string, stageId: number): Finding =>
     testFinding({
@@ -59,7 +62,14 @@ describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra 
     } as never) as Finding;
   const row = (id: string) => (extra ? new RegExp(`${extra.rootName}`) : new RegExp(`Measured ${id} sentence`));
 
-  it('drops the stage pills and the sentence of the stated finding only', () => {
+  // These widgets' rows are only what the line above states, so a stated finding keeps no row.
+  it.skipIf(!UNSTATED.has(type))('keeps no row for the stated finding', () => {
+    const [a, b] = [make('a', 11), make('b', 22)];
+    expect(keptRows(type as FindingType, [a, b], ['a'])).toEqual([b]);
+    expect(keptRows(type as FindingType, [a, b], ['a', 'b'])).toEqual([]);
+  });
+
+  it.skipIf(UNSTATED.has(type))('drops the stage pills and the sentence of the stated finding only', () => {
     const [a, b] = [make('a', 11), make('b', 22)];
     installInterpretation([a, b]);
     renderIn(<Widget catalog={[a, b]} defaultCollapsed={false} />, ['a']);

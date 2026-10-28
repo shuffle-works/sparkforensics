@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CircleX, CopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import type { AnyEvidencePanel } from '@/view/evidence-panel';
 import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
 import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
@@ -13,8 +14,8 @@ import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
-import { useEvidenceOpen } from '@/view/InlineEvidence';
-import { StepCode } from '@/view/StepCode';
+import { useEvidenceOpen, useRouteLanding } from '@/view/InlineEvidence';
+import { StepCode, useStepCodesShown } from '@/view/StepCode';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 
@@ -27,9 +28,11 @@ export interface RunVerdictProps {
   onShowMoreFindings: () => void;
   /** How many findings the Findings tab lists under "More findings". */
   moreFindingsCount?: number;
-  /** The step's evidence panel for a widget, or null when the widget has no card to show.
-   * `lead` is the step's finding, which the step already states. */
-  renderEvidence?: (widgetId: string, lead: Finding) => ReactNode;
+  /** The evidence panel a widget shows for a step's lead finding, which the step already states,
+   * or null when the widget has nothing to show beyond the step. */
+  evidencePanel?: (widgetId: string, lead: Finding) => AnyEvidencePanel | null;
+  /** The card that shows `panel` in place. */
+  renderEvidence?: (panel: AnyEvidencePanel) => ReactNode;
   /** Step index to the widget whose evidence renders inside that step. */
   evidenceOwners?: ReadonlyMap<number, string>;
 }
@@ -62,7 +65,14 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
 /** The verdict step's small bordered actions; the first step's evidence button is the soft primary. */
 const STEP_ACTION = 'h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent';
 
-function NextStepItem({
+/** What a step shows in place of its widget's card. A `panel` step has evidence to show and offers
+ * the control for it. A `bare` step has nothing beyond the step line: no control, and a route to
+ * it lands on the step. No evidence at all (null) means the step routes to the widget's card. */
+export type StepEvidence =
+  | { kind: 'panel'; widgetId: string; panel: AnyEvidencePanel; card: ReactNode }
+  | { kind: 'bare'; widgetId: string };
+
+export function NextStepItem({
   step,
   finding,
   interpretation,
@@ -76,11 +86,16 @@ function NextStepItem({
   interpretation: InterpretationState;
   index: number;
   onRoute: (target: TriageTarget) => void;
-  /** The card this step shows in place, when it owns one. */
-  evidence: { widgetId: string; card: ReactNode } | null;
+  evidence: StepEvidence | null;
 }) {
   const { openStage } = useStageDetail();
   const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null, [finding]);
+  const bare = evidence?.kind === 'bare';
+  const shown = evidence?.kind === 'panel' ? evidence : null;
+  const scope = useMemo(() => [finding], [finding]);
+  const stepRef = useRef<HTMLLIElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useRouteLanding(evidence?.kind === 'bare' ? evidence.widgetId : null, scope, stepRef, titleRef);
   const evidenceId = `next-step-${index}-evidence`;
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
@@ -88,17 +103,24 @@ function NextStepItem({
   const meaning = savings?.meaning ?? null;
   const titleId = `next-step-${index}-title`;
   const advanced = useWidgetDensity() === 'advanced';
+  const codeShown = useStepCodesShown();
   const provenance = advanced ? (savings?.provenance ?? null) : null;
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
-    <li className="verdict-step" data-testid="next-step" aria-labelledby={titleId}>
+    <li ref={stepRef} className={cn('verdict-step', !codeShown && 'verdict-step--plain')} data-testid="next-step" aria-labelledby={titleId}>
       {/* The step code (F1, F2, ...) also marks this step's Findings row, its
           bar on the stage strip and its Stage Summary row. */}
       <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 [overflow-wrap:anywhere]">
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
-        <h3 id={titleId} className="text-[0.9375rem] font-semibold">
+        <h3
+          ref={titleRef}
+          id={titleId}
+          tabIndex={bare ? -1 : undefined}
+          data-shortcut-target={bare ? '' : undefined}
+          className={cn('text-[0.9375rem] font-semibold', bare && 'rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring')}
+        >
           {findingActionLabel(finding)}
           {step.stageId != null ? (
             <>
@@ -155,16 +177,16 @@ function NextStepItem({
             Also flagged here, likely the same cause: {step.relatedTypes.map(findingName).join(', ')}.
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-1 pt-1">
+        {bare ? null : <div className="flex flex-wrap items-center gap-1 pt-1">
           <Button
             size="sm"
             variant={index === 0 ? 'soft' : 'outline'}
             className={cn(STEP_ACTION, index === 0 && 'border-transparent bg-accent-soft dark:bg-accent-soft')}
             data-shortcut-target
-            aria-expanded={evidence ? evidenceState.open : undefined}
-            aria-controls={evidence ? evidenceId : undefined}
+            aria-expanded={shown ? evidenceState.open : undefined}
+            aria-controls={shown ? evidenceId : undefined}
             onClick={() => {
-              if (evidence) {
+              if (shown) {
                 evidenceState.toggle();
                 return;
               }
@@ -173,15 +195,15 @@ function NextStepItem({
               if (target) onRoute(target);
             }}
           >
-            {evidence && evidenceState.open ? 'Hide evidence' : 'Show evidence'}
-            {evidence ? (
+            {shown && evidenceState.open ? 'Hide evidence' : 'Show evidence'}
+            {shown ? (
               evidenceState.open ? <ChevronUpIcon aria-hidden="true" /> : <ChevronDownIcon aria-hidden="true" />
             ) : (
               <ArrowRight aria-hidden="true" />
             )}
           </Button>
-        </div>
-        {evidence && evidenceState.open ? <div id={evidenceId} className="pt-2">{evidence.card}</div> : null}
+        </div>}
+        {shown && evidenceState.open ? <div id={evidenceId} className="pt-2">{shown.card}</div> : null}
       </div>
     </li>
   );
@@ -300,16 +322,17 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, renderEvidence, evidenceOwners }: RunVerdictProps) {
+export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, evidencePanel, renderEvidence, evidenceOwners }: RunVerdictProps) {
   const { title, summary, failed, clean, failureReason, copyText, idleLine } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
-  const evidenceFor = (index: number, lead: Finding) => {
+  const evidenceFor = (index: number, lead: Finding): StepEvidence | null => {
     const widgetId = evidenceOwners?.get(index);
-    const card = widgetId ? renderEvidence?.(widgetId, lead) : null;
-    return widgetId && card ? { widgetId, card } : null;
+    if (!widgetId || !evidencePanel) return null;
+    const panel = evidencePanel(widgetId, lead);
+    return panel ? { kind: 'panel', widgetId, panel, card: renderEvidence?.(panel) } : { kind: 'bare', widgetId };
   };
 
   return (

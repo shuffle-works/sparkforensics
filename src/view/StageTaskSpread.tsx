@@ -10,7 +10,8 @@ import { useLiveTaskData } from '@/view/useLiveTaskData';
 /** A stage's task duration spread: the P50/P95/Max line and a "Task detail" disclosure that
  * fetches the stage's tasks and draws their duration histogram. `between` renders between the
  * line and the disclosure, `children` inside the disclosure under the histogram. `p50Stated`
- * drops the P50 figure when the line above states it. */
+ * drops the P50 figure when the line above states it. An exported report carries no task data, so
+ * its disclosure exists only when `children` give it something to show. */
 export function StageTaskSpread({
   stageId,
   appModel,
@@ -45,7 +46,9 @@ export function StageTaskSpread({
         </p>
       ) : null}
       {between}
-      <ExpandToggleButton expanded={expanded} onClick={toggle} label="Task detail" location={`Stage ${stageId}`} controlsId={detailId} />
+      {liveGetTaskData || children ? (
+        <ExpandToggleButton expanded={expanded} onClick={toggle} label="Task detail" location={`Stage ${stageId}`} controlsId={detailId} />
+      ) : null}
       {expanded ? (
         <div id={detailId} className="space-y-3 pt-1">
           {taskData ? (

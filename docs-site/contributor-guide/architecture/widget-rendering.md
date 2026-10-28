@@ -65,7 +65,9 @@ sites (`ShuffleIO.tsx`, `PartitionSizing.tsx`, `Spill.tsx`, and the shared
 each Advanced-density only and only when the stage's plan tree resolves.
 The first three have no row-expansion toggle, so the trigger renders as a
 direct sibling in the row body; `StageFindingGroup.tsx` renders it inside
-the expanded Task detail. The same stage's plan is also reachable from `StageDetailDialog`.
+the expanded Task detail. In an HTML export, which carries no task data, that
+toggle remains only for the stage plan it holds. The same stage's plan is also
+reachable from `StageDetailDialog`.
 
 Plan detection logic belongs in a `packages/core/src/detectors.ts` entry (`scope:'sql'`)
 consuming `planTree`. `packages/core/src/plan-summary.ts` is display-only summarization; do

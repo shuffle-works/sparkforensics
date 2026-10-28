@@ -17,7 +17,7 @@ export interface DetectorRecord {
   pages: { catalog: string; guide: string };
   tuning: { kind: 'page' | 'shared' | 'section' | 'chapter'; anchor: string; path: string } | null;
   gate: { cliFlag: string; airflowParam: string } | null;
-  example: { source: 'corpus' | 'fixture' | 'synthetic'; log: string; finding: Record<string, any> };
+  example: { source: 'corpus' | 'fixture' | 'synthetic'; log: string; finding: { id: string; type: string } };
   surfaces: {
     mcp: { listCall: unknown; listResponse: unknown; docsCall: unknown; docsResponse: unknown };
     cli: { detectorsCommand: string; detectorsOutput: string; filterCommand: string; budgetCommand: string | null };
@@ -32,6 +32,12 @@ export interface DetectorData {
 /** A catalog path ("docs/user-guide/x.html#a", relative to the site root) as a docs-site link. */
 export function siteHref(path: string): string {
   return withBase(`/${path.replace(/^docs\//, '')}`);
+}
+
+/** The frame source for a type's example: the example app (docs-widget.html, built by
+ * `npm run build:docs-widget`) reads `?type` to pick the finding and its run. */
+export function exampleFrameSrc(type: string): string {
+  return withBase(`/detector-widget/app/docs-widget.html?type=${type}`);
 }
 
 /** The dashboard words a finding name in lowercase; headings and cards start it with a capital. */

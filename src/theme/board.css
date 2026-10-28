@@ -78,6 +78,15 @@
   .verdict-step__save-figure { font-size: 13px; }
 }
 
+/* No step code (see StepCodesShownContext): the title, the savings and the body use the freed column. */
+.verdict-step--plain { grid-template-columns: minmax(0, 1fr) auto; }
+.verdict-step--plain .verdict-step__body { grid-column: 1; }
+.verdict-step--plain .verdict-step__save { grid-column: 2; }
+@media (max-width: 639.98px) {
+  .verdict-step--plain { grid-template-columns: minmax(0, 1fr); }
+  .verdict-step--plain .verdict-step__save { grid-column: 1; }
+}
+
 /* Metric tiles: unit beside a big mono figure, smaller and muted. */
 .kpi-value small { margin-left: 1px; font-size: 1rem; font-weight: 500; color: var(--text-muted); }
 

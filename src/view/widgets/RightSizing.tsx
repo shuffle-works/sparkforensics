@@ -2,7 +2,6 @@ import { memo, useMemo, useState } from 'react';
 
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
-import { useWidgetDensity } from '@/store/store';
 import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { RowPagination } from '@/view/RowPagination';
@@ -22,9 +21,6 @@ function RightSizingRow({ finding }: { finding: FindingOf<'rightSizing'> }) {
   const anchor = useAnchoredRow([finding]);
   const { value, observedCores, observedActiveMs, modeledActiveMs, modelErrorPct } = finding;
   const stated = useStatedAbove(finding);
-  const advanced = useWidgetDensity() === 'advanced';
-  // The line above states the core counts and both durations; only the model error is new.
-  if (stated && !advanced) return null;
 
   return (
     <div

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, formatDuration, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { useWidgetDensity } from '@/store/store';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { StagePill } from '@/view/StagePill';
@@ -36,9 +35,6 @@ function retryWasteAdvancedExtension(f: FindingOf<'retryWaste'>): string {
 function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
-  const advanced = useWidgetDensity() === 'advanced';
-  // The line above states the wasted time, so only the Advanced extension remains.
-  if (stated && !(advanced && finding.extended)) return null;
   return (
     <li
       ref={anchor.ref}

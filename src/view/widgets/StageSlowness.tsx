@@ -25,8 +25,6 @@ function metricLabel(f: Finding): string {
 function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
-  // The line above an evidence panel states the stage duration and the stage, so only the stage's name is left.
-  if (stated && !(finding.stageId != null && appModel.stages.get(finding.stageId)?.name)) return null;
   return (
     <li
       ref={anchor.ref}

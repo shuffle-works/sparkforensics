@@ -9,7 +9,8 @@ import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from 
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
-import { InlineEvidence } from '@/view/InlineEvidence';
+import type { AnyEvidencePanel } from '@/view/evidence-panel';
+import { evidencePanelOf, InlineEvidence } from '@/view/InlineEvidence';
 import { verdictEvidenceOwners, verdictLeadFindings } from '@/view/verdict-evidence';
 import { computeActiveWidgets, SUGGESTED_IMPROVEMENTS_ANCHOR_ID } from '@/view/widgets/Alerts';
 import {
@@ -163,11 +164,17 @@ function FilteredBoard({
     [interpretation, evidenceWidgets],
   );
   const verdictWidgetIds = useMemo(() => new Set(evidenceOwners.values()), [evidenceOwners]);
-  const renderVerdictEvidence = useCallback((widgetId: string, lead: Finding) => {
+  // A step states its own finding, so its panel shows only what the step line leaves out, or
+  // nothing: no panel, and the step offers no evidence control.
+  const verdictPanel = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
     const scope = verdictScopes.get(lead) ?? [lead];
-    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={scope} scope={scope} /> : null;
-  }, [evidenceWidgets, verdictScopes, appModel, catalog, configFindings, getTaskData, activeFileId]);
+    return evidencePanelOf(widget, appModel, scope, scope, density);
+  }, [evidenceWidgets, verdictScopes, appModel, density]);
+  const renderVerdictEvidence = useCallback((panel: AnyEvidencePanel) => {
+    const widget = evidenceWidgets.find((candidate) => candidate.type === panel.type);
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={panel.rows} panel={panel} /> : null;
+  }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');
     requestAnimationFrame(() => {
@@ -265,6 +272,7 @@ function FilteredBoard({
           onShowMoreFindings={showMoreFindings}
           moreFindingsCount={listedCount}
           evidenceOwners={evidenceOwners}
+          evidencePanel={verdictPanel}
           renderEvidence={renderVerdictEvidence}
         /> : null}
       {interpretation ? <Scorecard interpretation={interpretation.data} catalog={filteredCatalog} /> : null}

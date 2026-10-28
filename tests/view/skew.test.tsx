@@ -237,7 +237,7 @@ describe('Skew', () => {
     expect(await screen.findByText(/task data unavailable/i)).toBeInTheDocument();
   });
 
-  it('shows an honest export-mode message instead of fetching task data', async () => {
+  it('offers no task detail in an export, which carries no task data', async () => {
     const user = userEvent.setup();
     const appModel = makeAppModel([1]);
     const catalog = [skewFinding(1, 8)];
@@ -246,9 +246,8 @@ describe('Skew', () => {
 
     render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);
     await user.click(screen.getByRole('button', { name: /^task skew$/i }));
-    await user.click(screen.getByRole('button', { name: /show task detail for stage 1/i }));
 
-    expect(await screen.findByText(/isn.t included in exported reports/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /task detail/i })).toBeNull();
     expect(getTaskData).not.toHaveBeenCalled();
     store.setState({ exportMode: false });
   });

@@ -307,8 +307,15 @@ The docs site's `/docs/detectors/` pages are generated from the catalog by
 [Generated and vendored files](../development-setup.md#generated-and-vendored-files)).
 Every output a page shows is captured from a real run during the script: an
 in-memory `list_detectors` and `get_finding_documentation` call, and
-`runDetectorsCommand(['--type', type, '--format', 'md'])`. The finding card comes
-from `dev/detector-examples.json`, described in
-[Detector examples](../testing.md#detector-examples). Adding a finding type adds
+`runDetectorsCommand(['--type', type, '--format', 'md'])`. The example finding is
+the dashboard's own widget in a frame: `dev/detector-examples.json` names the
+finding and `dev/detector-example-runs.json` holds its run, described in
+[Detector examples](../testing.md#detector-examples). The frame is the example
+app (`docs-widget.html`, `src/docs-widget/`), built from the HTML export's graph
+and guard. It draws the finding as the dashboard does, as a verdict step when
+the run's verdict leads with it and as a Findings row otherwise, with its
+evidence panel open, and without the "Next step" header or the step labels
+(`StepCodesShownContext`) that tie a step to the rest of the dashboard. It follows the docs page's theme and
+reports its height to the page. Adding a finding type adds
 its page; the type needs a `FINDING_PRESENTATION` row with a `pitch` and
 `family`, and `tests/detector-pages.test.js` fails until a log fires it.

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { HEIGHT_MESSAGE } from '../../../src/docs-widget/host';
 import data from '../detectors-data.json';
-import { FIX_EFFORT_LABEL, SCOPE_LABEL, sentenceCase, siteHref, type DetectorData } from './detectors';
+import { FIX_EFFORT_LABEL, SCOPE_LABEL, exampleFrameSrc, sentenceCase, siteHref, type DetectorData } from './detectors';
 
 const props = defineProps<{ type: string }>();
 
@@ -12,22 +13,23 @@ const sharedWith = computed(() =>
   r.value.tagSharedWith.map((t) => records.find((x) => x.type === t)).filter((x) => x !== undefined),
 );
 
-const example = computed(() => r.value.example);
-const finding = computed(() => example.value.finding);
+// The example is the dashboard's own widget in a frame (docs-widget.html). The frame reports its
+// content height; until it does, it holds room for a typical card.
+const frame = ref<HTMLIFrameElement | null>(null);
+const frameHeight = ref(480);
+function onFrameMessage(event: MessageEvent) {
+  if (event.source !== frame.value?.contentWindow || event.data?.type !== HEIGHT_MESSAGE) return;
+  frameHeight.value = event.data.height;
+}
+onMounted(() => window.addEventListener('message', onFrameMessage));
+onBeforeUnmount(() => window.removeEventListener('message', onFrameMessage));
 
-// Compact text for an evidence value: scalars as is, structures as short JSON.
-function evidenceText(value: unknown): string {
+// Compact text for a threshold value: scalars as is, structures as short JSON.
+function thresholdText(value: unknown): string {
   if (value === null || value === undefined) return 'none';
   if (typeof value !== 'object') return String(value);
   const text = JSON.stringify(value);
   return text.length > 140 ? `${text.slice(0, 137)}...` : text;
-}
-const evidenceRows = computed(() => Object.entries(finding.value.evidence ?? {}).map(([k, v]) => [k, evidenceText(v)]));
-
-function remediationText(step: Record<string, unknown>): string {
-  if (step.kind === 'code') return String(step.hint);
-  const suggested = step.suggested === null || step.suggested === undefined ? '' : ` to ${String(step.suggested)}`;
-  return `${String(step.direction)} ${String(step.key)}${suggested}`;
 }
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
@@ -72,31 +74,17 @@ const airflowSnippet = computed(() => {
       </dl>
     </header>
 
-    <!-- Finding card, built from the real example finding. -->
+    <!-- The dashboard's own widget for the example finding, in a frame. -->
     <section class="det-section" aria-labelledby="det-example">
       <h2 id="det-example">An example finding</h2>
-      <article class="det-finding" :data-band="finding.impactBand">
-        <header class="det-finding-head">
-          <span class="det-dot" :data-band="finding.impactBand" aria-hidden="true"></span>
-          <span class="sf-chip">{{ finding.tag }}</span>
-          <strong class="det-finding-name">{{ finding.name }}</strong>
-          <span class="det-band">{{ finding.impactBand }}</span>
-          <span v-if="finding.stageId !== undefined && finding.stageId !== null" class="det-stage">Stage {{ finding.stageId }}</span>
-        </header>
-        <p class="det-reco">{{ finding.recommendation }}</p>
-        <p class="det-impact">
-          <template v-if="finding.impact"><strong>Impact</strong> {{ finding.impact }} {{ finding.impactMeaning }}
-          <span class="det-sep">·</span> </template><strong>Confidence</strong> {{ finding.confidence ?? 'not rated' }}
-        </p>
-        <p v-if="finding.estimateProvenance" class="det-small">{{ finding.estimateProvenance }}</p>
-        <p v-if="finding.validationRequired" class="det-small">{{ finding.validationRequired }}</p>
-        <ul v-if="finding.remediation?.length" class="det-fix">
-          <li v-for="(step, i) in finding.remediation" :key="i">{{ finding.actionLabel }}: {{ remediationText(step) }}</li>
-        </ul>
-        <dl v-if="evidenceRows.length" class="det-evidence">
-          <template v-for="[key, value] in evidenceRows" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></template>
-        </dl>
-      </article>
+      <iframe
+        ref="frame"
+        class="det-example"
+        :src="exampleFrameSrc(r.type)"
+        :style="{ height: `${frameHeight}px` }"
+        title="Example finding, as the dashboard shows it"
+        loading="lazy"
+      ></iframe>
     </section>
 
     <!-- The four surfaces, each with output captured from a real run. -->
@@ -167,7 +155,7 @@ const airflowSnippet = computed(() => {
           <table>
             <thead><tr><th>Threshold</th><th>Default</th></tr></thead>
             <tbody>
-              <tr v-for="(value, name) in d.thresholds" :key="name"><td><code>{{ name }}</code></td><td>{{ evidenceText(value) }}</td></tr>
+              <tr v-for="(value, name) in d.thresholds" :key="name"><td><code>{{ name }}</code></td><td>{{ thresholdText(value) }}</td></tr>
               <tr v-if="Object.keys(d.thresholds).length === 0"><td colspan="2">No thresholds.</td></tr>
             </tbody>
           </table>
@@ -216,28 +204,7 @@ const airflowSnippet = computed(() => {
 .det-label { margin: 14px 0 4px; font-size: 13px; color: var(--sf-muted); }
 .det-small { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--sf-muted); }
 
-.det-finding { border: 1px solid var(--sf-rule); border-left: 3px solid var(--sf-muted); border-radius: 6px; background: var(--sf-panel); padding: 14px 18px 16px; }
-.det-finding[data-band='critical'] { border-left-color: var(--sf-critical); }
-.det-finding[data-band='warning'] { border-left-color: var(--sf-warning); }
-.det-finding[data-band='info'] { border-left-color: var(--sf-info); }
-.det-finding-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.det-finding-name { font-size: 16px; }
-.det-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sf-muted); flex: none; }
-.det-dot[data-band='critical'] { background: var(--sf-critical); }
-.det-dot[data-band='warning'] { background: var(--sf-warning); }
-.det-dot[data-band='info'] { background: var(--sf-info); }
-.det-band { font-family: var(--vp-font-family-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sf-muted); }
-.det-stage { margin-left: auto; font-family: var(--vp-font-family-mono); font-size: 12px; color: var(--sf-muted); }
-.det-reco { margin: 12px 0 8px; line-height: 1.55; }
-.det-impact { margin: 0; font-size: 14px; }
-.det-sep { margin: 0 6px; color: var(--sf-muted); }
-.det-fix { margin: 10px 0 0; padding-left: 18px; font-size: 14px; }
-.det-evidence {
-  display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 14px 0 0; padding-top: 12px;
-  border-top: 1px solid var(--sf-rule-soft); font-size: 13px;
-}
-.det-evidence dt { font-family: var(--vp-font-family-mono); color: var(--sf-muted); }
-.det-evidence dd { margin: 0; overflow-wrap: anywhere; font-family: var(--vp-font-family-mono); }
+.det-example { display: block; width: 100%; max-width: 100%; margin-top: 12px; border: 0; }
 
 .det-code {
   margin: 6px 0 10px; padding: 12px 16px; overflow-x: auto; border: 1px solid var(--sf-rule); border-radius: 6px;
@@ -251,8 +218,5 @@ const airflowSnippet = computed(() => {
 @media (max-width: 640px) {
   .det-title h1 { font-size: 26px; }
   .det-standfirst { font-size: 16px; }
-  .det-finding { padding: 12px 14px 14px; }
-  .det-evidence { grid-template-columns: 1fr; gap: 0; }
-  .det-evidence dd { margin-bottom: 6px; }
 }
 </style>

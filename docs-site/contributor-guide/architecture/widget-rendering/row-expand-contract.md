@@ -173,6 +173,27 @@ routing" in [investigation-routing](./investigation-routing.md)).
   evidence" button on the sample run and the public fixtures, in the default
   view and with info shown, and fails on a panel with nothing under its heading
   besides its stage chip, stage name and call site (`data-panel-identity`).
+- A step or row whose widget has nothing to show beyond the line above offers
+  no evidence control and no panel. The decision is data, never a render. Every
+  `REGISTRY` entry has a typed `content: ContentCheck<T>`
+  (`src/view/evidence-panel.ts`) that takes the findings, the stated ids, the
+  density and the `appModel` and returns the rows the panel shows; a missing
+  check is a compile error. A check that keeps every row is `allRows`; a widget
+  whose rows are only the stated figure uses `unstatedRows`; any other lives in
+  `<Widget>.content.ts` beside the lazy-loaded widget (`RetryWaste.content.ts`,
+  `RightSizing.content.ts`, `StageSlowness.content.ts`). `evidencePanelFor`
+  (`detector-registry.tsx`) turns the check into an `EvidencePanel`, a branded
+  value that is null when no row is kept. The verdict step, the Findings row and
+  the group row take the panel from `evidencePanelOf` / `useEvidencePanel`
+  (`InlineEvidence.tsx`), which follows the density; the evidence control, the
+  panel row and `InlineEvidence` accept only that value, and the widget renders
+  only `panel.rows`, so the check and the panel are one decision. A route to a
+  finding with no panel still lands: the step or row registers through
+  `useRouteLanding`, and the route scrolls to it and focuses its title or label.
+  `tests/view/evidence-panel-types.test.ts` holds the `@ts-expect-error` cases,
+  and `tests/view/evidence-check.test.tsx` renders every panel the checks keep
+  for every finding of every example run, in both densities, and fails on one
+  that shows nothing under its title.
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

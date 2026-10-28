@@ -24,6 +24,7 @@ import { StageSlowness } from '@/view/widgets/StageSlowness';
 import { Straggler } from '@/view/widgets/Straggler';
 import { TinyTask } from '@/view/widgets/TinyTask';
 import { installInterpretation } from './_shared/interpretation';
+import { keptRows } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';
 
 const MB = 1024 * 1024;
@@ -233,9 +234,12 @@ describe('StageSlowness in an evidence panel', () => {
     expect(screen.getByText('map at A.scala:1')).toBeInTheDocument();
   });
 
-  it('renders no row for a stated finding on a stage with no name', () => {
-    const { container } = run(['a'], { 1: {}, 2: { name: 'map at B.scala:2' } } as never);
-    expect(container.querySelectorAll('li')).toHaveLength(1);
+  it('keeps no row for a stated finding on a stage with no name', () => {
+    const [a, b] = [make('a', 1, 20), make('b', 2, 30)];
+    const appModel = appModelOf({ 1: {}, 2: { name: 'map at B.scala:2' } });
+    expect(keptRows('stageSlowness', [a, b], ['a'], { appModel })).toEqual([b]);
+    // A stated finding on a stage with a name keeps its row: the name is what the line above lacks.
+    expect(keptRows('stageSlowness', [a, b], ['a'], { appModel: appModelOf(stages) })).toEqual([a, b]);
   });
 
   it('keeps everything outside a panel', () => {

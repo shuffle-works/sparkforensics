@@ -20,7 +20,8 @@ The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
 says what the finding measured and what to try, and has a
 **Show evidence** button that opens the finding's detail widget in place,
-under the step, without repeating the stage, savings or figures the step already shows. Findings
+under the step, without repeating the stage, savings or figures the step already shows. A step
+whose widget has nothing to add to that line has no **Show evidence** button. Findings
 on the same stage are folded into one step, because they usually share a
 cause and their savings overlap rather than add up. Each savings figure says
 what it counts: a time such as "58.6s of run time" is how much sooner the run
@@ -69,7 +70,8 @@ Below it, two tabs split the rest of the board:
    row when it fires more than once; clicking the summary row expands its
    full list. Each row has one **Show evidence** button that opens its
    detail widget (the chart and per-stage numbers behind it) in place,
-   showing only that row's findings. A row inside an expanded summary row
+   showing only that row's findings. A row whose widget has nothing to add
+   to the row's own line has no button. A row inside an expanded summary row
    opens the summary row's panel. Widgets that found nothing fold away into a "Clean checks"
    disclosure. A check the log lacked the data for is listed there under
    **Not checked on this log**, not as a pass, with the reason and the

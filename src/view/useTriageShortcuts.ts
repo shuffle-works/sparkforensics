@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 
 /** Every focusable finding control on the Findings tab, in reading order:
- * the verdict's per-step "Show evidence" buttons, then each band's
- * recommendation rows (single findings and type groups). */
+ * the verdict's per-step "Show evidence" buttons (or a bare step's title),
+ * then each band's recommendation rows (single findings and type groups). */
 const FINDING_CONTROL_SELECTOR = [
   '[data-testid="next-step"] [data-shortcut-target]',
-  '[data-testid="fix-these-first-row"] button[data-shortcut-target]',
+  '[data-testid="fix-these-first-row"] [data-shortcut-target]',
   '[data-testid="fix-these-first-group-row"] button[data-shortcut-target]',
 ].join(', ');
 

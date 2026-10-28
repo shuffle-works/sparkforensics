@@ -53,6 +53,8 @@ export interface ActiveWidget {
   index: number;
   findings: Finding[];
   impactBand: Finding['impactBand'];
+  /** The widget's finding type, for `evidencePanelFor`. */
+  type: string;
 }
 
 /** Every `REGISTRY` component except the always-mounted one(s), ranked by
@@ -71,7 +73,7 @@ export function computeActiveWidgets(
     .filter(({ type }) => !isAlwaysMountedType(type))
     .map(({ component, widgetId, type }, index) => {
       const findings = combined.filter((finding) => finding.type === type);
-      return { component, widgetId, index, findings, impactBand: worstImpactBand(findings) };
+      return { component, widgetId, type, index, findings, impactBand: worstImpactBand(findings) };
     });
 
   return componentWidgets

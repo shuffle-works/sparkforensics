@@ -4,7 +4,7 @@ import type { Finding } from '@sparkforensics/core/types.ts';
 import type { TriageTarget } from './triage-target';
 
 export interface WidgetRegistration {
-  wrapperElement: HTMLDivElement;
+  wrapperElement: HTMLElement;
   open: () => void;
   /** Returns the card's actual disclosure button (WidgetCard.tsx's
    * CollapsibleTrigger) when the card is collapsible, or null when it renders

@@ -94,12 +94,20 @@ function swapLiveOnlyModules(): Plugin {
 
 // `--mode guard` (tests/export-analysis-guard.test.ts) only bundles in memory
 // to run exportAnalysisGuard over the real graph: nothing is written or renamed.
+//
+// `--mode docs-widget` (run by `npm run docs:build`) builds the docs site's example app
+// (docs-widget.html): the same widgets and guard, as ordinary multi-file output under the docs
+// site's public folder, where the detector pages frame it. It is one app for every page, so the
+// chunks stay separate files.
+const DOCS_WIDGET_OUT_DIR = 'docs-site/public/detector-widget/app';
+
 export default defineConfig(({ mode }) => {
   const templateOnly = mode === 'template';
   const guardOnly = mode === 'guard';
+  const docsWidget = mode === 'docs-widget';
   return {
     base: './',
-    publicDir: templateOnly ? false : 'public',
+    publicDir: templateOnly || docsWidget ? false : 'public',
     plugins: [
       swapLiveOnlyModules(),
       react(),
@@ -112,20 +120,20 @@ export default defineConfig(({ mode }) => {
       // config/generateBundle hooks after the other plugins regardless of
       // array position; it's placed before renameExportEntry() to match the
       // pipeline order: bundle, inline, then rename+cleanup the final HTML.
-      viteSingleFile(),
+      ...(docsWidget ? [] : [viteSingleFile()]),
       // Fails the build when the graph reaches analysis or the live ingest path.
       exportAnalysisGuard(__dirname),
-      ...(guardOnly ? [] : [renameExportEntry(templateOnly)]),
+      ...(guardOnly || docsWidget ? [] : [renameExportEntry(templateOnly)]),
     ],
     resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
     build: {
-      outDir: templateOnly ? TEMPLATE_OUT_DIR : 'dist-export',
+      outDir: docsWidget ? DOCS_WIDGET_OUT_DIR : templateOnly ? TEMPLATE_OUT_DIR : 'dist-export',
       target: 'es2022',
       // No `manualChunks` here: vite-plugin-singlefile inlines the whole
       // bundle into one file (it also forces a single JS chunk via its
       // `config` hook), so per-vendor chunk splitting has no effect.
       rollupOptions: {
-        input: path.resolve(__dirname, 'index.export.html'),
+        input: path.resolve(__dirname, docsWidget ? 'docs-widget.html' : 'index.export.html'),
       },
     },
   };

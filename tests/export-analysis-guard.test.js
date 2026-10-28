@@ -27,6 +27,23 @@ describe('export analysis guard', () => {
     expect(moduleIds.filter((id) => exportModuleViolation(id) != null)).toEqual([]);
   }, 180_000);
 
+  it('the docs example app reaches only allowed core modules and no live-only module either', async () => {
+    let moduleIds = [];
+    // The build `npm run build:docs-widget` runs, bundled in memory.
+    await build({
+      root,
+      configFile: path.join(root, 'vite.export.config.ts'),
+      mode: 'docs-widget',
+      logLevel: 'silent',
+      build: { write: false },
+      plugins: [{ name: 'record-module-ids', buildEnd() { moduleIds = [...this.getModuleIds()].map(toRepoPath); } }],
+    });
+
+    expect(moduleIds).toContain('src/docs-widget/main.tsx');
+    expect(moduleIds).toContain('src/docs-widget/FindingExample.tsx');
+    expect(moduleIds.filter((id) => exportModuleViolation(id) != null)).toEqual([]);
+  }, 180_000);
+
   it('names each forbidden module with an importer chain back to the entry', () => {
     const abs = (repoPath) => path.join(root, repoPath);
     const importers = {
