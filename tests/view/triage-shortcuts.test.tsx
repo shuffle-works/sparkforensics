@@ -198,3 +198,50 @@ test('shortcuts work again once a Select popup has closed and stays mounted hidd
   await user.keyboard('2');
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
 });
+
+// Its widget has nothing to show beyond the step or row line, so neither offers an evidence control.
+const coldStart = {
+  type: 'coldStart', id: 'cold-1', impactBand: 'critical', value: 43,
+  recommendation: 'Keep a warm pool of idle executors.',
+  impactEstimate: { basis: 'serial', wallClock: { low: 40_000, high: 43_000 }, estimateMethod: 'measured' },
+} as Finding;
+
+// j walks down to `target`; one press of `away` leaves it and the opposite key comes back to it.
+async function walkThrough(target: Element, away: 'j' | 'k') {
+  const user = userEvent.setup();
+  const press = async (key: string) => {
+    const before = document.activeElement;
+    await user.keyboard(key);
+    await waitFor(() => expect(document.activeElement).not.toBe(before));
+  };
+  for (let presses = 0; presses < 8 && document.activeElement !== target; presses += 1) await press('j');
+  expect(document.activeElement).toBe(target);
+  await press(away);
+  await press(away === 'j' ? 'k' : 'j');
+  expect(document.activeElement).toBe(target);
+}
+
+test('in Advanced view, j and k reach a verdict step that offers no evidence control', async () => {
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [coldStart, ...catalog], configFindings: [], widgetDensity: 'advanced' });
+  render(<App />);
+  await screen.findByRole('tab', { name: 'Findings' });
+  const step = (await screen.findAllByTestId('next-step')).find((item) => item.querySelector('h3')?.textContent?.match(/pre-warm/i))!;
+  expect(step.querySelector('button')).toBeNull();
+
+  await walkThrough(step.querySelector('h3')!, 'j');
+});
+
+test('in Advanced view, j and k reach a finding row that offers no evidence control', async () => {
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [
+    catalog[0], catalog[1],
+    { type: 'spill', stageId: 3, impactBand: 'critical', recommendation: 'Reduce spill in Stage 3.' },
+    { ...coldStart, impactBand: 'warning', impactEstimate: undefined },
+  ], configFindings: [], widgetDensity: 'advanced' });
+  render(<App />);
+  await screen.findByRole('tab', { name: 'Findings' });
+  const row = (await screen.findAllByTestId('fix-these-first-row')).find((item) => item.dataset.findingType === 'coldStart')!;
+  expect(row.querySelector('button')).toBeNull();
+
+  // The row is the last control, so k leaves it and j comes back.
+  await walkThrough(row.querySelector('[tabindex="-1"]')!, 'k');
+});

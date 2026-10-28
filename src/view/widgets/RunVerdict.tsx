@@ -113,6 +113,7 @@ export function NextStepItem({
           ref={titleRef}
           id={titleId}
           tabIndex={bare ? -1 : undefined}
+          data-shortcut-target={bare ? '' : undefined}
           className={cn('text-[0.9375rem] font-semibold', bare && 'rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring')}
         >
           {findingActionLabel(finding)}

@@ -220,7 +220,7 @@ export function FindingRow({
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
       </TableCell>
       <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
-        <span ref={labelRef} tabIndex={bare ? -1 : undefined} className="block rounded-sm text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</span>
+        <span ref={labelRef} tabIndex={bare ? -1 : undefined} data-shortcut-target={bare ? '' : undefined} className="block rounded-sm text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</span>
         <span className="mt-tight block text-[0.8125rem] text-muted-foreground">{text}</span>
         <EvidenceButton target={target} evidence={shownEvidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />
       </TableCell>
