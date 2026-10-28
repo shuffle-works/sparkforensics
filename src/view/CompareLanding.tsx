@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, ArrowRight, Bot, BookOpen, FileText, GitCompareArrows, Moon, ShieldCheck, Sun, TriangleAlert, Workflow } from 'lucide-react';
+import { Activity, ArrowRight, Bot, BookOpen, FileText, Gauge, GitCompareArrows, Moon, ShieldCheck, Sun, TriangleAlert, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DOCS_BASE_DIR } from '@sparkforensics/core/docs-config.ts';
+import { CI_AUTOMATION_URL } from '@sparkforensics/core/docs-site-config.ts';
+import { DetectorStrip } from '@/view/DetectorStrip';
 import { DropZone } from '@/view/DropZone';
 import { McpSetupGuide } from '@/view/McpSetupGuide';
 import { ProductBarPortal } from '@/view/ProductBarPortal';
@@ -142,6 +144,21 @@ function NextStepsRail({ onCompare }: { onCompare: () => void }) {
             </Button>
           </div>
         </article>
+        <article>
+          <Gauge aria-hidden="true" />
+          <div>
+            <h3>Gate it in CI</h3>
+            <p>Fail a build on a budget or a regression with sparkforensics-analyze.</p>
+            <Button
+              variant="outline"
+              className="tap-target-comfortable"
+              nativeButton={false}
+              render={<a href={CI_AUTOMATION_URL} target="_blank" rel="noopener noreferrer" />}
+            >
+              Read the CI guide <ArrowRight aria-hidden="true" />
+            </Button>
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -204,6 +221,8 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             <DropZone />
           </div>
         </section>
+
+        <DetectorStrip />
 
         <NextStepsRail onCompare={() => setCompareMode(true)} />
       </div>
