@@ -116,9 +116,11 @@ test.each(
   expect(found.length).toBeGreaterThan(0);
 
   const failures: string[] = [];
+  let routed = 0;
   for (const finding of found) {
     const target = triageTargetFor(finding);
     if (!target) continue;
+    routed += 1;
     // Start every route from nothing focused, so the focus below is the route's.
     (document.activeElement as HTMLElement | null)?.blur();
     act(() => tap.route!(target));
@@ -133,5 +135,6 @@ test.each(
     if (isHidden(focused, document.body)) failures.push(`${finding.type} ${finding.id}: the focused element is hidden`);
     else if (!landing?.contains(focused)) failures.push(`${finding.type} ${finding.id}: the focused element is outside the finding's row, panel and card`);
   }
+  expect(routed).toBeGreaterThan(0);
   expect(failures).toEqual([]);
 }, 120_000);

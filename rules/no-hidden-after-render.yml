@@ -36,9 +36,26 @@ rule:
       regex: has-\[.*\]:(hidden|invisible)
     - kind: template_string
       regex: has-\[.*\]:(hidden|invisible)
-    # className={flag ? 'hidden' : '...'}
-    - pattern: $FLAG && 'hidden'
-    - pattern: "$FLAG ? 'hidden' : $OTHER"
-    - pattern: "$FLAG ? $OTHER : 'hidden'"
+    # className={flag ? 'hidden' : '...'}, cn('pt-2', flag && "invisible"), `${flag ? `hidden` : ''}`
+    - any:
+        - kind: string
+        - kind: template_string
+      regex: ^['"`]([\w:/.\[\]-]+\s+)*(hidden|invisible)(\s+[\w:/.\[\]-]+)*['"`]$
+      inside:
+        any:
+          - kind: ternary_expression
+          - pattern: $FLAG && $CLASS
+          - pattern: $FLAG || $CLASS
+    # cn('pt-2', { hidden: flag })
+    - kind: pair
+      has:
+        field: key
+        regex: ^['"`]?([\w:/.\[\]-]+\s+)*(hidden|invisible)(\s+[\w:/.\[\]-]+)*['"`]?$
+      inside:
+        stopBy: end
+        kind: call_expression
+        has:
+          field: function
+          regex: ^(cn|clsx)$
 files:
   - src/**

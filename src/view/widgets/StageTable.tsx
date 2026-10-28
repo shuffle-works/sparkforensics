@@ -429,7 +429,13 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
           className="max-w-xs"
         />
         <div className="flex items-center justify-between gap-2">
-          <p className={cn('text-muted-foreground text-xs', !tableOverflows && 'invisible')}>Scroll sideways to see all columns &rarr;</p>
+          <p
+            // The hint keeps its space when the table fits, so the button beside it does not move.
+            // ast-grep-ignore: no-hidden-after-render
+            className={cn('text-muted-foreground text-xs', !tableOverflows && 'invisible')}
+          >
+            Scroll sideways to see all columns &rarr;
+          </p>
           <Button type="button" variant="outline" size="sm" onClick={toggleView}>
             {showProblems ? `Top ${TOP_N} by duration` : 'Problems only'}
           </Button>
