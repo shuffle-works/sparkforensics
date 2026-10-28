@@ -50,14 +50,35 @@ async function connectedClient(server) {
 }
 
 describe('createMcpServer', () => {
-  it('registers all 8 tools', async () => {
+  it('registers all 9 tools', async () => {
     const server = createMcpServer();
     const client = await connectedClient(server);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation',
-      'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_runs',
+      'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
     ]);
+  });
+
+  it('round-trips list_detectors with filters and the server\'s own thresholds', async () => {
+    const client = await connectedClient(createMcpServer({ thresholds: { skew: { ratioWarn: 6 } } }));
+    const all = await client.callTool({ name: 'list_detectors', arguments: {} });
+    expect(all.isError).toBeFalsy();
+    expect(all.structuredContent.count).toBe(all.structuredContent.detectors.length);
+    const one = await client.callTool({ name: 'list_detectors', arguments: { type: 'skew' } });
+    expect(one.structuredContent.detectors).toHaveLength(1);
+    expect(one.structuredContent.detectors[0].detectors[0].thresholds.ratioWarn).toBe(6);
+    expect(JSON.parse(one.content[0].text)).toEqual(one.structuredContent);
+    const family = await client.callTool({ name: 'list_detectors', arguments: { family: 'plan' } });
+    expect(family.structuredContent.detectors.every((r) => r.family === 'plan')).toBe(true);
+  });
+
+  it('refuses a list_detectors filter value that is not in the catalog', async () => {
+    const client = await connectedClient(createMcpServer());
+    for (const arguments_ of [{ type: 'nope' }, { tag: 'NOPE' }, { family: 'nope' }, { scope: 'nope' }]) {
+      const result = await client.callTool({ name: 'list_detectors', arguments: arguments_ }).catch((e) => ({ isError: true, thrown: e }));
+      expect(result.isError, JSON.stringify(arguments_)).toBe(true);
+    }
   });
 
   it('round-trips list_runs for a local directory', async () => {

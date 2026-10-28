@@ -484,6 +484,24 @@ Only SQL writes are covered. Writes made outside Spark SQL, such as an RDD
 `saveAsTextFile` or a direct filesystem call from the driver, do not appear in
 the event log and are not in `writeTargets`.
 
+## List the detectors {#list-the-detectors}
+
+`sparkforensics-analyze detectors` prints every finding type the detectors can
+report, with no event log:
+
+```sh
+npx -p sparkforensics-cli sparkforensics-analyze detectors --family cost --format md
+```
+
+The default output is JSON, the same records the
+[`list_detectors`](../mcp-tools/list-detectors.md) MCP tool returns. It
+takes `--type`, `--tag`, `--family` and `--scope` filters, `--out <path>`, and
+`--thresholds <file>` to show the thresholds a tuned run uses. The command name is read only as the
+first argument; pass a log that is named `detectors` as `./detectors`. Exit
+codes: `0` ok, `2` usage error. Each record names the budget flag that gates
+its type, when it has one, and the [detector catalog](../../detectors/index.md)
+has a page for every type.
+
 ## Generator
 
 The CLI's JSON output carries a `generator` block naming the build that wrote

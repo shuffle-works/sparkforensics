@@ -1,11 +1,12 @@
 # MCP tools reference
 
-SparkForensics has an MCP server with eight tools, so an MCP-aware client (or
+SparkForensics has an MCP server with nine tools, so an MCP-aware client (or
 an AI agent) can diagnose a run without opening the dashboard.
 
 | Tool | What it does |
 |------|--------------|
 | [`list_runs`](./mcp-tools/list-runs.md) | Lists event-log runs in a local directory or on a Spark History Server. |
+| [`list_detectors`](./mcp-tools/list-detectors.md) | Lists every finding type the detectors can report, with its tag, family, thresholds, docs and budget flag. |
 | [`diagnose_run`](./mcp-tools/diagnose-run.md) | Returns the verdict, the ranked findings and the recommendations for one run. |
 | [`get_run_summary`](./mcp-tools/get-run-summary.md) | Returns counts, duration and how the run ended, with no findings. |
 | [`compare_runs`](./mcp-tools/compare-runs.md) | Compares a baseline run with a candidate run: verdict, metric deltas and findings delta. |
@@ -57,7 +58,7 @@ baseline.
 
 ## Redaction {#redaction}
 
-Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
+Five of the nine tools (`list_runs`, `diagnose_run`, `get_run_summary`,
 `compare_runs`, `get_finding_evidence`) accept an optional `redact: boolean`
 parameter (default `false`) that pseudonymizes the app id and any host name or IP
 address in the response (`app-1`, `host-1`, ...), including the host of a URL, and
@@ -116,7 +117,7 @@ change them per call. An unreadable or invalid file stops the server from
 starting: it exits with status 2, with the problem on stderr. An unknown
 flag, such as a misspelled `--threshold`, stops it the same way.
 `sparkforensics-mcp --help` prints the usage and the tool list. On a tuned
-server, `diagnose_run`, `compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
+server, `list_detectors` reports the tuned thresholds, and `diagnose_run`, `compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
 each finding and clean check from a tuned detector carries its own
 `tunedThresholds`, as in the CLI report. The Markdown output of
 `diagnose_run` and `compare_runs` names the tuned thresholds too.
@@ -125,7 +126,7 @@ each finding and clean check from a tuned detector carries its own
 
 The local server (`npx sparkforensics-server`, see
 [Run it locally](./getting-started.md#local-server-mode)) also serves the
-same eight tools over MCP's streamable HTTP transport at
+same nine tools over MCP's streamable HTTP transport at
 `http://127.0.0.1:4173/mcp` (or the port you pass with `--port`). Point a
 client that speaks streamable HTTP, such as Claude Code, at that URL:
 
@@ -154,7 +155,7 @@ pass an absolute path when in doubt.
 ## Errors
 
 Errors a tool raises carry `structuredContent.code`, the same way in all
-eight tools:
+nine tools:
 
 ```json
 {

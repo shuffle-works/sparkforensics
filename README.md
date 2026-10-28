@@ -29,11 +29,12 @@ turns them into findings.
   Node companion that can also pull runs from a Spark History Server.
 - Event logs are streamed and parsed off the main thread in a Web Worker,
   so a 240MB+ (or multi-GB) NDJSON log doesn't freeze the tab.
-- 25 finding types cover skew, shuffle, spill, GC
+- The finding types cover skew, shuffle, spill, GC
   pressure, stragglers, cold start, cache/memory utilization, autoscaling
   churn, job/stage failures and partition sizing, plus a SQL Plan Advisor
   (duplicate subtrees, small files, broadcast sizing) and a config audit.
-  Every detector and its thresholds are in the [detector table](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract/threshold-tables#bottleneck-thresholds).
+  Each has a page in the [detector catalog](https://shuffle-works.github.io/sparkforensics/docs/detectors/),
+  and its thresholds are in the [detector table](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract/threshold-tables#bottleneck-thresholds).
 - Fix These First orders every finding by its estimated wall-clock impact,
   not severity alone, so the top row is the fix worth doing first.
 - Run comparison (A/B) mode structurally matches stages across two
@@ -234,6 +235,14 @@ Several candidates from one History Server take repeated `--app-id` values
 
 See [Several budgets and several candidates](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/ci-and-automation.html#several-budgets-and-several-candidates)
 for the `--budgets` file, the NDJSON line fields and the exit code rules.
+
+List every finding type the detectors can report, with its tag, family, thresholds and the
+budget flag that gates it, without reading a log (the MCP `list_detectors` tool returns the
+same records):
+
+```bash
+npx -p sparkforensics-cli sparkforensics-analyze detectors --family cost --format md
+```
 
 Redact the app id, the app name, host names, IP addresses and user names in URLs and
 paths before sharing the output outside the environment that produced it. Other paths, table

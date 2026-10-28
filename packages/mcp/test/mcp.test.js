@@ -32,13 +32,13 @@ afterAll(() => {
 });
 
 describe('published sparkforensics-mcp stdio bin entrypoint', () => {
-  it('starts and lists all 8 tools over stdio via the installed .bin symlink', async () => {
+  it('starts and lists all 9 tools over stdio via the installed .bin symlink', async () => {
     const transport = new StdioClientTransport({ command: binPath, args: [] });
     client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_runs',
+      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
     ]);
   }, 30000);
 
