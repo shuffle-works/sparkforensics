@@ -1,14 +1,17 @@
 import { useMemo, type ReactNode } from 'react';
 
+import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { Table, TableBody } from '@/components/ui/table';
 import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { EvidenceInitiallyOpenContext } from '@/view/InlineEvidenceContext';
+import { REGISTRY } from '@/view/detector-registry';
 import { StepCodesShownContext } from '@/view/StepCode';
 import { InlineEvidence, useEvidencePanel } from '@/view/InlineEvidence';
 import { eligibleFindings, findingAt, useInterpretation } from '@/view/interpretation';
-import { computeActiveWidgets } from '@/view/widgets/Alerts';
+import type { ActiveWidget } from '@/view/widgets/Alerts';
 import { FindingRow } from '@/view/widgets/FixTheseFirst';
 import { NextStepItem, type StepEvidence } from '@/view/widgets/RunVerdict';
 
@@ -27,11 +30,19 @@ export function FindingExample({ findingId }: { findingId: string }) {
 
   const findings = useMemo(() => [...catalog, ...configFindings], [catalog, configFindings]);
   const finding = findings.find((candidate) => candidate.id === findingId);
-  const widget = useMemo(() => (
-    finding && interpretation
-      ? computeActiveWidgets(catalog, configFindings, interpretation.data.detectors).find((w) => w.findings.includes(finding))
-      : undefined
-  ), [finding, interpretation, catalog, configFindings]);
+  const widget = useMemo((): ActiveWidget | undefined => {
+    const entry = finding && REGISTRY[finding.type];
+    if (!finding || !entry) return undefined;
+    const sameType = findings.filter((candidate) => candidate.type === finding.type && isRealFinding(candidate));
+    return {
+      component: entry.component,
+      widgetId: entry.widgetId,
+      type: finding.type,
+      index: 0,
+      findings: sameType,
+      impactBand: worstImpactBand(sameType) ?? finding.impactBand,
+    };
+  }, [finding, findings]);
 
   const scope = useMemo(() => (finding ? [finding] : []), [finding]);
   // A step or row states its finding, so its panel shows what the line leaves out, or nothing. A

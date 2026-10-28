@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { findingName } from '@sparkforensics/core/finding-names.ts';
 import { DocsWidgetApp } from '@/docs-widget/DocsWidgetApp';
@@ -51,6 +51,14 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   expect(screen.queryByRole('alert')).toBeNull();
   // The step labels tie a step to the rest of the dashboard, which the page does not show.
   expect(container.querySelector('[data-step-code]')).toBeNull();
+  // The evidence control shows only with the widget's panel, which the page opens: no control routes
+  // away from the page, and every control's panel holds the widget's card.
+  expect(screen.queryByRole('button', { name: /show evidence/i })).toBeNull();
+  for (const control of screen.queryAllByRole('button', { name: /hide evidence/i })) {
+    const panel = container.querySelector<HTMLElement>(`[id="${control.getAttribute('aria-controls')}"]`);
+    expect(panel).not.toBeNull();
+    expect(await within(panel!).findByRole('heading', { level: 3 }, { timeout: 10_000 })).toBeTruthy();
+  }
   // A run-time saving is large enough to weigh.
   const wallClock = finding.impactEstimate?.wallClock;
   if (wallClock) expect(wallClock.high).toBeGreaterThanOrEqual(30_000);
