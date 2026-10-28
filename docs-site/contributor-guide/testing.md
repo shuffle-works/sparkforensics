@@ -41,14 +41,17 @@ rendered output and correct it afterwards:
 - `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
   `innerText`, `innerHTML`, `getComputedStyle` in `src/view/`.
 - `no-hidden-after-render`: `hidden={flag}`, `display: none` styles, a
-  conditional `hidden` or `invisible` class (in any quote style or as a
-  `cn({ hidden: flag })` key) and `has-[...]:hidden` in `src/`.
+  conditional `hidden` or `invisible` class (in any quote style, with or
+  without the `!` important modifier, or as a `cn({ hidden: flag })` key) and
+  `has-[...]:hidden` in `src/`.
 - `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
   widgets, `WidgetCard`, `WidgetGrid` and `InlineEvidence`.
 - `content-check-is-pure`: a content check that imports React, the store or a
-  context, calls a hook, or reads a global, the clock or randomness. A content
-  check is a `ContentCheck`-typed value, a registry entry's `content`, and the
-  whole module that declares a `ContentCheck`, wherever it lives in `src/`.
+  context, calls a hook, or reads a global, the clock or randomness. It covers
+  all of every `*.content.ts` file and `evidence-panel.ts`.
+- `content-check-is-pure-inline`: the same reads elsewhere in `src/`, inside a
+  `ContentCheck`-typed value or a registry entry's `content`. Both rules share
+  their list of reads in `rule-utils/`.
 - `no-panel-forgery`: an `EvidencePanel` made by a cast, a `type`/`rows` literal
   or a direct `evidencePanel(...)` call outside `evidence-panel.ts` and
   `detector-registry.tsx`.

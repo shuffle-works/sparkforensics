@@ -40,7 +40,7 @@ rule:
     - any:
         - kind: string
         - kind: template_string
-      regex: ^['"`]([\w:/.\[\]-]+\s+)*(hidden|invisible)(\s+[\w:/.\[\]-]+)*['"`]$
+      regex: ^['"`]([\w:/.\[\]!-]+\s+)*!?(hidden|invisible)!?(\s+[\w:/.\[\]!-]+)*['"`]$
       inside:
         any:
           - kind: ternary_expression
@@ -50,7 +50,7 @@ rule:
     - kind: pair
       has:
         field: key
-        regex: ^['"`]?([\w:/.\[\]-]+\s+)*(hidden|invisible)(\s+[\w:/.\[\]-]+)*['"`]?$
+        regex: ^['"`]?([\w:/.\[\]!-]+\s+)*!?(hidden|invisible)!?(\s+[\w:/.\[\]!-]+)*['"`]?$
       inside:
         stopBy: end
         kind: call_expression

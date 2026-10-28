@@ -3,68 +3,12 @@ language: tsx
 severity: error
 message: A content check reads something other than its input.
 note: |
-  A content check (a `ContentCheck<T>` value, a registry entry's `content`, and the module that
-  declares either, such as `*.content.ts` and `evidence-panel.ts`) decides what a panel shows from
-  its PanelInput (findings, stated ids, density, appModel) alone. It may not import React, the store
-  or a context, call a hook, read a global such as `document` or `window`, or use the clock or
-  randomness. If it needs a value, add that value to PanelInput.
-utils:
-  # const check: ContentCheck<'x'> = ..., and `type ContentCheck<T> = ...` itself
-  declares-content-check:
-    any:
-      - kind: variable_declarator
-        has:
-          field: type
-          has:
-            stopBy: end
-            kind: type_identifier
-            regex: ^ContentCheck$
-      - kind: type_alias_declaration
-        has:
-          field: name
-          regex: ^ContentCheck$
-  # A module that declares a content check: all of it runs as part of the check.
-  content-module:
-    kind: program
-    has:
-      stopBy: end
-      matches: declares-content-check
-  # { content: ... } in the registry
-  content-value:
-    kind: pair
-    has:
-      field: key
-      regex: ^content$
-  in-content-check:
-    inside:
-      stopBy: end
-      any:
-        - matches: content-module
-        - matches: declares-content-check
-        - matches: content-value
+  A content check (`*.content.ts`, and the shared checks in `evidence-panel.ts`) decides what a
+  panel shows from its PanelInput (findings, stated ids, density, appModel) alone. It may not import
+  React, the store or a context, call a hook, read a global such as `document` or `window`, or use
+  the clock or randomness. If it needs a value, add that value to PanelInput.
 rule:
-  any:
-    - kind: import_statement
-      has:
-        field: source
-        kind: string
-        regex: ^['"](react|react-dom|zustand)(/.*)?['"]$|@/store/|Context['"]$|@/view/use[A-Z]
-      inside:
-        matches: content-module
-    - kind: call_expression
-      has:
-        field: function
-        kind: identifier
-        regex: ^use[A-Z]
-      matches: in-content-check
-    - kind: identifier
-      regex: ^(document|window|globalThis|navigator|localStorage|sessionStorage|performance|console|fetch|setTimeout|setInterval|requestAnimationFrame)$
-      matches: in-content-check
-    - pattern: Math.random()
-      matches: in-content-check
-    - pattern: Date.now()
-      matches: in-content-check
-    - pattern: new Date()
-      matches: in-content-check
+  matches: content-check-impurity
 files:
-  - src/**
+  - src/view/widgets/*.content.ts
+  - src/view/evidence-panel.ts

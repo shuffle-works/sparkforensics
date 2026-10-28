@@ -9,7 +9,7 @@ if [ -n "$staged" ]; then
   npx eslint $staged || { echo "eslint failed: fix the errors above or 'git commit --no-verify' to skip." >&2; status=1; }
 fi
 
-structure=$(git diff --cached --name-only --diff-filter=ACMD -- 'src/*.ts' 'src/*.tsx' 'rules/*' 'rule-tests/*' sgconfig.yml)
+structure=$(git diff --cached --name-only --diff-filter=ACMD -- 'src/*.ts' 'src/*.tsx' 'rules/*' 'rule-utils/*' 'rule-tests/*' sgconfig.yml)
 if [ -n "$structure" ]; then
   npm run --silent lint:structure || { echo "lint:structure failed: fix the errors above or 'git commit --no-verify' to skip." >&2; status=1; }
 fi

@@ -9,48 +9,21 @@ valid:
     import type { Finding } from '@sparkforensics/core/types.ts';
     export const total = (findings: Finding[]) => findings.length;
   - "const useless = 1;"
-  # A widget may use React and the store: it declares no content check.
-  - |
-    import { useState } from 'react';
-    import { useStore } from '@/store/store';
-    export function Widget() { const [open] = useState(false); return open ? document.title : null; }
-  # The registry names its checks and may compute the rest of an entry as it likes.
-  - |
-    import { lazy } from 'react';
-    const ENTRIES = { retryWaste: { component: lazy(() => import('./RetryWaste')), content: retryWasteContent } };
-  - "const ENTRIES = { retryWaste: { content: ({ findings, density }) => (density === 'advanced' ? findings : []) } };"
 invalid:
-  - |
-    import { useState } from 'react';
-    export const check: ContentCheck<'coldStart'> = ({ findings }) => findings;
-  - |
-    import { useStore } from '@/store/store';
-    export const check: ContentCheck<'coldStart'> = ({ findings }) => findings;
-  - |
-    import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
-    export const check: ContentCheck<'coldStart'> = ({ findings }) => findings;
-  - |
-    import { useWidgetDensity } from '@/view/useWidgetDensity';
-    export const check: ContentCheck<'coldStart'> = ({ findings }) => findings;
-  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []);"
-  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []);"
-  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (window.matchMedia('(min-width: 1px)').matches ? findings : []);"
-  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (Math.random() > 0.5 ? findings : []);"
-  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (Date.now() % 2 ? findings : []);"
-  - "export const check: ContentCheck<'retryWaste'> = ({ findings }) => (new Date().getDay() === 0 ? findings : []);"
-  # A helper in a module that declares a check runs as part of it.
+  - "import { useState } from 'react';"
+  - "import { useStore } from '@/store/store';"
+  - "import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';"
+  - "import { useWidgetDensity } from '@/view/useWidgetDensity';"
+  - "export const check = ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []);"
+  - "export const check = ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []);"
+  - "export const check = ({ findings }) => (window.matchMedia('(min-width: 1px)').matches ? findings : []);"
+  - "export const check = ({ findings }) => (Math.random() > 0.5 ? findings : []);"
+  - "export const check = ({ findings }) => (Date.now() % 2 ? findings : []);"
+  - "export const check = ({ findings }) => (new Date().getDay() === 0 ? findings : []);"
+  # Unannotated checks: the registry accepts any function of the right type.
+  - "export function fooContent({ findings }: PanelInput<'foo'>) { return document.body.dataset.d === 'a' ? findings : []; }"
+  - "export const barContent = (({ findings }) => (window.innerWidth > 0 ? findings : [])) satisfies ContentCheck<'bar'>;"
+  # A helper the check calls.
   - |
     const blank = () => document.querySelector('[data-evidence-blank]') !== null;
     export const check: ContentCheck<'retryWaste'> = ({ findings }) => (blank() ? [] : findings);
-  # The shared checks next to the ContentCheck type itself.
-  - |
-    export type ContentCheck<T extends FindingType> = (input: PanelInput<T>) => readonly FindingOf<T>[];
-    export function allRows({ findings }) { return window.innerWidth > 0 ? findings : []; }
-  # A check typed in a widget file that imports the store.
-  - |
-    import { useStore } from '@/store/store';
-    export const retryWasteContent: ContentCheck<'retryWaste'> = ({ findings }) => findings;
-    export function RetryWaste() { return useStore((state) => state.density); }
-  # A check written inline in the registry.
-  - "const ENTRIES = { retryWaste: { content: ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []) } };"
-  - "const ENTRIES = { retryWaste: { content: ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []) } };"

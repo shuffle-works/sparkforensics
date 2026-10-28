@@ -1,0 +1,20 @@
+# What a content check may not read: anything but its PanelInput.
+id: content-check-impurity
+language: tsx
+rule:
+  any:
+    - kind: import_statement
+      has:
+        field: source
+        kind: string
+        regex: ^['"](react|react-dom|zustand)(/.*)?['"]$|@/store/|Context['"]$|@/view/use[A-Z]
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: ^use[A-Z]
+    - kind: identifier
+      regex: ^(document|window|globalThis|navigator|localStorage|sessionStorage|performance|console|fetch|setTimeout|setInterval|requestAnimationFrame)$
+    - pattern: Math.random()
+    - pattern: Date.now()
+    - pattern: new Date()
