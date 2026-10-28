@@ -25,11 +25,13 @@ export function keptRows(
   return evidencePanelFor(type, input)?.rows ?? [];
 }
 
+const HIDING_CLASSES = ['hidden', 'invisible', 'hidden!', 'invisible!', '!hidden', '!invisible'];
+
 /** Whether `node` or an ancestor up to `root` is hidden from view. jsdom loads no stylesheet, so
- * Tailwind's `hidden` class is read by name. */
+ * Tailwind's hiding classes are read by name. */
 export function isHidden(node: Element, root: Element): boolean {
   for (let element: Element | null = node; element && element !== root.parentElement; element = element.parentElement) {
-    if (element.hasAttribute('hidden') || element.classList.contains('hidden')) return true;
+    if (element.hasAttribute('hidden') || HIDING_CLASSES.some((name) => element!.classList.contains(name))) return true;
     const style = getComputedStyle(element);
     if (style.display === 'none' || style.visibility === 'hidden') return true;
   }

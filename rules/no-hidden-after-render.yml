@@ -7,30 +7,9 @@ note: |
   the parent computes from data before rendering (the widget's content check). Hiding it after it
   rendered keeps its effects and route targets alive. `hidden` stays for content that must remain
   in the DOM, such as an inactive tab panel: suppress it with `// ast-grep-ignore: no-hidden-after-render`
-  and a reason on the line above.
-utils:
-  # A value that ends up in a class list: a className attribute or property, a cn/clsx call, or a
-  # variable named for a class.
-  in-class-list:
-    inside:
-      stopBy: end
-      any:
-        - kind: jsx_attribute
-          has:
-            kind: property_identifier
-            regex: ^(className|class)$
-        - kind: pair
-          has:
-            field: key
-            regex: ^['"`]?className['"`]?$
-        - kind: call_expression
-          has:
-            field: function
-            regex: ^(cn|clsx)$
-        - kind: variable_declarator
-          has:
-            field: name
-            regex: (?i)class
+  and a reason on the line above. A conditional `hidden` or `invisible` class string is not matched
+  here: the behaviour tests (`tests/view/evidence-check.test.tsx`, `closed-evidence-panels.test.tsx`,
+  `route-focus.test.tsx`) count that output as not shown.
 rule:
   any:
     # hidden={flag}
@@ -49,7 +28,7 @@ rule:
             regex: ^(display|visibility)$
         - has:
             field: value
-            regex: "['\"](none|hidden)['\"]"
+            regex: "['\"`](none|hidden)['\"`]"
     # node.hidden = flag, node.style.display = 'none'
     - pattern: $NODE.hidden = $VALUE
     - pattern: $NODE.style.display = $VALUE
@@ -59,27 +38,5 @@ rule:
       regex: has-\[.*\]:(hidden|invisible)
     - kind: template_string
       regex: has-\[.*\]:(hidden|invisible)
-    # className={flag ? 'hidden' : '...'}, cn('pt-2', flag && "invisible"), `${base} ${flag ? 'hidden!' : ''}`
-    - any:
-        - kind: string
-        - kind: template_string
-      regex: (^['"`]|\s|\})!?(hidden|invisible)!?(['"`]$|\s|\$\{)
-      inside:
-        any:
-          - kind: ternary_expression
-          - pattern: $FLAG && $CLASS
-          - pattern: $FLAG || $CLASS
-      matches: in-class-list
-    # cn('pt-2', { hidden: flag })
-    - kind: pair
-      has:
-        field: key
-        regex: (^['"`]?|\s)!?(hidden|invisible)!?(['"`]?$|\s)
-      inside:
-        stopBy: end
-        kind: call_expression
-        has:
-          field: function
-          regex: ^(cn|clsx)$
 files:
   - src/**

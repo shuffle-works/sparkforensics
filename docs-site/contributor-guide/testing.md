@@ -40,10 +40,11 @@ rendered output and correct it afterwards:
 
 - `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
   `innerText`, `innerHTML`, `getComputedStyle` in `src/view/`.
-- `no-hidden-after-render`: `hidden={flag}`, `display: none` styles, a
-  conditional `hidden` or `invisible` class token in a class list (in any
-  quote style or template, with or without the `!` important modifier, or as a
-  `cn({ hidden: flag })` key) and `has-[...]:hidden` in `src/`.
+- `no-hidden-after-render`: `hidden={flag}`, `display: none` and
+  `visibility: hidden` styles, a `.hidden` or `.style.display` assignment and
+  `has-[...]:hidden` in `src/`. A conditional `hidden` or `invisible` class
+  string is not matched by this rule: the behaviour tests above count that
+  output as not shown.
 - `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
   widgets, `WidgetCard`, `WidgetGrid` and `InlineEvidence`.
 - `content-check-is-pure`: a content check that imports React, the store or a
