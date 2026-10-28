@@ -24,3 +24,10 @@ export function keptRows(
   const input = { findings, stated: new Set(stated), density: options.density ?? 'basic', appModel: options.appModel ?? emptyAppModel() };
   return evidencePanelFor(type, input)?.rows ?? [];
 }
+
+/** Whether a rendered evidence panel shows anything besides its title: text, or a chart or a table. */
+export function showsEvidence(panel: HTMLElement): boolean {
+  const body = panel.querySelector('section > div:last-child') as HTMLElement | null;
+  if (!body) return false;
+  return Boolean(body.textContent?.trim()) || body.querySelector('svg:not([aria-hidden="true"]), table, canvas, img') != null;
+}

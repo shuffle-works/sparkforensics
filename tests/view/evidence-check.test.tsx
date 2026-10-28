@@ -11,6 +11,7 @@ import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { evidencePanelOf, InlineEvidence } from '@/view/InlineEvidence';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
+import { showsEvidence } from './_shared/evidence-panel';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS): the runs are the HTML export's.
 vi.mock('@/store/useIngest', () => import('@/export/live-only-stubs/useIngest'));
@@ -35,12 +36,6 @@ afterEach(() => {
   cleanup();
   store.setState({ widgetDensity: 'basic' });
 });
-
-// What an evidence panel shows besides its title: text, or a chart or a table.
-function showsEvidence(panel: HTMLElement): boolean {
-  const body = panel.querySelector('section > div:last-child') as HTMLElement;
-  return Boolean(body.textContent?.trim()) || body.querySelector('svg:not([aria-hidden="true"]), table, canvas, img') != null;
-}
 
 // A widget renders only the rows its content check keeps, so a panel exists exactly when the check
 // keeps a row. What can still drift is a kept row that renders nothing under its title (a widget
