@@ -165,9 +165,9 @@ source that fires it:
 1. `corpus`: the public logs named in `dev/corpus-snapshot.json`.
 2. `fixture`: the recorded logs in `packages/core/test/fixtures`.
 3. `synthetic`: the small hand-built logs in
-   `packages/core/test/fixtures/synthetic`, which the page labels as a
-   synthetic example. A new detector that no recorded log fires adds one there,
-   with a test that the real analyzer reports the type from it.
+   `packages/core/test/fixtures/synthetic`. A new detector that no recorded log
+   fires adds one there, with a test that the real analyzer reports the type
+   from it.
 
 Within a source the pick is the best impact band, then the highest confidence,
 then the smaller file, then the log name. The finding is the first of that type
