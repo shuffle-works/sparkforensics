@@ -761,6 +761,7 @@
       ]
     }
   },
+  "unprunedScan": null,
   "utilization": {
     "log": "external-application_1578436911597_0052.ndjson",
     "sparkVersion": "3.0.0-SNAPSHOT",
