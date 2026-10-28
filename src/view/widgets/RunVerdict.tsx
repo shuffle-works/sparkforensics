@@ -62,7 +62,7 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
 /** The verdict step's small bordered actions; the first step's evidence button is the soft primary. */
 const STEP_ACTION = 'h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent';
 
-function NextStepItem({
+export function NextStepItem({
   step,
   finding,
   interpretation,

@@ -1,8 +1,8 @@
-import { Suspense, useLayoutEffect, useMemo, useState } from 'react';
+import { Suspense, useContext, useLayoutEffect, useMemo, useState } from 'react';
 
 import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
+import { EvidenceInitiallyOpenContext, InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
@@ -13,7 +13,8 @@ import type { ActiveWidget } from '@/view/widgets/Alerts';
  * route that targets one of them (stage dialog, Stage Summary, a group
  * member's row) opens it too, and it stays open after the route completes. */
 export function useEvidenceOpen(widgetId: string | null, scope: readonly Finding[]) {
-  const [open, setOpen] = useState(false);
+  const initiallyOpen = useContext(EvidenceInitiallyOpenContext);
+  const [open, setOpen] = useState(initiallyOpen);
   const routeTarget = useActiveRouteTarget();
   const routedHere = widgetId != null && routeTarget?.widgetId === widgetId && scope.includes(routeTarget.finding);
   useLayoutEffect(() => {

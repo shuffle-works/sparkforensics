@@ -121,6 +121,9 @@ naming each module and one importer chain back to the entry.
 allowlist fails the build: move its conclusion into `interpretRun`, or, if it
 only responds to what the viewer does, add it to the allowlist. The guard
 checks modules, not code: a threshold written straight into a widget passes it.
+The detector docs pages reuse this graph: `npm run build:docs-widget`
+(`--mode docs-widget`) builds the example app `docs-widget.html`, with the same
+stand-ins and guard, as multi-file output under `docs-site/public/`.
 
 ### Finding filter state
 

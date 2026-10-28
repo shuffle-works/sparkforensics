@@ -1,10 +1,12 @@
 // Generates the docs site's detector catalog: docs-site/detectors/index.md, one page per finding
 // type, and the data file the Vue components (DetectorIndex.vue, DetectorPage.vue) render. Reads the
 // catalog from core, so the pages state what the MCP `list_detectors` tool and the CLI `detectors`
-// command state. Every output a page shows is captured from a real run of those two surfaces here;
-// the example finding cards come from dev/detector-examples.json (real CLI runs, gated by
-// `node dev/detector-examples.mjs --check`). The output is gitignored; docs:dev and docs:build run
-// this script before vitepress.
+// command state. Every output a page shows is captured from a real run of those two surfaces here.
+// The example finding on each page is the real dashboard widget: dev/detector-examples.json names
+// the finding and dev/detector-example-runs.json holds its run (both gated by
+// `node dev/detector-examples.mjs --check`), and each page's finding id and run are written to
+// docs-site/public/detector-widget/data/<type>.json for the example app (docs-widget.html) to load.
+// The output is gitignored; docs:dev and docs:build run this script before vitepress.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +21,8 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_OUT_DIR = join(REPO_ROOT, 'docs-site', 'detectors');
 export const DEFAULT_DATA_FILE = join(REPO_ROOT, 'docs-site', '.vitepress', 'detectors-data.json');
 export const DEFAULT_EXAMPLES_FILE = join(REPO_ROOT, 'dev', 'detector-examples.json');
+export const DEFAULT_RUNS_FILE = join(REPO_ROOT, 'dev', 'detector-example-runs.json');
+export const DEFAULT_WIDGET_DATA_DIR = join(REPO_ROOT, 'docs-site', 'public', 'detector-widget', 'data');
 
 // The placeholders the command examples use for the user's own log.
 const LOG_PLACEHOLDER = '<event-log>';
@@ -58,9 +62,9 @@ function cliDetectors(type) {
   return { command: `sparkforensics-analyze detectors ${argv.join(' ')}`, output: result.stdout };
 }
 
-function loadExamples(examplesFile) {
-  if (!existsSync(examplesFile)) throw new Error(`${examplesFile} is missing. Run: node dev/detector-examples.mjs --update`);
-  return JSON.parse(readFileSync(examplesFile, 'utf8'));
+function loadJson(file) {
+  if (!existsSync(file)) throw new Error(`${file} is missing. Run: node dev/detector-examples.mjs --update`);
+  return JSON.parse(readFileSync(file, 'utf8'));
 }
 
 // The data file entry for one catalog record: the record, its example and the real tool outputs the
@@ -107,13 +111,16 @@ function pageSource(title, description, component) {
 }
 
 /**
- * Writes the detector pages and the data file. Returns the data object it wrote.
- * @param {{ outDir?: string, dataFile?: string, examplesFile?: string }} [options]
+ * Writes the detector pages, the data file and each page's example data. Returns the data object
+ * it wrote.
+ * @param {{ outDir?: string, dataFile?: string, examplesFile?: string, runsFile?: string, widgetDataDir?: string }} [options]
  */
 export async function buildDetectorPages({
   outDir = DEFAULT_OUT_DIR, dataFile = DEFAULT_DATA_FILE, examplesFile = DEFAULT_EXAMPLES_FILE,
+  runsFile = DEFAULT_RUNS_FILE, widgetDataDir = DEFAULT_WIDGET_DATA_DIR,
 } = {}) {
-  const examples = loadExamples(examplesFile);
+  const examples = loadJson(examplesFile);
+  const runs = loadJson(runsFile);
   const catalog = buildDetectorCatalog();
   const client = await connectMcp();
   let records;
@@ -128,6 +135,10 @@ export async function buildDetectorPages({
           `${examplesFile} has no example for ${record.type}: no log fires it. A recorded fixture or a synthetic log under packages/core/test/fixtures/synthetic must fire it, then run: node dev/detector-examples.mjs --update`,
         );
       }
+      const { source, log } = examples[record.type];
+      if (!(`${source}/${log}` in runs)) {
+        throw new Error(`${runsFile} has no run for ${source}/${log}. Run: node dev/detector-examples.mjs --update`);
+      }
       records.push(await buildEntry(client, record, examples[record.type]));
     }
   } finally {
@@ -136,9 +147,15 @@ export async function buildDetectorPages({
 
   const data = { families: DETECTOR_FAMILIES, records };
   rmSync(outDir, { recursive: true, force: true });
+  rmSync(widgetDataDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
+  mkdirSync(widgetDataDir, { recursive: true });
   mkdirSync(dirname(dataFile), { recursive: true });
   writeFileSync(dataFile, `${JSON.stringify(data)}\n`);
+  for (const { type, example } of records) {
+    const payload = runs[`${example.source}/${example.log}`];
+    writeFileSync(join(widgetDataDir, `${type}.json`), JSON.stringify({ findingId: example.finding.id, payload }));
+  }
   writeFileSync(
     join(outDir, 'index.md'),
     pageSource(

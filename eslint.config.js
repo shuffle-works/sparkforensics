@@ -96,6 +96,7 @@ export default [
       'packages/*/coverage/**',
       'docs-site/.vitepress/dist/**',
       'docs-site/.vitepress/cache/**',
+      'docs-site/public/detector-widget/**',
       '.claude/worktrees/**',
     ],
   },

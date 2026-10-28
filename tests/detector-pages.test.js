@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildDetectorPages, DEFAULT_EXAMPLES_FILE } from '../scripts/build-detector-pages.mjs';
+import { gunzipSync } from 'node:zlib';
+import { buildDetectorPages, DEFAULT_EXAMPLES_FILE, DEFAULT_RUNS_FILE } from '../scripts/build-detector-pages.mjs';
 import { buildDetectorCatalog } from '../packages/core/src/detector-catalog.ts';
 import { DETECTOR_FAMILIES } from '../packages/core/src/finding-presentation.ts';
 
@@ -11,6 +12,7 @@ import { DETECTOR_FAMILIES } from '../packages/core/src/finding-presentation.ts'
 // touches the gitignored output the docs build writes.
 let tmp;
 let outDir;
+let widgetDataDir;
 let data;
 const catalog = buildDetectorCatalog();
 const read = (name) => readFileSync(join(outDir, name), 'utf8');
@@ -19,7 +21,8 @@ const entry = (type) => data.records.find((r) => r.type === type);
 beforeAll(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'detector-pages-'));
   outDir = join(tmp, 'detectors');
-  data = await buildDetectorPages({ outDir, dataFile: join(tmp, 'detectors-data.json') });
+  widgetDataDir = join(tmp, 'widget-data');
+  data = await buildDetectorPages({ outDir, dataFile: join(tmp, 'detectors-data.json'), widgetDataDir });
 }, 60000);
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -65,6 +68,33 @@ describe('real outputs on the pages', () => {
   });
 });
 
+describe('example data for the widget', () => {
+  const runs = JSON.parse(readFileSync(DEFAULT_RUNS_FILE, 'utf8'));
+  const example = (type) => JSON.parse(readFileSync(join(widgetDataDir, `${type}.json`), 'utf8'));
+
+  it('writes one file per type, with the example finding id and its run', () => {
+    expect(readdirSync(widgetDataDir).sort()).toEqual(catalog.map((r) => `${r.type}.json`).sort());
+    for (const record of data.records) {
+      const { findingId, payload } = example(record.type);
+      expect(findingId).toBe(record.example.finding.id);
+      expect(payload).toBe(runs[`${record.example.source}/${record.example.log}`]);
+    }
+  });
+
+  it('holds the example finding in the run it names', () => {
+    for (const record of data.records) {
+      const { findingId, payload } = example(record.type);
+      const run = JSON.parse(gunzipSync(Buffer.from(payload, 'base64')).toString());
+      const found = [...run.catalog, ...run.configFindings].find((f) => f.id === findingId);
+      expect(found?.type, `${record.type}'s run has no finding ${findingId}`).toBe(record.type);
+    }
+  });
+
+  it('keeps the runs out of the data file the page component bundles', () => {
+    expect(JSON.stringify(data)).not.toContain(Object.values(runs)[0].slice(0, 200));
+  });
+});
+
 describe('examples file', () => {
   const examples = JSON.parse(readFileSync(DEFAULT_EXAMPLES_FILE, 'utf8'));
 
@@ -78,7 +108,7 @@ describe('examples file', () => {
     }
   });
 
-  // Every page shows a finding card. A new detector needs a corpus log, a recorded fixture or a
+  // Every page shows its example finding. A new detector needs a corpus log, a recorded fixture or a
   // small synthetic log (packages/core/test/fixtures/synthetic) that fires it at default thresholds.
   it('gives every type an example from a corpus log, a fixture or a synthetic log', () => {
     for (const record of catalog) {

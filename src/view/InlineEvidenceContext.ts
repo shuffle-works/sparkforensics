@@ -15,6 +15,10 @@ export interface InlineEvidenceState {
 
 export const InlineEvidenceContext = createContext<InlineEvidenceState | null>(null);
 
+/** Whether an evidence panel starts open. Only a host that shows one finding on its own
+ * (the docs example) turns it on; the dashboard starts every panel closed. */
+export const EvidenceInitiallyOpenContext = createContext(false);
+
 /** The panel's state, or null outside an in-place evidence panel (the grid, the
  * Full app report, the stage dialog), where widgets render in full. */
 export function useInlineEvidence(): InlineEvidenceState | null {

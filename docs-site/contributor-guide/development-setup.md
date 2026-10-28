@@ -109,8 +109,14 @@ npm run docs:preview   # serves the built docs site locally
 - `docs-site/detectors/` and `docs-site/.vitepress/detectors-data.json`
   (gitignored) are the detector catalog pages and the data the Vue components
   render, written by `scripts/build-detector-pages.mjs` from the catalog in
-  `packages/core` and `dev/detector-examples.json`. `docs:dev` and `docs:build`
-  run it; to regenerate on demand: `node scripts/build-detector-pages.mjs`.
+  `packages/core`, `dev/detector-examples.json` and
+  `dev/detector-example-runs.json`. The script also writes each page's example
+  data to `docs-site/public/detector-widget/data/`. `docs:dev` and
+  `docs:build` run it; to regenerate on demand:
+  `node scripts/build-detector-pages.mjs`.
+- `docs-site/public/detector-widget/app/` (gitignored) is the example app each
+  detector page frames, built from `docs-widget.html` by
+  `npm run build:docs-widget`, which `docs:dev` and `docs:build` run.
 - `packages/{cli,mcp,server}/vendor-core/` (gitignored) is rebuilt only at
   `prepack`. In the monorepo the bins load `packages/core/src/load-vendored.js`,
   which uses a leftover `vendor-core/` only while its `core-source-hash.txt`
