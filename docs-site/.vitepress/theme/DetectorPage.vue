@@ -52,7 +52,7 @@ const airflowSnippet = computed(() => {
   <main id="main-content" class="det-page">
     <p class="det-crumb"><a :href="siteHref('docs/detectors/')">Detector catalog</a> / {{ familyLabel }}</p>
 
-    <!-- Lead block: for people who read the result, not the Spark internals. -->
+    <!-- Lead block: the finding in plain words. -->
     <header class="det-lead">
       <div class="det-title"><span class="sf-chip sf-chip-lg">{{ r.tag }}</span><h1>{{ sentenceCase(r.name) }}</h1></div>
       <p class="det-standfirst">{{ r.pitch }}</p>
@@ -75,8 +75,13 @@ const airflowSnippet = computed(() => {
     <!-- Finding card, built from the real example finding. -->
     <section v-if="finding" class="det-section" aria-labelledby="det-example">
       <h2 id="det-example">An example finding</h2>
-      <p class="det-note">
-        A finding as reported, from the public corpus log <code>{{ example!.log }}</code>{{ example!.sparkVersion ? ` (Spark ${example!.sparkVersion})` : '' }}.
+      <p v-if="example!.source === 'synthetic'" class="det-note">
+        <strong>A synthetic example.</strong> A small event log built to fire this detector at its default thresholds,
+        <code>{{ example!.log }}</code>{{ example!.sparkVersion ? ` (Spark ${example!.sparkVersion})` : '' }}, read by the real analyzer.
+        It is not a real production run.
+      </p>
+      <p v-else class="det-note">
+        A finding as reported, from the public {{ example!.source === 'corpus' ? 'corpus' : 'test' }} log <code>{{ example!.log }}</code>{{ example!.sparkVersion ? ` (Spark ${example!.sparkVersion})` : '' }}.
       </p>
       <article class="det-finding" :data-band="finding.impactBand">
         <header class="det-finding-head">
@@ -84,6 +89,7 @@ const airflowSnippet = computed(() => {
           <span class="sf-chip">{{ finding.tag }}</span>
           <strong class="det-finding-name">{{ finding.name }}</strong>
           <span class="det-band">{{ finding.impactBand }}</span>
+          <span v-if="example!.source === 'synthetic'" class="det-band">synthetic example</span>
           <span v-if="finding.stageId !== undefined && finding.stageId !== null" class="det-stage">Stage {{ finding.stageId }}</span>
         </header>
         <p class="det-reco">{{ finding.recommendation }}</p>
@@ -138,7 +144,10 @@ const airflowSnippet = computed(() => {
       <pre class="det-code"><code>{{ json(r.surfaces.mcp.docsResponse) }}</code></pre>
 
       <h3 id="det-ci">CI (CLI)</h3>
-      <p>List this entry from the command line. The output below is a real run of the command.</p>
+      <p>
+        List this entry from the command line. The output below is a real run of the command. Budgets and exit codes are in the
+        <a :href="siteHref('docs/user-guide/getting-started/ci-and-automation.html')">CI guide</a>.
+      </p>
       <pre class="det-code"><code>{{ r.surfaces.cli.detectorsCommand }}</code></pre>
       <pre class="det-code det-output"><code>{{ r.surfaces.cli.detectorsOutput }}</code></pre>
       <p>Report only this finding type for a run with <code>--type</code>:</p>
@@ -156,12 +165,15 @@ const airflowSnippet = computed(() => {
       <p v-if="r.gate">The operator takes the budget as the <code>{{ r.gate.airflowParam }}</code> parameter.</p>
       <p v-else>The operator has no budget parameter for it. Use <code>fail_on_introduced</code> with a baseline.</p>
       <pre class="det-code"><code>{{ airflowSnippet }}</code></pre>
-      <p>The operator works per run, and its summary counts findings per impact band.</p>
+      <p>
+        The operator works per run, and its summary counts findings per impact band. See the
+        <a href="https://github.com/shuffle-works/sparkforensics-operator">operator</a> for its parameters.
+      </p>
     </section>
 
-    <!-- Engineer block. -->
-    <section class="det-section det-engineer" aria-labelledby="det-engineer">
-      <h2 id="det-engineer">For engineers</h2>
+    <!-- Thresholds and docs. -->
+    <section class="det-section det-measured" aria-labelledby="det-measured">
+      <h2 id="det-measured">How it is measured</h2>
 
       <h3 id="det-thresholds">Thresholds</h3>
       <p>{{ sentenceCase(r.thresholdSummary) }}.</p>
@@ -183,6 +195,7 @@ const airflowSnippet = computed(() => {
           <code>{{ d.suppressedBy }}</code> flagged in the same run.
         </p>
       </div>
+      <p class="det-small">Each rule's impact bands and fixed fallbacks are in the <a :href="siteHref('docs/contributor-guide/architecture/detector-contract/threshold-tables.html')">threshold tables</a>.</p>
       <p class="det-small">Override a default per run with <code>--thresholds</code>; see <a :href="siteHref('docs/user-guide/getting-started/tuning-thresholds.html')">Tuning detector thresholds</a>.</p>
 
       <h3 id="det-docs">Docs</h3>

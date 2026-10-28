@@ -487,19 +487,11 @@ the event log and are not in `writeTargets`.
 ## List the detectors {#list-the-detectors}
 
 `sparkforensics-analyze detectors` prints every finding type the detectors can
-report, with no event log:
-
-```sh
-npx -p sparkforensics-cli sparkforensics-analyze detectors --format md
-```
-
-The default output is JSON, the same records the
-[`list_detectors`](../mcp-tools/list-detectors.md) MCP tool returns, with the
-default thresholds. `--type <type>` keeps one type. The command name is read only as the
-first argument; pass a log that is named `detectors` as `./detectors`. Exit
-codes: `0` ok, `2` usage error. Each record names the budget flag that gates
-its type, when it has one, and the [detector catalog](../../detectors/index.md)
-has a page for every type.
+report, with no event log, as the JSON records of the
+[`list_detectors`](../mcp-tools/list-detectors.md) MCP tool (which lists the
+fields) or, with `--format md`, as a table. `--type <type>` keeps one type. The
+command name is read only as the first argument; pass a log named `detectors`
+as `./detectors`. Exit codes: `0` ok, `2` usage error.
 
 ## Generator
 

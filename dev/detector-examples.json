@@ -1,6 +1,48 @@
 {
-  "autoscalingChurn": null,
+  "autoscalingChurn": {
+    "source": "synthetic",
+    "log": "autoscaling-churn.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "13977064",
+      "type": "autoscalingChurn",
+      "name": "Autoscaling Churn",
+      "tag": "CHRN",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "shortLivedExecutorPct",
+      "value": 56,
+      "recommendation": "56% of removed executors ran for under 2 minutes: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.",
+      "actionLabel": "Reduce autoscaling churn",
+      "confidence": "medium",
+      "evidence": {
+        "dynamicAllocation": "on",
+        "shortLivedExecutorCount": 5
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.dynamicAllocation.executorIdleTimeout",
+          "direction": "increase",
+          "suggested": null
+        },
+        {
+          "kind": "conf",
+          "key": "spark.dynamicAllocation.minExecutors",
+          "direction": "decrease",
+          "suggested": null
+        },
+        {
+          "kind": "conf",
+          "key": "spark.dynamicAllocation.maxExecutors",
+          "direction": "increase",
+          "suggested": null
+        }
+      ]
+    }
+  },
   "cacheUtilization": {
+    "source": "corpus",
     "log": "cache-memory-and-disk.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -39,6 +81,7 @@
     }
   },
   "cachingOpportunity": {
+    "source": "corpus",
     "log": "delta-update.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -71,6 +114,7 @@
     }
   },
   "coldStart": {
+    "source": "corpus",
     "log": "pairwise-05.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -94,6 +138,7 @@
     }
   },
   "configAudit": {
+    "source": "corpus",
     "log": "external-local-1426533911241.ndjson",
     "sparkVersion": null,
     "finding": {
@@ -120,8 +165,41 @@
       ]
     }
   },
-  "coreLocality": null,
+  "coreLocality": {
+    "source": "synthetic",
+    "log": "core-locality.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "a0ca4ae7",
+      "type": "coreLocality",
+      "name": "Core Locality",
+      "tag": "LOCAL",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "nonLocalRatio",
+      "value": 30,
+      "recommendation": "30% of tasks (16) ran without process- or node-local data placement on a run of 6 hosts, highest in stage 0 (25% of 32), stage 1 (36% of 22). Raise spark.locality.wait (3s) so the scheduler waits longer for a local slot, or run executors on the hosts that hold the data.",
+      "actionLabel": "Fix data locality",
+      "confidence": "low",
+      "validationRequired": "Flagged when at least 15% of tasks run non-local (critical at 35%), on runs of 50+ tasks.",
+      "impact": "0.3 core-s",
+      "impactMeaning": "of core time (modeled)",
+      "estimateProvenance": "Modeled; 0.3 core-s of core time, which may not shorten the run. Assumes 20 ms of extra core time per non-local task; the log has no measured fetch cost.",
+      "evidence": {
+        "nonLocalTaskCount": 16
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.locality.wait",
+          "direction": "increase",
+          "suggested": null
+        }
+      ]
+    }
+  },
   "duplicatePlanSubtree": {
+    "source": "corpus",
     "log": "external-sql-duplicate-exchange-eventlog.ndjson",
     "sparkVersion": null,
     "finding": {
@@ -152,6 +230,7 @@
     }
   },
   "failures": {
+    "source": "corpus",
     "log": "failure-stage-abort.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -185,6 +264,7 @@
     }
   },
   "gc": {
+    "source": "corpus",
     "log": "pairwise-03.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -215,6 +295,7 @@
     }
   },
   "incompleteRun": {
+    "source": "corpus",
     "log": "failure-killed-run.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -233,6 +314,7 @@
     }
   },
   "jobFailureRate": {
+    "source": "corpus",
     "log": "external-failed-eventlog.ndjson",
     "sparkVersion": null,
     "finding": {
@@ -257,8 +339,45 @@
       "remediation": []
     }
   },
-  "joinKeyCast": null,
+  "joinKeyCast": {
+    "source": "fixture",
+    "log": "join-key-cast-spark-3.5.3.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "8784b424",
+      "type": "joinKeyCast",
+      "name": "Cast On A Join Key",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "shuffleBytes",
+      "value": 48000,
+      "recommendation": "SortMergeJoin joins on cast(k as decimal(20,0)), so its output is partitioned by the cast key and the exchange after it shuffles 48 KB again by k. Give both join columns the same type before the join, so Spark adds no cast to the key and the join output keeps its partitioning.",
+      "actionLabel": "Match join key types",
+      "evidence": {
+        "castKeys": [
+          "cast(k as decimal(20,0))"
+        ],
+        "exchangeKeys": [
+          "k"
+        ],
+        "executionId": 0,
+        "nodeName": "SortMergeJoin",
+        "stageIds": [
+          2,
+          3
+        ]
+      },
+      "remediation": [
+        {
+          "kind": "code",
+          "hint": "Give both join columns the same type before the join, so Spark adds no cast to the key and the join output keeps its partitioning."
+        }
+      ]
+    }
+  },
   "memoryUtilization": {
+    "source": "corpus",
     "log": "external-application_1578436911597_0052.ndjson",
     "sparkVersion": "3.0.0-SNAPSHOT",
     "finding": {
@@ -295,6 +414,7 @@
     }
   },
   "mergeRewrite": {
+    "source": "corpus",
     "log": "delta-merge-sql.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -323,9 +443,76 @@
       "remediation": []
     }
   },
-  "nestedLoopJoin": null,
-  "overBroadcast": null,
+  "nestedLoopJoin": {
+    "source": "fixture",
+    "log": "nested-loop-join-spark-3.5.9.ndjson",
+    "sparkVersion": "3.5.9",
+    "finding": {
+      "id": "674a79b9",
+      "type": "nestedLoopJoin",
+      "name": "Nested Loop Join",
+      "tag": "PLAN",
+      "impactBand": "critical",
+      "stageId": null,
+      "metric": "outputRows",
+      "value": 9000000,
+      "recommendation": "CartesianProduct produced 9,000,000 rows, every left row paired with every right row. Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.",
+      "actionLabel": "Confirm cross join",
+      "confidence": "medium",
+      "validationRequired": "Row counts are the executors' measured values; the time graded is the whole stage that runs the join, which also covers its other operators.",
+      "impact": "116ms",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate. Raw waste before the floor clipped it: 256ms.",
+      "evidence": {
+        "condition": null,
+        "executionId": 1,
+        "joinType": "Inner",
+        "leftRows": null,
+        "nodeName": "CartesianProduct",
+        "outputRows": 9000000,
+        "rightRows": null,
+        "stageIds": [
+          4
+        ]
+      },
+      "remediation": [
+        {
+          "kind": "code",
+          "hint": "Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied."
+        }
+      ]
+    }
+  },
+  "overBroadcast": {
+    "source": "synthetic",
+    "log": "over-broadcast.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "de4ac17a",
+      "type": "overBroadcast",
+      "name": "Oversized Broadcast Join",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "broadcastBytes",
+      "value": 1650000000,
+      "recommendation": "This broadcast (1.6 GB) exceeds the 1 GB threshold: spark.sql.autoBroadcastJoinThreshold (10 MB) is below it, so a broadcast() hint forced it: remove the hint.",
+      "actionLabel": "Fix oversized broadcast",
+      "impact": "55ms",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate. Raw waste before the floor clipped it: 13.2s.",
+      "evidence": {
+        "broadcastThreshold": "notLimiting",
+        "executionId": 0,
+        "stageIds": [
+          0
+        ]
+      },
+      "remediation": []
+    }
+  },
   "partitionSizing": {
+    "source": "corpus",
     "log": "pairwise-03.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -355,8 +542,42 @@
       ]
     }
   },
-  "pythonUdf": null,
+  "pythonUdf": {
+    "source": "synthetic",
+    "log": "python-udf.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "11d38720",
+      "type": "pythonUdf",
+      "name": "Row-At-A-Time Python UDF",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "dataSentBytes",
+      "value": 1150000000,
+      "recommendation": "Row-at-a-time Python UDFs (BatchEvalPython) sent 1.1 GB to Python workers and received 192 MB back over 1m 25s of stage time: set spark.sql.execution.pythonUDF.arrow.enabled=true to ship rows in Arrow batches, or rewrite the UDF as a pandas UDF.",
+      "actionLabel": "Vectorize Python UDF",
+      "evidence": {
+        "dataReturnedBytes": 192000000,
+        "dataSentBytes": 1150000000,
+        "executionId": 0,
+        "stageDurationMs": 85180,
+        "stageIds": [
+          0
+        ]
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.sql.execution.pythonUDF.arrow.enabled",
+          "direction": "set",
+          "suggested": true
+        }
+      ]
+    }
+  },
   "retryWaste": {
+    "source": "corpus",
     "log": "failure-task-retry.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -422,8 +643,47 @@
       "remediation": []
     }
   },
-  "rightSizing": null,
+  "rightSizing": {
+    "source": "synthetic",
+    "log": "right-sizing.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "8a2b006e",
+      "type": "rightSizing",
+      "name": "Right-Sized Cluster",
+      "tag": "UTIL",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "rightSizedCores",
+      "value": 8,
+      "recommendation": "At its peak the run held 16 cores. A simple model predicts that about 8 would run the stages in 6m 13s, within 10% of the 6m 13s they took: consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.",
+      "actionLabel": "Right-size cluster",
+      "confidence": "low",
+      "validationRequired": "The model spreads each stage's tasks evenly over the cores and ignores scheduling and shuffle costs. At 16 cores it misses the real time by 4%. The scaling card can show a different error, because it counts every executor ever added. Re-run with fewer cores to check.",
+      "evidence": {
+        "modelErrorPct": 4,
+        "modeledActiveMs": 373509,
+        "observedActiveMs": 373509,
+        "observedCores": 16
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.dynamicAllocation.enabled",
+          "direction": "set",
+          "suggested": true
+        },
+        {
+          "kind": "conf",
+          "key": "spark.executor.instances",
+          "direction": "decrease",
+          "suggested": null
+        }
+      ]
+    }
+  },
   "shuffle": {
+    "source": "corpus",
     "log": "pairwise-02.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -447,6 +707,7 @@
     }
   },
   "skew": {
+    "source": "corpus",
     "log": "cache-memory-only.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -478,6 +739,7 @@
     }
   },
   "slowHost": {
+    "source": "corpus",
     "log": "pairwise-03.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -508,6 +770,7 @@
     }
   },
   "smallFiles": {
+    "source": "corpus",
     "log": "eventlog-zstd.zstd",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -537,6 +800,7 @@
     }
   },
   "speculationWaste": {
+    "source": "corpus",
     "log": "pairwise-01.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -572,6 +836,7 @@
     }
   },
   "spill": {
+    "source": "corpus",
     "log": "pairwise-03.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -620,6 +885,7 @@
     }
   },
   "stageFailed": {
+    "source": "corpus",
     "log": "external-failed-eventlog.ndjson",
     "sparkVersion": null,
     "finding": {
@@ -643,6 +909,7 @@
     }
   },
   "stageShape": {
+    "source": "corpus",
     "log": "external-local-1430917381536.ndjson",
     "sparkVersion": "3.5.2",
     "finding": {
@@ -662,8 +929,36 @@
       "remediation": []
     }
   },
-  "stageSlowness": null,
+  "stageSlowness": {
+    "source": "synthetic",
+    "log": "stage-slowness.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "c3c5fd6d",
+      "type": "stageSlowness",
+      "name": "Slow Stage",
+      "tag": "SLOW",
+      "impactBand": "info",
+      "stageId": 0,
+      "metric": "stageDurationMinutes",
+      "value": 17.3,
+      "recommendation": "This stage ran 17.3 minutes with no more specific cause flagged and reads mostly input files: often too few or too uneven input partitions, so check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.",
+      "actionLabel": "Profile slow stage",
+      "evidence": {
+        "reads": "input"
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.sql.files.maxPartitionBytes",
+          "direction": "decrease",
+          "suggested": null
+        }
+      ]
+    }
+  },
   "straggler": {
+    "source": "corpus",
     "log": "external-application_1628109047826_1317105.ndjson",
     "sparkVersion": "3.1.1.119",
     "finding": {
@@ -693,6 +988,7 @@
     }
   },
   "tinyTask": {
+    "source": "corpus",
     "log": "eventlog-zstd.zstd",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -723,6 +1019,7 @@
     }
   },
   "underBroadcast": {
+    "source": "corpus",
     "log": "delta-merge-sql.ndjson",
     "sparkVersion": "4.2.0",
     "finding": {
@@ -761,8 +1058,39 @@
       ]
     }
   },
-  "unprunedScan": null,
+  "unprunedScan": {
+    "source": "synthetic",
+    "log": "unpruned-scan.ndjson",
+    "sparkVersion": "3.5.3",
+    "finding": {
+      "id": "acb13e23",
+      "type": "unprunedScan",
+      "name": "Unpruned Partitioned Scan",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "bytesRead",
+      "value": 3400000000,
+      "recommendation": "No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.",
+      "actionLabel": "Filter on partition columns",
+      "confidence": "low",
+      "validationRequired": "The plan does not name the table's partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.",
+      "evidence": {
+        "dataFilters": [
+          "(event_type = purchase)"
+        ],
+        "executionId": 0,
+        "partitionsRead": 365,
+        "relation": "default.events",
+        "stageIds": [
+          0
+        ]
+      },
+      "remediation": []
+    }
+  },
   "utilization": {
+    "source": "corpus",
     "log": "external-application_1578436911597_0052.ndjson",
     "sparkVersion": "3.0.0-SNAPSHOT",
     "finding": {

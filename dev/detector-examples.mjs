@@ -1,15 +1,18 @@
 #!/usr/bin/env node
-// Manual dev tool and CI gate: picks one public corpus log per finding type and keeps the finding
-// the real CLI reports for it, so the docs site's detector pages show a real finding card.
+// Manual dev tool and CI gate: picks one public log per finding type and keeps the finding the real
+// CLI reports for it, so the docs site's detector pages show a finding card from an actual run.
 // Details: docs-site/contributor-guide/testing.md.
 //
 // Usage:
 //   node dev/detector-examples.mjs --update   Write dev/detector-examples.json
 //   node dev/detector-examples.mjs --check    Fail when the committed file is out of date
 //
-// Pick rule per type, over the logs named in dev/corpus-snapshot.json: best impact band
+// Sources, in order of preference: the public corpus logs named in dev/corpus-snapshot.json
+// ('corpus'), then the recorded logs in packages/core/test/fixtures ('fixture'), then the small
+// hand-built logs in packages/core/test/fixtures/synthetic ('synthetic'). A later source is read
+// only for a type the earlier ones never fire. Pick rule within a source: best impact band
 // (critical, warning, info), then highest confidence, then the smaller file, then the name.
-// A type no public log fires maps to null.
+// A type no source fires maps to null.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -19,6 +22,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const CLI = join(ROOT, 'packages', 'cli', 'bin', 'sparkforensics-analyze.mjs');
 const LOG_DIRS = [join(HERE, 'log-corpus', 'logs'), join(HERE, 'log-corpus', 'logs', 'external')];
+const FIXTURE_DIR = join(ROOT, 'packages', 'core', 'test', 'fixtures');
 export const SNAPSHOT_FILE = join(HERE, 'corpus-snapshot.json');
 export const EXAMPLES_FILE = join(HERE, 'detector-examples.json');
 
@@ -68,14 +72,10 @@ function better(a, b) {
   return false;
 }
 
-/** Regenerates the examples in memory: { <type>: { log, sparkVersion, finding } | null }. */
-export function buildExamples() {
-  const snapshot = JSON.parse(readFileSync(SNAPSHOT_FILE, 'utf8'));
-  const names = snapshot.logs.filter((l) => !l.error).map((l) => l.name).sort();
+// The best candidate per finding type over `files` ({ name, path }), read through the real CLI.
+function bestByType(files, source) {
   const best = new Map();
-  for (const name of names) {
-    const path = logPath(name);
-    if (!path) die(`Corpus log ${name} is named in ${SNAPSHOT_FILE} but not found under dev/log-corpus/logs.`);
+  for (const { name, path } of files) {
     const report = analyze(path);
     if (!report) die(`The CLI failed on ${name}.`);
     const bytes = sizeOf(path);
@@ -83,24 +83,48 @@ export function buildExamples() {
     for (const f of report.findings) {
       if (seen.has(f.type)) continue; // the first finding of a type in the log
       seen.add(f.type);
-      const candidate = { log: name, path, bytes, finding: f };
+      const candidate = { source, log: name, path, bytes, finding: f };
       const current = best.get(f.type);
       if (!current || better(candidate, current)) best.set(f.type, candidate);
     }
   }
+  return best;
+}
+
+function ndjsonIn(dir) {
+  return readdirSync(dir).filter((n) => n.endsWith('.ndjson')).sort().map((name) => ({ name, path: join(dir, name) }));
+}
+
+/** Regenerates the examples in memory: { <type>: { source, log, sparkVersion, finding } | null }. */
+export function buildExamples() {
+  const snapshot = JSON.parse(readFileSync(SNAPSHOT_FILE, 'utf8'));
+  const corpus = snapshot.logs.filter((l) => !l.error).map((l) => l.name).sort().map((name) => {
+    const path = logPath(name);
+    if (!path) die(`Corpus log ${name} is named in ${SNAPSHOT_FILE} but not found under dev/log-corpus/logs.`);
+    return { name, path };
+  });
+  const types = catalogTypes();
+  const best = bestByType(corpus, 'corpus');
+  for (const [dir, source] of [[FIXTURE_DIR, 'fixture'], [join(FIXTURE_DIR, 'synthetic'), 'synthetic']]) {
+    if (types.every((t) => best.has(t))) break;
+    for (const [type, candidate] of bestByType(ndjsonIn(dir), source)) {
+      if (!best.has(type)) best.set(type, candidate);
+    }
+  }
   const versions = new Map();
   const sparkVersionOf = (c) => {
-    if (!versions.has(c.log)) {
+    if (!versions.has(c.path)) {
       const report = analyze(c.path, { redact: false });
       if (!report) die(`The CLI failed on ${c.log}.`);
-      versions.set(c.log, report.summary?.app?.sparkVersion ?? null);
+      versions.set(c.path, report.summary?.app?.sparkVersion ?? null);
     }
-    return versions.get(c.log);
+    return versions.get(c.path);
   };
   const out = {};
-  for (const type of catalogTypes()) {
+  for (const type of types) {
     const c = best.get(type);
     out[type] = c ? {
+      source: c.source,
       log: c.log,
       sparkVersion: sparkVersionOf(c),
       finding: Object.fromEntries(KEPT_FIELDS.filter((k) => c.finding[k] !== undefined).map((k) => [k, c.finding[k]])),

@@ -78,6 +78,24 @@ describe('examples file', () => {
     }
   });
 
+  // Every page shows a finding card. A new detector needs a corpus log, a recorded fixture or a
+  // small synthetic log (packages/core/test/fixtures/synthetic) that fires it at default thresholds.
+  it('gives every type an example from a corpus log, a fixture or a synthetic log', () => {
+    for (const record of catalog) {
+      const example = examples[record.type];
+      expect(example, `${record.type} has no log that fires it`).not.toBeNull();
+      expect(['corpus', 'fixture', 'synthetic']).toContain(example.source);
+    }
+  });
+
+  it('names a committed file for each fixture and synthetic example', () => {
+    const fixtures = join(import.meta.dirname, '..', 'packages', 'core', 'test', 'fixtures');
+    for (const example of Object.values(examples)) {
+      if (example?.source === 'fixture') expect(existsSync(join(fixtures, example.log))).toBe(true);
+      if (example?.source === 'synthetic') expect(existsSync(join(fixtures, 'synthetic', example.log))).toBe(true);
+    }
+  });
+
   it('puts the example from the file on each record', () => {
     for (const record of data.records) expect(record.example).toEqual(examples[record.type]);
   });

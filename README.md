@@ -236,9 +236,8 @@ Several candidates from one History Server take repeated `--app-id` values
 See [Several budgets and several candidates](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/ci-and-automation.html#several-budgets-and-several-candidates)
 for the `--budgets` file, the NDJSON line fields and the exit code rules.
 
-List every finding type the detectors can report, with its tag, family, thresholds and the
-budget flag that gates it, without reading a log (the MCP `list_detectors` tool returns the
-same records):
+List every finding type the detectors can report, without reading a log (the MCP
+`list_detectors` tool returns the same records):
 
 ```bash
 npx -p sparkforensics-cli sparkforensics-analyze detectors --format md

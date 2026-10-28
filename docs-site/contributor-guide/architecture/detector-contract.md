@@ -292,32 +292,23 @@ default-threshold analysis.
 
 `buildDetectorCatalog()` (`packages/core/src/detector-catalog.ts`) returns one
 `DetectorCatalogRecord` per emitted finding type, with no run needed. A record
-joins the type's `DETECTORS` entries (scope, fix effort, default
-`thresholds`, `suppressedBy`) with its `FINDING_PRESENTATION` row in
-`finding-presentation.ts`: the lowercase `name`, the `tag` and the other types
-that share it (`tagSharedWith`), the outcome `family` (`DETECTOR_FAMILIES` gives
-the order and labels), a one-sentence `pitch` with no figures or names, and a
-`region` (`reference` for the types the dashboard renders below the action
-widgets, otherwise `action`). It also carries the docs paths of the type's
-catalog page and findings-guide entry, its tuning anchor (a page, a section of
-another page, or a general chapter; null when no single anchor covers it) and
-the CLI budget flag and Airflow parameter that gate it, when it has one.
+joins the type's `DETECTORS` entries with its `FINDING_PRESENTATION` row in
+`finding-presentation.ts`, which also holds the outcome `family`
+(`DETECTOR_FAMILIES` gives the order and labels), a one-sentence `pitch` with no
+figures or names, and the `region` marker. The fields are listed in the
+[`list_detectors` reference](../../user-guide/mcp-tools/list-detectors.md).
 
 The `list_detectors` MCP tool and the `sparkforensics-analyze detectors`
 command read the same builder, so they state the same default thresholds, docs
 and gates.
 
-The docs site's `/docs/detectors/` pages are generated from the catalog.
-`scripts/build-detector-pages.mjs` (run by `docs:dev` and `docs:build`) writes
-`docs-site/detectors/*.md` and `docs-site/.vitepress/detectors-data.json`, all
-gitignored. Every output a page shows is captured from a real run during the
-script: an in-memory `list_detectors` and `get_finding_documentation` call, and
-`runDetectorsCommand(['--type', type, '--format', 'md'])`. The finding card on
-a page is a real finding from `dev/detector-examples.json`, which maps each
-type to one public corpus log and the finding the CLI reports for it, or to
-null when no public log fires the type. `node dev/detector-examples.mjs
---check` gates the file in CI; see
+The docs site's `/docs/detectors/` pages are generated from the catalog by
+`scripts/build-detector-pages.mjs` (see
+[Generated and vendored files](../development-setup.md#generated-and-vendored-files)).
+Every output a page shows is captured from a real run during the script: an
+in-memory `list_detectors` and `get_finding_documentation` call, and
+`runDetectorsCommand(['--type', type, '--format', 'md'])`. The finding card comes
+from `dev/detector-examples.json`, described in
 [Detector examples](../testing.md#detector-examples). Adding a finding type adds
 its page; the type needs a `FINDING_PRESENTATION` row with a `pitch` and
-`family`, and `tests/detector-pages.test.js` fails until the examples file has a
-key for it.
+`family`, and `tests/detector-pages.test.js` fails until a log fires it.

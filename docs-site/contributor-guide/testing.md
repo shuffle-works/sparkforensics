@@ -156,13 +156,22 @@ public corpus logs belong in the snapshot: never pass private logs to
 
 ### Detector examples
 
-`dev/detector-examples.json` maps every finding type to one public corpus log
-and the finding the CLI reports for it, or to `null` when no public log fires
-that type. The docs site's detector pages show it as the example finding card.
-Per type the pick is the best impact band, then the highest confidence, then
-the smaller file, then the log name, over the logs named in
-`dev/corpus-snapshot.json`; the finding is the first of that type in the real
-CLI's `--redact` JSON, reduced to the fields a page renders. CI's `core` job
+`dev/detector-examples.json` maps every finding type to one public log and the
+finding the CLI reports for it. The docs site's detector pages show it as the
+example finding card, so every type needs a log that fires it at default
+thresholds. Each entry names its `source`, and a type is read from the first
+source that fires it:
+
+1. `corpus`: the public logs named in `dev/corpus-snapshot.json`.
+2. `fixture`: the recorded logs in `packages/core/test/fixtures`.
+3. `synthetic`: the small hand-built logs in
+   `packages/core/test/fixtures/synthetic`, which the page labels as a
+   synthetic example. A new detector that no recorded log fires adds one there,
+   with a test that the real analyzer reports the type from it.
+
+Within a source the pick is the best impact band, then the highest confidence,
+then the smaller file, then the log name. The finding is the first of that type
+in the real CLI's `--redact` JSON, reduced to the fields a page renders. CI's `core` job
 regenerates it in memory and fails when it differs:
 
 ```bash
