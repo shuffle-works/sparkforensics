@@ -132,7 +132,7 @@ neutral rather than clean green, after the interpretation's `coverage.gaps`
 (`verdictGaps`) lines saying why
 and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
-action-region type. Caching Opportunities, Config Audit, and the seven
+action-region type. Caching Opportunities, Config Audit, and the eight
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files,
 Nested Loop Join, MERGE rewrites, Unpruned Partitioned Scans, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
