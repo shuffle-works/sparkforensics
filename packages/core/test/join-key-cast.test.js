@@ -129,6 +129,27 @@ describe('joinKeyCastOf', () => {
     expect(castOf(exchange('hashpartitioning(k#8L, 4)', joinOf('ShuffledHashJoin [k#2L], [cast(k#8L as bigint)], RightOuter, BuildLeft')))).toMatchObject({ exchangeKeys: ['k'] });
   });
 
+  it('reports nothing when an expand or a union drops the join partitioning before the exchange', () => {
+    const expand = node('HashAggregate', 'HashAggregate(keys=[k#2, spark_grouping_id#9], functions=[partial_count(1)])', [
+      node('Expand', 'Expand [[k#2, 0], [null, 1]]', [joinOf(DECIMAL_JOIN)]),
+    ]);
+    expect(castOf(exchange('hashpartitioning(k#2, spark_grouping_id#9, 4)', expand))).toBeNull();
+    const union = node('Union', 'Union', [joinOf(DECIMAL_JOIN), scan('c')]);
+    expect(castOf(exchange('hashpartitioning(k#2, 4)', union))).toBeNull();
+  });
+
+  it('needs every key of a later join to match the cast side, not just cover it', () => {
+    const later = (hash) => {
+      const cast = joinOf('SortMergeJoin [cast(a#1 as decimal(20,0))], [x#7L], Inner');
+      const root = node('SortMergeJoin', 'SortMergeJoin [a#1, d#4], [b#5, e#6], Inner', [
+        node('Sort', 'Sort [a#1 ASC]', [exchange(hash, cast)]), scan('c'),
+      ]);
+      return joinKeyCastOf(cast, parentsOf(root));
+    };
+    expect(later('hashpartitioning(a#1, d#4, 4)')).toBeNull();
+    expect(later('hashpartitioning(a#1, 4)')).toMatchObject({ exchangeKeys: ['a'] });
+  });
+
   it('reports nothing for an exchange the job asked for', () => {
     const repartition = node('Exchange', 'Exchange hashpartitioning(k#2, 4), REPARTITION_BY_COL', [
       node('Exchange', '', [joinOf(DECIMAL_JOIN)], { exchangeRole: 'write' }),

@@ -496,8 +496,10 @@ this tag:
   the same type before the join. Not flagged: a broadcast join, a join with no
   exchange after it, an exchange on the cast expression itself, an exchange
   the job asked for (a repartition or rebalance), an exchange whose keys do
-  not cover every key of the cast side (it would stay without the cast), a
-  full outer join, and a cast only on the side whose partitioning the join
+  not cover every key of the cast side (it would stay without the cast), an
+  exchange before a later join whose keys are not exactly the cast side's
+  keys, an expand (rollup, cube) or union between the join and the exchange,
+  a full outer join, and a cast only on the side whose partitioning the join
   does not keep (the right side of a left outer, semi or anti join, the left
   side of a right outer join).
 - MERGE rewrite: a Delta `MERGE` whose command node reports one of two
