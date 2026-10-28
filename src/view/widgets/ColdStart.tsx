@@ -70,7 +70,7 @@ export const ColdStart = memo(function ColdStart({ catalog, defaultCollapsed = t
       badges={
         <>
           <TagBadge type="coldStart" impactBand={issues[0].impactBand} />
-          {canToggleSort(issues, issues.length, cardOpen) ? (
+          {canToggleSort(issues, (f) => [f], (f) => f.stageId ?? null, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
         </>

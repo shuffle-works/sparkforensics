@@ -130,7 +130,7 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
   }
 
   const combinedImpactBand = worstImpactBand(partitionFindings);
-  const canSortByImpact = canToggleSort(partitionFindings, sorted.length, cardOpen);
+  const canSortByImpact = canToggleSort(sorted, (e) => e.partitions, (e) => e.stageId, cardOpen);
 
   return (
     <WidgetCard

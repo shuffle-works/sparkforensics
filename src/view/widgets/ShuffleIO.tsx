@@ -125,7 +125,7 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
   const pills = orderedEntries
     .filter((e) => e.shuffle.id == null || !inline?.stated.has(e.shuffle.id))
     .map((e) => ({ id: e.stageId }));
-  const canSortByImpact = canToggleSort(shuffleFindings, sorted.length, cardOpen);
+  const canSortByImpact = canToggleSort(sorted, (e) => [e.shuffle], (e) => e.stageId, cardOpen);
 
   return (
     <WidgetCard

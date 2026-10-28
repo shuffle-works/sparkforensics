@@ -121,7 +121,7 @@ export function TaskFailures({ appModel, catalog, defaultCollapsed = true }: Tas
       badges={
         <>
           <TagBadge type="failures" impactBand={worstImpactBand(findings)!} />
-          {canToggleSort(findings, findings.length, cardOpen) ? (
+          {canToggleSort(sorted, (f) => [f], (f) => f.stageId, cardOpen) ? (
             <SortModeToggle
               mode={sortMode}
               onChange={(next) => {

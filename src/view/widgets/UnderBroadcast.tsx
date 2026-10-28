@@ -78,7 +78,7 @@ export const UnderBroadcast = memo(function UnderBroadcast({ catalog, defaultCol
       badges={
         <>
           <TagBadge type="underBroadcast" impactBand={worstImpactBand(findings) ?? 'info'} className={PLAN_TAG_CLASS} />
-          {canToggleSort(findings, findings.length, cardOpen) ? (
+          {canToggleSort(findings, (f) => [f], stageIdOf, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
         </>

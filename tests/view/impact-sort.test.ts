@@ -40,35 +40,6 @@ test('stageIdOf returns null for an app-level finding with neither stageId nor s
   expect(stageIdOf(finding({ stageId: null, stageIds: [] }))).toBeNull();
 });
 
-test('canToggleSort returns false when cardOpen is false, regardless of findings or rowCount', () => {
-  const f = withWallClockLow(100);
-  expect(canToggleSort(installInterpretation([f]), [f], 2, false)).toBe(false);
-});
-
-test('canToggleSort returns false when no finding in the list is ranked, even if cardOpen is true', () => {
-  const f = finding({ recommendation: '' });
-  expect(canToggleSort(installInterpretation([f]), [f], 2, true)).toBe(false);
-  expect(canToggleSort(null, [withWallClockLow(100)], 2, true)).toBe(false);
-});
-
-test('canToggleSort returns false when rowCount is 1 or less, even if cardOpen is true and a finding is ranked', () => {
-  const f = withWallClockLow(100);
-  const interpreted = installInterpretation([f]);
-  expect(canToggleSort(interpreted, [f], 1, true)).toBe(false);
-  expect(canToggleSort(interpreted, [f], 0, true)).toBe(false);
-});
-
-test('canToggleSort returns true for ranked findings with no wall-clock claim, which the impact order still moves', () => {
-  const findings = [
-    finding({ stageId: 1, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 1_000 } }),
-    finding({ stageId: 2, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 9_000 } }),
-  ];
-  const interpreted = installInterpretation(findings);
-
-  expect(orderByImpact(interpreted, findings, (f) => [f])).toEqual([findings[1], findings[0]]);
-  expect(canToggleSort(interpreted, findings, 2, true)).toBe(true);
-});
-
 const identityFindings = (f: Finding) => [f];
 
 function onStage(type: string, stageId: number, wallClockMs: number, stageTaskMs: number): Finding {
@@ -78,6 +49,71 @@ function onStage(type: string, stageId: number, wallClockMs: number, stageTaskMs
     impactEstimate: { basis: 'serial', wallClock: { low: wallClockMs, high: wallClockMs }, estimateMethod: 'measured', stageTaskMs },
   });
 }
+
+const stageOf = (f: Finding) => f.stageId ?? null;
+
+test('canToggleSort returns true when the stage order differs from the impact order', () => {
+  const rows = [onStage('gc', 1, 1, 1_000), onStage('gc', 2, 1, 9_000)];
+  const interpreted = installInterpretation(rows);
+
+  expect(orderByImpact(interpreted, rows, identityFindings)).toEqual([rows[1], rows[0]]);
+  expect(canToggleSort(interpreted, rows, identityFindings, stageOf, true)).toBe(true);
+});
+
+test('canToggleSort returns true for ranked findings with no wall-clock claim, which the impact order still moves', () => {
+  const rows = [
+    finding({ stageId: 1, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 1_000 } }),
+    finding({ stageId: 2, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 9_000 } }),
+  ];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(true);
+});
+
+test('canToggleSort returns false when the stage order equals the impact order', () => {
+  const rows = [onStage('gc', 1, 1, 9_000), onStage('gc', 2, 1, 1_000)];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
+});
+
+test('canToggleSort returns false when every row sits on one stage', () => {
+  const rows = [onStage('gc', 3, 1, 1_000), onStage('gc', 3, 1, 9_000)];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
+});
+
+test('canToggleSort returns false when no row has a stage', () => {
+  const rows = [finding({ type: 'gc', stageId: null, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 1_000 } }),
+    finding({ type: 'gc', stageId: null, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 9_000 } })];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
+});
+
+test('canToggleSort returns true when every row has the same impact but the rows are not in stage order', () => {
+  const rows = [onStage('gc', 2, 1, 5_000), onStage('gc', 1, 1, 5_000)];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(true);
+});
+
+test('canToggleSort returns false when cardOpen is false, even if the orders differ', () => {
+  const rows = [onStage('gc', 1, 1, 1_000), onStage('gc', 2, 1, 9_000)];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, false)).toBe(false);
+});
+
+test('canToggleSort returns false when no finding in the rows is ranked, even if cardOpen is true', () => {
+  const rows = [finding({ stageId: 2, recommendation: '' }), finding({ stageId: 1, recommendation: '' })];
+
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
+  expect(canToggleSort(null, [withWallClockLow(100), withWallClockLow(200)], identityFindings, stageOf, true)).toBe(false);
+});
+
+test('canToggleSort returns false for one row or none', () => {
+  const row = onStage('gc', 1, 1, 9_000);
+  const interpreted = installInterpretation([row]);
+
+  expect(canToggleSort(interpreted, [row], identityFindings, stageOf, true)).toBe(false);
+  expect(canToggleSort(interpreted, [], identityFindings, stageOf, true)).toBe(false);
+});
 
 test('orderByImpact lists rows in verdict step order when stage task time and wall-clock savings disagree', () => {
   const catalog = [

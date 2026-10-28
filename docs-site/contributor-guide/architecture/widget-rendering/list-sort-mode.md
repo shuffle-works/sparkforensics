@@ -30,11 +30,15 @@ are, not by how much fixing them would save. A per-stage
 detector's own `finding.stageId` is the sort key directly; a sql-scope finding that spans
 several stages (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `pythonUdf`, `underBroadcast`, `overBroadcast`,
 via `stageIds`) sorts by the lowest stage id it touches (`stageIdOf`). The toggle renders
-only when `canToggleSort` holds: a finding in the list has a place in `savingsRank`,
-there is more than one row, and the card is open; with no ranked finding the impact
-order is the input order, so the toggle would do nothing. `MergeRewrite.tsx` also
-hides it when none of its findings has a stage, since stage order would be the input order. Rows with no
+only when `canToggleSort` holds: the card is open, a finding in the rows has a place in
+`savingsRank`, and the stage order lists a different sequence of stage ids than the impact
+order. A widget passes the same rows, in the same order, that it passes to `orderBy`, with the
+same finding and stage accessors. The gate compares the stage id of each position in both orders
+over all rows, so pagination does not affect it, and rows tied on one stage never show it. The toggle is hidden when the stage order adds no stage
+information: all rows share one stage, have none, or are already in stage order. With no ranked finding the
+impact order is the input order, so the toggle would do nothing. Rows with no
 rankable finding, and `byStageAsc` ties, keep their prior relative order
 (`Array.prototype.sort`'s stability) rather than being shuffled.
+`GcPressure.tsx` shows its one toggle when either of its two sections has differing orders.
 `FixTheseFirst`'s own expanded group list (see "Findings tab" above) sorts by impact
 on its own and does not use this pattern; it has no stage-order toggle.
