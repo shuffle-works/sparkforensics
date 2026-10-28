@@ -73,7 +73,8 @@ wrapping rather than truncating, then one **Show evidence** button); and a right
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
 `formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). The
 **Show evidence** button (`EvidenceButton`), not the row, is the click
-target. Every row opens its own evidence in place as a table row below
+target. A row whose content check keeps no row has no button (see
+[row-expand-contract](./row-expand-contract.md#in-place-evidence-panel)). Every other row opens its own evidence in place as a table row below
 (`EvidencePanelRow`, `InlineEvidence`), scoped to the row's findings: the
 widget renders without its other findings of the same type. The panel starts
 at the text column, and stacks full width below `sm`. A route that targets one
