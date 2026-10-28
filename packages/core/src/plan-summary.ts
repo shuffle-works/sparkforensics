@@ -168,13 +168,37 @@ function visitAgg(_name: string, detail: string, result: PlanSummary): boolean {
   return true;
 }
 
+/** The raw key expressions (expression ids kept) and partition count of a `hashpartitioning(...)` or
+ * `rangepartitioning(...)` in an exchange detail, or null. A depth scan, not a regex: a key such as
+ * `cast(a#1 as decimal(20,0))` holds a comma. */
+export function partitioningArgs(detail: string, kind: 'hash' | 'range'): { keys: string[]; numPartitions: number } | null {
+  const open = detail.search(new RegExp(`${kind}partitioning\\(`, 'i'));
+  if (open < 0) return null;
+  const start = detail.indexOf('(', open) + 1;
+  let depth = 1, end = start;
+  for (; end < detail.length && depth > 0; end++) {
+    if (detail[end] === '(') depth++;
+    else if (detail[end] === ')') depth--;
+  }
+  const args = splitTopLevel(detail.slice(start, end - 1));
+  const count = args.pop() ?? '';
+  return depth === 0 && /^\d+$/.test(count) ? { keys: args, numPartitions: parseInt(count, 10) } : null;
+}
+
+/** The operator, raw key expressions (expression ids kept) and join type of a keyed join node's detail, or null. */
+export function parseJoinKeys(detail: string): { operator: string; leftKeys: string[]; rightKeys: string[]; joinType: string } | null {
+  const m = detail.match(JOIN_DETAIL);
+  return m ? { operator: m[1], leftKeys: splitTopLevel(m[2].slice(1, -1)), rightKeys: splitTopLevel(m[3].slice(1, -1)), joinType: m[4] } : null;
+}
+
 function visitExchange(detail: string, result: PlanSummary): void {
-  const h = detail.match(/hashpartitioning\((.+?),\s*(\d+)\)/i);
-  const r = detail.match(/rangepartitioning\((.+?),\s*(\d+)\)/i);
+  const h = partitioningArgs(detail, 'hash');
+  const r = partitioningArgs(detail, 'range');
+  const cleanKeys = (keys: string[]) => keys.map(s => cleanColRef(s.replace(/\s+(ASC|DESC)(\s+NULLS\s+\w+)?/i, ''))).filter(Boolean);
   if (h) {
-    result.exchanges.push({ partitioning: 'hash', keys: splitTopLevel(h[1]).map(s => cleanColRef(s.replace(/\s+(ASC|DESC)(\s+NULLS\s+\w+)?/i, ''))).filter(Boolean), numPartitions: parseInt(h[2], 10) });
+    result.exchanges.push({ partitioning: 'hash', keys: cleanKeys(h.keys), numPartitions: h.numPartitions });
   } else if (r) {
-    result.exchanges.push({ partitioning: 'range', keys: splitTopLevel(r[1]).map(s => cleanColRef(s.replace(/\s+(ASC|DESC)(\s+NULLS\s+\w+)?/i, ''))).filter(Boolean), numPartitions: parseInt(r[2], 10) });
+    result.exchanges.push({ partitioning: 'range', keys: cleanKeys(r.keys), numPartitions: r.numPartitions });
   } else if (/RoundRobinPartitioning/i.test(detail)) {
     const n = detail.match(/RoundRobinPartitioning\((\d+)\)/i);
     result.exchanges.push({ partitioning: 'roundrobin', keys: [], numPartitions: n ? parseInt(n[1], 10) : 0 });

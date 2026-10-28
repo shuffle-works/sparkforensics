@@ -4,7 +4,7 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
 
 - **Plan Advisor** (tag `PLAN`): SQL-plan-level findings computed from
   `appModel.sql`'s resolved `planTree` (DETECTORS entries
-  `duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `broadcastSizing`, `pythonUdf` in
+  `duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `broadcastSizing`, `pythonUdf` in
   `packages/core/src/detectors.ts`): repeated plan subtrees (≥3 nodes, ≥2 occurrences; dropped when their
   linked stages take under 0.5% of the run; banded from the recovered
   wall-clock like other findings, with a `warning`/`info` fallback; an
@@ -12,20 +12,22 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
   exchange reuse), small-files read/write (>100 files
   averaging <3 MiB), nested-loop and cartesian joins whose output dwarfs
   their inputs (`nestedLoopJoin`, graded by the time of the stages that run the
-  join), Delta MERGEs that rewrite mostly unmodified rows or keep most target
+  join), shuffled joins whose key carries a cast, so that an exchange
+  after the join shuffles by the uncast column again (`joinKeyCast`, an info finding;
+  its `value` is that exchange's `data size`), Delta MERGEs that rewrite mostly unmodified rows or keep most target
   files after skipping (`mergeRewrite`, two rules, each an info finding; `target` is read with
   `resolveDeltaCommandTarget`, so it is null when the log names no single target), and broadcast-join sizing in both directions (missed-
   broadcast info finding, over-broadcast warning at >1 GB), and
   row-at-a-time Python UDFs (`BatchEvalPython` stages that sent >64 MiB to
-  Python workers over >30 s; an info finding). Each of the seven
+  Python workers over >30 s; an info finding). Each of the eight
   emitted types renders as its own card (`DuplicatePlanSubtree.tsx`,
-  `SmallFiles.tsx`, `NestedLoopJoin.tsx`, `MergeRewrite.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`, `PythonUdf.tsx`): all seven
+  `SmallFiles.tsx`, `NestedLoopJoin.tsx`, `JoinKeyCast.tsx`, `MergeRewrite.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`, `PythonUdf.tsx`): all eight
   share the `PLAN` tag and
   the same `--plan-aggregate` badge tint (`src/view/plan-finding-shared.ts`).
   Their `docAnchor`s (`#bottleneck-duplicate-plan-subtree`,
   `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`, `#pyspark`) each
-  resolve to their own page in the vendored tuning reference; `nestedLoopJoin`
-  links to the reference's `#joins` chapter and `mergeRewrite` to its
+  resolve to their own page in the vendored tuning reference; `nestedLoopJoin` and `joinKeyCast`
+  link to the reference's `#joins` chapter and `mergeRewrite` to its
   `#table-formats` chapter.
 
 `detector-registry.tsx`'s `REGISTRY` carries `region: 'reference'` on

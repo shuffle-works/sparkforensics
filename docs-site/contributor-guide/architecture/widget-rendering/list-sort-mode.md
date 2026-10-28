@@ -21,14 +21,14 @@ to the interpretation: `Skew.tsx`, `TinyTask.tsx`, `StageShape.tsx`,
 `RetryWaste.tsx`, `StageFailed.tsx`, `TaskFailures.tsx`,
 `SlowHost.tsx`, `StageSlowness.tsx`, `Straggler.tsx`, `SpeculationWaste.tsx`,
 `ColdStart.tsx` (one widget per type, each sorting only its own flat issue list), and `DuplicatePlanSubtree.tsx`/
-`SmallFiles.tsx`/`NestedLoopJoin.tsx`/`MergeRewrite.tsx`/`PythonUdf.tsx`/`UnderBroadcast.tsx`/`OverBroadcast.tsx` (each reorders its own list by
+`SmallFiles.tsx`/`NestedLoopJoin.tsx`/`JoinKeyCast.tsx`/`MergeRewrite.tsx`/`PythonUdf.tsx`/`UnderBroadcast.tsx`/`OverBroadcast.tsx` (each reorders its own list by
 `stageIdOf`, the lowest stage id its finding touches).
 It is a two-segment `ToggleGroup` (Impact / Stage; optional `stageLabel`, default "Stage",
 which no caller overrides), wrapped in `AdvancedOnly`: stage number is the one axis every one of these widgets' items
 can be compared on. Neither mode sorts by impact band, which ranks findings by how bad they
 are, not by how much fixing them would save. A per-stage
 detector's own `finding.stageId` is the sort key directly; a sql-scope finding that spans
-several stages (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `pythonUdf`, `underBroadcast`, `overBroadcast`,
+several stages (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `pythonUdf`, `underBroadcast`, `overBroadcast`,
 via `stageIds`) sorts by the lowest stage id it touches (`stageIdOf`). The toggle renders
 only when `canToggleSort` holds: the card is open, a finding in the rows has a place in
 `savingsRank`, and the stage order lists a different sequence of stage ids than the impact
