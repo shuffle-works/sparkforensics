@@ -57,11 +57,11 @@ function sizeOf(path) {
   return readdirSync(path).reduce((sum, n) => sum + sizeOf(join(path, n)), 0);
 }
 
-// The findings come from a redacted run. Redaction can also rewrite the Spark version, so the
-// version comes from an unredacted run of the chosen log.
-function analyze(path, { redact = true } = {}) {
+// Every source is a public corpus log, a recorded fixture or a synthetic log, so nothing here is
+// redacted: the docs widgets show the names and values the dashboard shows for the same log.
+function analyze(path) {
   const r = spawnSync(process.execPath, [
-    CLI, path, '--impact', 'critical,warning,info', ...(redact ? ['--redact'] : []), '--format', 'json',
+    CLI, path, '--impact', 'critical,warning,info', '--format', 'json',
   ], { encoding: 'utf8', maxBuffer: 1 << 30 });
   // Exit 3 is an inconclusive run (no ApplicationEnd): the report is still complete.
   if (r.status !== 0 && r.status !== 3) return null;
@@ -101,14 +101,14 @@ function ndjsonIn(dir) {
   return readdirSync(dir).filter((n) => n.endsWith('.ndjson')).sort().map((name) => ({ name, path: join(dir, name) }));
 }
 
-// The payload the dashboard's HTML export carries for `path`, the way the CLI's --redact
-// --export-html builds it (that flag needs a built template, which this gate must not). The gzip
-// header's timestamp is zeroed, or every run would encode differently.
+// The payload the dashboard's HTML export carries for `path`, the way the CLI's --export-html
+// builds it (that flag needs a built template, which this gate must not). The gzip header's
+// timestamp is zeroed, or every run would encode differently.
 async function exportPayload(path) {
   const { appModel, skippedLines } = await collectRun(path);
   appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
   const { catalog } = runFindings(appModel, undefined);
-  const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact: true, ...EXPORT_STAMP });
+  const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact: false, ...EXPORT_STAMP });
   return Buffer.from(gzipSync(strToU8(JSON.stringify(data)), { mtime: 0 })).toString('base64');
 }
 

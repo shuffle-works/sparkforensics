@@ -174,9 +174,11 @@ the first source that fires it:
 
 Within a source the pick is the best impact band, then the highest confidence,
 then the smaller file, then the log name. The finding is the first of that type
-in the real CLI's `--redact` JSON. The run is built in process the way
-`--redact --export-html` builds it. CI's `core` job regenerates both files in
-memory and fails when either differs, naming each changed type or log:
+in the real CLI's JSON report. The run is built in process the way
+`--export-html` builds it. Neither is redacted: every source is public, and the
+widgets show the names and values the dashboard shows for the same log. CI's
+`core` job regenerates both files in memory and fails when either differs,
+naming each changed type or log:
 
 ```bash
 node dev/detector-examples.mjs --check

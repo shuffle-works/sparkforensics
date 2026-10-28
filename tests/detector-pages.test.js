@@ -90,6 +90,13 @@ describe('example data for the widget', () => {
     }
   });
 
+  it('keeps the application ids the logs carry, not the pseudonyms redaction writes', () => {
+    for (const [name, payload] of Object.entries(runs)) {
+      const run = JSON.parse(gunzipSync(Buffer.from(payload, 'base64')).toString());
+      expect(run.app.id, `${name} is redacted`).not.toMatch(/^app-\d+$/);
+    }
+  });
+
   it('keeps the runs out of the data file the page component bundles', () => {
     expect(JSON.stringify(data)).not.toContain(Object.values(runs)[0].slice(0, 200));
   });
