@@ -60,25 +60,21 @@ describe('createMcpServer', () => {
     ]);
   });
 
-  it('round-trips list_detectors with filters and the server\'s own thresholds', async () => {
+  it('round-trips list_detectors with the default thresholds, filtered by type', async () => {
     const client = await connectedClient(createMcpServer({ thresholds: { skew: { ratioWarn: 6 } } }));
     const all = await client.callTool({ name: 'list_detectors', arguments: {} });
     expect(all.isError).toBeFalsy();
     expect(all.structuredContent.count).toBe(all.structuredContent.detectors.length);
     const one = await client.callTool({ name: 'list_detectors', arguments: { type: 'skew' } });
     expect(one.structuredContent.detectors).toHaveLength(1);
-    expect(one.structuredContent.detectors[0].detectors[0].thresholds.ratioWarn).toBe(6);
+    expect(one.structuredContent.detectors[0].detectors[0].thresholds.ratioWarn).toBe(3);
     expect(JSON.parse(one.content[0].text)).toEqual(one.structuredContent);
-    const family = await client.callTool({ name: 'list_detectors', arguments: { family: 'plan' } });
-    expect(family.structuredContent.detectors.every((r) => r.family === 'plan')).toBe(true);
   });
 
-  it('refuses a list_detectors filter value that is not in the catalog', async () => {
+  it('refuses a list_detectors type that is not in the catalog', async () => {
     const client = await connectedClient(createMcpServer());
-    for (const arguments_ of [{ type: 'nope' }, { tag: 'NOPE' }, { family: 'nope' }, { scope: 'nope' }]) {
-      const result = await client.callTool({ name: 'list_detectors', arguments: arguments_ }).catch((e) => ({ isError: true, thrown: e }));
-      expect(result.isError, JSON.stringify(arguments_)).toBe(true);
-    }
+    const result = await client.callTool({ name: 'list_detectors', arguments: { type: 'nope' } }).catch((e) => ({ isError: true, thrown: e }));
+    expect(result.isError).toBe(true);
   });
 
   it('round-trips list_runs for a local directory', async () => {

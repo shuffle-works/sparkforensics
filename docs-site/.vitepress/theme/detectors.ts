@@ -18,7 +18,6 @@ export interface DetectorRecord {
   tuning: { kind: 'page' | 'section' | 'chapter'; anchor: string; path: string } | null;
   gate: { cliFlag: string; airflowParam: string } | null;
   example: { log: string; sparkVersion: string | null; finding: Record<string, any> } | null;
-  flags: { sharedTag: boolean; tuning: string; hasExample: boolean; gate: string; reference: boolean; suppressedBy: string[] };
   surfaces: {
     mcp: { listCall: unknown; listResponse: unknown; docsCall: unknown; docsResponse: unknown };
     cli: { detectorsCommand: string; detectorsOutput: string; filterCommand: string; budgetCommand: string | null };

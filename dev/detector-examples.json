@@ -665,7 +665,7 @@
   "stageSlowness": null,
   "straggler": {
     "log": "external-application_1628109047826_1317105.ndjson",
-    "sparkVersion": "host-2",
+    "sparkVersion": "3.1.1.119",
     "finding": {
       "id": "92c6a172",
       "type": "straggler",

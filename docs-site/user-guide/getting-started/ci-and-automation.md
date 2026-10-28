@@ -490,13 +490,12 @@ the event log and are not in `writeTargets`.
 report, with no event log:
 
 ```sh
-npx -p sparkforensics-cli sparkforensics-analyze detectors --family cost --format md
+npx -p sparkforensics-cli sparkforensics-analyze detectors --format md
 ```
 
 The default output is JSON, the same records the
-[`list_detectors`](../mcp-tools/list-detectors.md) MCP tool returns. It
-takes `--type`, `--tag`, `--family` and `--scope` filters, `--out <path>`, and
-`--thresholds <file>` to show the thresholds a tuned run uses. The command name is read only as the
+[`list_detectors`](../mcp-tools/list-detectors.md) MCP tool returns, with the
+default thresholds. `--type <type>` keeps one type. The command name is read only as the
 first argument; pass a log that is named `detectors` as `./detectors`. Exit
 codes: `0` ok, `2` usage error. Each record names the budget flag that gates
 its type, when it has one, and the [detector catalog](../../detectors/index.md)

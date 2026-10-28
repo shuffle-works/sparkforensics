@@ -13,8 +13,7 @@ import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-al
 import { IMPACT_BANDS } from './format-utils.ts';
 import { COMPARISON_METRIC_KEYS } from './run-comparison.ts';
 import { FINDING_TYPES } from './cli/flag-values.ts';
-import { catalogTags, listDetectors } from './detector-catalog.ts';
-import { DETECTOR_FAMILIES } from './finding-presentation.ts';
+import { listDetectors } from './detector-catalog.ts';
 
 // z.enum wants a non-empty tuple; these lists are never empty.
 const nonEmpty = (values: readonly string[]) => values as [string, ...string[]];
@@ -239,14 +238,9 @@ export function createMcpServer(
   ));
 
   server.registerTool('list_detectors', {
-    description: 'Every finding type SparkForensics can report, with no run needed: its tag, outcome family, scope, fix effort, one-sentence pitch, thresholds (the server\'s own when it was started with --thresholds), docs paths, and the budget flag that gates it, when it has one. Filter by type, tag, family or scope. Docs paths are relative to the published site root.',
-    inputSchema: {
-      type: findingTypeSchema.optional(),
-      tag: z.enum(nonEmpty(catalogTags())).optional(),
-      family: z.enum(nonEmpty(DETECTOR_FAMILIES.map((f) => f.id))).optional(),
-      scope: z.enum(['stage', 'app', 'sql', 'config']).optional(),
-    },
-  }, (filter) => toolResult(Promise.resolve().then(() => listDetectors(filter, { thresholds }))));
+    description: 'Every finding type SparkForensics can report, with no run needed: its tag, outcome family, scope, fix effort, one-sentence pitch, default thresholds, docs paths, and the budget flag that gates it, when it has one. Pass a type for that one record. Docs paths are relative to the published site root.',
+    inputSchema: { type: findingTypeSchema.optional() },
+  }, ({ type }) => toolResult(Promise.resolve().then(() => listDetectors(type))));
 
   server.registerTool('get_reference_doc', {
     description: 'Full tuning-reference chapter or bottleneck markdown by doc anchor (e.g. "#joins", "#bottleneck-skew", "#metric-task-duration"), so a client without browser access can read the same reference the web view shows.',

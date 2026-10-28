@@ -63,8 +63,8 @@ function loadExamples(examplesFile) {
   return JSON.parse(readFileSync(examplesFile, 'utf8'));
 }
 
-// The data file entry for one catalog record: the record, its example, the special-case flags the
-// tests assert, and the real tool outputs the page shows.
+// The data file entry for one catalog record: the record, its example and the real tool outputs the
+// page shows.
 async function buildEntry(client, record, example) {
   const { type } = record;
   const mcpResponse = await callTool(client, 'list_detectors', { type });
@@ -74,14 +74,6 @@ async function buildEntry(client, record, example) {
   return {
     ...record,
     example: example ?? null,
-    flags: {
-      sharedTag: record.tagSharedWith.length > 0,
-      tuning: record.tuning?.kind ?? 'none',
-      hasExample: example != null,
-      gate: record.gate?.cliFlag ?? 'none',
-      reference: record.region === 'reference',
-      suppressedBy: record.detectors.map((d) => d.suppressedBy).filter(Boolean),
-    },
     surfaces: {
       mcp: {
         listCall: { tool: 'list_detectors', arguments: { type } },

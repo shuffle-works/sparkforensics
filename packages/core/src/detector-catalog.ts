@@ -2,7 +2,7 @@
 // FINDING_PRESENTATION, with no run needed. `list_detectors` (MCP), `sparkforensics-analyze
 // detectors` (CLI) and the docs site's /docs/detectors/ pages all read it, so they state the same
 // thresholds, docs and gates. It imports detectors.ts by value, so the HTML export never reaches it.
-import { DETECTORS, ENTRY_BY_TYPE, type DetectorScope, type DetectorThresholds, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, type DetectorScope, type DetectorThresholds } from './detectors.ts';
 import { docAnchorForType } from './detector-docs.ts';
 import { docsUrl, pageForAnchor } from './docs-config.ts';
 import { detectorPageUrl, findingGuideUrl } from './docs-site-config.ts';
@@ -10,8 +10,7 @@ import {
   DETECTOR_FAMILIES, FINDING_PRESENTATION, type DetectorFamily,
 } from './finding-presentation.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
-import { effectiveThresholds, tunedDetectors } from './threshold-overrides.ts';
-import type { FindingType, FixEffort, TunedThresholds } from './types.ts';
+import type { FindingType, FixEffort } from './types.ts';
 
 /** The CLI budget flag and Airflow operator parameter that gate a finding type directly. A type
  * with no entry is gated through `--fail-on-introduced` against a baseline, or not at all. */
@@ -26,7 +25,7 @@ const BUDGET_GATES: { readonly [T in FindingType]?: BudgetGate } = {
   skew: { cliFlag: '--max-skew', airflowParam: 'max_skew_ratio' },
   spill: { cliFlag: '--max-spill', airflowParam: 'max_spill_gb' },
   utilization: { cliFlag: '--min-efficiency', airflowParam: 'min_efficiency_pct' },
-  jobFailureRate: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
+  failures: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
 };
 
 /** Where a type's tuning documentation lives: its own bottleneck page, a section of another
@@ -43,8 +42,6 @@ export interface DetectorEntryInfo {
   detector: string;
   version: number;
   thresholds: DetectorThresholds;
-  /** Present only when an override moved a threshold off its default. */
-  tunedThresholds?: TunedThresholds;
   suppressedBy?: string;
 }
 
@@ -61,7 +58,7 @@ export interface DetectorCatalogRecord {
   region: 'action' | 'reference';
   scope: DetectorScope;
   fixEffort: FixEffort;
-  /** The clean-check criterion, under any overrides. */
+  /** The clean-check criterion. */
   thresholdSummary: string;
   detectors: DetectorEntryInfo[];
   /** The docs path of this type's catalog page and of its entry in the findings guide. */
@@ -69,13 +66,6 @@ export interface DetectorCatalogRecord {
   /** Null when no single tuning anchor covers the type. */
   tuning: TuningDocRef | null;
   gate: BudgetGate | null;
-}
-
-export interface DetectorCatalogFilter {
-  type?: string;
-  tag?: string;
-  family?: string;
-  scope?: string;
 }
 
 export interface DetectorCatalogResult {
@@ -92,9 +82,7 @@ function tuningDocRef(type: string): TuningDocRef | null {
 }
 
 /** Every emitted finding type's record, in detector order (the order `ENTRY_BY_TYPE` gives). */
-export function buildDetectorCatalog(options: { thresholds?: ThresholdOverrides } = {}): DetectorCatalogRecord[] {
-  const { thresholds } = options;
-  const tuned = tunedDetectors(thresholds);
+export function buildDetectorCatalog(): DetectorCatalogRecord[] {
   const types = [...ENTRY_BY_TYPE.keys()] as FindingType[];
   const typesByTag = new Map<string, FindingType[]>();
   for (const type of types) {
@@ -114,12 +102,11 @@ export function buildDetectorCatalog(options: { thresholds?: ThresholdOverrides 
       region: presentation.region ?? 'action',
       scope: first.scope,
       fixEffort: first.fixEffort,
-      thresholdSummary: getThresholdSummary(type, thresholds),
+      thresholdSummary: getThresholdSummary(type),
       detectors: DETECTORS.filter((entry) => (entry.emits as readonly string[]).includes(type)).map((entry) => ({
         detector: entry.type,
         version: entry.version,
-        thresholds: effectiveThresholds(entry, thresholds),
-        ...(tuned?.[entry.type] ? { tunedThresholds: tuned[entry.type] } : {}),
+        thresholds: entry.thresholds,
         ...(entry.suppressedBy ? { suppressedBy: entry.suppressedBy } : {}),
       })),
       pages: { catalog: detectorPageUrl(type), guide: findingGuideUrl(type) },
@@ -129,21 +116,9 @@ export function buildDetectorCatalog(options: { thresholds?: ThresholdOverrides 
   });
 }
 
-/** The tags in use, in catalog order. */
-export function catalogTags(): string[] {
-  return [...new Set([...ENTRY_BY_TYPE.keys()].map((type) => FINDING_PRESENTATION[type as FindingType].tag))];
-}
-
-/** The records a filter keeps. Every field is exact; a tag matches in any case. */
-export function listDetectors(
-  filter: DetectorCatalogFilter = {}, options: { thresholds?: ThresholdOverrides } = {},
-): DetectorCatalogResult {
-  const tag = filter.tag?.toUpperCase();
-  const detectors = buildDetectorCatalog(options).filter((record) =>
-    (filter.type === undefined || record.type === filter.type)
-    && (tag === undefined || record.tag === tag)
-    && (filter.family === undefined || record.family === filter.family)
-    && (filter.scope === undefined || record.scope === filter.scope));
+/** Every record, or only the one of `type`. */
+export function listDetectors(type?: string): DetectorCatalogResult {
+  const detectors = buildDetectorCatalog().filter((record) => type === undefined || record.type === type);
   return { count: detectors.length, detectors };
 }
 

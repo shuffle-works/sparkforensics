@@ -78,40 +78,42 @@ describe('examples file', () => {
     }
   });
 
-  it('marks hasExample from the file', () => {
-    for (const record of data.records) expect(record.flags.hasExample).toBe(examples[record.type] != null);
+  it('puts the example from the file on each record', () => {
+    for (const record of data.records) expect(record.example).toEqual(examples[record.type]);
   });
 });
 
 describe('special cases', () => {
-  it('flags the tuning page kind', () => {
-    expect(entry('configAudit').flags.tuning).toBe('none');
-    expect(entry('stageShape').flags.tuning).toBe('section');
-    expect(entry('pythonUdf').flags.tuning).toBe('chapter');
-    expect(entry('skew').flags.tuning).toBe('page');
+  it('carries the tuning page kind', () => {
+    expect(entry('configAudit').tuning).toBeNull();
+    expect(entry('stageShape').tuning.kind).toBe('section');
+    expect(entry('pythonUdf').tuning.kind).toBe('chapter');
+    expect(entry('skew').tuning.kind).toBe('page');
   });
 
-  it('flags a tag shared by two types', () => {
-    expect(entry('utilization').flags.sharedTag).toBe(true);
-    expect(entry('rightSizing').flags.sharedTag).toBe(true);
+  it('carries a tag shared by two types', () => {
     expect(entry('utilization').tagSharedWith).toContain('rightSizing');
-    expect(entry('skew').flags.sharedTag).toBe(false);
+    expect(entry('rightSizing').tagSharedWith).toContain('utilization');
+    expect(entry('skew').tagSharedWith).toEqual([]);
   });
 
-  it('flags the reference region', () => {
-    expect(entry('memoryUtilization').flags.reference).toBe(true);
-    expect(entry('skew').flags.reference).toBe(false);
+  it('carries the reference region', () => {
+    expect(entry('memoryUtilization').region).toBe('reference');
+    expect(entry('skew').region).toBe('action');
   });
 
-  it('flags a budget gate', () => {
-    expect(entry('skew').flags.gate).toBe('--max-skew');
-    expect(entry('stageShape').flags.gate).toBe('none');
+  it('carries a budget gate and its budget command', () => {
+    expect(entry('skew').gate.cliFlag).toBe('--max-skew');
+    expect(entry('failures').gate.cliFlag).toBe('--max-failed-task-rate');
+    expect(entry('jobFailureRate').gate).toBeNull();
+    expect(entry('stageShape').gate).toBeNull();
     expect(entry('skew').surfaces.cli.budgetCommand).toContain('--max-skew');
+    expect(entry('failures').surfaces.cli.budgetCommand).toContain('--max-failed-task-rate');
     expect(entry('stageShape').surfaces.cli.budgetCommand).toBeNull();
   });
 
-  it('flags a suppressed detector', () => {
-    expect(entry('stageSlowness').flags.suppressedBy).toEqual(['slowHost']);
-    expect(entry('skew').flags.suppressedBy).toEqual([]);
+  it('carries a suppressed detector', () => {
+    expect(entry('stageSlowness').detectors.map((d) => d.suppressedBy)).toEqual(['slowHost']);
+    expect(entry('skew').detectors.every((d) => d.suppressedBy === undefined)).toBe(true);
   });
 });

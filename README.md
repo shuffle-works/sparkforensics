@@ -241,7 +241,7 @@ budget flag that gates it, without reading a log (the MCP `list_detectors` tool 
 same records):
 
 ```bash
-npx -p sparkforensics-cli sparkforensics-analyze detectors --family cost --format md
+npx -p sparkforensics-cli sparkforensics-analyze detectors --format md
 ```
 
 Redact the app id, the app name, host names, IP addresses and user names in URLs and

@@ -454,39 +454,16 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
   });
 });
 
-// `detectors` and `list_detectors` are two views of one catalog builder, so one list, filtered or tuned,
-// reads the same on both. No log is read, so this suite needs no corpus.
+// `detectors` and `list_detectors` are two views of one catalog builder, so one list reads the same
+// on both. No log is read, so this suite needs no corpus.
 describe('detectors command and list_detectors tool', () => {
   it.each([
     [[], {}],
     [['--type', 'skew'], { type: 'skew' }],
-    [['--tag', 'plan'], { tag: 'PLAN' }],
-    [['--family', 'cost'], { family: 'cost' }],
-    [['--scope', 'sql'], { scope: 'sql' }],
   ])('report the same records for %j', async (flags, args) => {
     const cli = await cliJson(['detectors', ...flags]);
     expect(cli.count).toBe(cli.detectors.length);
     expect(cli.count).toBeGreaterThan(0);
     expect(diffSurfaces(cli, await mcpCall('list_detectors', args), [])).toEqual([]);
-  });
-
-  it('report the thresholds a tuned run uses', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-parity-'));
-    const thresholdsPath = join(dir, 'thresholds.json');
-    writeFileSync(thresholdsPath, JSON.stringify({ skew: { ratioWarn: 2 } }));
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await createMcpServer({ thresholds: { skew: { ratioWarn: 2 } }, generator: MCP_GENERATOR }).connect(serverTransport);
-    const client = new Client({ name: 'parity-test-tuned', version: '1.0.0' });
-    await client.connect(clientTransport);
-    try {
-      const cli = await cliJson(['detectors', '--type', 'skew', '--thresholds', thresholdsPath]);
-      const tool = await client.callTool({ name: 'list_detectors', arguments: { type: 'skew' } });
-      expect(diffSurfaces(cli, JSON.parse(JSON.stringify(tool.structuredContent)), [])).toEqual([]);
-      expect(cli.detectors[0].detectors[0].thresholds.ratioWarn).toBe(2);
-      expect(cli.detectors[0].detectors[0].tunedThresholds.ratioWarn).toEqual({ value: 2, default: 3 });
-    } finally {
-      await client.close();
-      rmSync(dir, { recursive: true, force: true });
-    }
   });
 });

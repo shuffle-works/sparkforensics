@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDetectorCatalog, catalogTags, listDetectors, renderDetectorCatalogMarkdown } from '../src/detector-catalog.js';
+import { buildDetectorCatalog, listDetectors, renderDetectorCatalogMarkdown } from '../src/detector-catalog.js';
 import { ENTRY_BY_TYPE } from '../src/detectors.js';
 import { DETECTOR_FAMILIES, FINDING_PRESENTATION } from '../src/finding-presentation.js';
 
@@ -57,7 +57,7 @@ describe('detector catalog special cases', () => {
       skew: { cliFlag: '--max-skew', airflowParam: 'max_skew_ratio' },
       spill: { cliFlag: '--max-spill', airflowParam: 'max_spill_gb' },
       utilization: { cliFlag: '--min-efficiency', airflowParam: 'min_efficiency_pct' },
-      jobFailureRate: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
+      failures: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
     });
   });
 
@@ -74,26 +74,13 @@ describe('detector catalog special cases', () => {
 });
 
 describe('listDetectors', () => {
-  it('filters by type, tag (in any case), family and scope, and counts the result', () => {
-    expect(listDetectors({ type: 'skew' }).detectors.map((r) => r.type)).toEqual(['skew']);
-    expect(listDetectors({ tag: 'plan' }).detectors.every((r) => r.tag === 'PLAN')).toBe(true);
-    expect(listDetectors({ family: 'setup' }).detectors.map((r) => r.type).sort()).toEqual(['configAudit', 'incompleteRun']);
-    expect(listDetectors({ scope: 'config' }).detectors.map((r) => r.type)).toEqual(['configAudit']);
-    expect(listDetectors({ tag: 'SKEW', family: 'cost' })).toEqual({ count: 0, detectors: [] });
-    expect(listDetectors().count).toBe(catalog.length);
+  it('returns every record, or the one of a type, and counts the result', () => {
+    expect(listDetectors()).toEqual({ count: catalog.length, detectors: catalog });
+    expect(listDetectors('skew')).toEqual({ count: 1, detectors: [byType('skew')] });
   });
 
-  it('reports the thresholds under overrides and marks the tuned ones', () => {
-    const { detectors } = listDetectors({ type: 'skew' }, { thresholds: { skew: { ratioWarn: 5 } } });
-    const [entry] = detectors[0].detectors;
-    expect(entry.thresholds.ratioWarn).toBe(5);
-    expect(entry.tunedThresholds).toEqual({ ratioWarn: { value: 5, default: 3 } });
-    expect(detectors[0].thresholdSummary).toContain('over 5×');
-    expect(byType('skew').detectors[0].tunedThresholds).toBeUndefined();
-  });
-
-  it('lists every tag once', () => {
-    expect(catalogTags()).toEqual([...new Set(catalog.map((r) => r.tag))]);
+  it('reports the default thresholds', () => {
+    expect(byType('skew').detectors[0].thresholds.ratioWarn).toBe(3);
   });
 });
 

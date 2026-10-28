@@ -292,7 +292,7 @@ default-threshold analysis.
 
 `buildDetectorCatalog()` (`packages/core/src/detector-catalog.ts`) returns one
 `DetectorCatalogRecord` per emitted finding type, with no run needed. A record
-joins the type's `DETECTORS` entries (scope, fix effort, effective
+joins the type's `DETECTORS` entries (scope, fix effort, default
 `thresholds`, `suppressedBy`) with its `FINDING_PRESENTATION` row in
 `finding-presentation.ts`: the lowercase `name`, the `tag` and the other types
 that share it (`tagSharedWith`), the outcome `family` (`DETECTOR_FAMILIES` gives
@@ -304,9 +304,8 @@ another page, or a general chapter; null when no single anchor covers it) and
 the CLI budget flag and Airflow parameter that gate it, when it has one.
 
 The `list_detectors` MCP tool and the `sparkforensics-analyze detectors`
-command read the same builder, so they state the same thresholds, docs and
-gates, and both report the values a `--thresholds` file tunes (the MCP server
-takes the flag at start).
+command read the same builder, so they state the same default thresholds, docs
+and gates.
 
 The docs site's `/docs/detectors/` pages are generated from the catalog.
 `scripts/build-detector-pages.mjs` (run by `docs:dev` and `docs:build`) writes

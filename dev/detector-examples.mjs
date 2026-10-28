@@ -47,9 +47,11 @@ function sizeOf(path) {
   return readdirSync(path).reduce((sum, n) => sum + sizeOf(join(path, n)), 0);
 }
 
-function analyze(path) {
+// The findings come from a redacted run. Redaction can also rewrite the Spark version, so the
+// version comes from an unredacted run of the chosen log.
+function analyze(path, { redact = true } = {}) {
   const r = spawnSync(process.execPath, [
-    CLI, path, '--impact', 'critical,warning,info', '--redact', '--format', 'json',
+    CLI, path, '--impact', 'critical,warning,info', ...(redact ? ['--redact'] : []), '--format', 'json',
   ], { encoding: 'utf8', maxBuffer: 1 << 30 });
   // Exit 3 is an inconclusive run (no ApplicationEnd): the report is still complete.
   if (r.status !== 0 && r.status !== 3) return null;
@@ -81,17 +83,26 @@ export function buildExamples() {
     for (const f of report.findings) {
       if (seen.has(f.type)) continue; // the first finding of a type in the log
       seen.add(f.type);
-      const candidate = { log: name, bytes, sparkVersion: report.summary?.app?.sparkVersion ?? null, finding: f };
+      const candidate = { log: name, path, bytes, finding: f };
       const current = best.get(f.type);
       if (!current || better(candidate, current)) best.set(f.type, candidate);
     }
   }
+  const versions = new Map();
+  const sparkVersionOf = (c) => {
+    if (!versions.has(c.log)) {
+      const report = analyze(c.path, { redact: false });
+      if (!report) die(`The CLI failed on ${c.log}.`);
+      versions.set(c.log, report.summary?.app?.sparkVersion ?? null);
+    }
+    return versions.get(c.log);
+  };
   const out = {};
   for (const type of catalogTypes()) {
     const c = best.get(type);
     out[type] = c ? {
       log: c.log,
-      sparkVersion: c.sparkVersion,
+      sparkVersion: sparkVersionOf(c),
       finding: Object.fromEntries(KEPT_FIELDS.filter((k) => c.finding[k] !== undefined).map((k) => [k, c.finding[k]])),
     } : null;
   }

@@ -425,16 +425,10 @@ function outPathProblem(outPath) {
 
 // `detectors` is a command only as the first argument; a log with that name is passed as ./detectors.
 function runDetectors(args) {
-  const { exitCode, stdout, stderr, outPath } = runDetectorsCommand(args);
+  const { exitCode, stdout, stderr } = runDetectorsCommand(args);
   process.exitCode = exitCode;
   if (stderr) process.stderr.write(stderr);
-  if (outPath === undefined) {
-    process.stdout.write(stdout);
-    return;
-  }
-  const problem = outPathProblem(outPath);
-  if (problem) return bail(`--out: ${problem}.\n`, 2);
-  writeFileSync(outPath, stdout);
+  process.stdout.write(stdout);
 }
 
 async function runCli(argv, { fetchImpl } = {}) {
