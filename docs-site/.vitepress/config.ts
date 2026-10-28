@@ -23,6 +23,28 @@ function navSidebar(navIndexUrl: string, base: string) {
 // Measures the pinned top chrome into --sf-anchor-offset; see the file itself.
 const anchorOffsetScript = readFileSync(fileURLToPath(new URL('./anchor-offset.js', import.meta.url)), 'utf8');
 
+// The detector catalog sidebar, grouped by family, from the data file
+// scripts/build-detector-pages.mjs writes. Missing file (the script has not run): just the index.
+function detectorSidebar() {
+  const overview = { text: 'Catalog overview', link: '/detectors/' };
+  let data: { families: Array<{ id: string; label: string }>; records: Array<{ type: string; tag: string; name: string; family: string }> };
+  try {
+    data = JSON.parse(readFileSync(fileURLToPath(new URL('./detectors-data.json', import.meta.url)), 'utf8'));
+  } catch {
+    return [{ text: 'Detectors', items: [overview] }];
+  }
+  return [
+    { text: 'Detectors', items: [overview] },
+    ...data.families.map((family) => ({
+      text: family.label,
+      collapsed: true,
+      items: data.records
+        .filter((r) => r.family === family.id)
+        .map((r) => ({ text: r.name.charAt(0).toUpperCase() + r.name.slice(1), link: `/detectors/${r.type}` })),
+    })),
+  ];
+}
+
 const tuningSidebar = navSidebar(
   new URL('../../packages/core/src/docs-content/chapters/nav-index.json', import.meta.url).href,
   '/tuning-reference/',
@@ -48,6 +70,7 @@ export default defineConfig({
     nav: [
       { text: 'User Guide', link: '/user-guide/getting-started' },
       { text: 'Contributor Guide', link: '/contributor-guide/development-setup' },
+      { text: 'Detectors', link: '/detectors/', activeMatch: '/detectors/' },
       { text: 'Tuning Reference', link: '/tuning-reference/' },
       // The app root is the parent of the docs base. VitePress prefixes every
       // root-relative nav link with the base, so '/..' renders as
@@ -58,6 +81,7 @@ export default defineConfig({
     ],
     sidebar: {
       '/tuning-reference/': tuningSidebar,
+      '/detectors/': detectorSidebar(),
       '/user-guide/': [
         {
           text: 'User Guide',
@@ -95,6 +119,7 @@ export default defineConfig({
                 { text: 'get_finding_documentation', link: '/user-guide/mcp-tools/get-finding-documentation' },
                 { text: 'get_reference_doc', link: '/user-guide/mcp-tools/get-reference-doc' },
                 { text: 'list_runs', link: '/user-guide/mcp-tools/list-runs' },
+                { text: 'list_detectors', link: '/user-guide/mcp-tools/list-detectors' },
               ],
             },
             {

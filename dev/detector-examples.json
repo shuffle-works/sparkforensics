@@ -1,0 +1,797 @@
+{
+  "autoscalingChurn": null,
+  "cacheUtilization": {
+    "log": "cache-memory-and-disk.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "f3e080ff",
+      "type": "cacheUtilization",
+      "name": "Cache Utilization",
+      "tag": "CSTOR",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "diskRatio",
+      "value": 100,
+      "recommendation": "RDD *(1) Project [id#0L AS row_id#1L, cast((... is 100% spilled to disk despite requesting MEMORY_AND_DISK: executor memory may be too small for it.",
+      "actionLabel": "Increase cache memory",
+      "confidence": "medium",
+      "validationRequired": "This ratio is the RDD's peak cache residency rebuilt from block-update events, not a runtime read-count. Confirm against the Spark UI's Storage tab before acting.",
+      "impact": "0.3 core-s",
+      "impactMeaning": "of task time (modeled)",
+      "estimateProvenance": "Modeled; 0.3 core-s of task time, which may not shorten the run. Assumes 125 MB/s per reading task, summed as task time and not divided over executors.",
+      "evidence": {
+        "diskSize": 36877124,
+        "memorySize": 0,
+        "numCachedPartitions": 20,
+        "numPartitions": 20,
+        "rddId": 4,
+        "rddName": "*(1) Project [id#0L AS row_id#1L, cast((rand(4038281633589974871) * 1000.0) as bigint) AS join_key#2L]\n+- *(1) Range (0, 5000000, step=1, splits=20)\n",
+        "variant": "diskSpillover"
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.executor.memory",
+          "direction": "increase",
+          "suggested": null
+        }
+      ]
+    }
+  },
+  "cachingOpportunity": {
+    "log": "delta-update.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "d19dbed2",
+      "type": "cachingOpportunity",
+      "name": "Caching Opportunity",
+      "tag": "CACHE",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "executionReuse",
+      "value": 3,
+      "recommendation": "Read by 3 queries: cache the shared DataFrame, or broadcast it if it is a small join lookup.",
+      "actionLabel": "Cache shared table",
+      "confidence": "medium",
+      "validationRequired": "Relation-reuse is inferred from the pre-AQE plan scan identity across SQL executions; confirm the reads are the same data and cacheable within one session before acting.",
+      "impact": "24 MB",
+      "impactMeaning": "of input read by the repeated scans",
+      "estimateProvenance": "Measured; 24 MB of input read by the repeated scans, which may not shorten the run. Counts the bytes 3 queries scanned from the same relation, matched by plan; a cache would still read it once.",
+      "evidence": {
+        "executionIds": [
+          8,
+          10,
+          16
+        ],
+        "format": "parquet",
+        "relation": "data-delta-table",
+        "totalReadBytes": 24029985
+      },
+      "remediation": []
+    }
+  },
+  "coldStart": {
+    "log": "pairwise-05.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "943e0d98",
+      "type": "coldStart",
+      "name": "Cold Start",
+      "tag": "COLD",
+      "impactBand": "critical",
+      "stageId": null,
+      "metric": "startupGapSeconds",
+      "value": 43,
+      "recommendation": "The first stage waited 43s for an executor to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.",
+      "actionLabel": "Pre-warm cluster",
+      "impact": "43.0s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "dynamicAllocation": "off"
+      },
+      "remediation": []
+    }
+  },
+  "configAudit": {
+    "log": "external-local-1426533911241.ndjson",
+    "sparkVersion": null,
+    "finding": {
+      "id": "6650899b",
+      "type": "configAudit",
+      "name": "Config Audit",
+      "tag": "CFG",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "config",
+      "value": null,
+      "recommendation": "Current serializer is the default JavaSerializer: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.",
+      "actionLabel": "Switch to Kryo",
+      "evidence": {
+        "property": "spark.serializer"
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.serializer",
+          "direction": "set",
+          "suggested": "org.apache.spark.serializer.KryoSerializer"
+        }
+      ]
+    }
+  },
+  "coreLocality": null,
+  "duplicatePlanSubtree": {
+    "log": "external-sql-duplicate-exchange-eventlog.ndjson",
+    "sparkVersion": null,
+    "finding": {
+      "id": "d68aa318",
+      "type": "duplicatePlanSubtree",
+      "name": "Duplicate Plan Subtree",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "subtreeOccurrences",
+      "value": 2,
+      "recommendation": "A 3-node subtree rooted at Exchange repeats 2x in this plan: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.",
+      "actionLabel": "Dedupe repeated subtree",
+      "confidence": "low",
+      "validationRequired": "Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.",
+      "evidence": {
+        "executionId": 21,
+        "groupIndex": 0,
+        "occurrencesIdentical": true,
+        "readsDifferentVersions": false,
+        "rootName": "Exchange",
+        "sampleRelation": null,
+        "stageIds": [],
+        "stageShares": {},
+        "subtreeSize": 3
+      },
+      "remediation": []
+    }
+  },
+  "failures": {
+    "log": "failure-stage-abort.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "07e63228",
+      "type": "failures",
+      "name": "Failed Tasks",
+      "tag": "FAIL",
+      "impactBand": "warning",
+      "stageId": 0,
+      "metric": "failureRate",
+      "value": 20,
+      "recommendation": "20% of tasks failed (dominant error: org.apache.spark.api.python.PythonException): investigate driver logs for executor instability or data-driven errors.",
+      "actionLabel": "Investigate task failures",
+      "evidence": {
+        "dominantError": "org.apache.spark.api.python.PythonException",
+        "dominantReason": "ExceptionFailure",
+        "failedTasks": 4,
+        "failureGroups": [
+          {
+            "reason": "ExceptionFailure",
+            "className": "org.apache.spark.api.python.PythonException",
+            "message": "[redacted]",
+            "lossReason": null,
+            "stackExcerpt": "org.apache.spark.api.python.PythonException\n\t...\n\t...",
+            "count": 4
+          }
+        ],
+        "otherFailedTasks": 0
+      },
+      "remediation": []
+    }
+  },
+  "gc": {
+    "log": "pairwise-03.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "ecdba273",
+      "type": "gc",
+      "name": "GC Pressure",
+      "tag": "GC",
+      "impactBand": "critical",
+      "stageId": 6,
+      "metric": "gcPct",
+      "value": 11.5,
+      "recommendation": "GC consumed 11.5% of executor run time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.",
+      "actionLabel": "Reduce GC pressure",
+      "confidence": "low",
+      "validationRequired": "Checked only on stages with at least 10s of executor run time.",
+      "impact": "3.0s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate. Resource waste measured: 7.0 core-s.",
+      "evidence": {},
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.executor.memory",
+          "direction": "increase",
+          "suggested": null
+        }
+      ]
+    }
+  },
+  "incompleteRun": {
+    "log": "failure-killed-run.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "1d473001",
+      "type": "incompleteRun",
+      "name": "Incomplete Run",
+      "tag": "INCMP",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "applicationEnd",
+      "value": null,
+      "recommendation": "This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (a job still running, a rotated log, or a cut-short capture), so every figure on this board covers only what was captured.",
+      "actionLabel": "incomplete run",
+      "evidence": {},
+      "remediation": []
+    }
+  },
+  "jobFailureRate": {
+    "log": "external-failed-eventlog.ndjson",
+    "sparkVersion": null,
+    "finding": {
+      "id": "e1a1cfc6",
+      "type": "jobFailureRate",
+      "name": "Job Failure Rate",
+      "tag": "JOBS",
+      "impactBand": "critical",
+      "stageId": null,
+      "metric": "jobFailureRate",
+      "value": 100,
+      "recommendation": "1 of 1 jobs never recovered: inspect the driver log for the failed job(s) and the stage failures that triggered them.",
+      "actionLabel": "Investigate failed jobs",
+      "evidence": {
+        "avgJobDurationMs": 4000,
+        "failedJobs": 1,
+        "failedTasks": 0,
+        "taskFailureRate": 0,
+        "totalJobs": 1,
+        "totalTasks": 2
+      },
+      "remediation": []
+    }
+  },
+  "joinKeyCast": null,
+  "memoryUtilization": {
+    "log": "external-application_1578436911597_0052.ndjson",
+    "sparkVersion": "3.0.0-SNAPSHOT",
+    "finding": {
+      "id": "89cacd2d",
+      "type": "memoryUtilization",
+      "name": "Memory Utilization",
+      "tag": "MEM",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "idleCoreRate",
+      "value": 99,
+      "recommendation": "99% of available core-time ran no task: either reduce cluster size (spark.executor.instances) or enable dynamic allocation.",
+      "actionLabel": "Reduce idle cores",
+      "impact": "45,856.1 MB-s",
+      "impactMeaning": "of unused executor memory (modeled)",
+      "estimateProvenance": "Modeled; 45,856.1 MB-s of unused executor memory, which may not shorten the run.",
+      "evidence": {
+        "variant": "idleCores"
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.dynamicAllocation.enabled",
+          "direction": "set",
+          "suggested": true
+        },
+        {
+          "kind": "conf",
+          "key": "spark.executor.instances",
+          "direction": "decrease",
+          "suggested": null
+        }
+      ]
+    }
+  },
+  "mergeRewrite": {
+    "log": "delta-merge-sql.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "af708bbf",
+      "type": "mergeRewrite",
+      "name": "MERGE Rewrite",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "rewrittenRows",
+      "value": 800000,
+      "recommendation": "Most rows the MERGE rewrote did not change: filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.",
+      "actionLabel": "Filter MERGE source",
+      "evidence": {
+        "changedRows": 300000,
+        "executionId": 4,
+        "filesAfter": 8,
+        "filesBefore": 8,
+        "partitionsScanned": 4,
+        "partitionsTouched": 4,
+        "rewrittenRows": 800000,
+        "rule": "rewrittenRows",
+        "stageIds": [],
+        "target": "file:///tmp/spark-workload-output/data-delta-table"
+      },
+      "remediation": []
+    }
+  },
+  "nestedLoopJoin": null,
+  "overBroadcast": null,
+  "partitionSizing": {
+    "log": "pairwise-03.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "d16d9a88",
+      "type": "partitionSizing",
+      "name": "Partition Sizing",
+      "tag": "PART",
+      "impactBand": "critical",
+      "stageId": 6,
+      "metric": "shuffleReadMax",
+      "value": 282343427,
+      "recommendation": "The largest shuffle partition (282 MB) is far larger than the median, which is effectively empty: AQE skew-join handling cannot apply: the join's left input comes from a Project operator instead of a shuffle, and AQE splits only a shuffle that feeds the join directly; salt the key or repartition on a better key.",
+      "actionLabel": "Fix skewed partition",
+      "impact": "2.3s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "aqeSkew": "planShape",
+        "origin": "shuffleJoin",
+        "rule": "shufflePartitionSkew"
+      },
+      "remediation": [
+        {
+          "kind": "code",
+          "hint": "salt the key or repartition on a better key"
+        }
+      ]
+    }
+  },
+  "pythonUdf": null,
+  "retryWaste": {
+    "log": "failure-task-retry.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "a7a57dec",
+      "type": "retryWaste",
+      "name": "Retry Waste",
+      "tag": "RETRY",
+      "impactBand": "critical",
+      "stageId": 0,
+      "metric": "retryWasteMs",
+      "value": 43909,
+      "recommendation": "Retried task attempts wasted 44s of executor time (4 attempts) even though the stage completed: investigate executor loss or fetch failures.",
+      "actionLabel": "Investigate retry cause",
+      "impact": "14.8s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate. Raw waste before the floor clipped it: 43.9s.",
+      "evidence": {
+        "memoryBytesSpilled": 0,
+        "numTasks": 4,
+        "retriedTaskDetails": [
+          {
+            "taskId": 0,
+            "attemptNumber": 0,
+            "host": "host-3",
+            "executorId": "0",
+            "reason": "ExceptionFailure",
+            "peakExecMem": 0,
+            "memSpilled": 0,
+            "shuffleWrite": 0
+          },
+          {
+            "taskId": 1,
+            "attemptNumber": 0,
+            "host": "host-3",
+            "executorId": "0",
+            "reason": "ExceptionFailure",
+            "peakExecMem": 0,
+            "memSpilled": 0,
+            "shuffleWrite": 0
+          },
+          {
+            "taskId": 2,
+            "attemptNumber": 0,
+            "host": "host-2",
+            "executorId": "1",
+            "reason": "ExceptionFailure",
+            "peakExecMem": 0,
+            "memSpilled": 0,
+            "shuffleWrite": 0
+          },
+          {
+            "taskId": 3,
+            "attemptNumber": 0,
+            "host": "host-2",
+            "executorId": "1",
+            "reason": "ExceptionFailure",
+            "peakExecMem": 0,
+            "memSpilled": 0,
+            "shuffleWrite": 0
+          }
+        ]
+      },
+      "remediation": []
+    }
+  },
+  "rightSizing": null,
+  "shuffle": {
+    "log": "pairwise-02.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "bace057c",
+      "type": "shuffle",
+      "name": "Shuffle I/O",
+      "tag": "SHFL",
+      "impactBand": "critical",
+      "stageId": 9,
+      "metric": "shuffleReadBytes",
+      "value": 709784882,
+      "recommendation": "710 MB shuffled in this stage: its 2000 tasks already read about 355 KB each, so more partitions will not help: consider a broadcast join for the smaller side.",
+      "actionLabel": "Reduce shuffle size",
+      "impact": "1.6s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage ran alone, so this is close to a point estimate. Resource waste measured: 710 MB. Assumes 125 MB/s per executor over 3 executors; counts network transfer only, capped at the fetch wait the tasks measured.",
+      "evidence": {
+        "partitions": "sufficient"
+      },
+      "remediation": []
+    }
+  },
+  "skew": {
+    "log": "cache-memory-only.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "a9608309",
+      "type": "skew",
+      "name": "Task Skew",
+      "tag": "SKEW",
+      "impactBand": "critical",
+      "stageId": 0,
+      "metric": "P95/median",
+      "value": 22.1,
+      "recommendation": "Task duration ratio (P95/median) is 22.1×, and the median task read almost nothing: salt the key or repartition on a better key.",
+      "actionLabel": "Fix task skew",
+      "confidence": "high",
+      "validationRequired": "Flagged only when it costs at least 0.5% of run time.",
+      "impact": "342ms-851ms",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage shared the cluster: 342ms is the floor, 851ms if the fix fully lands.",
+      "evidence": {
+        "cause": "data",
+        "origin": "other"
+      },
+      "remediation": [
+        {
+          "kind": "code",
+          "hint": "salt the key or repartition on a better key"
+        }
+      ]
+    }
+  },
+  "slowHost": {
+    "log": "pairwise-03.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "5e49db43",
+      "type": "slowHost",
+      "name": "Slow Executor Host",
+      "tag": "HOST",
+      "impactBand": "critical",
+      "stageId": 6,
+      "metric": "execMaxMedianRatio",
+      "value": 248.2,
+      "recommendation": "Executor 2's task time is 248.2× the median: investigate uneven partition assignment or a degraded executor.",
+      "actionLabel": "Investigate degraded executor",
+      "confidence": "low",
+      "validationRequired": "One of 3 executors: the largest of 3 per-executor mean task times reaches 248.2x the median by chance when task durations vary widely or each executor ran few tasks (2000 tasks over 3 executors here). Compare per-task times on executor 2 in the Spark UI before acting.",
+      "impact": "10.8s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "dimension": "taskTime",
+        "execMaxValue": 10866.5,
+        "executorCount": 3,
+        "executorId": "2",
+        "taskCount": 2000,
+        "variant": "multiDim"
+      },
+      "remediation": []
+    }
+  },
+  "smallFiles": {
+    "log": "eventlog-zstd.zstd",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "ff9608f1",
+      "type": "smallFiles",
+      "name": "Small Files",
+      "tag": "PLAN",
+      "impactBand": "critical",
+      "stageId": null,
+      "metric": "avgFileSizeBytes",
+      "value": 39893,
+      "recommendation": "637 small files were written at Execute InsertIntoHadoopFsRelationCommand: repartition or coalesce before writing to raise the average file size.",
+      "actionLabel": "Coalesce output files",
+      "impact": "6.4s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "direction": "write",
+        "executionId": 0,
+        "fileCount": 637,
+        "nodeName": "Execute InsertIntoHadoopFsRelationCommand",
+        "stageIds": [
+          6
+        ]
+      },
+      "remediation": []
+    }
+  },
+  "speculationWaste": {
+    "log": "pairwise-01.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "ea58fb74",
+      "type": "speculationWaste",
+      "name": "Speculation Waste",
+      "tag": "SPEC",
+      "impactBand": "warning",
+      "stageId": 9,
+      "metric": "speculationWasteMs",
+      "value": 82150,
+      "recommendation": "Speculative execution discarded 82s of executor time in this stage: if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile (with this run's settings, a task running over 3x the median is relaunched once 90% of the stage's tasks have finished).",
+      "actionLabel": "Tune speculation settings",
+      "confidence": "low",
+      "impact": "675ms",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage ran alone, so this is close to a point estimate. Raw waste before the floor clipped it: 1m 22s.",
+      "evidence": {},
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.speculation.multiplier",
+          "direction": "increase",
+          "suggested": null
+        },
+        {
+          "kind": "conf",
+          "key": "spark.speculation.quantile",
+          "direction": "increase",
+          "suggested": null
+        }
+      ]
+    }
+  },
+  "spill": {
+    "log": "pairwise-03.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "f690f47b",
+      "type": "spill",
+      "name": "Spill",
+      "tag": "SPILL",
+      "impactBand": "critical",
+      "stageId": 6,
+      "metric": "memoryBytesSpilled",
+      "value": 1056962592,
+      "recommendation": "1.1 GB spilled, skew-driven: fix task skew first; adding memory will not help. Spilled by Sort e0:n16 feeding SortMergeJoin 1.1 GB. Memory spill is 0.9x the stage's input.",
+      "actionLabel": "Reduce spill",
+      "confidence": "medium",
+      "validationRequired": "Spill cause is inferred from the share of tasks that spilled: confirm against per-task spill metrics in the Spark UI.",
+      "impact": "10.8s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate. Resource waste measured: 822 MB. Assumes 200 MB/s per executor over 3 executors for disk spill, plus 36% of the stage's task time as serialization and sort CPU (50% per pass of its read bytes through disk spill, capped at 60%); GC is not counted.",
+      "evidence": {
+        "exchanges": [
+          {
+            "nodeId": "e0:n13",
+            "columns": 10,
+            "bytesPerRow": 88,
+            "partitioning": "hashpartitioning(join_key#2L, 2000)",
+            "partitions": 2000,
+            "origin": "ENSURE_REQUIREMENTS"
+          }
+        ],
+        "operators": [
+          {
+            "nodeId": "e0:n16",
+            "name": "Sort",
+            "spillBytes": 1056962592,
+            "feeds": "SortMergeJoin",
+            "arguments": "[join_key#2L ASC NULLS FIRST], false, 0",
+            "global": false
+          }
+        ],
+        "reads": "shuffle",
+        "spillToInputRatio": 0.9,
+        "sqlDescription": "save at DirectMethodHandleAccessor.java:103",
+        "wideRows": false
+      },
+      "remediation": []
+    }
+  },
+  "stageFailed": {
+    "log": "external-failed-eventlog.ndjson",
+    "sparkVersion": null,
+    "finding": {
+      "id": "f49acbc4",
+      "type": "stageFailed",
+      "name": "Failed Stage",
+      "tag": "SFAIL",
+      "impactBand": "critical",
+      "stageId": 13,
+      "metric": "stageFailureReason",
+      "value": null,
+      "recommendation": "This stage attempt failed outright. Inspect the driver log for the failure reason and the job that triggered it.",
+      "actionLabel": "Inspect stage failure",
+      "evidence": {
+        "failedTaskDetails": [],
+        "memoryBytesSpilled": 0,
+        "numTasks": 2,
+        "variant": "stageFailure"
+      },
+      "remediation": []
+    }
+  },
+  "stageShape": {
+    "log": "external-local-1430917381536.ndjson",
+    "sparkVersion": "3.5.2",
+    "finding": {
+      "id": "76f147b2",
+      "type": "stageShape",
+      "name": "Stage Shape",
+      "tag": "SHAPE",
+      "impactBand": "info",
+      "stageId": 0,
+      "metric": "taskStageSkew",
+      "value": 0.88,
+      "recommendation": "The longest task ran for 88% of this stage's wall-clock, 18.9× the median task: a single straggler is gating the whole stage.",
+      "actionLabel": "Fix straggler task",
+      "evidence": {
+        "rule": "taskStageSkew"
+      },
+      "remediation": []
+    }
+  },
+  "stageSlowness": null,
+  "straggler": {
+    "log": "external-application_1628109047826_1317105.ndjson",
+    "sparkVersion": "host-2",
+    "finding": {
+      "id": "92c6a172",
+      "type": "straggler",
+      "name": "Straggling Task",
+      "tag": "STRAG",
+      "impactBand": "critical",
+      "stageId": 0,
+      "metric": "max/median",
+      "value": 16.4,
+      "recommendation": "Task duration ratio (max/median) is 16.4×: nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host, so check their input sizes, GC time and hosts before choosing a fix.",
+      "actionLabel": "Fix stragglers",
+      "confidence": "high",
+      "validationRequired": "Warning needs at least 0.5% of run time at stake, critical 2%.",
+      "impact": "58.6s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "cause": "unattributed",
+        "cpuPct": 0,
+        "speculativeTasks": 0,
+        "stragglerCount": 1,
+        "unit": "ratio"
+      },
+      "remediation": []
+    }
+  },
+  "tinyTask": {
+    "log": "eventlog-zstd.zstd",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "f9875107",
+      "type": "tinyTask",
+      "name": "Tiny Tasks",
+      "tag": "TINY",
+      "impactBand": "critical",
+      "stageId": 6,
+      "metric": "taskDurationP50",
+      "value": 50,
+      "recommendation": "Many small tasks (1000, P50 50ms): scheduler overhead may dominate. Try lowering spark.sql.shuffle.partitions or using .coalesce(100).",
+      "actionLabel": "Coalesce small tasks",
+      "impact": "5.9s",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Measured; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "reads": "shuffle"
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.sql.shuffle.partitions",
+          "direction": "decrease",
+          "suggested": null
+        }
+      ]
+    }
+  },
+  "underBroadcast": {
+    "log": "delta-merge-sql.ndjson",
+    "sparkVersion": "4.2.0",
+    "finding": {
+      "id": "72860c2a",
+      "type": "underBroadcast",
+      "name": "Missed Broadcast Join",
+      "tag": "PLAN",
+      "impactBand": "info",
+      "stageId": null,
+      "metric": "smallerSideBytes",
+      "value": 4800000,
+      "recommendation": "The left input to this Inner Sort Merge Join (5 MB) was not broadcast (the other side is 32 MB) because automatic broadcast is disabled (spark.sql.autoBroadcastJoinThreshold=-1): this could have been a broadcast join. Set spark.sql.autoBroadcastJoinThreshold to a positive size or add a broadcast() hint.",
+      "actionLabel": "Use broadcast join",
+      "impact": "38ms",
+      "impactMeaning": "of run time",
+      "estimateProvenance": "Modeled; the stage ran alone, so this is close to a point estimate.",
+      "evidence": {
+        "broadcastThreshold": "disabled",
+        "buildSide": "left",
+        "executionId": 10,
+        "joinType": "Inner",
+        "largerSideBytes": 32000000,
+        "stageIds": [
+          10,
+          11,
+          14
+        ]
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.sql.autoBroadcastJoinThreshold",
+          "direction": "increase",
+          "suggested": null
+        }
+      ]
+    }
+  },
+  "utilization": {
+    "log": "external-application_1578436911597_0052.ndjson",
+    "sparkVersion": "3.0.0-SNAPSHOT",
+    "finding": {
+      "id": "ab40a29c",
+      "type": "utilization",
+      "name": "Executor Utilization",
+      "tag": "UTIL",
+      "impactBand": "warning",
+      "stageId": null,
+      "metric": "avgUtilization",
+      "value": 1,
+      "recommendation": "Average executor utilization was only 1%: consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.",
+      "actionLabel": "Reduce cluster size",
+      "evidence": {
+        "cpuUtilizationPct": 0
+      },
+      "remediation": [
+        {
+          "kind": "conf",
+          "key": "spark.dynamicAllocation.enabled",
+          "direction": "set",
+          "suggested": true
+        },
+        {
+          "kind": "conf",
+          "key": "spark.executor.instances",
+          "direction": "decrease",
+          "suggested": null
+        }
+      ]
+    }
+  }
+}
