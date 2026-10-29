@@ -1,4 +1,4 @@
-import { cacheFor, runFindings, type ReportCache } from './evidence-report.ts';
+import { cacheFor, runFindings, type ReportCache } from './analyzed-run.ts';
 import { redactRunModel } from './redact.ts';
 import { computeRunMetrics, type RunMetrics } from './run-metrics.ts';
 import { buildEffectiveConf, type EffectiveConf } from './effective-conf.ts';

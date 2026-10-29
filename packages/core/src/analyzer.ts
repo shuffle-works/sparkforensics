@@ -2,6 +2,7 @@ import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type D
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
+import { findingLocation } from './finding-identity.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
@@ -72,12 +73,15 @@ const ID_DISCRIMINATOR_SETS = new Map<string, ReadonlySet<DiscriminatorSlot>>(
   Object.entries(ID_DISCRIMINATORS).map(([type, slots]) => [type, new Set<DiscriminatorSlot>(slots)]),
 );
 
-// Location key: stage, else SQL execution, else audited config property.
+// The location part of a finding id: the stage, execution or config property it sits at.
 function locationKey(f: Finding): number | string {
-  if (f.stageId != null) return f.stageId;
-  if ('executionId' in f) return f.executionId;
-  if (f.type === 'configAudit') return f.property;
-  return '';
+  const location = findingLocation(f);
+  switch (location.scope) {
+    case 'stage': return location.stageId;
+    case 'execution': return location.executionId;
+    case 'property': return location.property;
+    case 'run': return '';
+  }
 }
 
 export function findingId(f: Finding): string {

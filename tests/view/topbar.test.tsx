@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store, emptyAppModel } from '@/store/store';
 import { Topbar } from '@/view/Topbar';
 import { testFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 // DocsSheet resizes via react-resizable-panels, which constructs a
 // ResizeObserver on mount; jsdom has none (see docs-sheet.test.tsx).
@@ -19,10 +20,8 @@ if (!window.ResizeObserver) {
 
 beforeEach(() => store.setState({
   ...store.getState(),
-  catalog: [],
-  configFindings: [],
-  appModel: emptyAppModel(),
-  skippedLines: 0,
+  run: null,
+  runKey: null,
   planGraph: { active: false, stageId: null, initialScope: 'segment' },
   exportMode: false,
 }));
@@ -52,19 +51,19 @@ test('stays pinned to the top of the viewport while the page scrolls', () => {
 });
 
 test('renders the app name', () => {
-  store.setState({ appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } } });
+  store.setState({ ...runState({ appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } } }) });
   renderTopbar();
   expect(screen.getByText('My Spark App')).toBeInTheDocument();
 });
 
 test('renders the app id and Spark version subtitle', () => {
-  store.setState({ appModel: { ...emptyAppModel(), app: { name: 'My Spark App', id: 'app-1', sparkVersion: '3.5.3' } } });
+  store.setState({ ...runState({ appModel: { ...emptyAppModel(), app: { name: 'My Spark App', id: 'app-1', sparkVersion: '3.5.3' } } }) });
   renderTopbar();
   expect(screen.getByText('app-1 · Spark 3.5.3')).toBeInTheDocument();
 });
 
 test('shows a skipped-lines warning when parsing skipped malformed or invalid data', () => {
-  store.setState({ skippedLines: 3 });
+  store.setState({ ...runState({ appModel: { ...emptyAppModel(), skippedLines: 3 } }) });
   renderTopbar();
   expect(screen.getByText('3 lines skipped: malformed or invalid data')).toBeInTheDocument();
 });
@@ -165,20 +164,19 @@ test('wires the file switcher to the recent-files list', async () => {
 const checkedAppModel = () => ({ ...emptyAppModel(), stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 1_000 }]]) }) as any;
 
 test('shows an all-clear verdict when catalog is empty', () => {
-  store.setState({ appModel: checkedAppModel(), configFindings: [] });
+  store.setState({ ...runState({ appModel: checkedAppModel(), configFindings: [] }) });
   renderTopbar();
   expect(screen.getByText(/no findings/i)).toBeInTheDocument();
 });
 
 test('says "Not fully checked" instead of all-clear when the log had nothing to check or lacked evidence', () => {
-  store.setState({ configFindings: [] });
+  store.setState({ ...runState({ configFindings: [] }) });
   renderTopbar();
   expect(screen.getByText('Not fully checked')).toBeInTheDocument();
 
   cleanup();
   store.setState({
-    appModel: checkedAppModel(),
-    catalog: [{ type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info', dataUnavailable: true, recommendation: 'Enable executor metrics.' }],
+    ...runState({ appModel: checkedAppModel(), catalog: [{ type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info', dataUnavailable: true, recommendation: 'Enable executor metrics.' }] }),
   });
   renderTopbar();
   // The caveat is not counted as a finding ("1 info"), and the run is not called clean.
@@ -188,8 +186,7 @@ test('says "Not fully checked" instead of all-clear when the log had nothing to 
 
 test('says the run failed when a job failed even with no finding to rank', () => {
   store.setState({
-    configFindings: [],
-    appModel: { ...checkedAppModel(), jobs: new Map([[1, { id: 1, stageIds: [], result: 'JobFailed', succeeded: false, exception: null }]]) },
+    ...runState({ configFindings: [], appModel: { ...checkedAppModel(), jobs: new Map([[1, { id: 1, stageIds: [], result: 'JobFailed', succeeded: false, exception: null }]]) } }),
   });
   renderTopbar();
   expect(screen.getByText('Run failed')).toBeInTheDocument();
@@ -199,12 +196,10 @@ test('the count chip jumps to that band of the Findings list', async () => {
   const user = userEvent.setup();
   const onJumpToFindings = vi.fn();
   store.setState({
-    appModel: checkedAppModel(),
-    configFindings: [],
-    catalog: [
+    ...runState({ appModel: checkedAppModel(), configFindings: [], catalog: [
       { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Rebalance.' },
       { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Add memory.' },
-    ],
+    ] }),
   });
   renderTopbar({ onJumpToFindings });
   await user.click(screen.getByRole('button', { name: '2 critical: show them in Findings' }));
@@ -220,11 +215,11 @@ test('size="sm" secondary buttons carry the comfortable tap-target class', () =>
 
 test('verdict pill reflects the worst impactBand in the catalog', () => {
   store.setState({
-    catalog: [
+    ...runState({ catalog: [
       { type: 'gc', stageId: 1, impactBand: 'warning' },
       { type: 'gc', stageId: 2, impactBand: 'warning' },
       { type: 'skew', stageId: 3, impactBand: 'critical' },
-    ],
+    ] }),
   });
   renderTopbar();
   expect(screen.getByText(/1 critical/i)).toBeInTheDocument();
@@ -241,7 +236,7 @@ test('a single eligible SQL execution renders a plain Plan graph button that ope
   const appModel = emptyAppModel();
   appModel.stages.set(7, { id: 7, sqlExecutionId: 1 } as never);
   appModel.sql.set(1, { executionId: 1, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
 
   renderTopbar();
   await user.click(screen.getByRole('button', { name: 'Plan graph' }));
@@ -253,7 +248,7 @@ test('an execution with no plan tree is excluded even if it has stages', () => {
   const appModel = emptyAppModel();
   appModel.stages.set(7, { id: 7, sqlExecutionId: 1 } as never);
   appModel.sql.set(1, { executionId: 1, planTree: null } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
 
   renderTopbar();
   expect(screen.queryByRole('button', { name: 'Plan graph' })).not.toBeInTheDocument();
@@ -269,7 +264,7 @@ test('two or more eligible SQL executions render a picker dialog listing each, a
     planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] },
   } as never);
   appModel.sql.set(2, { executionId: 2, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
 
   renderTopbar();
   await user.click(screen.getByRole('button', { name: 'Plan graph' }));
@@ -292,12 +287,11 @@ test('the picker counts and ranks executions by the findings the dashboard lists
   appModel.sql.set(1, { executionId: 1, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
   appModel.sql.set(2, { executionId: 2, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
   store.setState({
-    appModel,
-    catalog: [
+    ...runState({ appModel, catalog: [
       { type: 'skew', stageId: 7, impactBand: 'warning' },
       { type: 'gc', stageId: 7, impactBand: 'info' },
       { type: 'gc', stageId: 9, impactBand: 'info' },
-    ] as never,
+    ] as never }),
   });
 
   renderTopbar();
@@ -315,7 +309,7 @@ test('the narrow overflow menu also exposes Plan graph, opening the same picker'
   appModel.stages.set(9, { id: 9, sqlExecutionId: 2 } as never);
   appModel.sql.set(1, { executionId: 1, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
   appModel.sql.set(2, { executionId: 2, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
 
   renderTopbar();
   await user.click(screen.getByRole('button', { name: 'More options' }));
@@ -326,13 +320,13 @@ test('the narrow overflow menu also exposes Plan graph, opening the same picker'
 
 test('sectionControls replaces the impactBand chip and dashboard action cluster, but keeps the theme toggle', () => {
   store.setState({
-    catalog: [{ type: 'gc', stageId: 1, impactBand: 'warning' }],
     comparison: { active: false, baselineId: 'a', candidateId: 'b' },
+    ...runState({ catalog: [{ type: 'gc', stageId: 1, impactBand: 'warning' }] }),
   });
   const appModel = emptyAppModel();
   appModel.stages.set(7, { id: 7, sqlExecutionId: 1 } as never);
   appModel.sql.set(1, { executionId: 1, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
 
   renderTopbar({ sectionControls: <span>my-controls</span> });
 
@@ -353,7 +347,7 @@ test('sectionControls trims the overflow menu to just Toggle theme', async () =>
   const appModel = emptyAppModel();
   appModel.stages.set(7, { id: 7, sqlExecutionId: 1 } as never);
   appModel.sql.set(1, { executionId: 1, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
 
   renderTopbar({ sectionControls: <span>my-controls</span> });
 
@@ -385,11 +379,10 @@ test('the picker sorts entries by impactBand (critical, then warning, then unfla
     planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] },
   } as never);
   store.setState({
-    appModel,
-    catalog: [
+    ...runState({ appModel, catalog: [
       { type: 'gc', stageId: 20, impactBand: 'warning' },
       { type: 'skew', stageId: 30, impactBand: 'critical' },
-    ],
+    ] }),
   });
 
   renderTopbar();
@@ -427,14 +420,13 @@ test('the picker impactBand and total count aggregate all findings across linked
   } as never);
   appModel.sql.set(2, { executionId: 2, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
   store.setState({
-    appModel,
-    catalog: [
+    ...runState({ appModel, catalog: [
       testFinding({ type: 'gc', stageId: 7, impactBand: 'warning' }),
       testFinding({
         type: 'smallFiles', stageId: null, stageIds: [8], impactBand: 'critical',
         executionId: 1, planNodeIds: [], fileCount: 1, direction: 'read', nodeName: 'Scan',
       }),
-    ],
+    ] }),
   });
 
   renderTopbar();
@@ -452,7 +444,7 @@ test('the picker impactBand and total count aggregate all findings across linked
 });
 
 test('exportMode hides the interactive file switcher but keeps the app identity visible', () => {
-  store.setState({ exportMode: true, appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } } });
+  store.setState({ exportMode: true, ...runState({ appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } } }) });
   renderTopbar();
   expect(screen.getByText('My Spark App')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /My Spark App/i })).not.toBeInTheDocument();
@@ -542,7 +534,7 @@ test('offers Compare with another run for an open run, and calls onCompare', asy
   // Not paused behind "Back to comparison", which hides this action.
   store.setState({
     comparison: { active: false, baselineId: null, candidateId: null },
-    appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } },
+    ...runState({ appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } } }),
   });
   renderTopbar({ activeFileId: 'a::1::2', onCompare });
   await user.click(screen.getByRole('button', { name: 'Compare with another run' }));

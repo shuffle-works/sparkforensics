@@ -4,8 +4,7 @@ import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { DESIGN_SPIKE_DISCLAIMER } from '@/view/design-spike-disclaimer';
-import { useInterpretation } from '@/view/interpretation';
-import type { InterpretationState } from '@/store/store';
+import { useInterpretation, type InterpretationState } from '@/view/interpretation';
 import { formatDuration, MS_PER_CORE_HOUR } from '@sparkforensics/core/format-utils.ts';
 
 /** Whether the run has allocated compute to measure; the grid mounts the tile only then. */

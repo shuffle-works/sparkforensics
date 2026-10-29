@@ -147,8 +147,9 @@ interface RowListProps<R extends AnyRow> {
   listClassName: string;
 }
 
-/** One paged list of rows in display order. A new file or a new sort order starts it on the first page,
- * and a route to one of its findings opens the page that holds it. */
+/** One paged list of rows in display order. A new sort order starts it on the first page (a new run
+ * remounts it through the run-keyed dashboard), and a route to one of its findings opens the page
+ * that holds it. */
 function RowList<R extends AnyRow>({
   rows, Row, appModel, getTaskData, routeTarget, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName,
 }: RowListProps<R>) {
@@ -160,7 +161,7 @@ function RowList<R extends AnyRow>({
       return;
     }
     setPage(0);
-  }, [appModel, sortMode]);
+  }, [sortMode]);
 
   const List = LIST_ELEMENT[rowElement];
   const routeIndex = routeTarget ? rows.findIndex((row) => row.findings.includes(routeTarget.finding)) : null;

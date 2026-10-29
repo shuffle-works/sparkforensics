@@ -1,14 +1,14 @@
 import { useCallback } from 'react';
 import { createIngestClient } from '@sparkforensics/core/ingest.ts';
 import { createModelCallbacks } from '@sparkforensics/core/model-assembler.ts';
-import { analyze, auditConfig } from '@sparkforensics/core/analyzer.ts';
-import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
-import { captureSnapshot, applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import { analyzeRun } from '@sparkforensics/core/analyzed-run.ts';
+import { comparedRun } from '@sparkforensics/core/compared-run.ts';
+import { deserializeRun, serializeRun } from '@sparkforensics/core/run-serialization.ts';
 import { runLabel } from '@sparkforensics/core/format-utils.ts';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 import { isShsErrorCode } from '@sparkforensics/core/shs-request.js';
-import { store } from './store';
-import type { EvidenceAvailability, TaskData } from '@sparkforensics/core/types.ts';
+import { emptyAppModel, snapshotOf, store } from './store';
+import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
 
 interface Opts { makeClient?: () => ReturnType<typeof createIngestClient>; }
 
@@ -60,16 +60,24 @@ const clientRef: { current: ReturnType<typeof createIngestClient> | null } = { c
 // `recentFiles.add` on success. Null for handle-less loads (folder / SHS-fetch).
 const pendingRef: { current: { handle: unknown; name: string; size: number; lastModified: number } | null } = { current: null };
 
+// Names a run that has no file identity (a folder or a History Server fetch).
+let runSequence = 0;
+
 const errorMessage = (e: unknown): string => (e as { message?: string } | null)?.message ?? String(e);
 
 export function useIngest(opts: Opts = {}) {
   const make = opts.makeClient ?? createIngestClient;
 
+  // Per-task detail of the run on screen: what is cached, else what the run's worker returns. A run
+  // without a worker (restored, drilled into) holds only the stages it prefetched.
   const getTaskData = useCallback(async (stageId: number): Promise<TaskData> => {
-    const cached = store.getState().taskDataCache.get(stageId);
+    const { run, taskDataCache } = store.getState();
+    const cached = taskDataCache.get(stageId);
     if (cached) return cached;
-    const data = await clientRef.current!.requestTaskData(stageId);
-    store.getState().setTaskData(stageId, data);
+    if (run?.taskData.kind !== 'worker') throw new Error(`Task data for stage ${stageId} is not available for this run.`);
+    const data = await run.taskData.request(stageId);
+    // The reader may have moved to another run while the worker answered.
+    if (store.getState().run === run) store.getState().setTaskData(stageId, data);
     return data;
   }, []);
 
@@ -77,40 +85,40 @@ export function useIngest(opts: Opts = {}) {
   // parse with the page error, never an endless "Parsing" screen. After ready the dashboard works,
   // so a failure in the task-data prefetch or the recent-files bookkeeping is only logged: both
   // are conveniences (stage data loads on demand), and an error screen would discard a good run.
-  const runDone = useCallback(async (skippedLines = 0) => {
-    const m = store.getState().appModel;
-    let catalog: ReturnType<typeof analyze>;
+  const runDone = useCallback(async (parsed: AppModel, client: ReturnType<typeof createIngestClient>) => {
+    let run: ReturnType<typeof analyzeRun>;
+    const runKey = store.getState().activeFileId ?? `run-${++runSequence}`;
     try {
-      const ledger = deriveEvidenceAvailability(m, { skippedLines }) as EvidenceAvailability;
-      catalog = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);
-      store.getState().setFindings(catalog, auditConfig(m.app, m.stages), ledger);
-      store.getState().setSkippedLines(skippedLines);
-      store.getState().setStatus('ready');
+      run = analyzeRun(parsed, { taskData: { kind: 'worker', request: (stageId) => client.requestTaskData(stageId) } });
+      store.getState().installRun(run, runKey);
     } catch (e) {
-      clientRef.current?.terminate();
+      client.terminate();
       store.getState().setShsParsing(false);
       store.getState().setError(`Could not analyze this log: ${errorMessage(e)}`);
       return;
     }
 
     try {
-      const flagged = [...new Set(catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
-      const prefetched = await clientRef.current!.prefetchFlaggedStages(flagged);
-      store.getState().setTaskDataBatch(prefetched.map(({ stageId, metrics, fieldNames }) => [stageId, { metrics, fieldNames }]));
+      const flagged = [...new Set(run.catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
+      const prefetched = await client.prefetchFlaggedStages(flagged);
+      // The reader may have moved to another run while the worker answered.
+      if (store.getState().run === run) {
+        store.getState().setTaskDataBatch(prefetched.map(({ stageId, metrics, fieldNames }) => [stageId, { metrics, fieldNames }]));
+      }
     } catch (e) {
       console.warn('Stage data prefetch failed; stages load on demand:', e);
     }
 
     const pending = pendingRef.current;
     if (pending?.handle) {
-      const issueCount = new Set(catalog.map((f) => f.stageId ?? `app:${f.type}`)).size;
+      const issueCount = new Set(run.catalog.map((f) => f.stageId ?? `app:${f.type}`)).size;
       try {
         await recentFiles.add({
           handle: pending.handle,
           name: pending.name,
           size: pending.size,
           lastModified: pending.lastModified,
-          appName: m.app?.name ?? null,
+          appName: run.appModel.app?.name ?? null,
           issueCount,
         });
       } catch (e) {
@@ -123,9 +131,8 @@ export function useIngest(opts: Opts = {}) {
   // restored or compared later. Skips a fresh/empty model.
   const cacheCurrentSnapshot = useCallback(() => {
     const s = store.getState();
-    if (s.activeFileId != null && s.appModel.app) {
-      s.sessionCache.set(s.activeFileId, captureSnapshot(s.appModel, s.catalog, s.taskDataCache));
-    }
+    const snapshot = snapshotOf(s);
+    if (s.activeFileId != null && snapshot?.app) s.sessionCache.set(s.activeFileId, snapshot);
   }, []);
 
   const begin = useCallback((onError?: (error: unknown) => void) => {
@@ -134,11 +141,14 @@ export function useIngest(opts: Opts = {}) {
     store.getState().setStatus('parsing');
     store.getState().setActiveFile(null);
     pendingRef.current = null;
-    clientRef.current = make();
-    return createModelCallbacks(store.getState().appModel, {
+    const client = make();
+    clientRef.current = client;
+    // The load owns the model it builds; the store receives the run only once it is analyzed.
+    const parsed = emptyAppModel();
+    return createModelCallbacks(parsed, {
       onProgress: (p: any) =>
         store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
-      onDone: (d: any) => { void runDone(d?.skippedLines ?? 0); },
+      onDone: () => { void runDone(parsed, client); },
       onError: (e: any) => {
         if (onError) onError(e);
         else store.getState().setError(String(e?.message ?? e));
@@ -209,11 +219,8 @@ export function useIngest(opts: Opts = {}) {
       cacheCurrentSnapshot();
       clientRef.current?.terminate();
       clientRef.current = null;
-      const catalog = applySnapshot(s.appModel, s.taskDataCache, snap);
-      store.getState().setFindings(catalog, auditConfig(s.appModel.app, s.appModel.stages));
-      store.getState().setSkippedLines(snap.skippedLines ?? 0);
       store.getState().setActiveFile(id);
-      store.getState().setStatus('ready');
+      store.getState().installRun(deserializeRun(snap), id);
       // Only reorders the recent list: an IndexedDB failure must not reject after the run is shown.
       await recentFiles.touch(id).catch((e) => console.warn('Could not update the recent list:', e));
       return 'restored';
@@ -246,7 +253,10 @@ export function useIngest(opts: Opts = {}) {
     const cache = store.getState().sessionCache;
     const base = cache.get(baselineId), cand = cache.get(candidateId);
     if (!base || !cand) return null;
-    return { baseline: { label: runLabel(baselineId), snapshot: base }, candidate: { label: runLabel(candidateId), snapshot: cand } };
+    return {
+      baseline: { label: runLabel(baselineId), snapshot: comparedRun(deserializeRun(base)) },
+      candidate: { label: runLabel(candidateId), snapshot: comparedRun(deserializeRun(cand)) },
+    };
   }, []);
 
   // Resolves a RunSource's File(s) at compare time (recent/file handles may need
@@ -272,15 +282,11 @@ export function useIngest(opts: Opts = {}) {
     return { start: (h) => clientRef.current!.startParse(file, h) };
   }, []);
 
-  // Snapshots the just-parsed run into sessionCache under `id`, deriving the
-  // ledger and catalog as runDone does but with no status/recent-files side
-  // effects: this run is a comparison operand, not the active dashboard.
-  const snapshotParsedRun = useCallback((id: string, skippedLines = 0) => {
-    const m = store.getState().appModel;
-    store.getState().setEvidenceAvailability(deriveEvidenceAvailability(m, { skippedLines }) as EvidenceAvailability);
-    const m2 = store.getState().appModel;
-    const catalog = analyze(m2.app, m2.stages, m2.executors.added, m2.executors.removed, m2.jobs, m2.sql, m2.runAggregates);
-    store.getState().sessionCache.set(id, captureSnapshot(m2, catalog, store.getState().taskDataCache));
+  // Snapshots the just-parsed run into sessionCache under `id`, analyzed as runDone does but with
+  // no store install or recent-files side effects: this run is a comparison operand, not the
+  // active dashboard.
+  const snapshotParsedRun = useCallback((id: string, parsed: AppModel) => {
+    store.getState().sessionCache.set(id, serializeRun(analyzeRun(parsed)));
   }, []);
 
   // Sequential two-run compare over the single worker:
@@ -293,7 +299,7 @@ export function useIngest(opts: Opts = {}) {
       store.getState().setError(`${COMPARE_RUN_NAME[which]}: ${errorMessage(e)}`);
     };
 
-    const parseInto = async (source: RunSource, which: 'A' | 'B', onDone: (skippedLines: number) => void) => {
+    const parseInto = async (source: RunSource, which: 'A' | 'B', onDone: (parsed: AppModel) => void) => {
       try {
         clientRef.current?.terminate();
         store.getState().resetModel();
@@ -311,12 +317,13 @@ export function useIngest(opts: Opts = {}) {
           store.getState().setComparisonActive(false);
           return;
         }
-        const cb = createModelCallbacks(store.getState().appModel, {
+        const parsed = emptyAppModel();
+        const cb = createModelCallbacks(parsed, {
           onProgress: (p: any) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
           // A throw here (snapshotting, or opening the comparison) would otherwise leave the
           // "Parsing run N of 2" screen up forever.
-          onDone: (d: any) => {
-            try { onDone(d?.skippedLines ?? 0); } catch (e) { abort(which, e); }
+          onDone: () => {
+            try { onDone(parsed); } catch (e) { abort(which, e); }
           },
           onError: (e: any) => abort(which, e),
         });
@@ -336,8 +343,8 @@ export function useIngest(opts: Opts = {}) {
         next();
         return;
       }
-      void parseInto(source, which, (skippedLines) => {
-        snapshotParsedRun(source.id, skippedLines);
+      void parseInto(source, which, (parsed) => {
+        snapshotParsedRun(source.id, parsed);
         next();
       });
     };
@@ -361,7 +368,7 @@ export function useIngest(opts: Opts = {}) {
   const compareWithAnotherRun = useCallback(() => {
     const s = store.getState();
     const id = s.activeFileId;
-    if (id == null || !s.appModel.app) return;
+    if (id == null || !s.run?.appModel.app) return;
     resetToDropZone();
     store.getState().setCompareSeed({ id, label: runLabel(id) });
   }, [resetToDropZone]);
@@ -374,11 +381,8 @@ export function useIngest(opts: Opts = {}) {
     if (!snap) return;
     clientRef.current?.terminate();
     clientRef.current = null;
-    const catalog = applySnapshot(s.appModel, s.taskDataCache, snap);
-    store.getState().setFindings(catalog, auditConfig(s.appModel.app, s.appModel.stages));
-    store.getState().setSkippedLines(snap.skippedLines ?? 0);
     store.getState().setActiveFile(id);
-    store.getState().setStatus('ready');
+    store.getState().installRun(deserializeRun(snap), id);
     store.getState().setComparisonActive(false);
   }, []);
 

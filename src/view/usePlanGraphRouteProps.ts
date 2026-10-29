@@ -1,4 +1,4 @@
-import { useStore } from '@/store/store';
+import { selectAppModel, selectCatalog, useStore } from '@/store/store';
 import type { PlanGraphRouteProps } from '@/view/PlanGraphRoute';
 
 /** Shared store-selector logic for App.tsx's and ExportApp.tsx's
@@ -12,8 +12,8 @@ import type { PlanGraphRouteProps } from '@/view/PlanGraphRoute';
 export function usePlanGraphRouteProps(): PlanGraphRouteProps | null {
   const stageId = useStore((s) => s.planGraph.stageId);
   const initialScope = useStore((s) => s.planGraph.initialScope);
-  const appModel = useStore((s) => s.appModel);
-  const catalog = useStore((s) => s.catalog);
+  const appModel = useStore(selectAppModel);
+  const catalog = useStore(selectCatalog);
   const activeFileId = useStore((s) => s.activeFileId);
   const closePlanGraph = useStore((s) => s.closePlanGraph);
 

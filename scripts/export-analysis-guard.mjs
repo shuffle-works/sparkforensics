@@ -16,7 +16,7 @@ export const ALLOWED_EXPORT_CORE_MODULES = [
     'finding-action-label', 'finding-filter-predicate', 'finding-generic-recommendation', 'finding-identity',
     'finding-names', 'finding-presentation', 'finding-tag-help', 'findings-of-type', 'format-utils',
     'intervals', 'plan-dot', 'plan-duration-attribution', 'plan-graph-model', 'plan-node-detail', 'plan-summary', 'plan-tree-walk',
-    'recommendation-rollup', 'run-payload', 'scaling-sim', 'session-snapshot', 'sql-stages', 'task-failure',
+    'recommendation-rollup', 'run-payload', 'run-serialization', 'scaling-sim', 'sql-stages', 'task-failure',
   ].map((name) => `packages/core/src/${name}.ts`),
   'packages/core/src/vendor/fflate.js',
 ];
@@ -24,7 +24,6 @@ export const ALLOWED_EXPORT_CORE_MODULES = [
 /** Live app modules the export build swaps for stubs (vite.export.config.ts) or never imports. */
 export const LIVE_ONLY_MODULES = [
   'src/store/useIngest.ts',
-  'src/store/live-interpretation.ts',
   'src/view/useRecentFiles.ts',
   'src/view/EvidenceExport.tsx',
   'src/view/core-usage-histogram-data.ts',

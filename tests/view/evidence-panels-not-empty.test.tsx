@@ -6,9 +6,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
-import { store, emptyAppModel } from '@/store/store';
+import { store } from '@/store/store';
 import { analyze, auditConfig } from '@sparkforensics/core/analyzer.ts';
 import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
+import { runState } from './_shared/run';
 
 const ROOT = join(__dirname, '..', '..');
 const FIXTURE_DIR = join(ROOT, 'packages', 'core', 'test', 'fixtures');
@@ -38,7 +39,7 @@ describe('every opened evidence panel shows evidence', () => {
     window.history.replaceState({}, '', `/${search}`);
     const { appModel } = await collectRun(path);
     const catalog = analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates);
-    store.setState({ ...emptyAppModel(), appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages), status: 'ready', widgetDensity: 'basic' } as never);
+    store.setState({ status: 'ready', widgetDensity: 'basic', ...runState({ appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) }) });
 
     const user = userEvent.setup();
     render(<App />);

@@ -1,0 +1,44 @@
+id: no-run-reset-effect
+language: tsx
+severity: error
+message: An effect resets state when the run or file changes.
+note: |
+  Per-run view state starts fresh because `DashboardRoute` is keyed by the store's `runKey`: a new
+  run remounts everything under it. Do not list `appModel` or `activeFileId` in an effect's
+  dependencies to reset state with a setter. Move the state so it starts at its initial value on
+  mount, or derive the value during render. An effect that loads or subscribes to something outside
+  React is not matched: its setter runs inside a callback, when the outside work answers.
+rule:
+  kind: call_expression
+  all:
+    - has:
+        field: function
+        kind: identifier
+        regex: ^(useEffect|useLayoutEffect)$
+    - has:
+        field: arguments
+        has:
+          kind: array
+          has:
+            kind: identifier
+            regex: ^(appModel|activeFileId)$
+    - has:
+        field: arguments
+        has:
+          any:
+            - kind: arrow_function
+            - kind: function_expression
+          has:
+            kind: call_expression
+            # Not inside a callback the effect hands to a fetch or a timer: that setter runs later,
+            # when the outside work answers.
+            stopBy:
+              any:
+                - kind: arrow_function
+                - kind: function_expression
+            has:
+              field: function
+              kind: identifier
+              regex: ^set[A-Z]
+files:
+  - src/**

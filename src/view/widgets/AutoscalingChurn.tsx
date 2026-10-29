@@ -103,8 +103,8 @@ function Row({ row: { finding, stated } }: FindingRowProps<AutoscalingChurnRow>)
   );
 }
 
-// The series is keyed on the executor lists and the app, which `applySnapshot` replaces on a
-// cached-file switch, so it never shows the previous file's churn.
+// The series is keyed on the executor lists and the app; every installed run brings its own
+// model, so it never shows the previous file's churn.
 const Lead: NonNullable<FindingWidgetView<AutoscalingChurnRow>['Lead']> = ({ appModel }) => {
   const { added, removed } = appModel.executors;
   const app = appModel.app;

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { store, emptyAppModel } from '../src/store/store';
+import { runState } from './view/_shared/run';
 
 beforeEach(() => {
   store.getState().resetModel();
@@ -27,13 +28,15 @@ describe('comparison store slice', () => {
   it('openComparison snapshots the active run into sessionCache (so a pure render-time read can resolve it)', () => {
     store.setState({
       activeFileId: 'active::1::2',
-      appModel: { ...emptyAppModel(), app: { name: 'Active App' } },
-      catalog: [{ type: 'gc', impactBand: 'info' }],
+      ...runState({
+        appModel: { ...emptyAppModel(), app: { name: 'Active App' } },
+        catalog: [{ type: 'gc', impactBand: 'info' }],
+      }, 'active::1::2'),
     });
     store.getState().openComparison('active::1::2', 'other::3::4');
     const snap = store.getState().sessionCache.get('active::1::2');
     expect(snap?.app).toEqual({ name: 'Active App' });
-    expect(snap.catalog).toEqual([{ type: 'gc', impactBand: 'info' }]);
+    expect(snap.catalog).toMatchObject([{ type: 'gc', impactBand: 'info' }]);
   });
 
   it('openComparison snapshots nothing when no run is active', () => {

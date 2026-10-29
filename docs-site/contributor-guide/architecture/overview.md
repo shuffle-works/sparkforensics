@@ -12,16 +12,17 @@ proxies Spark History Server fetches to sidestep CORS.
 
 ### Main thread
 
-Owns the DOM (React) and a summary `AppModel` (jobs, stages, sql, executors, no
-raw tasks), held in a Zustand store (`src/store/store.ts`).
+Owns the DOM (React) and the run on screen, an `AnalyzedRun` whose summary `AppModel`
+(jobs, stages, sql, executors, no raw tasks) sits beside its findings and interpretation,
+held in a Zustand store (`src/store/store.ts`).
 
 `src/store/useIngest.ts` is the composition root. It owns the ingest client's
 lifecycle (`createIngestClient`, `@sparkforensics/core/ingest.ts`) and wires
 `model-assembler.ts`'s `createModelCallbacks` (worker message → `AppModel`)
-into store updates: `onProgress` → `parse`; `onDone` → derives
-`evidenceAvailability` from the final normalized model plus
-`done.skippedLines`, runs `analyzer.ts`, sets `catalog`, and prefetches
-flagged-stage task data.
+into a model the load owns: `onProgress` → `parse`; `onDone` → `analyzeRun`
+(`analyzed-run.ts`: the evidence ledger from the final normalized model plus its
+`skippedLines`, the detectors, the config audit and the interpretation), then
+`installRun` puts the run in the store and the flagged stages' task data is prefetched.
 
 `src/App.tsx` routes on store state: a two-run compare load, the plan-graph
 route and the run comparison take precedence; otherwise idle/error →

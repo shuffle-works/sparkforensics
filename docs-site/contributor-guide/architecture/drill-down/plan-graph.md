@@ -308,17 +308,13 @@ Zustand slice
 `AppRoutes` branch in `src/App.tsx`, modeled on the
 `comparison`/`RunComparisonRoute` full-takeover pattern.
 
-`buildPlanGraphModel`'s output is memoized per `(activeFileId, stageId, scope, durationMode)`
-in `PlanGraphRoute.tsx`, since `stageId` alone isn't unique across loaded runs
-and `applySnapshot` mutates `appModel` in place rather than replacing it (see
-[State model](../state-and-history.md#state-model)). The memo cache is a
-module-level `Map`, so it survives across route open/close: re-opening the same
-stage in the same run reuses the cached model instead of rebuilding it. It must
-still be evicted on a fresh parse or reload. `resetModel()` (`store.ts`) bumps a
-`modelResetCount` counter for exactly this purpose, and `PlanGraphRoute.tsx`
-subscribes to it to clear the cache. A counter rather than a direct call, since
-`store.ts` has no view-layer imports anywhere else and importing a `.tsx` module
-there would invert that dependency direction.
+`buildPlanGraphModel`'s output is memoized per run and then per `(stageId, scope, durationMode, showInfo)`
+in `PlanGraphRoute.tsx`: the outer key is the run's `appModel`, which is a new
+object for every run installed (see [State model](../state-and-history.md#state-model)),
+since `stageId` alone isn't unique across loaded runs. The memo cache is a
+module-level `WeakMap`, so it survives across route open/close: re-opening the same
+stage in the same run reuses the cached model instead of rebuilding it, and a new
+run or a reload of the same file starts empty.
 
 ## Duration share
 

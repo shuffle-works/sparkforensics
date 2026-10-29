@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { test, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { store, emptyAppModel } from '@/store/store';
+import { store, emptyAppModel, selectAppModel } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import type { RunSource } from '@/store/useIngest';
-import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import { serializeRun, type SerializedRun } from '@sparkforensics/core/run-serialization.ts';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import { makeRun, runState } from './_shared/run';
 
 // A Map that records every set(key, value), so a test can prove a snapshot was
 // written exactly once for a key (i.e. never clobbered by a redundant re-write).
@@ -34,16 +35,22 @@ function makeFakeClient(appNameByCall: string[]) {
 
 const fileSource = (id: string, name: string): RunSource => ({ kind: 'file', id, label: name, file: new File(['{}'], name) });
 
+// A finished run as the session cache stores it.
+const runSnapshot = (name: string, skippedLines?: number): SerializedRun => serializeRun(makeRun({
+  appModel: { ...emptyAppModel(), app: { name } as any, ...(skippedLines === undefined ? {} : { skippedLines }) },
+  taskData: { kind: 'none' },
+}));
+
 beforeEach(() => {
   store.getState().resetModel();
-  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel(), compareSeed: null });
+  store.setState({ sessionCache: new Map(), activeFileId: null, compareSeed: null });
 });
 
 test('startCompareLoad parses A then B, snapshots both, opens the comparison', async () => {
   const client = makeFakeClient(['SameApp', 'SameApp']);
   // Record every sessionCache.set so we can prove the candidate's snapshot is written
   // once (by snapshotParsedRun) and never clobbered by openComparison.
-  const cache = new RecordingMap<string, SessionSnapshot>();
+  const cache = new RecordingMap<string, SerializedRun>();
   store.setState({ sessionCache: cache });
   const { result } = renderHook(() => useIngest({ makeClient: () => client as any }));
   await act(async () => {
@@ -133,21 +140,20 @@ test('a parse error on the candidate aborts the compare and surfaces a run-named
 
 test('drillIntoRun restores one cached run without evicting the other', () => {
   store.setState({
-    sessionCache: new Map([
-      ['a::1::2', { app: { name: 'A' }, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null, catalog: [], taskData: new Map() }],
-      ['b::3::4', { app: { name: 'B' }, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null, catalog: [], taskData: new Map() }],
-    ]),
+    sessionCache: new Map([['a::1::2', runSnapshot('A')], ['b::3::4', runSnapshot('B')]]),
     comparison: { active: true, baselineId: 'a::1::2', candidateId: 'b::3::4' },
   });
   const { result } = renderHook(() => useIngest());
-  const interpretations = new Set<unknown>();
+  const runs = new Set<unknown>();
   const unsubscribe = store.subscribe((next, previous) => {
-    if (next.interpretation !== previous.interpretation) interpretations.add(next.interpretation);
+    if (next.run !== previous.run) runs.add(next.run);
   });
   act(() => result.current.drillIntoRun('a::1::2'));
   unsubscribe();
-  // One store update carries the restored findings, so the live interpreter runs once.
-  expect(interpretations.size).toBe(1);
+  // One store update installs the restored run, interpretation included.
+  expect(runs.size).toBe(1);
+  expect(store.getState().run?.appModel.app?.name).toBe('A');
+  expect(store.getState().runKey).toBe('a::1::2');
   expect(store.getState().activeFileId).toBe('a::1::2');
   expect(store.getState().status).toBe('ready');
   expect(store.getState().comparison.active).toBe(false);
@@ -155,12 +161,12 @@ test('drillIntoRun restores one cached run without evicting the other', () => {
 });
 
 test('compareWithAnotherRun keeps the open run as a cached baseline and seeds the landing compare view', async () => {
-  const cache = new Map<string, SessionSnapshot>();
+  const cache = new Map<string, SerializedRun>();
   store.setState({
     sessionCache: cache,
     activeFileId: 'a::1::2',
     status: 'ready',
-    appModel: { ...emptyAppModel(), app: { id: 'A', name: 'A' } as any },
+    ...runState({ appModel: { ...emptyAppModel(), app: { id: 'A', name: 'A' } as any } }),
   });
   const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient([]) as any }));
   act(() => result.current.compareWithAnotherRun());
@@ -171,7 +177,7 @@ test('compareWithAnotherRun keeps the open run as a cached baseline and seeds th
 });
 
 test('compareWithAnotherRun stays on the dashboard when the open run has no app to snapshot', () => {
-  const cache = new Map<string, SessionSnapshot>();
+  const cache = new Map<string, SerializedRun>();
   store.setState({ sessionCache: cache, activeFileId: 'a::1::2', status: 'ready', compareSeed: null });
   const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient([]) as any }));
   act(() => result.current.compareWithAnotherRun());
@@ -185,8 +191,8 @@ test('compareWithAnotherRun stays on the dashboard when the open run has no app 
 test('startCompareLoad reuses a cached baseline: only the candidate is parsed, and the baseline is never re-snapshotted', async () => {
   const startParse = vi.fn();
   const client = makeFakeClient(['B']);
-  const cache = new RecordingMap<string, SessionSnapshot>();
-  cache.set('a::1::2', { appModel: emptyAppModel() } as unknown as SessionSnapshot);
+  const cache = new RecordingMap<string, SerializedRun>();
+  cache.set('a::1::2', runSnapshot('A'));
   cache.sets = [];
   store.setState({ sessionCache: cache });
   const { result } = renderHook(() =>
@@ -204,7 +210,7 @@ test('startCompareLoad reuses a cached baseline: only the candidate is parsed, a
 
 test('startCompareLoad keeps the compare seed when the candidate fails, and clears it once the comparison opens', async () => {
   const seed = { id: 'a::1::2', label: 'a.log' };
-  const cache = new Map<string, SessionSnapshot>([['a::1::2', { appModel: emptyAppModel() } as unknown as SessionSnapshot]]);
+  const cache = new Map<string, SerializedRun>([['a::1::2', runSnapshot('A')]]);
   const failing = { ...makeFakeClient([]), startParse: (_f: File, h: any) => h.onError?.(new Error('bad log')) };
   store.setState({ sessionCache: cache, compareSeed: seed });
   const failed = renderHook(() => useIngest({ makeClient: () => failing as any }));
@@ -235,13 +241,6 @@ test('startCompareLoad reports a cached baseline that is no longer loaded instea
   expect(store.getState().comparison.active).toBe(false);
 });
 
-// A snapshot of a finished run, as captureSnapshot would store it.
-const runSnapshot = (name: string, skippedLines?: number): SessionSnapshot => ({
-  app: { name } as any, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(),
-  runAggregates: null, evidenceAvailability: null, ...(skippedLines === undefined ? {} : { skippedLines }),
-  catalog: [], taskData: new Map(),
-});
-
 test('drillIntoRun restores the drilled run skipped-line count into the store', async () => {
   const client = {
     ...makeFakeClient(['A', 'B']),
@@ -255,9 +254,9 @@ test('drillIntoRun restores the drilled run skipped-line count into the store', 
     await Promise.resolve();
   });
   act(() => result.current.drillIntoRun('a::1::2'));
-  expect(store.getState().skippedLines).toBe(4);
+  expect(selectAppModel(store.getState()).skippedLines).toBe(4);
   act(() => result.current.drillIntoRun('b::3::4'));
-  expect(store.getState().skippedLines).toBe(0);
+  expect(selectAppModel(store.getState()).skippedLines).toBe(0);
 });
 
 test('pickRecent restores the picked run skipped-line count, not the previous run value', async () => {
@@ -265,16 +264,16 @@ test('pickRecent restores the picked run skipped-line count, not the previous ru
   store.setState({
     sessionCache: new Map([['a::1::2', runSnapshot('A', 4)]]),
     activeFileId: 'b::3::4',
-    skippedLines: 9,
+    ...runState({ appModel: { ...emptyAppModel(), skippedLines: 9 } }),
   });
   const { result } = renderHook(() => useIngest());
   await act(async () => { await result.current.pickRecent('a::1::2'); });
-  expect(store.getState().skippedLines).toBe(4);
+  expect(selectAppModel(store.getState()).skippedLines).toBe(4);
 });
 
-test('restoring a snapshot saved without skippedLines reads zero', () => {
-  store.setState({ sessionCache: new Map([['a::1::2', runSnapshot('A')]]), skippedLines: 9 });
+test('restoring a run whose model counted no skipped lines reads zero', () => {
+  store.setState({ sessionCache: new Map([['a::1::2', runSnapshot('A')]]), ...runState({ appModel: { ...emptyAppModel(), skippedLines: 9 } }) });
   const { result } = renderHook(() => useIngest());
   act(() => result.current.drillIntoRun('a::1::2'));
-  expect(store.getState().skippedLines).toBe(0);
+  expect(selectAppModel(store.getState()).skippedLines).toBe(0);
 });

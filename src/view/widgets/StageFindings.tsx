@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
-import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';
+import { findingById, savingsOf, useInterpretation } from '@/view/interpretation';
 import { emptySelection, matchesFilter } from '@/view/finding-filter';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -121,7 +121,7 @@ export function StageFindings({ stage, catalog, showInfo, onShowEvidence }: Stag
   // that touches only this stage (stageIds: [id]) is listed here too.
   const stageFindings = interpretation?.data.stages[String(stage.id)];
   const stageCatalog = interpretation && stageFindings
-    ? stageFindings.findingIndexes.map((index) => findingAt(interpretation, index)).filter((f): f is Finding => f != null)
+    ? stageFindings.findingIds.map((id) => findingById(interpretation, id)).filter((f): f is Finding => f != null)
     : [];
   const findings = showInfo ? stageCatalog : stageCatalog.filter((f) => matchesFilter(f, emptySelection()));
   const groups = groupFindingsByType(findings, stageFindings?.typeOrder ?? []);

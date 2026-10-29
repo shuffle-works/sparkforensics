@@ -3,7 +3,7 @@ import { normalizeDetail } from './detectors.ts';
 import { normalizeStageName, stageIdentityWith, identityIndexWith, pairEqualCounts } from './stage-identity.ts';
 import { computeAllocation } from './allocation.ts';
 import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
-import { captureSnapshot } from './session-snapshot.ts';
+import { comparedRun } from './compared-run.ts';
 import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
 import { mdInline } from './markdown-inline.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
@@ -11,7 +11,7 @@ import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator
 import { cyrb53 } from './string-hash.ts';
 import { IMPACT_BAND_ORDER, formatBytes, formatRawWaste, fmtMs } from './format-utils.ts';
 import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
-import type { SessionSnapshot } from './session-snapshot.ts';
+import type { ComparedRun } from './compared-run.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
 import { stageDisplayLabel } from './stage-label.ts';
@@ -93,14 +93,14 @@ export interface CompareRunsResult {
   comparability: Comparability;
 }
 
-function jobOutcome(snapshot: SessionSnapshot): VerdictJobOutcome {
+function jobOutcome(snapshot: ComparedRun): VerdictJobOutcome {
   const { failedJobs, totalJobs } = summarizeRunOutcome(snapshot.jobs, snapshot.catalog);
   return { failedJobs, totalJobs, incomplete: isIncompleteRun(snapshot.catalog) };
 }
 
 export { normalizeStageName };
 
-export function stageIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
+export function stageIdentity(stage: Stage, snapshot: Pick<ComparedRun, 'sql'>): string {
   return stageIdentityWith(stage, snapshot, normalizeDetail);
 }
 
@@ -110,7 +110,7 @@ export function stageIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql
  * the same key, so a reader pairs findings across runs without the aligner. A pairing aid: several
  * findings can share a key (one detector firing per host on a run-level key, stages that share a
  * fingerprint), and it says nothing about whether the finding's value or band held. */
-export function findingKeyer(snapshot: Pick<SessionSnapshot, 'stages' | 'sql'>): (finding: Finding) => string {
+export function findingKeyer(snapshot: Pick<ComparedRun, 'stages' | 'sql'>): (finding: Finding) => string {
   const stageLabels = new Map<number, string>();
   const stageLabel = (id: number): string => {
     let label = stageLabels.get(id);
@@ -139,7 +139,7 @@ export function findingKeyer(snapshot: Pick<SessionSnapshot, 'stages' | 'sql'>):
   return (finding) => findingKey(finding, locator);
 }
 
-export function matchStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): {
+export function matchStages(baseSnap: ComparedRun, candSnap: ComparedRun): {
   pairs: Array<{ identity: string; baseId: number; candId: number }>;
   matchedIdentities: Set<string>;
   collisionIdentities: Set<string>;
@@ -234,7 +234,7 @@ export const DEFAULT_NOISE_BAND = 0.02;
  * `caveatThresholds` replace them. */
 export const DEFAULT_CAVEAT_THRESHOLDS: CaveatThresholds = { executorRatio: 1.5, unmatchedShare: 0.2, taskCountChange: 0.25 };
 
-export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, noiseBand = DEFAULT_NOISE_BAND): MetricDeltaRow[] {
+export function metricDeltas(baseSnap: ComparedRun, candSnap: ComparedRun, noiseBand = DEFAULT_NOISE_BAND): MetricDeltaRow[] {
   const metric = (
     key: string, label: string, baseline: number | null, candidate: number | null,
     extra: { unavailableReason?: string } = {},
@@ -248,7 +248,7 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   const out: MetricDeltaRow[] = [];
   // Run totals count every task attempt, failed and speculative ones too (run-totals.ts), the
   // same sums the CLI metrics block reports; skew stays on each stage's latest attempt.
-  const attemptsOf = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
+  const attemptsOf = (snap: ComparedRun): Stage[] => withEarlierAttempts([...snap.stages.values()]);
 
   // Wall-clock: always computable (computeWallClock tolerates a null app).
   out.push(metric('wallClock', 'Wall-clock duration',
@@ -301,7 +301,7 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
 
   // Executor count is app-level, not per-stage. `executors` is absent on
   // hand-built snapshots; guard so it renders Unavailable, not a crash.
-  const execCount = (snap: SessionSnapshot): number | null =>
+  const execCount = (snap: ComparedRun): number | null =>
     (Array.isArray(snap.executors?.added) ? snap.executors.added.length : null);
   const bExec = execCount(baseSnap), cExec = execCount(candSnap);
   out.push(metric('executorsAdded', 'Executors added', bExec, cExec,
@@ -309,11 +309,11 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
 
   // Executor CPU time (ms) and allocated core-hours cost resources, so less is better. CPU time is
   // null, not 0, on a run whose log never recorded it (older Spark).
-  const cpuMs = (snap: SessionSnapshot): number | null => totalExecutorCpuMs(attemptsOf(snap));
+  const cpuMs = (snap: ComparedRun): number | null => totalExecutorCpuMs(attemptsOf(snap));
   const bCpu = cpuMs(baseSnap), cCpu = cpuMs(candSnap);
   out.push(metric('executorCpuTime', 'Executor CPU time', bCpu, cCpu,
     { unavailableReason: bCpu != null && cCpu != null ? undefined : 'No executor CPU time recorded for a run' }));
-  const coreHours = (snap: SessionSnapshot): number | null =>
+  const coreHours = (snap: ComparedRun): number | null =>
     (snap.executors ? computeAllocation(snap).coreHours : null);
   const bCore = coreHours(baseSnap), cCore = coreHours(candSnap);
   out.push(metric('allocatedCoreHours', 'Allocated core-hours', bCore, cCore,
@@ -324,7 +324,7 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
 
 // Cross-run identity of a snapshot's stages and SQL executions: a stage (or execution) the aligner
 // paired takes one label on both sides; an unpaired one takes a side-neutral label, so the same problem on an unpaired stage in both runs still matches.
-function findingLocators(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[]): { base: FindingLocator; cand: FindingLocator } {
+function findingLocators(baseSnap: ComparedRun, candSnap: ComparedRun, stagePairs: StagePair[]): { base: FindingLocator; cand: FindingLocator } {
   const baseStage = new Map<number, string>(), candStage = new Map<number, string>();
   const executionVotes = new Map<number, Map<number, number>>(); // base execution -> cand execution -> paired stages
   for (const pair of stagePairs) {
@@ -354,10 +354,10 @@ function findingLocators(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, s
 // never value or band). One with a counterpart is not introduced or resolved: a different band
 // makes it `changed`. Each row aggregates findings of one rule and band, with the stage names
 // of the side the findings are on.
-export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[] = []): FindingsDelta {
+export function findingsDelta(baseSnap: ComparedRun, candSnap: ComparedRun, stagePairs: StagePair[] = []): FindingsDelta {
   const locators = findingLocators(baseSnap, candSnap, stagePairs);
   const diff = diffFindings(baseSnap.catalog, candSnap.catalog, locators.base, locators.cand);
-  const stageNames = (snap: SessionSnapshot, findings: Finding[]): string[] => {
+  const stageNames = (snap: ComparedRun, findings: Finding[]): string[] => {
     const names = new Set<string>();
     for (const f of findings) {
       const name = f.stageId != null ? snap.stages.get(f.stageId)?.name : undefined;
@@ -377,7 +377,7 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
     }
     return [...groups].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   };
-  const rows = (findings: Finding[], snap: SessionSnapshot, side: 'base' | 'cand'): FindingsDeltaRow[] =>
+  const rows = (findings: Finding[], snap: ComparedRun, side: 'base' | 'cand'): FindingsDeltaRow[] =>
     group(findings, (f) => `${findingRule(f)}§${findingBand(f)}`).map(([, fs]) => {
       const count = fs.length;
       const stages = stageNames(snap, fs);
@@ -409,7 +409,7 @@ function namesConflict(a: SparkAppInfo | null, b: SparkAppInfo | null): boolean 
 // A pair's skew ratio is null when the stage's duration wasn't measurable (see
 // `stageSkewRatio`). Rows come from the aligner's `stagePairs`, so the table and the coverage
 // banner agree. A pair covers one stage per side here; `pairId` is the unique row key.
-function stageSkewDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[]): StageSkewRow[] {
+function stageSkewDeltas(baseSnap: ComparedRun, candSnap: ComparedRun, stagePairs: StagePair[]): StageSkewRow[] {
   return stagePairs.map((p) => {
     const baseId = p.baseStageIds[0], candId = p.candStageIds[0];
     const baseStage = baseSnap.stages.get(baseId)!;
@@ -453,13 +453,12 @@ function perStageMetrics(stage: Stage): StageMetricsRow {
   };
 }
 
-function stageList(snap: SessionSnapshot): Array<{ id: number; name: string; metrics: StageMetricsRow }> {
+function stageList(snap: ComparedRun): Array<{ id: number; name: string; metrics: StageMetricsRow }> {
   return [...snap.stages].map(([id, s]) => ({ id, name: s.name ?? `Stage ${id}`, metrics: perStageMetrics(s) }));
 }
 
 // captureSnapshot copies this into a fresh Map internally and never mutates the
 // caller's reference, so one shared empty Map is safe here.
-const EMPTY_TASK_DATA = new Map<number, unknown>();
 
 export interface CompareOptions {
   /** Caller-supplied regular expressions (sources), applied to plan node detail before stages are
@@ -481,16 +480,15 @@ export interface CompareOptions {
   caveatThresholds?: Partial<CaveatThresholds>;
 }
 
-// Snapshot-building shared by the CLI's --baseline path and mcp-tools.ts's compareRuns tool. The
-// empty taskDataCache is the interactive drill-down cache, which comparison never reads.
+// Operand-building shared by the CLI's --baseline path and mcp-tools.ts's compareRuns tool.
 export function buildComparison(
   baseline: { label: string; appModel: AppModel; catalog: Finding[] },
   candidate: { label: string; appModel: AppModel; catalog: Finding[] },
   options?: CompareOptions,
 ): CompareRunsResult {
   return compareRuns(
-    { label: baseline.label, snapshot: captureSnapshot(baseline.appModel, baseline.catalog, EMPTY_TASK_DATA) },
-    { label: candidate.label, snapshot: captureSnapshot(candidate.appModel, candidate.catalog, EMPTY_TASK_DATA) },
+    { label: baseline.label, snapshot: comparedRun(baseline) },
+    { label: candidate.label, snapshot: comparedRun(candidate) },
     options,
   );
 }
@@ -501,8 +499,8 @@ export function buildComparison(
 const RUNTIME_COVERAGE_THRESHOLD = 0.9;
 
 export function compareRuns(
-  baseline: { label: string; snapshot: SessionSnapshot },
-  candidate: { label: string; snapshot: SessionSnapshot },
+  baseline: { label: string; snapshot: ComparedRun },
+  candidate: { label: string; snapshot: ComparedRun },
   options: CompareOptions = {},
 ): CompareRunsResult {
   const baseSnap = baseline.snapshot, candSnap = candidate.snapshot;

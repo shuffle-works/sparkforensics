@@ -9,7 +9,8 @@ import { createState, runParse } from '../src/parser-worker.ts';
 import { createModelCallbacks } from '../src/model-assembler.ts';
 import { routeMessage } from '../src/ingest.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
-import { captureSnapshot, applySnapshot } from '../src/session-snapshot.ts';
+import { analyzeRun } from '../src/analyzed-run.ts';
+import { deserializeRun, serializeRun } from '../src/run-serialization.ts';
 
 // The dashboard assembles its model from the worker's messages with createModelCallbacks (see
 // src/store/useIngest.ts); the CLI, MCP and SHS paths go through collectRun. Both must end with the
@@ -69,9 +70,7 @@ describe('write targets agree across ingest paths', () => {
   it('keeps the parse gaps through a session snapshot round trip', async () => {
     const dashboard = await ingestLikeTheDashboard(logWithUnreadableStarts());
     const before = buildEvidenceReport(dashboard, { markdown: false }).json.writeTargets;
-    const snapshot = captureSnapshot(dashboard, [], new Map());
-    const restored = emptyAppModel();
-    applySnapshot(restored, new Map(), snapshot);
+    const restored = deserializeRun(serializeRun(analyzeRun(dashboard))).appModel;
     expect(buildEvidenceReport(restored, { markdown: false }).json.writeTargets).toEqual(before);
     expect(before.skippedLines).toBe(2);
   });
@@ -124,8 +123,7 @@ describe('Delta write targets from a log', () => {
   it('keeps the targets through a session snapshot round trip', async () => {
     const dashboard = await ingestLikeTheDashboard(DELTA_LOG);
     const before = buildEvidenceReport(dashboard, { markdown: false }).json.writeTargets;
-    const restored = emptyAppModel();
-    applySnapshot(restored, new Map(), captureSnapshot(dashboard, [], new Map()));
+    const restored = deserializeRun(serializeRun(analyzeRun(dashboard))).appModel;
     expect(buildEvidenceReport(restored, { markdown: false }).json.writeTargets).toEqual(before);
   });
 });

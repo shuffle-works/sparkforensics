@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectRun } from '../src/cli/collect-run.js';
-import { captureSnapshot } from '../src/session-snapshot.js';
+import { comparedRun } from '../src/compared-run.js';
 import { alignStages, comparisonDetailNormalizer, comparisonIdentity, isDeltaBookkeepingStage } from '../src/stage-alignment.js';
 import { compareRuns, stageIdentity } from '../src/run-comparison.js';
 import { corpusLog } from './corpus-log.js';
@@ -24,7 +24,7 @@ const snapshots = new Map();
 beforeAll(async () => {
   for (const { name, path } of LOGS) {
     const { appModel } = await collectRun(path);
-    snapshots.set(name, captureSnapshot(appModel, [], new Map()));
+    snapshots.set(name, comparedRun({ appModel, catalog: [] }));
   }
 }, 120_000);
 
