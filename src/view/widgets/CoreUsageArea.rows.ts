@@ -31,7 +31,6 @@ export const coreUsageRows: RowsOf<'coreLocality', CoreUsageRow> = ({ findings, 
 export const coreUsageModel: FindingWidgetModel<'coreLocality', CoreUsageRow> = {
   type: 'coreLocality',
   rows: coreUsageRows,
-  title: 'Core Usage by Locality',
   stageOf: () => null,
   alwaysMounted: true,
   listClassName: 'space-y-2',

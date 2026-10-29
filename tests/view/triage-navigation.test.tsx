@@ -545,7 +545,7 @@ test('a core-locality target switches to Full app report, where its always-mount
 
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
-  const heading = await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' });
+  const heading = await within(reportPanel).findByRole('heading', { name: 'Core Locality' });
   const card = heading.closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
   expect(Element.prototype.scrollIntoView).toHaveBeenCalled();

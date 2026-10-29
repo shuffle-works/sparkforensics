@@ -21,7 +21,7 @@ export function verdictEvidenceOwners(
   const owners = new Map<number, string>();
   verdictLeadFindings(interpretation).forEach((finding, index) => {
     const placement = evidencePlacement(interpretation, finding, available);
-    if (placement.kind === 'step' && placement.widgetId && available.has(placement.widgetId)) owners.set(index, placement.widgetId);
+    if (placement.kind === 'step' && placement.widgetId) owners.set(index, placement.widgetId);
   });
   return owners;
 }

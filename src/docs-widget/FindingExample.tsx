@@ -56,8 +56,6 @@ export function FindingExample({ findingId }: { findingId: string }) {
       evidence = panel
         ? { kind: 'panel', widgetId: widget.widgetId, panel, card: <InlineEvidence widget={widget} widgetProps={widgetProps} stated={scope} panel={panel} /> }
         : { kind: 'bare', widgetId: widget.widgetId };
-    } else if (placement.widgetId) {
-      evidence = { kind: 'bare', widgetId: placement.widgetId };
     }
     body = (
       <section className="rounded-xl border border-border bg-card px-4 pb-1 sm:px-5">
@@ -67,7 +65,6 @@ export function FindingExample({ findingId }: { findingId: string }) {
             finding={finding}
             interpretation={interpretation}
             index={placement.index}
-            onRoute={NO_ROUTE}
             evidence={evidence}
           />
         </ol>

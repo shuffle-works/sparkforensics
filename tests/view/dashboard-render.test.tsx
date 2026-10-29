@@ -148,9 +148,9 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
   expect(within(reportPanel).getByRole('heading', { name: 'Stage Summary' })).toBeInTheDocument();
   // REGISTRY widgets mount in ImpactBoard (Findings tab), except the
-  // always-mounted Core Usage by Locality, which lives in Full app report.
-  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
-  expect(within(findingsPanel).queryByRole('heading', { name: 'Core Usage by Locality' })).not.toBeInTheDocument();
+  // always-mounted Core Locality, which lives in Full app report.
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Locality' })).toBeInTheDocument();
+  expect(within(findingsPanel).queryByRole('heading', { name: 'Core Locality' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Memory Utilization' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
 });
@@ -170,7 +170,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
   // Memory/Executor Utilization and Cache Utilization are not always-mounted, so
-  // they're absent from this catalog-less run; Core Usage by Locality lives
+  // they're absent from this catalog-less run; Core Locality lives
   // in Full app report.
   await within(findingsPanel).findByRole('heading', { name: 'Info alert' });
   expect(within(findingsPanel).getAllByRole('heading').map((node) => node.textContent))
@@ -230,7 +230,7 @@ test('empty catalog shows the "no findings to fix" empty state alongside the Ful
   // The empty state is additive: Full app report and its always-mounted chart remain available.
   await userEvent.setup().click(screen.getByRole('tab', { name: 'Full app report' }));
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
-  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Locality' })).toBeInTheDocument();
 });
 
 test('shows real Config Audit findings as a row in All recommendations without adding them to the catalog', async () => {

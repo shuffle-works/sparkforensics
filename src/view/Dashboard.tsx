@@ -69,7 +69,7 @@ interface RouteRequest {
  * fixed-order tail of non-detector report lenses ("Widget rendering order" in
  * docs-site/contributor-guide/architecture/widget-rendering.md).
  * `REGISTRY` widgets render inside the Findings tab's `ImpactBoard`, not
- * here, except the always-mounted Core Usage by Locality chart
+ * here, except the always-mounted Core Locality chart
  * (`alwaysMountedWidgets`), a run-wide reference view that sits beside the
  * executor timeline. Selecting the tab is itself the disclosure. The
  * Scorecard lives in its own strip above the tabs, shared by both.

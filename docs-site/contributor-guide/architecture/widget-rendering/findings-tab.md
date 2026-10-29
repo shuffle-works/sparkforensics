@@ -143,7 +143,7 @@ Plan Advisor widgets (Duplicate Plan Subtree, Small Files,
 Nested Loop Join, Cast On A Join Key, MERGE Rewrite, Unpruned Partitioned Scan, Row-At-A-Time Python UDF, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
 [App- and plan-level widgets](../board-widgets.md#board-widgets-app-and-plan-widgets)).
-Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is
+Core Locality (`coreLocality`, resolving to `CoreUsageArea`) is
 not in the Findings tab at all: it mounts unconditionally from `appModel`
 at the head of the Full app report's reference grid
 (`alwaysMountedWidgets()`/`isAlwaysMountedType()`), carrying its own

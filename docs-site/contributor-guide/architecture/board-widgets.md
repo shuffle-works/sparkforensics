@@ -69,7 +69,7 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   finding is eligible for a row in the Findings tab's recommendation
   rollup and gets its own card in the active grid, alongside genuine
   bottleneck-catalog findings.
-- **Core Usage by Locality** (tag `LOCAL`, `CoreUsageArea.tsx`): app-level
+- **Core Locality** (tag `LOCAL`, `CoreUsageArea.tsx`): app-level
   non-local-task-ratio threshold (DETECTORS entry `coreLocality`; the other
   half of a wasted-cores-ratio check, the idle-core half already
   covered by Memory Utilization's `idleCores` variant above). Sums
@@ -92,7 +92,7 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
 
 Documented ALL-CAPS tag vocabulary: `SKEW`, `SHFL`, `SPILL`, `GC`, `COLD`,
 `UTIL`, `MEM` (Memory Utilization), `CSTOR` (Cache Utilization), `LOCAL`
-(Core Usage by Locality), plus `FAIL` (Failed Tasks), `JOBS` (Job Failure Rate),
+(Core Locality), plus `FAIL` (Failed Tasks), `JOBS` (Job Failure Rate),
 `CFG` (Config Audit), `PLAN` (Plan Advisor), `SFAIL` (stage failed outright),
 `PART` (partition sizing), `SLOW` (stage overall slowness), `SHAPE` (stage
 shape smells), `CACHE` (caching opportunity), `CHRN` (autoscaling churn),

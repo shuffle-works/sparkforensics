@@ -18,7 +18,7 @@ introduces it.
   `TagBadge`, a `SortModeToggle` when the rows can be re-sorted, a
   `finding-anchor` ref on every row, the route index and the paging. A widget
   file writes none of these. A widget mounts when `rows(...)` is not empty and
-  renders nothing otherwise. Core Usage by Locality is the one always-mounted
+  renders nothing otherwise. Core Locality is the one always-mounted
   widget: its model sets `alwaysMounted`, and it renders from `appModel` via
   `alwaysMountedWidgets()`/`isAlwaysMountedType()` even with no rows.
 - Tier B (the row/expand pattern): a row's collapsed state shows its core

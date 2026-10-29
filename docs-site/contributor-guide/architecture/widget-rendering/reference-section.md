@@ -23,10 +23,10 @@ of which tab is active rather than living inside either one (a three-tile
 run-info row: Wall-clock, Efficiency, Unused core time; see
 [App- and plan-level widgets](../board-widgets.md#board-widgets-app-and-plan-widgets)).
 WallClock, Timeline, Executor Count Over Time and StageTable render
-expanded. The grid tiles beside them (Core Usage by Locality, Evidence
+expanded. The grid tiles beside them (Core Locality, Evidence
 availability and the report lenses) are `collapsedTile`s: they start
 collapsed at a uniform height and widen to the full row when opened;
-`revealEvidence` opens the Evidence availability tile. Core Usage by Locality is the only detector-driven `REGISTRY`
+`revealEvidence` opens the Evidence availability tile. Core Locality is the only detector-driven `REGISTRY`
 card in this section, always mounted; Memory Utilization, Executor
 Utilization, and Cache Utilization live in the Findings tab above and surface
 there only when they have an active finding.
@@ -56,8 +56,8 @@ row, not a `WidgetGrid` card, and carries no collapse/expand state of its own
 (`ImpactBoard` holds which group is expanded; a `TypeGroupRow` owns only its
 page). Full app report's non-`REGISTRY` tiles (ETL Phase Attribution,
 What-If Executor Scaling, Compute Efficiency, Core-Usage
-Distribution) sit in the same `WidgetGrid` as Core Usage by Locality and
-Evidence availability; only Core Usage by Locality's item carries a
+Distribution) sit in the same `WidgetGrid` as Core Locality and
+Evidence availability; only Core Locality's item carries a
 `widgetId` (see "First investigation routing" below), so it is the grid's
 one route destination.
 

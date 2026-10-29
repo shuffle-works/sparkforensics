@@ -85,13 +85,14 @@ export function NextStepItem({
   finding: Finding;
   interpretation: InterpretationState;
   index: number;
-  onRoute: (target: TriageTarget) => void;
+  /** Absent where the page has nowhere to route, so a step with no panel offers no control. */
+  onRoute?: (target: TriageTarget) => void;
   evidence: StepEvidence | null;
 }) {
   const { openStage } = useStageDetail();
   const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null, [finding]);
-  const bare = evidence?.kind === 'bare';
   const shown = evidence?.kind === 'panel' ? evidence : null;
+  const bare = evidence?.kind === 'bare' || (!shown && !onRoute);
   const scope = useMemo(() => [finding], [finding]);
   const stepRef = useRef<HTMLLIElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -192,7 +193,7 @@ export function NextStepItem({
               }
               // Every step lead passed the same routeable check, so the target is never null.
               const target = triageTargetFor(finding);
-              if (target) onRoute(target);
+              if (target) onRoute?.(target);
             }}
           >
             {shown && evidenceState.open ? 'Hide evidence' : 'Show evidence'}
