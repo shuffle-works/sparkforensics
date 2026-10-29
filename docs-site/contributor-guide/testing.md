@@ -147,7 +147,10 @@ tests in `packages/core/test/` (for example `list-runs.test.js`,
 locally with `git submodule update --init dev/log-corpus`; without it, those
 tests skip and the snapshot check has no logs (see
 [Development setup](./development-setup.md)). CI's `core`, `server` and
-`node18` jobs check it out.
+`node18` jobs check it out. A corpus-gated test resolves its path with
+`corpusLog()` (`packages/core/test/corpus-log.js`), which returns null to skip
+locally but throws when `CI` is set, so a missing submodule fails CI instead of
+skipping silently.
 
 `packages/core/test/fixtures/aqe-skew-spark-3.5.ndjson` and `aqe-skew-spark-4.0.ndjson` are
 real local-mode runs (Spark 3.5.9 and 4.0.4) of three queries over 1M rows with 60% on one key,
