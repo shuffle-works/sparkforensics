@@ -23,8 +23,8 @@ async function childPhases(path, otherPath) {
   const { collectRun, nodeFileFromPath } = await import(join(CORE, 'cli', 'collect-run.ts'));
   const { streamFile } = await import(join(CORE, 'parser-worker.ts'));
   const { nodeParseCodecs } = await import(join(CORE, 'cli', 'native-zstd.ts'));
-  const { runFindings, buildEvidenceReport } = await import(join(CORE, 'evidence-report.ts'));
-  const { deriveEvidenceAvailability } = await import(join(CORE, 'evidence-availability.ts'));
+  const { analyzeRun } = await import(join(CORE, 'analyzed-run.ts'));
+  const { buildEvidenceReport } = await import(join(CORE, 'evidence-report.ts'));
   const { buildComparisonOutput } = await import(join(CORE, 'comparison-output.ts'));
   const out = { name: basename(path), bytes: statSync(path).size };
 
@@ -40,15 +40,14 @@ async function childPhases(path, otherPath) {
   }
 
   const t1 = performance.now();
-  const { appModel, skippedLines } = await collectRun(path);
+  const { appModel: parsed } = await collectRun(path);
   out.collectMs = ms(t1);
   out.heapAfterCollectMB = process.memoryUsage().heapUsed / 1e6;
-  appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-  out.stages = appModel.stages.size;
+  out.stages = parsed.stages.size;
 
   const t2 = performance.now();
-  const { catalog } = runFindings(appModel, undefined);
-  out.findingsMs = ms(t2);
+  const { appModel, catalog } = analyzeRun(parsed);
+  out.analyzeMs = ms(t2);
   out.findings = catalog.length;
 
   const t3 = performance.now();
@@ -64,12 +63,10 @@ async function childPhases(path, otherPath) {
   out.outputBlocksMs = ms(t6);
 
   if (otherPath) {
-    const b = await collectRun(otherPath);
-    b.appModel.evidenceAvailability = deriveEvidenceAvailability(b.appModel, { skippedLines: b.skippedLines });
-    const bCatalog = runFindings(b.appModel, undefined).catalog;
+    const baseline = analyzeRun((await collectRun(otherPath)).appModel);
     const t5 = performance.now();
     buildComparisonOutput(
-      { label: 'baseline', appModel: b.appModel, catalog: bCatalog },
+      { label: 'baseline', appModel: baseline.appModel, catalog: baseline.catalog },
       { label: 'candidate', appModel, catalog },
       {},
     );

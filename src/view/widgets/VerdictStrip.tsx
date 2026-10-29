@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 
 import { cn } from '@/lib/utils';
-import { useStore, type InterpretationState } from '@/store/store';
+import { selectAppModel, useStore } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import type { ImpactBand, Stage } from '@sparkforensics/core/types.ts';
 import { computeRunEndSec, formatRunClock, runClockTicks, runStartMs } from '@/view/charts/run-clock';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
-import { findingAt, stepCodes } from '@/view/interpretation';
+import { findingById, stepCodes } from '@/view/interpretation';
 import { selectTimelineStages } from '@/view/widgets/Timeline';
 
 /** Rows the strip shows before capping to the longest stages (step stages always stay). */
@@ -32,7 +33,7 @@ const pct = (sec: number, runEndSec: number) => Math.max(0, Math.min(100, (sec /
  * (seconds from app start, 0 to the run's end), with each verdict step's stage in its status color and labelled
  * with its step code. Renders nothing when the run has no usable timing. */
 export function VerdictStrip({ interpretation }: { interpretation: InterpretationState }) {
-  const appModel = useStore((s) => s.appModel);
+  const appModel = useStore(selectAppModel);
   const steps = interpretation.data.verdict.steps;
 
   const strip = useMemo(() => {
@@ -43,7 +44,7 @@ export function VerdictStrip({ interpretation }: { interpretation: Interpretatio
     const stepByStage = new Map<number, StripStep>();
     const { byStage } = stepCodes(interpretation);
     steps.forEach((step, i) => {
-      const lead = findingAt(interpretation, step.leadIndex);
+      const lead = findingById(interpretation, step.leadId);
       if (step.stageId == null || !lead || byStage.get(step.stageId) !== `F${i + 1}`) return;
       stepByStage.set(step.stageId, { code: byStage.get(step.stageId)!, impactBand: lead.impactBand });
     });

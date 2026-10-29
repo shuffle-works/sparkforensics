@@ -1,10 +1,9 @@
 import { createStore } from 'zustand/vanilla';
 import { useStore as useZustand } from 'zustand';
-import { captureSnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import { serializeRun, type SerializedRun } from '@sparkforensics/core/run-serialization.ts';
+import type { AnalyzedRun } from '@sparkforensics/core/analyzed-run.ts';
 import type { ExportProvenance } from '@sparkforensics/core/export-data.ts';
-import type { RunInterpretation } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, EvidenceAvailability, Finding, TaskData, StageId } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData, StageId } from '@sparkforensics/core/types.ts';
 
 export function emptyAppModel(): AppModel {
   return {
@@ -18,25 +17,20 @@ export function emptyAppModel(): AppModel {
   };
 }
 
-/** A run's interpretation and the findings its indexes point into (catalog then config, the
- * same objects as the store's `catalog`/`configFindings` when it was computed). */
-export interface InterpretationState {
-  data: RunInterpretation;
-  findings: Finding[];
-}
+/** What a view reads before any run is installed. */
+export const EMPTY_APP_MODEL: AppModel = emptyAppModel();
+const NO_FINDINGS: Finding[] = [];
 
 interface State {
-  appModel: AppModel;
-  catalog: Finding[];
-  configFindings: Finding[];
-  /** Every conclusion the dashboard shows about the run. The live app computes it from the
-   * findings (src/store/live-interpretation.ts); the export bundle loads it from its payload.
-   * Views only render it, never derive it. */
-  interpretation: InterpretationState | null;
+  /** The run on screen, built once by `analyzeRun` (live) or read from an export, and installed whole by
+   * `installRun`. Null until a run is installed. Views render its conclusions, never derive them. */
+  run: AnalyzedRun | null;
+  /** Names the installed run: a view that holds per-run state is keyed by it, so a new run starts it fresh. */
+  runKey: string | null;
   /** What produced the loaded export file, shown in its footer; null in the live app. */
   exportProvenance: ExportProvenance | null;
   activeFileId: string | null;
-  sessionCache: Map<string, SessionSnapshot>;
+  sessionCache: Map<string, SerializedRun>;
   taskDataCache: Map<StageId, TaskData>;
   parse: { pct: number; lines: number; etaMs: number | null };
   status: 'idle' | 'parsing' | 'ready' | 'error';
@@ -50,7 +44,6 @@ interface State {
   // same alert as before" when two distinct attempts produce the same message.
   errorNonce: number;
   theme: 'dark' | 'light';
-  skippedLines: number;
   widgetDensity: 'basic' | 'advanced';
   /** Set once, at boot, by src/export/hydrate-store.ts. Never toggled at
    * runtime and never reset by resetModel(): it describes which bundle is
@@ -70,20 +63,12 @@ interface State {
   planGraph: { active: boolean; stageId: number | null; initialScope: 'segment' | 'full' };
   openPlanGraph: (stageId: number, opts?: { initialScope?: 'segment' | 'full' }) => void;
   closePlanGraph: () => void;
-  // Bumped by resetModel() only, so view-layer memo caches can detect a reset via
-  // store.subscribe and evict themselves without store.ts importing a view module
-  // (which would invert the store -> view dependency direction).
-  modelResetCount: number;
+  /** Replaces the whole run on screen and starts its task data from the run's source. */
+  installRun: (run: AnalyzedRun, runKey: string) => void;
   resetModel: () => void;
   setStatus: (s: State['status']) => void;
   setShsParsing: (v: boolean) => void;
   setParse: (p: State['parse']) => void;
-  setCatalog: (c: Finding[]) => void;
-  setConfigFindings: (c: Finding[]) => void;
-  /** A load's findings in one update, so the live interpreter runs once per load; also sets the
-   * run's evidence ledger when one is passed. */
-  setFindings: (catalog: Finding[], configFindings: Finding[], evidenceAvailability?: EvidenceAvailability | null) => void;
-  setInterpretation: (interpretation: InterpretationState | null) => void;
   setTaskData: (stageId: StageId, data: TaskData) => void;
   /** Adds many stages' task data in one state update: a copy of the cache per stage is quadratic. */
   setTaskDataBatch: (entries: Array<[StageId, TaskData]>) => void;
@@ -91,8 +76,6 @@ interface State {
   setError: (msg: string | null) => void;
   setTheme: (t: 'dark' | 'light') => void;
   setWidgetDensity: (d: 'basic' | 'advanced') => void;
-  setSkippedLines: (n: number) => void;
-  setEvidenceAvailability: (ledger: EvidenceAvailability | null) => void;
 }
 
 /**
@@ -129,11 +112,14 @@ export function initialWidgetDensity(): 'basic' | 'advanced' {
   return 'basic';
 }
 
+/** The run as a session snapshot: everything fetched so far is part of it. */
+export function snapshotOf(state: Pick<State, 'run' | 'taskDataCache'>): SerializedRun | null {
+  return state.run && serializeRun(state.run, state.taskDataCache);
+}
+
 export const store = createStore<State>((set) => ({
-  appModel: emptyAppModel(),
-  catalog: [],
-  configFindings: [],
-  interpretation: null,
+  run: null,
+  runKey: null,
   exportProvenance: null,
   activeFileId: null,
   sessionCache: new Map(),
@@ -146,20 +132,17 @@ export const store = createStore<State>((set) => ({
   theme: initialTheme(),
   widgetDensity: initialWidgetDensity(),
   exportMode: false,
-  skippedLines: 0,
   comparison: { active: false, baselineId: null, candidateId: null },
   compareLoad: null,
   compareSeed: null,
   planGraph: { active: false, stageId: null, initialScope: 'segment' },
-  modelResetCount: 0,
   setCompareSeed: (compareSeed) => set({ compareSeed }),
   openComparison: (baselineId, candidateId) =>
     set((s) => {
       // Snapshot the active run so a comparison including it resolves by a pure
       // read at render time (never mutate the store during render).
-      if (s.activeFileId != null && s.appModel.app) {
-        s.sessionCache.set(s.activeFileId, captureSnapshot(s.appModel, s.catalog, s.taskDataCache));
-      }
+      const snapshot = snapshotOf(s);
+      if (s.activeFileId != null && snapshot?.app) s.sessionCache.set(s.activeFileId, snapshot);
       return { comparison: { active: true, baselineId, candidateId } };
     }),
   setComparisonActive: (active) => set((s) => ({ comparison: { ...s.comparison, active } })),
@@ -167,33 +150,28 @@ export const store = createStore<State>((set) => ({
   closeComparison: () => set({ comparison: { active: false, baselineId: null, candidateId: null } }),
   openPlanGraph: (stageId, opts) => set({ planGraph: { active: true, stageId, initialScope: opts?.initialScope ?? 'segment' } }),
   closePlanGraph: () => set({ planGraph: { active: false, stageId: null, initialScope: 'segment' } }),
+  installRun: (run, runKey) =>
+    set({
+      run,
+      runKey,
+      taskDataCache: new Map(run.taskData.kind === 'snapshot' ? run.taskData.stages : []),
+      status: 'ready',
+    }),
   resetModel: () =>
-    set((s) => ({
-      appModel: emptyAppModel(),
-      catalog: [],
-      configFindings: [],
-      interpretation: null,
+    set({
+      run: null,
+      runKey: null,
       taskDataCache: new Map(),
       status: 'idle',
       shsParsing: false,
       errorMessage: null,
-      skippedLines: 0,
       comparison: { active: false, baselineId: null, candidateId: null },
       compareLoad: null,
       planGraph: { active: false, stageId: null, initialScope: 'segment' },
-      modelResetCount: s.modelResetCount + 1,
-    })),
+    }),
   setStatus: (status) => set({ status }),
   setShsParsing: (shsParsing) => set({ shsParsing }),
   setParse: (parse) => set({ parse }),
-  setCatalog: (catalog) => set({ catalog }),
-  setConfigFindings: (configFindings) => set({ configFindings }),
-  setFindings: (catalog, configFindings, evidenceAvailability) => set((s) => ({
-    catalog,
-    configFindings,
-    ...(evidenceAvailability === undefined ? {} : { appModel: { ...s.appModel, evidenceAvailability } }),
-  })),
-  setInterpretation: (interpretation) => set({ interpretation }),
   setTaskData: (stageId, data) =>
     set((s) => {
       const next = new Map(s.taskDataCache);
@@ -219,14 +197,15 @@ export const store = createStore<State>((set) => ({
     }
     set({ widgetDensity });
   },
-  setSkippedLines: (skippedLines) => set({ skippedLines }),
-  setEvidenceAvailability: (evidenceAvailability) =>
-    set((s) => ({ appModel: { ...s.appModel, evidenceAvailability } })),
 }));
 
 export function useStore<T>(selector: (s: State) => T): T {
   return useZustand(store, selector);
 }
+
+export const selectAppModel = (s: Pick<State, 'run'>): AppModel => s.run?.appModel ?? EMPTY_APP_MODEL;
+export const selectCatalog = (s: Pick<State, 'run'>): Finding[] => s.run?.catalog ?? NO_FINDINGS;
+export const selectConfigFindings = (s: Pick<State, 'run'>): Finding[] => s.run?.configFindings ?? NO_FINDINGS;
 
 export function useWidgetDensity(): 'basic' | 'advanced' {
   return useStore((s) => s.widgetDensity);

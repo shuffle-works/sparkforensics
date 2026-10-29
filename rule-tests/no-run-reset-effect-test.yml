@@ -1,0 +1,15 @@
+id: no-run-reset-effect
+valid:
+  # Not a setter: a subscription keyed on the model.
+  - "useEffect(() => { const stop = subscribe(appModel); return stop; }, [appModel]);"
+  # A setter, but the dependencies name neither the model nor the file.
+  - "useEffect(() => { setPage(0); }, [filter]);"
+  # Loads data for the model: the setter runs when the load answers.
+  - "useEffect(() => { load(appModel).then((rows) => setRows(rows)); }, [appModel]);"
+  # Runs once on mount.
+  - "useEffect(() => { setOpen(true); }, []);"
+invalid:
+  - "useEffect(() => { setPage(0); }, [appModel]);"
+  - "useEffect(() => setFullCardWidgetIds(new Set()), [activeFileId]);"
+  - "useLayoutEffect(() => { if (ready) { setHighPage(0); setLowPage(0); } }, [filter, appModel]);"
+  - "useEffect(function reset() { setPage(0); }, [activeFileId]);"

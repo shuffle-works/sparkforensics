@@ -240,26 +240,6 @@ describe('GcPressure', () => {
     store.getState().setWidgetDensity('basic');
   });
 
-  it('resets pagination back to page 1 when a new file is loaded (appModel identity changes)', async () => {
-    const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 8 }, (_, i) => ({
-      type: 'gc' as const,
-      stageId: i + 1,
-      impactBand: 'warning' as const,
-      value: 20 + i,
-      recommendation: 'r',
-    }));
-    const { rerender } = render(<GcPressure catalog={catalog} appModel={buildAppModel()} defaultCollapsed={false} />);
-    await user.click(screen.getByRole('button', { name: /^next$/i }));
-    expect(screen.getByRole('button', { name: /open details for stage 1$/i })).toBeInTheDocument();
-
-    // A fresh appModel object must reset the page-2 cursor, else the section renders an empty out-of-range slice.
-    rerender(<GcPressure catalog={catalog} appModel={buildAppModel()} defaultCollapsed={false} />);
-
-    expect(screen.getByRole('button', { name: /open details for stage 8$/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /open details for stage 1$/i })).not.toBeInTheDocument();
-  });
-
   it('shows a confidence caveat when the gc finding carries one', () => {
     const catalog: Finding[] = [
       {

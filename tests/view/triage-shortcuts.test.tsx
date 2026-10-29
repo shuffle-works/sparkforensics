@@ -7,6 +7,7 @@ import App from '@/App';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { store, emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { runState } from './_shared/run';
 
 function readyAppModel() {
   return {
@@ -30,7 +31,7 @@ const catalog: Finding[] = [
 ];
 
 function load(density: 'basic' | 'advanced') {
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog, configFindings: [], widgetDensity: density });
+  store.setState({ status: 'ready', widgetDensity: density, ...runState({ appModel: readyAppModel() as any, catalog, configFindings: [] }) });
   render(<App />);
   return screen.findByRole('tab', { name: 'Findings' });
 }
@@ -46,7 +47,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  store.setState({ widgetDensity: 'basic', status: 'idle', catalog: [], appModel: emptyAppModel() });
+  store.setState({ widgetDensity: 'basic', status: 'idle', run: null, runKey: null });
 });
 
 test('in Advanced view, j and k walk the verdict steps then the finding rows, in order', async () => {
@@ -222,7 +223,7 @@ async function walkThrough(target: Element, away: 'j' | 'k') {
 }
 
 test('in Advanced view, j and k reach a verdict step that offers no evidence control', async () => {
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [coldStart, ...catalog], configFindings: [], widgetDensity: 'advanced' });
+  store.setState({ status: 'ready', widgetDensity: 'advanced', ...runState({ appModel: readyAppModel() as any, catalog: [coldStart, ...catalog], configFindings: [] }) });
   render(<App />);
   await screen.findByRole('tab', { name: 'Findings' });
   const step = (await screen.findAllByTestId('next-step')).find((item) => item.querySelector('h3')?.textContent?.match(/pre-warm/i))!;
@@ -232,11 +233,15 @@ test('in Advanced view, j and k reach a verdict step that offers no evidence con
 });
 
 test('in Advanced view, j and k reach a finding row that offers no evidence control', async () => {
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [
+  store.setState({
+    status: 'ready',
+    widgetDensity: 'advanced',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
     catalog[0], catalog[1],
     { type: 'spill', stageId: 3, impactBand: 'critical', recommendation: 'Reduce spill in Stage 3.' },
     { ...coldStart, impactBand: 'warning', impactEstimate: undefined },
-  ], configFindings: [], widgetDensity: 'advanced' });
+  ], configFindings: [] }),
+  });
   render(<App />);
   await screen.findByRole('tab', { name: 'Findings' });
   const row = (await screen.findAllByTestId('fix-these-first-row')).find((item) => item.dataset.findingType === 'coldStart')!;

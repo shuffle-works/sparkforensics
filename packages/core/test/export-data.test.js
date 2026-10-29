@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildExportRunData, CORE_VERSION, EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections,
+  buildExportRunData, CORE_VERSION, encodeCollections, EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections, upgradeExportPayload,
 } from '../src/export-data.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 import { buildHtmlExportData, encodeRunPayload } from '../src/html-export.js';
 import { runPayloadScript } from '../src/run-payload.js';
-import { analyze, auditConfig } from '../src/analyzer.js';
+import { auditConfig } from '../src/analyzer.js';
+import { analyzeRun } from '../src/analyzed-run.js';
 import { TRUNCATED_HOST, TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { interpretRun } from '../src/run-interpretation.js';
 import { readFileSync } from 'node:fs';
@@ -13,12 +14,20 @@ import { gunzipSync } from 'node:zlib';
 
 const PROVENANCE = { coreVersion: CORE_VERSION, buildId: 'abc123', producer: 'test-producer 1.0.0' };
 
-// buildExportRunData with the interpretation and provenance a producer would pass.
-function exportData(appModel, catalog = [], configFindings = [], skippedLines = 0) {
-  return buildExportRunData(
-    appModel, catalog, configFindings, skippedLines, interpretRun(appModel, catalog, configFindings), PROVENANCE,
-  );
+// A run of hand-made parts, as analyzeRun would hold them: the model carries its parse gaps and the
+// interpretation is computed from the findings.
+function runOf(appModel, catalog = [], configFindings = [], skippedLines = 0) {
+  const model = { ...appModel, skippedLines };
+  return { appModel: model, catalog, configFindings, interpretation: interpretRun(model, catalog, configFindings), taskData: { kind: 'none' } };
 }
+
+// buildExportRunData with the provenance a producer would pass.
+function exportData(appModel, catalog = [], configFindings = [], skippedLines = 0) {
+  return buildExportRunData(runOf(appModel, catalog, configFindings, skippedLines), PROVENANCE);
+}
+
+// The payload as the JSON file carries it.
+const throughJson = (data) => JSON.parse(JSON.stringify(encodeCollections(data)), reviveExportCollections);
 
 function makeAppModel(overrides = {}) {
   return {
@@ -39,8 +48,8 @@ function makeAppModel(overrides = {}) {
 describe('buildExportRunData', () => {
   it('converts the Map-based AppModel into plain arrays keyed the same way the store rebuilds them', () => {
     const appModel = makeAppModel();
-    const catalog = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
-    const configFindings = [{ type: 'configAudit', property: 'spark.sql.shuffle.partitions', impactBand: 'info' }];
+    const catalog = [{ id: 'skew-1', type: 'skew', stageId: 1, impactBand: 'warning' }];
+    const configFindings = [{ id: 'config-1', type: 'configAudit', property: 'spark.sql.shuffle.partitions', impactBand: 'info' }];
     const data = exportData(appModel, catalog, configFindings, 2);
 
     expect(data.schemaVersion).toBe(EXPORT_DATA_SCHEMA_VERSION);
@@ -52,14 +61,26 @@ describe('buildExportRunData', () => {
     expect(data.catalog).toEqual(catalog);
     expect(data.configFindings).toEqual(configFindings);
     expect(data.skippedLines).toBe(2);
+    expect(data.unreadableSqlExecutions).toBeNull();
+    expect(data.taskData).toBeNull();
     expect(data.provenance).toEqual(PROVENANCE);
-    expect(data.interpretation).toEqual(interpretRun(appModel, catalog, configFindings));
+    expect(data.interpretation).toEqual(runOf(appModel, catalog, configFindings, 2).interpretation);
+  });
+
+  it('carries the SQL executions whose start could not be read', () => {
+    const data = exportData(makeAppModel({ unreadableSqlExecutions: [4, 9] }));
+    expect(data.unreadableSqlExecutions).toEqual([4, 9]);
+  });
+
+  it('drops the run\'s task data: it is never part of an export', () => {
+    const run = { ...runOf(makeAppModel()), taskData: { kind: 'snapshot', stages: new Map([[1, { metrics: new Float64Array([1]), fieldNames: ['duration'] }]]) } };
+    expect(buildExportRunData(run, PROVENANCE).taskData).toBeNull();
   });
 
   it('is JSON-round-trippable (Maps become plain arrays, not objects with numeric keys)', () => {
     const appModel = makeAppModel();
     const data = exportData(appModel);
-    const roundTripped = JSON.parse(JSON.stringify(data));
+    const roundTripped = JSON.parse(JSON.stringify(encodeCollections(data)));
     expect(Array.isArray(roundTripped.stages)).toBe(true);
     expect(roundTripped.stages).toEqual(data.stages);
   });
@@ -71,7 +92,7 @@ describe('buildExportRunData', () => {
       app: { ...makeApp(), rddInfo },
       stages: new Map([[1, makeStage({ id: 1, executorMetrics })]]),
     });
-    const json = JSON.stringify(exportData(appModel));
+    const json = JSON.stringify(encodeCollections(exportData(appModel)));
     expect(JSON.parse(json).app.rddInfo).not.toEqual({});
 
     const revived = JSON.parse(json, reviveExportCollections);
@@ -79,7 +100,7 @@ describe('buildExportRunData', () => {
     expect([...revived.app.rddInfo.values()]).toEqual([...rddInfo.values()]);
     expect(revived.stages[0].executorMetrics).toEqual(executorMetrics);
     expect(JSON.parse(JSON.stringify({ tags: new Set(['a']) }), reviveExportCollections).tags).toEqual({});
-    expect(JSON.parse(JSON.stringify(exportData(makeAppModel({ app: { ...makeApp(), tags: new Set(['a', 'b']) } }))), reviveExportCollections).app.tags)
+    expect(throughJson(exportData(makeAppModel({ app: { ...makeApp(), tags: new Set(['a', 'b']) } }))).app.tags)
       .toEqual(new Set(['a', 'b']));
   });
 });
@@ -88,10 +109,11 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
   it('buildHtmlExportData carries the config audit, the interpretation and provenance, and redacts only when asked', () => {
     const appModel = makeAppModel({ app: makeApp({ id: 'application_42', config: { 'spark.executor.memory': '1g' } }) });
     const stamp = { buildId: 'abc123', producer: 'test-producer 1.0.0' };
-    const raw = buildHtmlExportData(appModel, [], 3, { redact: false, ...stamp });
-    expect(raw).toEqual(exportData(appModel, [], auditConfig(appModel.app, appModel.stages), 3));
+    const run = runOf(appModel, [], auditConfig(appModel.app, appModel.stages), 3);
+    const raw = buildHtmlExportData(run, { redact: false, ...stamp });
+    expect(raw).toEqual(buildExportRunData(run, PROVENANCE));
 
-    const redacted = buildHtmlExportData(appModel, [], 3, { redact: true, ...stamp });
+    const redacted = buildHtmlExportData(run, { redact: true, ...stamp });
     expect(redacted.app.id).toBe('app-1');
     expect(JSON.stringify(redacted)).not.toContain('application_42');
   });
@@ -107,7 +129,7 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
       type: 'stageFailed', stageId: 1, impactBand: 'critical', recommendation: 'Inspect the driver log.',
       valueText: 'Lost executor on ip-10-1-2-3.ec2.internal', id: 'f1',
     };
-    const data = buildHtmlExportData(appModel, [stageFailed], 0, { redact: true, buildId: 'b', producer: 'p' });
+    const data = buildHtmlExportData(runOf(appModel, [stageFailed]), { redact: true, buildId: 'b', producer: 'p' });
 
     expect(JSON.stringify(data)).not.toContain('ip-10-1-2-3');
     expect(data.interpretation.verdict.failureReason).toBe(data.catalog[0].valueText);
@@ -116,14 +138,14 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
 
   it('redacts the failure reason before interpreting, so a reason cut mid-host keeps no fragment of it', () => {
     const appModel = truncatedFailureRun();
-    const catalog = analyze(appModel.app, appModel.stages, [], [], appModel.jobs, appModel.sql, null);
-    const data = buildHtmlExportData(appModel, catalog, 0, { redact: true, buildId: 'b', producer: 'p' });
+    const run = analyzeRun(appModel);
+    const data = buildHtmlExportData(run, { redact: true, buildId: 'b', producer: 'p' });
     const { verdict } = data.interpretation;
 
     expect(verdict.failureReason).toBe('[redacted]');
     expect(JSON.stringify(data)).not.toContain(TRUNCATED_HOST_FRAGMENT);
     // Unredacted, the same run does quote the fragment: the cut is really exercised.
-    const raw = buildHtmlExportData(appModel, catalog, 0, { redact: false, buildId: 'b', producer: 'p' });
+    const raw = buildHtmlExportData(run, { redact: false, buildId: 'b', producer: 'p' });
     expect(raw.interpretation.verdict.failureReason).toContain(TRUNCATED_HOST_FRAGMENT);
     expect(raw.interpretation.verdict.failureReason).not.toContain(TRUNCATED_HOST);
   });
@@ -141,10 +163,64 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
     const base64 = encodeRunPayload(data);
     expect(base64.length).toBeGreaterThan(0x8000 * 2);
     expect(base64).toMatch(/^[A-Za-z0-9+/]+=*$/);
-    expect(JSON.parse(gunzipSync(Buffer.from(base64, 'base64')).toString('utf8'))).toEqual(JSON.parse(JSON.stringify(data)));
+    expect(JSON.parse(gunzipSync(Buffer.from(base64, 'base64')).toString('utf8'))).toEqual(JSON.parse(JSON.stringify(encodeCollections(data))));
   });
 
   it('runPayloadScript assigns the payload global the export app reads', () => {
     expect(runPayloadScript('QUJD')).toBe('window.__SPARKFORENSICS_RUN_GZ__ = "QUJD";');
+  });
+});
+
+// The interpretation as a version 3 export wrote it: findings by position in [...catalog, ...config].
+function asVersion3(data) {
+  const findings = [...data.catalog, ...data.configFindings];
+  const indexOf = (id) => findings.findIndex((finding) => finding.id === id);
+  const { interpretation } = data;
+  const rest = { ...data };
+  delete rest.unreadableSqlExecutions;
+  delete rest.taskData;
+  return {
+    ...rest,
+    schemaVersion: 3,
+    interpretation: {
+      ...interpretation,
+      savings: findings.map((finding) => interpretation.savings[finding.id]),
+      verdict: {
+        ...interpretation.verdict,
+        steps: interpretation.verdict.steps.map(({ leadId, ...step }) => ({ ...step, leadIndex: indexOf(leadId) })),
+        costSteps: interpretation.verdict.costSteps.map(({ leadId, ...step }) => ({ ...step, leadIndex: indexOf(leadId) })),
+      },
+      savingsRank: interpretation.savingsRank.map(indexOf),
+      stages: Object.fromEntries(Object.entries(interpretation.stages).map(([stageId, { findingIds, ...stage }]) => [
+        stageId, { ...stage, findingIndexes: findingIds.map(indexOf) },
+      ])),
+      rollup: {
+        eligibleIndexes: interpretation.rollup.eligibleIds.map(indexOf),
+        groups: interpretation.rollup.groups.map(({ memberIds, ...group }) => ({ ...group, memberIndexes: memberIds.map(indexOf) })),
+      },
+    },
+  };
+}
+
+describe('upgradeExportPayload', () => {
+  it('rewrites a version 3 payload, which pointed at findings by position, to the current one', () => {
+    const appModel = makeAppModel({
+      stages: new Map([[1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 9_000, taskCount: 10 })]]),
+    });
+    const run = analyzeRun(appModel);
+    expect(run.catalog.length).toBeGreaterThan(0);
+    const current = buildExportRunData(run, PROVENANCE);
+
+    const upgraded = upgradeExportPayload(asVersion3(current));
+
+    expect(upgraded.schemaVersion).toBe(EXPORT_DATA_SCHEMA_VERSION);
+    expect(upgraded).toEqual(current);
+  });
+
+  it('refuses an interpretation that points at a finding with no id', () => {
+    const current = buildExportRunData(runOf(makeAppModel(), [{ id: 'skew-1', type: 'skew', stageId: 1, impactBand: 'warning' }]), PROVENANCE);
+    const v3 = asVersion3(current);
+    v3.catalog = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
+    expect(() => upgradeExportPayload(v3)).toThrow(/has no id/);
   });
 });

@@ -1,7 +1,7 @@
 import { cyrb53 } from './string-hash.ts';
 import { planNodesOfStage } from './stage-plan-nodes.ts';
 import type { Stage, PlanNode } from './types.ts';
-import type { SessionSnapshot } from './session-snapshot.ts';
+import type { ComparedRun } from './compared-run.ts';
 
 // The stage-identity recipe, parameterized by the detail normalizer. `stageIdentity` (the frozen
 // exact key, run-comparison.ts) runs it with `normalizeDetail`; the aligner's `comparisonIdentity`
@@ -104,7 +104,7 @@ function planTreeIdentity(root: PlanNode | null | undefined, normalizeDetail: De
 // attributed nodes (hand-built snapshots without `stageIds`, or unmatched
 // accumulables).
 function sqlNodeIdentity(
-  stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>, normalizeDetail: DetailNormalizer, nodes?: PlanNode[],
+  stage: Stage, snapshot: Pick<ComparedRun, 'sql'>, normalizeDetail: DetailNormalizer, nodes?: PlanNode[],
 ): string {
   const execId = stage.sqlExecutionId;
   if (execId == null) return '';
@@ -119,13 +119,13 @@ function sqlNodeIdentity(
 /** `nodes`: the stage's attributed plan nodes when the caller already has them (`planNodesOfStage`),
  * so one walk of the plan serves several readers. */
 export function stageIdentityWith(
-  stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>, normalizeDetail: DetailNormalizer, nodes?: PlanNode[],
+  stage: Stage, snapshot: Pick<ComparedRun, 'sql'>, normalizeDetail: DetailNormalizer, nodes?: PlanNode[],
 ): string {
   return normalizeStageName(stage.name ?? '') + '§' + sqlNodeIdentity(stage, snapshot, normalizeDetail, nodes);
 }
 
 export function identityIndexWith(
-  snapshot: SessionSnapshot, identityOf: (stage: Stage, id: number) => string, only: (id: number) => boolean = () => true,
+  snapshot: ComparedRun, identityOf: (stage: Stage, id: number) => string, only: (id: number) => boolean = () => true,
 ): Map<string, number[]> {
   const byIdentity = new Map<string, number[]>();
   for (const [id, stage] of snapshot.stages) {

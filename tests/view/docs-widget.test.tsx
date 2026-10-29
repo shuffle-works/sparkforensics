@@ -8,8 +8,8 @@ import { findingName } from '@sparkforensics/core/finding-names.ts';
 import { DocsWidgetApp } from '@/docs-widget/DocsWidgetApp';
 import { HEIGHT_MESSAGE, followHostTheme, hostTheme, reportHeight } from '@/docs-widget/host';
 import { loadExportPayload } from '@/export/hydrate-store';
-import { store } from '@/store/store';
-import { eligibleFindings, findingAt } from '@/view/interpretation';
+import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
+import { eligibleFindings, findingById, interpretationOf } from '@/view/interpretation';
 import { keptRows, showsEvidence } from './_shared/evidence-panel';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS): the example app is built from
@@ -40,7 +40,8 @@ afterEach(() => vi.restoreAllMocks());
 // Every docs page frames this app for its type: the page must show the finding the example names.
 test.each(Object.entries(examples))('%s: shows its example finding from the committed run', async (_type, example) => {
   expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
-  const { catalog, configFindings } = store.getState();
+  const catalog = selectCatalog(store.getState());
+  const configFindings = selectConfigFindings(store.getState());
   const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
   expect(finding).toBeDefined();
 
@@ -60,9 +61,11 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   // offers the evidence control, opened, exactly when the check keeps a row beyond it; a finding shown
   // by its card alone needs the check to keep a row, or the page would show nothing. Either way the
   // panel has evidence under its title, and no control routes away from the page.
-  const { appModel, interpretation, widgetDensity } = store.getState();
+  const { run, widgetDensity } = store.getState();
+  const appModel = selectAppModel(store.getState());
+  const interpretation = interpretationOf(run!);
   const isLine = eligibleFindings(interpretation).includes(finding)
-    || interpretation!.data.verdict.steps.some((step) => findingAt(interpretation!, step.leadIndex) === finding);
+    || interpretation.data.verdict.steps.some((step) => findingById(interpretation, step.leadId) === finding);
   const kept = keptRows(finding.type, [finding], isLine ? [example.finding.id] : [], { density: widgetDensity, appModel });
   expect(screen.queryByRole('button', { name: /show evidence/i })).toBeNull();
   const controls = screen.queryAllByRole('button', { name: /hide evidence/i });

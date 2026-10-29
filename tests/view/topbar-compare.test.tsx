@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { Topbar } from '@/view/Topbar';
 import { store } from '@/store/store';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import type { SerializedRun } from '@sparkforensics/core/run-serialization.ts';
 
 const renderTopbar = () =>
   render(
@@ -28,7 +28,7 @@ beforeEach(() => {
 test('no Compare button even with two runs cached', () => {
   store.setState({
     activeFileId: 'a',
-    sessionCache: new Map([['a', {} as SessionSnapshot], ['b', {} as SessionSnapshot]]),
+    sessionCache: new Map([['a', {} as SerializedRun], ['b', {} as SerializedRun]]),
   });
   renderTopbar();
   expect(screen.queryByRole('button', { name: /^compare$/i })).not.toBeInTheDocument();

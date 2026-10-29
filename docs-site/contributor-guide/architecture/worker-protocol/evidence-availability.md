@@ -20,9 +20,11 @@ message just for the ledger. `app` messages are also emitted mid-parse from
 `SparkListenerEnvironmentUpdate` that arrives after the start; those
 snapshots are partial and non-authoritative. Only the terminal `app` message
 emitted by `emitParseCompletion` (the one immediately before `done`) should be
-used for evidence-availability conclusions. On the main thread, `useIngest`
-combines the normalized `AppModel` with `done.skippedLines`, derives the ledger
-before calling `analyze()`, and stores it as `appModel.evidenceAvailability`.
+used for evidence-availability conclusions. `analyzeRun`
+(`packages/core/src/analyzed-run.ts`) combines the normalized `AppModel` with its
+`skippedLines`, derives the ledger before running the detectors, and sets it as
+`appModel.evidenceAvailability` on the run's model. The dashboard, the CLI and MCP all
+reach it through `analyzeRun`.
 
 ## Evidence-availability contract
 
@@ -82,6 +84,6 @@ from an incomplete parse.
 
 Availability is model metadata, not a detector or finding: it never changes
 detector thresholds or ordering, impact band, catalog/scorecard counts,
-no-bottleneck behavior, or detector suppression. `session-snapshot.ts`
-captures and restores `evidenceAvailability` with the normalized model, so a
+no-bottleneck behavior, or detector suppression. `run-serialization.ts`
+serializes and restores `evidenceAvailability` with the model, so a
 recent-file switch retains the same ledger without reparsing.

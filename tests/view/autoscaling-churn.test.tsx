@@ -306,48 +306,4 @@ describe('AutoscalingChurn', () => {
     await user.click(screen.getByRole('button', { name: 'tick' }));
     expect((downsample as Mock).mock.calls.length - callsBefore).toBe(1);
   });
-
-  // applySnapshot mutates the live appModel's fields in place (not
-  // replacing the object), so a cached-file switch must not leave this widget
-  // showing the previous file's churn counts when appModel's reference is unchanged.
-  test('reflects a new file after appModel is mutated in place and activeFileId changes (cached-file switch)', async () => {
-    const appModel = makeAppModel({
-      app: { startTime: 0, endTime: 120_000 } as AppModel['app'],
-      executors: {
-        added: [{ timestamp: 0 }, { timestamp: 60_000 }] as unknown as AppModel['executors']['added'],
-        removed: [{ timestamp: 90_000 }] as unknown as AppModel['executors']['removed'],
-      },
-    });
-
-    const { rerender } = render(
-      <DocsProvider>
-        <AutoscalingChurn appModel={appModel} activeFileId="file-a" />
-      </DocsProvider>,
-    );
-    // The bucketed churn series handed to `downsample` is the observable: it's
-    // what the `activeFileId` memo key is there to recompute.
-    const churnTotals = () => {
-      const buckets = (downsample as Mock).mock.lastCall![0] as { adds: number; removes: number }[];
-      return buckets.reduce(
-        (acc, b) => ({ adds: acc.adds + b.adds, removes: acc.removes + b.removes }),
-        { adds: 0, removes: 0 },
-      );
-    };
-    expect(churnTotals()).toEqual({ adds: 2, removes: 1 });
-
-    // Mimic applySnapshot: mutate the same appModel's `executors` in place.
-    appModel.executors = {
-      added: [{ timestamp: 0 }] as unknown as AppModel['executors']['added'],
-      removed: [{ timestamp: 30_000 }, { timestamp: 60_000 }, { timestamp: 90_000 }] as unknown as AppModel['executors']['removed'],
-    };
-
-    rerender(
-      <DocsProvider>
-        <AutoscalingChurn appModel={appModel} activeFileId="file-b" />
-      </DocsProvider>,
-    );
-
-    expect(churnTotals()).toEqual({ adds: 1, removes: 3 });
-    expect(screen.queryByText('2 added / 1 removed')).not.toBeInTheDocument();
-  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -126,19 +126,6 @@ export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPre
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 
-  // A new file load swaps in a fresh `appModel`: reset pagination so a stale
-  // page index can't leave a section on an out-of-range empty slice. Skipped on
-  // first run, where page state already starts at 0, so it can't stomp a
-  // route-driven page jump when mounting mid-route.
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
-    setHighPage(0);
-    setLowPage(0);
-  }, [appModel]);
 
   const findings = catalog.filter((f) => f.type === 'gc');
   if (findings.length === 0) return null;

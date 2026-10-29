@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useStore } from '@/store/store';
+import { selectAppModel, useStore } from '@/store/store';
 import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
 import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
@@ -59,18 +59,16 @@ async function fetchExportTemplate(): Promise<string> {
  * module for a stub (vite.export.config.ts) and the Topbar offers none of it
  * in an exported dashboard. */
 export function useEvidenceExport() {
-  const appModel = useStore((s) => s.appModel);
-  const catalog = useStore((s) => s.catalog);
-  const skippedLines = useStore((s) => s.skippedLines);
+  const run = useStore((s) => s.run);
+  const appModel = useStore(selectAppModel);
   const [redact, setRedact] = useState(false);
 
   // Same data, redaction and encoding as the CLI's --export-html
   // (buildHtmlExportData), inlined into one file instead of a data.js beside it.
   const downloadHtml = async () => {
     try {
-      const data = buildHtmlExportData(appModel, catalog, skippedLines, {
-        redact, buildId: CORE_BUILD_ID, producer: WEB_PRODUCER,
-      });
+      if (!run) throw new Error('No run is loaded.');
+      const data = buildHtmlExportData(run, { redact, buildId: CORE_BUILD_ID, producer: WEB_PRODUCER });
       const html = inlineRunPayload(await fetchExportTemplate(), encodeRunPayload(data));
       triggerDownload(html, reportFilename(data.app?.id ?? null, 'html', redact), 'text/html');
     } catch (error) {

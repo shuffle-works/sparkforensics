@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 
-import { store, useStore, useWidgetDensity } from '@/store/store';
+import { selectAppModel, selectCatalog, selectConfigFindings, store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { alwaysMountedWidgets, isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry';
 import { findingName } from '@sparkforensics/core/finding-names.ts';
@@ -79,22 +79,21 @@ function ReferenceSection({
   catalog,
   configFindings,
   getTaskData,
-  activeFileId,
   onRoute,
 }: WidgetProps & { onRoute: (target: TriageTarget) => void }) {
   return (
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
       <WallClock />
-      <Timeline key={activeFileId} appModel={appModel} catalog={catalog} />
-      <ExecutorCountChart appModel={appModel} activeFileId={activeFileId} />
+      <Timeline appModel={appModel} catalog={catalog} />
+      <ExecutorCountChart appModel={appModel} />
       <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
       <WidgetGrid>
         {alwaysMountedWidgets().map(({ component: Widget, widgetId }) => (
           // widgetId registers the card as a route target for Show evidence.
           <WidgetGridItem key={widgetId} cardId={`reference-${widgetId}`} widgetId={widgetId} collapsedTile>
             <Suspense fallback={<WidgetCardSkeleton />}>
-              <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} defaultCollapsed />
+              <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} defaultCollapsed />
             </Suspense>
           </WidgetGridItem>
         ))}
@@ -129,7 +128,6 @@ function FilteredBoard({
   catalog,
   configFindings,
   getTaskData,
-  activeFileId,
   options,
   onRoute,
   activeTab,
@@ -174,8 +172,8 @@ function FilteredBoard({
   }, [evidenceWidgets, verdictScopes, appModel, density]);
   const renderVerdictEvidence = useCallback((panel: AnyEvidencePanel) => {
     const widget = evidenceWidgets.find((candidate) => candidate.type === panel.type);
-    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={panel.rows} panel={panel} /> : null;
-  }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData }} stated={panel.rows} panel={panel} /> : null;
+  }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');
     requestAnimationFrame(() => {
@@ -203,7 +201,6 @@ function FilteredBoard({
   // note the board leaves out, a caveat) is reached through its type's full card instead.
   const rowFindings = useMemo(() => new Set<Finding>([...verdictLeads, ...eligibleFindings(interpretation)]), [verdictLeads, interpretation]);
   const [fullCardWidgetIds, setFullCardWidgetIds] = useState<ReadonlySet<string>>(new Set());
-  useEffect(() => setFullCardWidgetIds(new Set()), [activeFileId]);
   const routeFinding = useCallback((target: TriageTarget) => {
     if (!isAlwaysMountedType(target.finding.type) && !rowFindings.has(target.finding)) {
       setFullCardWidgetIds((current) => new Set(current).add(target.widgetId));
@@ -327,7 +324,6 @@ function FilteredBoard({
               configFindings={filteredConfig}
               stages={appModel.stages}
               getTaskData={getTaskData}
-              activeFileId={activeFileId}
               onRoute={routeFinding}
             />
           </TabsContent>
@@ -337,7 +333,6 @@ function FilteredBoard({
               catalog={filteredCatalog}
               getTaskData={getTaskData}
               configFindings={filteredConfig}
-              activeFileId={activeFileId}
               onRoute={routeFinding}
             />
           </TabsContent>
@@ -357,9 +352,8 @@ function FilteredBoard({
  * over the dashboard starts a fresh parse. */
 function DashboardContent() {
   const { resetToDropZone, startLoad, getTaskData, compareWithAnotherRun } = useIngest();
-  const appModel = useStore((s) => s.appModel);
-  const catalog = useStore((s) => s.catalog);
-  const configFindings = useStore((s) => s.configFindings);
+  const appModel = useStore(selectAppModel);
+  const catalog = useStore(selectCatalog);
   const activeFileId = useStore((s) => s.activeFileId);
   const exportMode = useStore((s) => s.exportMode);
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
@@ -374,12 +368,10 @@ function DashboardContent() {
   const [routeFocusedCardKey, setRouteFocusedCardKey] = useState<string | null>(null);
   const [flashedFinding, setFlashedFinding] = useState<Finding | null>(null);
   // Refs mirror the active request so the callbacks below stay referentially
-  // stable (widget registration keys on them). `routeFileRef` catches a file swap
-  // that keeps the same catalog object refs. Route design:
+  // stable (widget registration keys on them). Route design:
   // docs-site/contributor-guide/architecture/widget-rendering/investigation-routing.md.
   const tokenRef = useRef(0);
   const routeRef = useRef<RouteRequest | null>(null);
-  const routeFileRef = useRef<string | null>(null);
   const registrationsRef = useRef(new Map<string, WidgetRegistration[]>());
   const findingAnchorsRef = useRef(new Map<string, HTMLElement>());
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -404,17 +396,14 @@ function DashboardContent() {
   const clearRoute = useCallback((token: number) => {
     if (routeRef.current?.token !== token) return;
     routeRef.current = null;
-    routeFileRef.current = null;
     setRouteRequest((current) => (current?.token === token ? null : current));
   }, []);
 
-  // A newer request, a file swap, or a catalog that lacks the finding
-  // makes a request stale (never scroll/focus).
+  // A newer request, or a catalog that lacks the finding, makes a request stale (never scroll/focus).
   const resolveRoute = useCallback((route: RouteRequest): TriageTarget | null => {
     if (routeRef.current?.token !== route.token) return null;
-    const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
-    if (routeFileRef.current !== currentFileId) return null;
-    const resolved = selectTriageTargetForFinding(route.target.finding, [...currentCatalog, ...currentConfig]);
+    const { run } = store.getState();
+    const resolved = selectTriageTargetForFinding(route.target.finding, run ? [...run.catalog, ...run.configFindings] : []);
     if (!resolved || resolved.widgetId !== route.target.widgetId || resolved.region !== route.target.region) {
       return null;
     }
@@ -426,18 +415,16 @@ function DashboardContent() {
     setActiveTab(isAlwaysMountedType(target.finding.type) ? 'full-report' : 'findings');
     const token = tokenRef.current + 1;
     tokenRef.current = token;
-    const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
-    const resolved = selectTriageTargetForFinding(target.finding, [...currentCatalog, ...currentConfig]);
+    const { run } = store.getState();
+    const resolved = selectTriageTargetForFinding(target.finding, run ? [...run.catalog, ...run.configFindings] : []);
     if (!resolved || resolved.widgetId !== target.widgetId || resolved.region !== target.region) {
       routeRef.current = null;
-      routeFileRef.current = null;
       setRouteRequest(null);
       return;
     }
 
     const next = { target: resolved, token };
     routeRef.current = next;
-    routeFileRef.current = currentFileId;
     setRouteRequest(next);
   }, []);
 
@@ -544,9 +531,9 @@ function DashboardContent() {
     if (route && !resolveRoute(route)) clearRoute(route.token);
   }, [activeFileId, catalog, clearRoute, resolveRoute]);
 
-  // Config-scope findings are computed once at ingest time (useIngest.ts's
-  // runDone/pickRecent/drillIntoRun, alongside `catalog`) and read from the
-  // store here; Dashboard never calls the analyzer directly.
+  // Config-scope findings are part of the installed run, built once by `analyzeRun`; Dashboard
+  // never calls the analyzer directly.
+  const configFindings = useStore(selectConfigFindings);
   // Filter options are derived from the values actually present in the full
   // catalog∪config; passed to the provider (seeds/validates the URL selection)
   // and to the bar.
@@ -609,7 +596,6 @@ function DashboardContent() {
             catalog={catalog}
             configFindings={configFindings}
             getTaskData={getTaskData}
-            activeFileId={activeFileId}
             options={options}
             onRoute={requestRoute}
             activeTab={activeTab}

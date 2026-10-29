@@ -2,9 +2,11 @@
 import { test, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useIngest } from '../../src/store/useIngest';
-import { store, emptyAppModel } from '../../src/store/store';
-import { captureSnapshot, applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import { store, emptyAppModel, selectAppModel, selectCatalog, selectConfigFindings } from '../../src/store/store';
+import { interpretationOf } from '../../src/view/interpretation';
+import { deserializeRun, serializeRun } from '@sparkforensics/core/run-serialization.ts';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import { makeRun, runState } from './_shared/run';
 
 function fakeClient(doneArg?: any) {
   let handlers: any;
@@ -27,7 +29,7 @@ function fakeClient(doneArg?: any) {
 test('startLoadFromUrl recovers typed SHS errors through its callback without setting a page error', () => {
   const client = fakeClient();
   const onShsError = vi.fn();
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], status: 'idle', errorMessage: null });
+  store.setState({ ...store.getState(), run: null, runKey: null, status: 'idle', errorMessage: null });
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
 
   act(() => result.current.startLoadFromUrl({
@@ -45,7 +47,7 @@ test('startLoadFromUrl recovers typed SHS errors through its callback without se
 
 test('startLoadFromUrl flags an SHS parse; a following local load clears the flag', () => {
   const client = fakeClient();
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], status: 'idle', shsParsing: false });
+  store.setState({ ...store.getState(), run: null, runKey: null, status: 'idle', shsParsing: false });
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
 
   act(() => result.current.startLoadFromUrl(
@@ -63,7 +65,7 @@ test('startLoadFromUrl flags an SHS parse; a following local load clears the fla
 test('startLoadFromUrl keeps non-SHS errors on the existing page-level route', () => {
   const client = fakeClient();
   const onShsError = vi.fn();
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], status: 'idle', errorMessage: null });
+  store.setState({ ...store.getState(), run: null, runKey: null, status: 'idle', errorMessage: null });
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
 
   act(() => result.current.startLoadFromUrl({
@@ -80,32 +82,32 @@ test('startLoadFromUrl keeps non-SHS errors on the existing page-level route', (
 });
 
 test('startLoad streams into the store and sets catalog on done', () => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [] });
+  store.setState({ ...store.getState(), run: null, runKey: null });
   const { result } = renderHook(() => useIngest({ makeClient: fakeClient }));
   act(() => result.current.startLoad(new File(['x'], 'log')));
-  expect(store.getState().appModel.app?.name).toBe('demo');
-  expect(store.getState().appModel.stages.size).toBe(1);
+  expect(selectAppModel(store.getState()).app?.name).toBe('demo');
+  expect(selectAppModel(store.getState()).stages.size).toBe(1);
   expect(store.getState().status).toBe('ready');
 });
 
 test('startLoad stores the skipped-line count from the done payload', () => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], skippedLines: 0 });
+  store.setState({ ...store.getState(), run: null, runKey: null });
   const { result } = renderHook(() =>
     useIngest({ makeClient: () => fakeClient({ skippedLines: 5 }) }),
   );
   act(() => result.current.startLoad(new File(['x'], 'log')));
-  expect(store.getState().skippedLines).toBe(5);
+  expect(selectAppModel(store.getState()).skippedLines).toBe(5);
 });
 
 test('startLoad resets skippedLines to 0 when the done payload omits it', () => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], skippedLines: 7 });
+  store.setState({ ...store.getState(), ...runState({ appModel: { ...emptyAppModel(), skippedLines: 7 } }) });
   const { result } = renderHook(() => useIngest({ makeClient: fakeClient }));
   act(() => result.current.startLoad(new File(['x'], 'log')));
-  expect(store.getState().skippedLines).toBe(0);
+  expect(selectAppModel(store.getState()).skippedLines).toBe(0);
 });
 
 test('runDone derives availability before analysis and snapshots it', () => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], skippedLines: 0 });
+  store.setState({ ...store.getState(), run: null, runKey: null });
   const client = fakeClient({ skippedLines: 0 });
   client.startParse = (_f: File, h: any) => {
     h.onApp({
@@ -122,21 +124,19 @@ test('runDone derives availability before analysis and snapshots it', () => {
 
   act(() => result.current.startLoad(new File(['{}'], 'evidence.log')));
 
-  expect(store.getState().appModel.evidenceAvailability?.schemaVersion).toBe(1);
-  expect(store.getState().appModel.evidenceAvailability?.entries.find((entry) => entry.key === 'taskCoreTime')).toMatchObject({
+  expect(selectAppModel(store.getState()).evidenceAvailability?.schemaVersion).toBe(1);
+  expect(selectAppModel(store.getState()).evidenceAvailability?.entries.find((entry) => entry.key === 'taskCoreTime')).toMatchObject({
     state: 'notEmitted', reasonCode: 'noUsableCoreTimeAggregate',
   });
   // 'evidenceAvailability' is a legacy finding type no current detector emits; this
   // guards against a regression that would resurrect it, so the type field is checked as a string.
-  expect(store.getState().catalog.every((finding) => (finding.type as string) !== 'evidenceAvailability')).toBe(true);
-  const snapshot = captureSnapshot(store.getState().appModel, [], new Map());
-  const restored = emptyAppModel();
-  applySnapshot(restored, new Map(), snapshot);
-  expect(restored.evidenceAvailability).toEqual(store.getState().appModel.evidenceAvailability);
+  expect(selectCatalog(store.getState()).every((finding) => (finding.type as string) !== 'evidenceAvailability')).toBe(true);
+  const restored = deserializeRun(serializeRun(store.getState().run!)).appModel;
+  expect(restored.evidenceAvailability).toEqual(selectAppModel(store.getState()).evidenceAvailability);
 });
 
 test('runDone derives configFindings from the app config, once, alongside catalog', () => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], configFindings: [] });
+  store.setState({ ...store.getState(), run: null, runKey: null });
   const client = fakeClient();
   client.startParse = (_f: File, h: any) => {
     h.onApp({
@@ -149,18 +149,17 @@ test('runDone derives configFindings from the app config, once, alongside catalo
 
   act(() => result.current.startLoad(new File(['x'], 'log')));
 
-  expect(store.getState().configFindings).toContainEqual(
+  expect(selectConfigFindings(store.getState())).toContainEqual(
     expect.objectContaining({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors' }),
   );
 });
 
-// Counts the live interpreter's passes (tests/view/setup.ts installs it) while `run` executes,
-// as distinct interpretation objects: a listener can see one pass twice when the interpreter's
-// own set nests inside the update that triggered it.
-async function interpretationChanges(run: () => void | Promise<void>): Promise<number> {
+// Counts the runs installed while `run` executes, as distinct run objects: the interpretation is
+// part of the run, so one install is one interpretation of the finished log.
+async function runsInstalled(run: () => void | Promise<void>): Promise<number> {
   const seen = new Set<unknown>();
   const unsubscribe = store.subscribe((next, previous) => {
-    if (next.interpretation !== previous.interpretation) seen.add(next.interpretation);
+    if (next.run !== previous.run) seen.add(next.run);
   });
   try {
     await run();
@@ -170,8 +169,8 @@ async function interpretationChanges(run: () => void | Promise<void>): Promise<n
   return seen.size;
 }
 
-test('runDone interprets the finished run once, not once per store update', async () => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], configFindings: [] });
+test('runDone installs the finished run once, not once per store update', async () => {
+  store.setState({ ...store.getState(), run: null, runKey: null });
   const client = fakeClient();
   let handlers: any;
   client.startParse = (_f: File, h: any) => {
@@ -181,26 +180,30 @@ test('runDone interprets the finished run once, not once per store update', asyn
   };
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
   act(() => result.current.startLoad(new File(['x'], 'log')));
+  // The parse builds its own model: the store holds no run until the log is analyzed.
+  expect(store.getState().run).toBeNull();
 
-  const changes = await interpretationChanges(() => act(() => handlers.onDone({ skippedLines: 0 })));
+  const changes = await runsInstalled(() => act(() => handlers.onDone({ skippedLines: 0 })));
 
+  const state = store.getState();
   expect(changes).toBe(1);
-  expect(store.getState().interpretation?.findings).toEqual([...store.getState().catalog, ...store.getState().configFindings]);
+  expect(interpretationOf(state.run!).findings).toEqual([...selectCatalog(state), ...selectConfigFindings(state)]);
 });
 
-test('switching to a cached run interprets it once', async () => {
-  const snapshot = captureSnapshot({ ...emptyAppModel(), app: { name: 'cached', id: 'app-2' } }, [], new Map());
+test('switching to a cached run installs it once', async () => {
+  const snapshot = serializeRun(makeRun({ appModel: { ...emptyAppModel(), app: { name: 'cached', id: 'app-2' } as any }, taskData: { kind: 'none' } }));
   store.setState({
-    ...store.getState(), appModel: emptyAppModel(), catalog: [], configFindings: [], activeFileId: 'a::1::2',
+    ...store.getState(), run: null, runKey: null, activeFileId: 'a::1::2',
     sessionCache: new Map([['b::3::4', snapshot]]),
   });
   vi.spyOn(recentFiles, 'touch').mockResolvedValue(undefined);
   const { result } = renderHook(() => useIngest({ makeClient: fakeClient }));
 
-  const changes = await interpretationChanges(() => act(async () => { await result.current.pickRecent('b::3::4'); }));
+  const changes = await runsInstalled(() => act(async () => { await result.current.pickRecent('b::3::4'); }));
 
   expect(changes).toBe(1);
   expect(store.getState().activeFileId).toBe('b::3::4');
+  expect(store.getState().runKey).toBe('b::3::4');
 });
 
 test('getTaskData memoizes through taskDataCache', async () => {
@@ -233,18 +236,18 @@ test('cancelParse abandons a mid-parse run without caching a snapshot for it', (
     h.onApp({ name: 'demo', id: 'app-1' });
     h.onStage({ stageId: 1, name: 's1' });
   };
-  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], status: 'idle', sessionCache: new Map() });
+  store.setState({ ...store.getState(), run: null, runKey: null, status: 'idle', sessionCache: new Map() });
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
 
   act(() => result.current.startLoad(new File(['x'], 'log'), { id: 'recent-1' }));
   expect(store.getState().status).toBe('parsing');
-  expect(store.getState().appModel.app?.name).toBe('demo');
+  expect(store.getState().run).toBeNull();
 
   act(() => result.current.cancelParse());
 
   expect(client.terminate).toHaveBeenCalled();
   expect(store.getState().sessionCache.has('recent-1')).toBe(false);
   expect(store.getState().activeFileId).toBeNull();
-  expect(store.getState().appModel.app).toBeNull();
+  expect(selectAppModel(store.getState()).app).toBeNull();
   expect(store.getState().status).toBe('idle');
 });

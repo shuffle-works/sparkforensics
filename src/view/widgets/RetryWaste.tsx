@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { IMPACT_BAND_ORDER, formatDuration, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -59,20 +59,12 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
 
 /** Board section for `retryWaste` findings: retried task attempts that
  * wasted executor time even though the stage ultimately completed. */
-export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: RetryWasteProps) {
+export function RetryWaste({ catalog, defaultCollapsed = true }: RetryWasteProps) {
   const [page, setPage] = useState(0);
   const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
-    setPage(0);
-  }, [appModel]);
 
   const findings = findingsOfType(catalog, 'retryWaste').filter(hasStage);
   const sorted = [...findings].sort(

@@ -25,8 +25,8 @@ const { collectRun } = await loadCore('cli/collect-run');
 const { collectRunPair } = await loadCore('cli/collect-run-pair');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
-const { buildEvidenceReport, runFindings, toFindingsFilter } = await loadCore('evidence-report');
+const { analyzeRun } = await loadCore('analyzed-run');
+const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { buildComparisonOutput } = await loadCore('comparison-output');
@@ -248,15 +248,6 @@ function splitCsv(value) {
   return value.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-function withEvidence({ appModel, skippedLines }) {
-  appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-  return { appModel, skippedLines };
-}
-
-async function collectWithEvidence(path) {
-  return withEvidence(await collectRun(path));
-}
-
 // The provenance stamp: this CLI's own name and version, and the build id of the core it loaded
 // (vendor-core/'s stamp or core/src's hash, see coreBuildId). The JSON report carries it as the
 // `generator` block, the HTML export as one "<name> <version>" producer string.
@@ -270,8 +261,8 @@ function exportProducer() {
   return `${name} ${version}`;
 }
 
-async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redact }) {
-  const exportData = buildHtmlExportData(appModel, catalog, skippedLines, {
+async function writeHtmlExport(destDir, run, { redact }) {
+  const exportData = buildHtmlExportData(run, {
     redact, buildId: coreBuildId(pkgDir), producer: exportProducer(),
   });
 
@@ -337,19 +328,18 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
 // a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
-// loadBaseline() and each candidate's load() resolve to { appModel }, from a local log or a History Server.
+// loadBaseline() and each candidate's load() resolve to { appModel }, the parsed log from a local file or a History Server.
 async function runMultiLog({
   candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds,
 }) {
-  let baselineAppModel;
+  let baselineRun;
   try {
-    ({ appModel: baselineAppModel } = await loadBaseline());
+    baselineRun = analyzeRun((await loadBaseline()).appModel, { thresholds });
   } catch (e) {
     process.stderr.write(`${redact ? redactedFailure('The baseline', EXIT.BASELINE_UNREADABLE) : e.message}\n`);
     process.exitCode = EXIT.BASELINE_UNREADABLE;
     return;
   }
-  const baselineCatalog = runFindings(baselineAppModel, thresholds).catalog;
   if (outPath) writeFileSync(outPath, '');
   const emit = (line) => {
     const text = `${JSON.stringify(line)}\n`;
@@ -362,10 +352,10 @@ async function runMultiLog({
     const log = redact ? `candidate-${index + 1}` : name;
     let line;
     try {
-      const { appModel } = await unreadable(load(), EXIT.CANDIDATE_UNREADABLE);
-      const catalog = runFindings(appModel, thresholds).catalog;
+      const { appModel: parsed } = await unreadable(load(), EXIT.CANDIDATE_UNREADABLE);
+      const { appModel, catalog } = analyzeRun(parsed, { thresholds });
       const { comparison, output } = buildComparisonOutput(
-        { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
+        { label: 'baseline', appModel: baselineRun.appModel, catalog: baselineRun.catalog },
         { label: 'candidate', appModel, catalog },
         { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, caveatThresholds, generator: generatorInfo() },
       );
@@ -702,14 +692,14 @@ async function runCli(argv, { fetchImpl } = {}) {
   const shsOpts = fetchImpl !== undefined ? { fetchImpl } : {};
   const loadBaseline = () => (usingBaselineShs
     ? resolveFromShs(values['baseline-shs-base-url'], values['baseline-app-id'], values['baseline-attempt-id'], shsOpts)
-    : collectWithEvidence(values.baseline));
+    : collectRun(values.baseline));
 
   if (multiLog) {
     const candidates = usingShs
       ? shsCandidates.map(({ appId, attemptId, name }) => ({
         name, load: () => resolveFromShs(values['shs-base-url'], appId, attemptId, shsOpts),
       }))
-      : positionals.map((path) => ({ name: path, load: () => collectWithEvidence(path) }));
+      : positionals.map((path) => ({ name: path, load: () => collectRun(path) }));
     return runMultiLog({
       candidates, loadBaseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
@@ -717,16 +707,15 @@ async function runCli(argv, { fetchImpl } = {}) {
     });
   }
 
-  let appModel;
-  let baselineAppModel;
-  // Assigned by every branch below before it's read.
-  let skippedLines;
+  // The parsed logs; every branch below assigns them before they are read.
+  let parsedModel;
+  let parsedBaselineModel;
   try {
     if (usingShs || usingBaselineShs) {
       const [{ appId, attemptId }] = usingShs ? shsCandidates : [{}];
       const candidatePromise = unreadable(usingShs
         ? resolveFromShs(values['shs-base-url'], appId, attemptId, shsOpts)
-        : collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE);
+        : collectRun(positionals[0]), EXIT.CANDIDATE_UNREADABLE);
       // An SHS fetch (network) and a local parse (disk) are independent, so run them concurrently.
       // Local+local below is CPU work on both sides, so collectRunPair uses a worker thread for it.
       if (usingBaseline) {
@@ -736,10 +725,10 @@ async function runCli(argv, { fetchImpl } = {}) {
         // The baseline's failure wins, as it does for local logs (exit 5 outranks 4).
         if (baselineResult.status === 'rejected') throw baselineResult.reason;
         if (candidateResult.status === 'rejected') throw candidateResult.reason;
-        ({ appModel, skippedLines } = candidateResult.value);
-        baselineAppModel = baselineResult.value.appModel;
+        parsedModel = candidateResult.value.appModel;
+        parsedBaselineModel = baselineResult.value.appModel;
       } else {
-        ({ appModel, skippedLines } = await candidatePromise);
+        parsedModel = (await candidatePromise).appModel;
       }
     } else {
       if (usingBaseline) {
@@ -747,13 +736,13 @@ async function runCli(argv, { fetchImpl } = {}) {
         // first, so a batch with both logs unreadable reports the worse exit code (5).
         const { baseline, candidate } = await collectRunPair(values.baseline, positionals[0]);
         const settled = (result, exitCode) => unreadable(
-          result.status === 'fulfilled' ? Promise.resolve().then(() => withEvidence(result.value)) : Promise.reject(result.reason),
+          result.status === 'fulfilled' ? Promise.resolve(result.value) : Promise.reject(result.reason),
           exitCode,
         );
-        baselineAppModel = (await settled(baseline, EXIT.BASELINE_UNREADABLE)).appModel;
-        ({ appModel, skippedLines } = await settled(candidate, EXIT.CANDIDATE_UNREADABLE));
+        parsedBaselineModel = (await settled(baseline, EXIT.BASELINE_UNREADABLE)).appModel;
+        parsedModel = (await settled(candidate, EXIT.CANDIDATE_UNREADABLE)).appModel;
       } else {
-        ({ appModel, skippedLines } = await unreadable(collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE));
+        parsedModel = (await unreadable(collectRun(positionals[0]), EXIT.CANDIDATE_UNREADABLE)).appModel;
       }
     }
   } catch (e) {
@@ -764,7 +753,8 @@ async function runCli(argv, { fetchImpl } = {}) {
     return;
   }
 
-  const catalog = runFindings(appModel, thresholds).catalog;
+  const run = analyzeRun(parsedModel, { thresholds });
+  const { appModel, catalog } = run;
 
   if (exportHtmlDir !== undefined) {
     // The dashboard never tunes, so the export is the default-threshold analysis of the run.
@@ -773,7 +763,7 @@ async function runCli(argv, { fetchImpl } = {}) {
       process.stderr.write('--export-html: the exported dashboard uses the default detector thresholds; --thresholds applies to the report only.\n');
     }
     try {
-      await writeHtmlExport(exportHtmlDir, appModel, tuned ? runFindings(appModel).catalog : catalog, skippedLines, { redact: values.redact });
+      await writeHtmlExport(exportHtmlDir, tuned ? analyzeRun(parsedModel) : run, { redact: values.redact });
     } catch (e) {
       process.stderr.write(`--export-html failed: ${e.message}\n`);
       process.exitCode = EXIT.INTERNAL;
@@ -784,11 +774,11 @@ async function runCli(argv, { fetchImpl } = {}) {
   let comparison;
   let comparisonJson;
   if (usingBaseline) {
-    const baselineCatalog = runFindings(baselineAppModel, thresholds).catalog;
+    const baselineRun = analyzeRun(parsedBaselineModel, { thresholds });
     // The builder applies --redact: stage names in the comparison carry raw Spark stage text,
     // which --redact promises to pseudonymize.
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
-      { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
+      { label: 'baseline', appModel: baselineRun.appModel, catalog: baselineRun.catalog },
       { label: 'candidate', appModel, catalog },
       { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand, caveatThresholds, generator: generatorInfo() },
     ));

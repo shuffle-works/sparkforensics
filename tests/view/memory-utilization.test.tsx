@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { test, expect } from 'vitest';
+import { test, expect, beforeEach } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryUtilization } from '../../src/view/widgets/MemoryUtilization';
@@ -8,6 +8,10 @@ import { DocsProvider } from '../../src/view/DocsContext';
 import { store } from '../../src/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { runState } from './_shared/run';
+
+// The badge reads the doc anchors of its finding type from the installed run's interpretation.
+beforeEach(() => store.setState(runState()));
 
 test('renders nothing when there are no memoryUtilization findings (collapses to a Clean-checks row instead)', () => {
   const { container } = render(<MemoryUtilization catalog={[]} />);

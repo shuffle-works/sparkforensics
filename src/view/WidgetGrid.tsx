@@ -11,7 +11,6 @@ import {
 
 import { cn } from '@/lib/utils';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { useStore } from '@/store/store';
 import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
 import { useRouteFocusedCardKey, useTriageNavigation } from '@/view/TriageNavigationContext';
 
@@ -64,7 +63,6 @@ export function WidgetGridItem({
   const navigation = useTriageNavigation();
   const focusedCardKey = useRouteFocusedCardKey();
   const focusKey = useId();
-  const activeFileId = useStore((s) => s.activeFileId);
   const [openRequestGeneration, setOpenRequestGeneration] = useState(0);
   // Local mirror of the card's disclosure state, kept via `reportOpen`, so the
   // grid item can widen itself (`col-span`) when its card is open. The card
@@ -118,7 +116,7 @@ export function WidgetGridItem({
         )}
       >
         {/* A widget that throws on its log's data shows an error card here, not a blank page. */}
-        <ErrorBoundary resetKey={activeFileId} fallback={(error, reset) => <WidgetErrorCard error={error} onRetry={reset} />}>
+        <ErrorBoundary fallback={(error, reset) => <WidgetErrorCard error={error} onRetry={reset} />}>
           {children}
         </ErrorBoundary>
       </div>

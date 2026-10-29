@@ -107,7 +107,7 @@ interface StageDetailBodyProps {
 }
 
 function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence, showInfo }: StageDetailBodyProps) {
-  const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
+  const { unavailable: noTaskData, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const [taskData, setTaskData] = useState<TaskData | null>(null);
   const [taskDataError, setTaskDataError] = useState(false);
   const [taskDataRetryCount, setTaskDataRetryCount] = useState(0);
@@ -176,8 +176,8 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
         ]}
       >
         {hasTaskHist ? (
-          exportMode ? (
-            <p className="text-xs text-muted-foreground">Per-task duration data isn&rsquo;t included in exported reports.</p>
+          noTaskData ? (
+            <p className="text-xs text-muted-foreground">Per-task duration data isn&rsquo;t available for this run.</p>
           ) : taskData ? (
             <DurationHistogram
               metrics={taskData.metrics}

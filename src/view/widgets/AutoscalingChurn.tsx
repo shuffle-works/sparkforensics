@@ -72,9 +72,6 @@ function skipSubPixelBars(props: BarShapeProps) {
 
 export interface AutoscalingChurnProps {
   appModel: AppModel;
-  // `applySnapshot` mutates `appModel`'s fields in place on a cached-file switch
-  // rather than replacing the object, so `activeFileId` is a memo key below.
-  activeFileId?: string | null;
   // REGISTRY always passes a real `catalog`, but direct test/callers that only
   // want the descriptive chart may omit it (optional, default []).
   catalog?: Finding[];
@@ -116,7 +113,7 @@ function AutoscalingChurnRow({ finding }: { finding: Finding }) {
 }
 
 // memo: skip recomputing bucketChurn when only the finding filter changes.
-export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activeFileId, catalog = [], defaultCollapsed = true }: AutoscalingChurnProps) {
+export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, catalog = [], defaultCollapsed = true }: AutoscalingChurnProps) {
   // Whole derived-series pipeline (including the empty-events guard) in one `useMemo`.
   const churn: ChurnModel = useMemo(() => {
     const added = appModel.executors.added;
@@ -141,7 +138,7 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
     const yAxisScale = computeYAxisScale(rows);
 
     return { hasEvents: true, added, removed, rows, yAxisScale };
-  }, [appModel, activeFileId]);
+  }, [appModel]);
 
   if (!churn.hasEvents) {
     return (

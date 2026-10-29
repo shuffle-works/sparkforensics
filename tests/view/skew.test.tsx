@@ -14,6 +14,7 @@ import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 function makeStage(id: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -237,19 +238,19 @@ describe('Skew', () => {
     expect(await screen.findByText(/task data unavailable/i)).toBeInTheDocument();
   });
 
-  it('offers no task detail in an export, which carries no task data', async () => {
+  it('offers no task detail when the run carries no task data', async () => {
     const user = userEvent.setup();
     const appModel = makeAppModel([1]);
     const catalog = [skewFinding(1, 8)];
     const getTaskData = vi.fn(async () => TASK_DATA);
-    store.setState({ exportMode: true });
+    store.setState(runState({ taskData: { kind: 'none' } }));
 
     render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);
     await user.click(screen.getByRole('button', { name: /^task skew$/i }));
 
     expect(screen.queryByRole('button', { name: /task detail/i })).toBeNull();
     expect(getTaskData).not.toHaveBeenCalled();
-    store.setState({ exportMode: false });
+    store.getState().resetModel();
   });
 
   it('shows a slow-host callout on a skewed stage\'s row with the host, ratio, and task share', () => {

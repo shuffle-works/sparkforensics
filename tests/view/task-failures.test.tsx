@@ -121,30 +121,6 @@ describe('TaskFailures', () => {
     ]);
   });
 
-  it('paginates the stage list 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
-    const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 8 }, (_, i) => testFinding({
-      type: 'failures', stageId: i + 1, impactBand: 'warning', metric: 'failureRate', value: 10 + i, failedTasks: 2, dominantReason: null,
-      dominantError: null, failureGroups: [], otherFailedTasks: 0,
-    }));
-    const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
-    const { rerender } = render_(catalog, makeAppModel(stageNames));
-
-    // Card defaults collapsed; open it first to access the content.
-    await user.click(screen.getByRole('button', { name: 'Failed Tasks' }));
-
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^next$/i }));
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
-
-    rerender(
-      <StageDetailProvider>
-        <TaskFailures appModel={makeAppModel(stageNames)} catalog={catalog} />
-      </StageDetailProvider>,
-    );
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  });
-
   it('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
     const user = userEvent.setup();
     store.getState().setWidgetDensity('advanced');

@@ -37,13 +37,12 @@ function run(): AppModel {
 }
 
 function install(catalog: Finding[], model: AppModel = run()) {
-  store.setState({ appModel: model });
   return installInterpretation(catalog, model);
 }
 
 afterEach(() => {
   cleanup();
-  store.setState({ appModel: emptyAppModel() });
+  store.getState().resetModel();
 });
 
 describe('run clock helpers', () => {

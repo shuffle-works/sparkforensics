@@ -1,9 +1,9 @@
 import { store } from '@/store/store';
 import {
-  EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections, type ExportRunData,
+  EXPORT_DATA_SCHEMA_VERSION, READABLE_EXPORT_SCHEMA_VERSIONS, reviveExportCollections, upgradeExportPayload,
+  type ExportRunData, type ExportRunDataV3,
 } from '@sparkforensics/core/export-data.ts';
-import { applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import { deserializeRun } from '@sparkforensics/core/run-serialization.ts';
 import { gunzipSync, strFromU8 } from '@sparkforensics/core/vendor/fflate.js';
 
 /** Reverses the CLI's write-time encoding of data.js (base64-decode, gunzip,
@@ -31,64 +31,32 @@ const REQUIRED_RESULTS: { key: keyof ExportRunData; present: (value: unknown) =>
   { key: 'jobs', present: Array.isArray, label: 'job list' },
 ];
 
-/** Why this bundle cannot render `payload`, or null when it can. The bundle
- * renders exactly the payload version it was built for: an older payload lacks
- * the precomputed conclusions (this bundle has no analysis to fill them in),
- * and a newer one may carry fields it would silently drop, so either is refused
- * whole rather than rendered partially. A payload of the right version missing
- * one of its precomputed results is refused the same way. */
+/** Why this bundle cannot render `payload`, or null when it can. The bundle reads the payload
+ * version it was built for and the older ones `upgradeExportPayload` converts. Any other version is
+ * refused whole rather than rendered partially: an older one lacks the precomputed conclusions (this
+ * bundle has no analysis to fill them in), and a newer one may carry fields it would silently drop.
+ * A payload of a readable version missing one of its precomputed results is refused the same way. */
 export function unsupportedPayloadReason(payload: unknown): string | null {
   const fields: Record<string, unknown> = isObject(payload) ? payload as Record<string, unknown> : {};
   const version = fields.schemaVersion;
-  if (version !== EXPORT_DATA_SCHEMA_VERSION) {
+  if (typeof version !== 'number' || !READABLE_EXPORT_SCHEMA_VERSIONS.includes(version)) {
     const found = typeof version === 'number' ? `version ${version}` : 'an unknown version';
-    return `This file holds export data format ${found}, but this viewer only reads version ${EXPORT_DATA_SCHEMA_VERSION}. ${REEXPORT_HINT}`;
+    return `This file holds export data format ${found}, but this viewer only reads ${READABLE_EXPORT_SCHEMA_VERSIONS.map((readable) => `version ${readable}`).join(' and ')}. ${REEXPORT_HINT}`;
   }
   const missing = REQUIRED_RESULTS.filter(({ key, present }) => !present(fields[key])).map(({ label }) => label);
   if (missing.length === 0) return null;
   return `This file is missing the ${missing.join(' and ')} this viewer needs. ${REEXPORT_HINT}`;
 }
 
-/** Rebuilds the store's Map-based AppModel from the CLI-serialized data.js
- * payload and flips the store to `exportMode`. Everything analytical arrives
- * precomputed by the producer: findings, config audit, and the interpretation
- * (verdict, coverage, formatted savings, run shape), which is installed as is.
- * Call only with a payload `unsupportedPayloadReason` accepts. Split out of main-export.tsx so it's testable
- * without mounting React.
- *
- * Reuses session-snapshot.ts's applySnapshot (the same restore path
- * useIngest.ts uses when switching to an already-parsed file) rather than
- * hand-rolling the array-to-Map rebuild again, so the two paths can't drift.
- * ExportRunData is SessionSnapshot minus taskData plus
- * configFindings/skippedLines, which applySnapshot doesn't handle and are set
- * separately below. */
-export function hydrateExportStore(data: ExportRunData): void {
-  const snapshot: SessionSnapshot = {
-    app: data.app,
-    stages: new Map(data.stages.map((s) => [s.id, s])),
-    executors: data.executors,
-    // Keyed by SqlExecution.id, matching onSql (model-assembler.ts) and the
-    // field buildExportRunData serializes into data.sql.
-    sql: new Map(data.sql.map((e) => [e.id, e])),
-    jobs: new Map(data.jobs.map((j) => [j.id, j])),
-    runAggregates: data.runAggregates,
-    evidenceAvailability: data.evidenceAvailability,
-    catalog: data.catalog,
-    taskData: new Map(),
-  };
-
-  // applySnapshot mutates the store's boot-time appModel/taskDataCache in
-  // place and returns the catalog to install.
-  const s = store.getState();
-  const catalog = applySnapshot(s.appModel, s.taskDataCache, snapshot);
+/** Installs the run an export payload carries and flips the store to `exportMode`. Everything
+ * analytical arrives precomputed by the producer: findings, config audit, and the interpretation
+ * (verdict, coverage, formatted savings, run shape), installed as is. Call only with a payload
+ * `unsupportedPayloadReason` accepts. Split out of main-export.tsx so it's testable without
+ * mounting React. */
+export function hydrateExportStore(payload: ExportRunData | ExportRunDataV3): void {
+  const data = payload.schemaVersion === EXPORT_DATA_SCHEMA_VERSION ? payload as ExportRunData : upgradeExportPayload(payload as ExportRunDataV3);
   store.setState({ exportMode: true, exportProvenance: data.provenance });
-  store.getState().setCatalog(catalog);
-  store.getState().setConfigFindings(data.configFindings);
-  // The interpretation indexes the findings in catalog-then-config order, the
-  // order the producer passed them to interpretRun.
-  store.getState().setInterpretation({ data: data.interpretation, findings: [...catalog, ...data.configFindings] });
-  store.getState().setSkippedLines(data.skippedLines);
-  store.getState().setStatus('ready');
+  store.getState().installRun(deserializeRun(data), 'export');
 }
 
 const UNREADABLE_PAYLOAD_REASON =
@@ -104,7 +72,7 @@ export function loadExportPayload(encoded: unknown): string | null {
     const payload = decodeRunPayload(encoded);
     const unsupported = unsupportedPayloadReason(payload);
     if (unsupported != null) return unsupported;
-    hydrateExportStore(payload as ExportRunData);
+    hydrateExportStore(payload as ExportRunData | ExportRunDataV3);
     return null;
   } catch (error) {
     console.error('Export payload could not be loaded:', error);

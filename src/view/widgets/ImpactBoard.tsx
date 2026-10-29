@@ -56,7 +56,6 @@ function ImpactGroup({
   catalog,
   configFindings,
   getTaskData,
-  activeFileId,
   subheading,
 }: {
   impactBand: Finding['impactBand'];
@@ -72,7 +71,7 @@ function ImpactGroup({
   /** Whether the band heading is a sub-heading of "More findings". */
   subheading: boolean;
 } & WidgetProps) {
-  const widgetProps: WidgetProps = { appModel, catalog, configFindings, getTaskData, activeFileId };
+  const widgetProps: WidgetProps = { appModel, catalog, configFindings, getTaskData };
   const evidenceByGroup = useMemo(() => {
     const byWidget = new Map(allWidgets.map((widget) => [widget.widgetId, widget]));
     const evidence = new Map<string, ActiveWidget>();
@@ -144,7 +143,6 @@ export function ImpactBoard({
   configFindings = [],
   stages,
   getTaskData,
-  activeFileId,
   onRoute,
   verdictLeads,
   verdictWidgetIds,
@@ -223,7 +221,6 @@ export function ImpactBoard({
           catalog={catalog}
           configFindings={configFindings}
           getTaskData={getTaskData}
-          activeFileId={activeFileId}
           subheading={hasVerdictLeads}
         />
       ))}

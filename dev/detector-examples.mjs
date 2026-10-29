@@ -19,9 +19,10 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectRun } from '../packages/core/src/cli/collect-run.ts';
-import { deriveEvidenceAvailability } from '../packages/core/src/evidence-availability.ts';
-import { runFindings } from '../packages/core/src/evidence-report.ts';
+import { analyzeRun } from '../packages/core/src/analyzed-run.ts';
+import { encodeCollections } from '../packages/core/src/export-data.ts';
 import { buildHtmlExportData } from '../packages/core/src/html-export.ts';
+import { interpretRun } from '../packages/core/src/run-interpretation.ts';
 import { gzipSync, strToU8 } from '../packages/core/src/vendor/fflate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -138,14 +139,13 @@ function raisedEstimate(estimate, id) {
 // builds it (that flag needs a built template, which this gate must not). The gzip header's
 // timestamp is zeroed, or every run would encode differently.
 async function exportPayload(path) {
-  const { appModel, skippedLines } = await collectRun(path);
-  appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-  const { catalog } = runFindings(appModel, undefined);
-  for (const finding of catalog) {
+  const analyzed = analyzeRun((await collectRun(path)).appModel);
+  for (const finding of analyzed.catalog) {
     if (finding.impactEstimate) finding.impactEstimate = raisedEstimate(finding.impactEstimate, finding.id);
   }
-  const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact: false, ...EXPORT_STAMP });
-  return Buffer.from(gzipSync(strToU8(JSON.stringify(data)), { mtime: 0 })).toString('base64');
+  const run = { ...analyzed, interpretation: interpretRun(analyzed.appModel, analyzed.catalog, analyzed.configFindings) };
+  const data = buildHtmlExportData(run, { redact: false, ...EXPORT_STAMP });
+  return Buffer.from(gzipSync(strToU8(JSON.stringify(encodeCollections(data))), { mtime: 0 })).toString('base64');
 }
 
 /**

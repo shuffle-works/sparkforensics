@@ -7,12 +7,13 @@ import { cn } from '@/lib/utils';
 import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import type { AnyEvidencePanel } from '@/view/evidence-panel';
-import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
+import { useStore, useWidgetDensity } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
-import { findingAt, savingsOf } from '@/view/interpretation';
+import { findingById, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useEvidenceOpen, useRouteLanding } from '@/view/InlineEvidence';
 import { StepCode, useStepCodesShown } from '@/view/StepCode';
@@ -214,7 +215,7 @@ export function NextStepItem({
 function CostLane({ interpretation, onRoute }: { interpretation: InterpretationState; onRoute: (target: TriageTarget) => void }) {
   const { openStage } = useStageDetail();
   const rows = interpretation.data.verdict.costSteps
-    .map((entry) => ({ entry, finding: findingAt(interpretation, entry.leadIndex) }))
+    .map((entry) => ({ entry, finding: findingById(interpretation, entry.leadId) }))
     .filter((row): row is { entry: InterpretedCostStep; finding: Finding } => row.finding != null);
   if (rows.length === 0) return null;
   return (
@@ -222,7 +223,7 @@ function CostLane({ interpretation, onRoute }: { interpretation: InterpretationS
       <p className="trace-eyebrow">By core time</p>
       <ol aria-label="Findings by core time" className="mt-1.5 space-y-1.5">
         {rows.map(({ entry, finding }) => (
-          <li key={finding.id ?? entry.leadIndex} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.8125rem]">
+          <li key={finding.id ?? entry.leadId} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.8125rem]">
             <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
             <button
               type="button"
@@ -325,7 +326,7 @@ function NewcomerPrimer() {
 export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, evidencePanel, renderEvidence, evidenceOwners }: RunVerdictProps) {
   const { title, summary, failed, clean, failureReason, copyText, idleLine } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
-    .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
+    .map((step) => ({ step, finding: findingById(interpretation, step.leadId) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
   const evidenceFor = (index: number, lead: Finding): StepEvidence | null => {

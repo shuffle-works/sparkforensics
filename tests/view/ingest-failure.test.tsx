@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
-import { store, emptyAppModel } from '@/store/store';
+import { store } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import type { RunSource } from '@/store/useIngest';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
@@ -43,7 +43,7 @@ beforeEach(() => {
   analysis.failWith = null;
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   store.getState().resetModel();
-  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel(), compareSeed: null });
+  store.setState({ sessionCache: new Map(), activeFileId: null, compareSeed: null });
 });
 
 afterEach(() => vi.restoreAllMocks());
