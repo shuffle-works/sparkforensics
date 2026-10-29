@@ -1,6 +1,6 @@
-import { RowStatusCluster } from '@/view/RowStatusCluster';
-import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
+import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
 import { StagePillGroup } from '@/view/StagePill';
+import { PlanRowStatus } from './PlanRowStatus';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { nestedLoopJoinModel, type NestedLoopJoinRow } from './NestedLoopJoin.rows';
 
@@ -14,13 +14,5 @@ function Row({ row: { finding, stageIds, headline, detail } }: FindingRowProps<N
   );
 }
 
-// `sqlPlan` is a widget-wide evidence constant (this detector always reads the resolved SQL plan),
-// so it sits on the header once, not per row.
-const Status: NonNullable<FindingWidgetView<NestedLoopJoinRow>['Status']> = ({ rows: [{ finding }], density }) => (
-  density === 'advanced' ? (
-    <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} evidenceKey="sqlPlan" />
-  ) : null
-);
-
 /** A BroadcastNestedLoopJoin or CartesianProduct whose output rows are far above both inputs. */
-export const NestedLoopJoin = defineFindingWidget(nestedLoopJoinModel, { Row, Status });
+export const NestedLoopJoin = defineFindingWidget(nestedLoopJoinModel, { Row, Status: PlanRowStatus });

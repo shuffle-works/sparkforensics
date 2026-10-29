@@ -1,6 +1,6 @@
-import { RowStatusCluster } from '@/view/RowStatusCluster';
-import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
+import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
 import { StagePillGroup } from '@/view/StagePill';
+import { PlanRowStatus } from './PlanRowStatus';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { overBroadcastModel, type OverBroadcastRow } from './OverBroadcast.rows';
 
@@ -13,11 +13,5 @@ function Row({ row: { finding, headline } }: FindingRowProps<OverBroadcastRow>) 
   );
 }
 
-const Status: NonNullable<FindingWidgetView<OverBroadcastRow>['Status']> = ({ rows: [{ finding }], density }) => (
-  density === 'advanced' ? (
-    <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} evidenceKey="sqlPlan" />
-  ) : null
-);
-
 /** A broadcast join whose build side turned out larger than the threshold assumed, risking an out-of-memory executor. */
-export const OverBroadcast = defineFindingWidget(overBroadcastModel, { Row, Status });
+export const OverBroadcast = defineFindingWidget(overBroadcastModel, { Row, Status: PlanRowStatus });
