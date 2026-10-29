@@ -1,9 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from '../index.js';
 import { zipSync, strToU8, unzipSync } from '../../core/src/vendor/fflate.js';
+import { corpusLog } from '../../core/test/corpus-log.js';
 
 const FIXTURE_DIR = fileURLToPath(new URL('../../../dev/log-corpus/logs', import.meta.url));
 
@@ -25,7 +26,7 @@ function listen(opts) {
 
 // dev/log-corpus is a git submodule (public corpus repo), checked out in CI; this
 // suite skips locally until `git submodule update --init dev/log-corpus`.
-describe.skipIf(!existsSync(FIXTURE_DIR))('SHS proxy against a static corpus fixture (no Docker, no live Spark)', () => {
+describe.skipIf(!corpusLog('.'))('SHS proxy against a static corpus fixture (no Docker, no live Spark)', () => {
   it('streams a real event log through /shs-proxy as a valid ZIP', async () => {
     const ndjson = firstBaselineFixture();
     const fetchImpl = async () => new Response(zipSync({ eventlog: strToU8(ndjson) }), { status: 200 });

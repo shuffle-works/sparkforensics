@@ -39,6 +39,7 @@ function renderWithNavigation(ui: React.ReactNode) {
           return () => {};
         }}
         registerFindingAnchor={() => () => {}}
+        findingKey={() => ''}
         reportWidgetOpen={reportWidgetOpen}
         clearRouteFocus={() => {}}
         focusedCardKey={null}

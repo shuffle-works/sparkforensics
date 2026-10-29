@@ -48,6 +48,7 @@ function TestNavigationProvider({
     <TriageNavigationProvider
       registerWidget={registerWidget}
       registerFindingAnchor={vi.fn(() => vi.fn())}
+      findingKey={() => ''}
       reportWidgetOpen={reportWidgetOpen}
       clearRouteFocus={vi.fn()}
       focusedCardKey={focusedCardKey}

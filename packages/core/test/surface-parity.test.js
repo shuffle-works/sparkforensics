@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { collectRun } from '../src/cli/collect-run.js';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { deriveEvidenceAvailability } from '../src/evidence-availability.js';
@@ -11,10 +10,11 @@ import { interpretRun } from '../src/run-interpretation.js';
 import { resolveOrCreateRun, diagnoseRun } from '../src/mcp-tools.js';
 import { buildComparison } from '../src/run-comparison.js';
 import { computeRunMetrics } from '../src/run-metrics.js';
+import { corpusLog } from './corpus-log.js';
 
 // Public corpus logs (dev/log-corpus submodule); the suite skips without it.
-const EXTERNAL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
-const LOGS = existsSync(EXTERNAL_DIR)
+const EXTERNAL_DIR = corpusLog('external');
+const LOGS = EXTERNAL_DIR
   ? readdirSync(EXTERNAL_DIR).filter((f) => f.endsWith('.ndjson')).sort() : [];
 
 // The fields this change adds or redefines, per finding, as each surface reads them.
@@ -88,18 +88,17 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
 });
 
 // Public corpus logs (git submodule, checked out in CI; skipped locally until initialized).
-const CORPUS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
 const METRIC_LOGS = [
   'external-app-20161115172038-0000.ndjson',
   'external-application_1516285256255_0012.ndjson',
   'external-application_1553914137147_0018.ndjson',
-].map((name) => join(CORPUS, name));
+].map((name) => corpusLog(`external/${name}`));
 
 // The CLI's metrics block, the evidence report (CLI md/json and MCP tools) and the run comparison
 // (dashboard comparison view, CLI --baseline, MCP compare_runs) must agree on every figure they
 // share. The comparison of a run with itself exposes its totals as baseline values.
 describe.each(METRIC_LOGS)('surface parity: %s', (path) => {
-  it.skipIf(!existsSync(path))('reads one figure per name across metrics, report and comparison', async () => {
+  it.skipIf(!path)('reads one figure per name across metrics, report and comparison', async () => {
     const { appModel } = await collectRun(path);
     const catalog = analyze(
       appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,

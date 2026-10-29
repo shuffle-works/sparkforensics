@@ -1,5 +1,5 @@
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
-import type { FindingType, ImpactBand, RawWasteFigure } from './types.ts';
+import type { Finding, FindingType, ImpactBand, RawWasteFigure } from './types.ts';
 import type { ExchangeWidth } from './finding-types.ts';
 
 const TARGET_PARTITION_BYTES = 128 * 1024 * 1024;
@@ -243,6 +243,15 @@ export function recommendPartitions(stage: {shuffleReadBytes?: number; taskCount
   const current = stage.taskCount ?? 0;
   if (recommended <= current * MEANINGFUL_RATIO) return null;
   return { recommended, current };
+}
+
+/** The count to try for the stage of a shuffle or spill finding, only when `spark.sql.shuffle.partitions`
+ * is what sized the stage. A shuffle finding says so with `partitions: 'raise'`; a spill finding whose input
+ * exchange is the job's own `repartition(n)` says the opposite. */
+export function partitionHint(finding: Finding, stage: {shuffleReadBytes?: number; taskCount?: number}): {recommended: number; current: number} | null {
+  if (finding.type === 'shuffle' && finding.partitions !== 'raise') return null;
+  if (finding.type === 'spill' && finding.exchanges?.[0]?.origin === 'REPARTITION_BY_NUM') return null;
+  return recommendPartitions(stage);
 }
 
 export function buildHistogram(values: number[], bins: number): {labels: number[]; data: number[]} {

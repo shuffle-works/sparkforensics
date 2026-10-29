@@ -1,18 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { collectRun, emptyAppModel } from '../src/cli/collect-run.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { extractWriteTargets } from '../src/write-targets.ts';
+import { corpusLog } from './corpus-log.js';
 
 // Output rows and bytes of a write, on public corpus logs. dev/log-corpus is a git submodule: the
 // corpus cases skip without it.
-const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs');
-const corpusLog = (name) => join(CORPUS_DIR, `${name}.ndjson`);
 
 async function reportOf(name) {
-  const { appModel } = await collectRun(corpusLog(name));
+  const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
   return buildEvidenceReport(appModel, { markdown: false }).json;
 }
 
@@ -20,7 +16,7 @@ const figures = (w) => ({ command: w.command, rows: w.outputRows, source: w.outp
 const noFigureCheck = (json) => json.notRunChecks.find((c) => c.type === 'writeOutputRows');
 
 describe('write output figures on public corpus logs', () => {
-  it.skipIf(!existsSync(corpusLog('spark-3.5-delta-baseline')))('sums the stages of the root execution for a Delta DataFrame write', async () => {
+  it.skipIf(!corpusLog('spark-3.5-delta-baseline.ndjson'))('sums the stages of the root execution for a Delta DataFrame write', async () => {
     const json = await reportOf('spark-3.5-delta-baseline');
     expect(json.writeTargets.writes.map(figures)).toEqual([
       { command: 'SaveIntoDataSourceCommand', rows: 5_000_000, source: 'stageSum', hasBytes: true },
@@ -29,7 +25,7 @@ describe('write output figures on public corpus logs', () => {
     expect(noFigureCheck(json)).toBeUndefined();
   });
 
-  it.skipIf(!existsSync(corpusLog('spark-3.5-parquet-baseline')))('keeps the node metric for a Parquet write', async () => {
+  it.skipIf(!corpusLog('spark-3.5-parquet-baseline.ndjson'))('keeps the node metric for a Parquet write', async () => {
     const json = await reportOf('spark-3.5-parquet-baseline');
     expect(json.writeTargets.writes.map(figures)).toEqual([
       { command: 'InsertIntoHadoopFsRelationCommand', rows: 5_000_000, source: 'nodeMetric', hasBytes: true },
@@ -37,7 +33,7 @@ describe('write output figures on public corpus logs', () => {
     expect(noFigureCheck(json)).toBeUndefined();
   });
 
-  it.skipIf(!existsSync(corpusLog('spark-3.5-iceberg-baseline')))('gives an Iceberg replace and its overwrite the same figure', async () => {
+  it.skipIf(!corpusLog('spark-3.5-iceberg-baseline.ndjson'))('gives an Iceberg replace and its overwrite the same figure', async () => {
     const json = await reportOf('spark-3.5-iceberg-baseline');
     expect(json.writeTargets.writes.map(figures)).toEqual([
       { command: 'AtomicReplaceTableAsSelect', rows: 5_000_000, source: 'stageSum', hasBytes: true },
@@ -46,7 +42,7 @@ describe('write output figures on public corpus logs', () => {
     expect(noFigureCheck(json)).toBeUndefined();
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reads a MERGE from its command node, not a stage sum', async () => {
+  it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('reads a MERGE from its command node, not a stage sum', async () => {
     const [save, merge] = (await reportOf('delta-merge-sql')).writeTargets.writes;
     expect(save).toMatchObject({ command: 'SaveIntoDataSourceCommand', outputRows: 1_000_000, outputRowsSource: 'stageSum' });
     expect(merge).toMatchObject({ command: 'MergeIntoCommand', outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_600 });

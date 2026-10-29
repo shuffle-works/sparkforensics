@@ -7,7 +7,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { StageHeader } from '@/view/StageHeader';
 import { useInlineEvidence, useStatedAbove } from '@/view/InlineEvidenceContext';
-import { formatBytes, recommendPartitions, IMPACT_BAND_ORDER, numericValue, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, partitionHint as hintFor, IMPACT_BAND_ORDER, numericValue, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
@@ -35,7 +35,7 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
   const stated = useStatedAbove(entry.shuffle);
   const stage = appModel.stages.get(entry.stageId);
   const writeBytes = stage?.shuffleWriteBytes ?? 0;
-  const partitionHint = stage ? recommendPartitions(stage) : null;
+  const partitionHint = stage ? hintFor(entry.shuffle, stage) : null;
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(entry.stageId, appModel);
 
   return (

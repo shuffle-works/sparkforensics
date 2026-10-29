@@ -6,16 +6,16 @@
 import path from 'node:path';
 
 /** The core modules the export entry may reach: presentation helpers, the payload contract and
- * decoder, the plan views, the Findings board rollup it recomputes under a filter, and the
- * Scaling Simulator's viewer-driven what-if. Any other packages/core module fails the build, so a
+ * decoder, finding identity keys, the plan views, the Findings board rollup it recomputes under a
+ * filter, and the Scaling Simulator's viewer-driven what-if. Any other packages/core module fails the build, so a
  * new analysis import forces a decision: move its result into interpretRun, or add it here as
  * something that only responds to what the viewer does. */
 export const ALLOWED_EXPORT_CORE_MODULES = [
   ...[
     'core-count', 'docs-config', 'docs-site-config', 'evidence-availability', 'export-data',
-    'finding-action-label', 'finding-filter-predicate', 'finding-generic-recommendation', 'finding-names',
-    'finding-presentation', 'finding-tag-help', 'findings-of-type', 'format-utils', 'intervals', 'plan-dot',
-    'plan-duration-attribution', 'plan-graph-model', 'plan-node-detail', 'plan-summary', 'plan-tree-walk',
+    'finding-action-label', 'finding-filter-predicate', 'finding-generic-recommendation', 'finding-identity',
+    'finding-names', 'finding-presentation', 'finding-tag-help', 'findings-of-type', 'format-utils',
+    'intervals', 'plan-dot', 'plan-duration-attribution', 'plan-graph-model', 'plan-node-detail', 'plan-summary', 'plan-tree-walk',
     'recommendation-rollup', 'run-payload', 'scaling-sim', 'session-snapshot', 'sql-stages', 'task-failure',
   ].map((name) => `packages/core/src/${name}.ts`),
   'packages/core/src/vendor/fflate.js',

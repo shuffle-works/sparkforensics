@@ -4,6 +4,7 @@ import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { alwaysMountedWidgets, isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry';
 import { findingName } from '@sparkforensics/core/finding-names.ts';
+import { runFindingKeys } from '@/view/finding-anchor';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
@@ -103,7 +104,7 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
         <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
         <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
       </WidgetGrid>
     </div>
   );
@@ -264,7 +265,7 @@ function FilteredBoard({
     {renderTopbar(jumpToFindings)}
     <main className="mx-auto w-full max-w-[80rem] min-w-0 flex-1 space-y-4 px-4 pt-5 pb-12 sm:px-8">
       <SampleRunNotice />
-      {/* Verdict first, from the unfiltered catalog: it answers "how did this
+      {/* Verdict and Scorecard first, from the unfiltered catalog: they answer "how did this
           run go and where do I start", which a board filter must not change. */}
       {interpretation ? <RunVerdict
           interpretation={interpretation}
@@ -275,7 +276,7 @@ function FilteredBoard({
           evidencePanel={verdictPanel}
           renderEvidence={renderVerdictEvidence}
         /> : null}
-      {interpretation ? <Scorecard interpretation={interpretation.data} catalog={filteredCatalog} /> : null}
+      {interpretation ? <Scorecard interpretation={interpretation.data} catalog={catalog} /> : null}
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
           hides the control that explains and clears it. */}
@@ -358,6 +359,7 @@ function DashboardContent() {
   const { resetToDropZone, startLoad, getTaskData, compareWithAnotherRun } = useIngest();
   const appModel = useStore((s) => s.appModel);
   const catalog = useStore((s) => s.catalog);
+  const configFindings = useStore((s) => s.configFindings);
   const activeFileId = useStore((s) => s.activeFileId);
   const exportMode = useStore((s) => s.exportMode);
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
@@ -379,7 +381,7 @@ function DashboardContent() {
   const routeRef = useRef<RouteRequest | null>(null);
   const routeFileRef = useRef<string | null>(null);
   const registrationsRef = useRef(new Map<string, WidgetRegistration[]>());
-  const findingAnchorsRef = useRef(new Map<Finding, HTMLElement>());
+  const findingAnchorsRef = useRef(new Map<string, HTMLElement>());
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Derived, so it is non-null exactly while a route is pending. Widgets read it
@@ -459,11 +461,12 @@ function DashboardContent() {
     };
   }, [resolveRoute, registrationFor]);
 
-  const registerFindingAnchor = useCallback((finding: Finding, element: HTMLElement) => {
-    findingAnchorsRef.current.set(finding, element);
+  const findingKey = useMemo(() => runFindingKeys([...catalog, ...(configFindings ?? [])]), [catalog, configFindings]);
+  const registerFindingAnchor = useCallback((key: string, element: HTMLElement) => {
+    findingAnchorsRef.current.set(key, element);
     return () => {
-      if (findingAnchorsRef.current.get(finding) === element) {
-        findingAnchorsRef.current.delete(finding);
+      if (findingAnchorsRef.current.get(key) === element) {
+        findingAnchorsRef.current.delete(key);
       }
     };
   }, []);
@@ -491,7 +494,7 @@ function DashboardContent() {
     }
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const anchorElement = findingAnchorsRef.current.get(resolved.finding);
+    const anchorElement = findingAnchorsRef.current.get(findingKey(resolved.finding));
     if (anchorElement) {
       // Focus the exact flagged row and flash it so it stays findable.
       anchorElement.scrollIntoView({
@@ -517,7 +520,7 @@ function DashboardContent() {
       setRouteFocusedCardKey(registration.focusKey);
     }
     clearRoute(route.token);
-  }, [clearRoute, resolveRoute, registrationFor]);
+  }, [clearRoute, resolveRoute, registrationFor, findingKey]);
 
   const clearRouteFocus = useCallback((focusKey: string) => {
     setRouteFocusedCardKey((current) => (current === focusKey ? null : current));
@@ -544,7 +547,6 @@ function DashboardContent() {
   // Config-scope findings are computed once at ingest time (useIngest.ts's
   // runDone/pickRecent/drillIntoRun, alongside `catalog`) and read from the
   // store here; Dashboard never calls the analyzer directly.
-  const configFindings = useStore((s) => s.configFindings);
   // Filter options are derived from the values actually present in the full
   // catalog∪config; passed to the provider (seeds/validates the URL selection)
   // and to the bar.
@@ -595,6 +597,7 @@ function DashboardContent() {
         <TriageNavigationProvider
           registerWidget={registerWidget}
           registerFindingAnchor={registerFindingAnchor}
+          findingKey={findingKey}
           reportWidgetOpen={reportWidgetOpen}
           clearRouteFocus={clearRouteFocus}
           focusedCardKey={routeFocusedCardKey}

@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   buildStackExcerpt, describeTaskFailure, extractTaskFailureDetail, formatTaskFailureHeadline,
   redactTaskFailureGroup, taskFailureKey, REDACTED_TEXT,
 } from '../src/task-failure.ts';
 import { collectRun } from '../src/cli/collect-run.js';
+import { corpusLog } from './corpus-log.js';
 
 const frames = (n) => Array.from({ length: n }, (_, i) => `\tat com.example.Step${i}.run(Step${i}.scala:${i + 1})`);
 
@@ -143,7 +143,7 @@ describe('redactTaskFailureGroup', () => {
 
 // dev/log-corpus is a git submodule: CI doesn't fetch submodules, so these skip there.
 // Locally: `git submodule update --init dev/log-corpus`.
-const EXTERNAL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
+const EXTERNAL_DIR = corpusLog('external');
 
 function failedEndReasons(file) {
   return readFileSync(join(EXTERNAL_DIR, file), 'utf8').split('\n')
@@ -153,7 +153,7 @@ function failedEndReasons(file) {
 }
 
 describe('task failure details on public corpus logs', () => {
-  const files = existsSync(EXTERNAL_DIR) ? readdirSync(EXTERNAL_DIR).filter((f) => f.endsWith('.ndjson')) : [];
+  const files = EXTERNAL_DIR ? readdirSync(EXTERNAL_DIR).filter((f) => f.endsWith('.ndjson')) : [];
 
   it.skipIf(files.length === 0)('names the error behind every failed attempt that carries one, with a bounded excerpt', () => {
     const withFailures = files.filter((f) => failedEndReasons(f).length > 0);

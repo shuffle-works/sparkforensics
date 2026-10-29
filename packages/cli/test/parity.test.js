@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -11,6 +11,7 @@ import { analyze } from '@sparkforensics/core/analyzer.ts';
 import { buildComparison } from '@sparkforensics/core/run-comparison.ts';
 import { comparisonOutput } from '@sparkforensics/core/comparison-output.ts';
 import { createMcpServer } from '@sparkforensics/core/mcp-server-factory.ts';
+import { corpusLog } from '../../core/test/corpus-log.js';
 
 // Contract test: the CLI's JSON and the MCP tools must report the same run, comparison and budget
 // results for the same logs, and the dashboard (which diffs two parsed runs with core's
@@ -19,7 +20,7 @@ import { createMcpServer } from '@sparkforensics/core/mcp-server-factory.ts';
 // side alone fails here. A difference that is meant to stay goes in an allowlist below with its
 // reason. Public corpus logs only.
 const CORPUS = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
-const BASELINE = join(CORPUS, 'external-app-20161115172038-0000.ndjson');
+const BASELINE = corpusLog('external/external-app-20161115172038-0000.ndjson');
 // Two runs of one generated workload, with and without a cached table: 5 stages against 4.
 const GENERATED = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs');
 const REPLAN_BASELINE = join(GENERATED, 'pairwise-01.ndjson');
@@ -176,7 +177,7 @@ const COMPARISON_BLOCK_FIELDS = [
 // compare_runs leaves stagePairs out unless asked (see COMPARISON_ALLOWED).
 const MCP_DEFAULT_FIELDS = COMPARISON_BLOCK_FIELDS.filter((f) => f !== 'stagePairs');
 
-describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public corpus logs', () => {
+describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs', () => {
   describe.each(CANDIDATES)('%s', (candidate) => {
     it.each([[false], [true]])('reports the same run (redact: %s) through the CLI and diagnose_run', async (redact) => {
       const cli = await cliJson([candidate, '--format', 'json', ...(redact ? ['--redact'] : [])]);

@@ -1,24 +1,24 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { collectRun } from '../src/cli/collect-run.js';
 import { captureSnapshot } from '../src/session-snapshot.js';
 import { alignStages, comparisonDetailNormalizer, comparisonIdentity, isDeltaBookkeepingStage } from '../src/stage-alignment.js';
 import { compareRuns, stageIdentity } from '../src/run-comparison.js';
+import { corpusLog } from './corpus-log.js';
 
 // The matcher on the public corpus (dev/log-corpus submodule; the suite skips without it): a run
 // paired with itself, swapping the roles, repeating the call, the over-merge check, and a
 // committed expected-coverage snapshot for the pairwise-* logs. The snapshot changes only on
 // purpose: rerun with UPDATE_ALIGNMENT_SNAPSHOT=1 and commit the diff.
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CORPUS = join(HERE, '..', '..', '..', 'dev', 'log-corpus', 'logs');
 const SNAPSHOT = join(HERE, 'fixtures', 'stage-alignment-coverage.json');
 
-const listed = (dir, prefix = '') => (existsSync(dir)
+const listed = (dir, prefix = '') => (dir
   ? readdirSync(dir).filter((f) => f.endsWith('.ndjson')).sort().map((f) => ({ name: `${prefix}${f}`, path: join(dir, f) }))
   : []);
-const LOGS = [...listed(CORPUS), ...listed(join(CORPUS, 'external'), 'external/')];
+const LOGS = [...listed(corpusLog('.')), ...listed(corpusLog('external'), 'external/')];
 
 const snapshots = new Map();
 beforeAll(async () => {

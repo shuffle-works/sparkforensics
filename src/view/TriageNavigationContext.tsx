@@ -20,7 +20,10 @@ export interface WidgetRegistration {
 
 export interface TriageNavigation {
   registerWidget: (widgetId: string, registration: WidgetRegistration) => () => void;
-  registerFindingAnchor: (finding: Finding, element: HTMLElement) => () => void;
+  /** Registers a row under a `findingKey`. */
+  registerFindingAnchor: (key: string, element: HTMLElement) => () => void;
+  /** The core `findingKey` of a finding in the active run. */
+  findingKey: (finding: Finding) => string;
   reportWidgetOpen: (widgetId: string, open: boolean) => void;
   clearRouteFocus: (focusKey: string) => void;
 }
@@ -42,6 +45,7 @@ export function TriageNavigationProvider({
   children,
   registerWidget,
   registerFindingAnchor,
+  findingKey,
   reportWidgetOpen,
   clearRouteFocus,
   focusedCardKey,
@@ -54,8 +58,8 @@ export function TriageNavigationProvider({
   flashedFinding: Finding | null;
 }) {
   const value = useMemo(
-    () => ({ registerWidget, registerFindingAnchor, reportWidgetOpen, clearRouteFocus }),
-    [registerWidget, registerFindingAnchor, reportWidgetOpen, clearRouteFocus],
+    () => ({ registerWidget, registerFindingAnchor, findingKey, reportWidgetOpen, clearRouteFocus }),
+    [registerWidget, registerFindingAnchor, findingKey, reportWidgetOpen, clearRouteFocus],
   );
 
   return (

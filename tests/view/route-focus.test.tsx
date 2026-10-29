@@ -6,6 +6,7 @@ import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ExportApp } from '@/export/ExportApp';
 import { store } from '@/store/store';
+import { runFindingKeys } from '@/view/finding-anchor';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 import type { WidgetRegistration } from '@/view/TriageNavigationContext';
 import { examples, exampleRuns, loadExampleRun } from './_shared/detector-examples';
@@ -22,7 +23,7 @@ vi.mock('@/view/core-usage-histogram-data', () => import('@/export/live-only-stu
 const tap = vi.hoisted(() => ({
   route: null as ((target: TriageTarget) => void) | null,
   widgets: [] as { widgetId: string; registration: WidgetRegistration }[],
-  anchors: new Map<Finding, HTMLElement>(),
+  anchors: new Map<string, HTMLElement>(),
 }));
 
 vi.mock('@/view/widgets/RunVerdict', async (importOriginal) => {
@@ -53,11 +54,11 @@ vi.mock('@/view/TriageNavigationContext', async (importOriginal) => {
           unregister();
         };
       }, []);
-      const registerFindingAnchor = useCallback<typeof props.registerFindingAnchor>((finding, element) => {
-        tap.anchors.set(finding, element);
-        const unregister = latest.current.registerFindingAnchor(finding, element);
+      const registerFindingAnchor = useCallback<typeof props.registerFindingAnchor>((key, element) => {
+        tap.anchors.set(key, element);
+        const unregister = latest.current.registerFindingAnchor(key, element);
         return () => {
-          if (tap.anchors.get(finding) === element) tap.anchors.delete(finding);
+          if (tap.anchors.get(key) === element) tap.anchors.delete(key);
           unregister();
         };
       }, []);
@@ -89,7 +90,8 @@ afterEach(() => {
 /** Where a route to `finding` lands: its row, else the card or panel registered for it (the panel
  * scoped to it before the widget's full card), as the dashboard resolves it. */
 function landingOf(finding: Finding, widgetId: string): HTMLElement | undefined {
-  const anchor = tap.anchors.get(finding);
+  const { catalog, configFindings } = store.getState();
+  const anchor = tap.anchors.get(runFindingKeys([...catalog, ...(configFindings ?? [])])(finding));
   if (anchor) return anchor;
   const registrations = tap.widgets.filter((entry) => entry.widgetId === widgetId).map((entry) => entry.registration);
   return (registrations.find((candidate) => candidate.holds?.(finding)) ?? registrations.find((candidate) => !candidate.holds))?.wrapperElement;

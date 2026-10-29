@@ -33,3 +33,21 @@ test('renders nothing actionable when a run has no stages', () => {
   render(<PinnedStageDeltas baseStages={[]} candStages={[]} />);
   expect(screen.queryByRole('button', { name: /pin pair/i })).not.toBeInTheDocument();
 });
+
+test('colors cost metrics by direction and leaves volume and count metrics neutral', async () => {
+  const user = userEvent.setup();
+  const baseStages = [{ id: 1, name: 'Exchange 1', metrics: M({}) }];
+  const candStages = [{ id: 9, name: 'Exchange 2', metrics: M({ inputBytes: 2_000_000, outputBytes: 2_000_000, taskCount: 20, executorRunTime: 6000, jvmGCTime: 50 }) }];
+  render(<PinnedStageDeltas baseStages={baseStages} candStages={candStages} />);
+
+  await user.selectOptions(screen.getByLabelText(/baseline stage/i), '1');
+  await user.selectOptions(screen.getByLabelText(/candidate stage/i), '9');
+  await user.click(screen.getByRole('button', { name: /pin pair/i }));
+
+  const deltaCell = (metric: string) => screen.getByRole('row', { name: metric }).lastElementChild as HTMLElement;
+  for (const neutral of ['Input read', 'Output written', 'Task count']) {
+    expect(deltaCell(neutral)).toHaveClass('text-muted-foreground');
+  }
+  expect(deltaCell('Executor run-time')).toHaveClass('text-critical');
+  expect(deltaCell('GC time')).toHaveClass('text-clean');
+});

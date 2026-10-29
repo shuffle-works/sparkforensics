@@ -12,6 +12,7 @@ vi.mock('@/view/TriageNavigationContext', () => ({
   useTriageNavigation: () => ({
     registerWidget: vi.fn(),
     registerFindingAnchor: vi.fn(() => vi.fn()),
+    findingKey: () => '',
     reportWidgetOpen: vi.fn(),
     clearRouteFocus: vi.fn(),
   }),

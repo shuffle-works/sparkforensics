@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readdirSync, statSync } from 'node:fs';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { collectRun } from '../src/cli/collect-run.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { corpusLog } from './corpus-log.js';
 
 // Every detector recommendation reads "<measurement>: <fix>". recommendationParts splits it at
 // the last ": " and the UI shows the two halves in different places, so a recommendation that
@@ -64,8 +64,8 @@ function syntheticFindings() {
 }
 
 // The local log corpus is gitignored: the suite skips it on a checkout without logs.
-const CORPUS_DIR = fileURLToPath(new URL('../../../dev/log-corpus/logs', import.meta.url));
-const corpusFiles = existsSync(CORPUS_DIR)
+const CORPUS_DIR = corpusLog('.');
+const corpusFiles = CORPUS_DIR
   ? readdirSync(CORPUS_DIR).filter((n) => n.endsWith('.ndjson')).map((n) => `${CORPUS_DIR}/${n}`).filter((p) => statSync(p).isFile())
   : [];
 

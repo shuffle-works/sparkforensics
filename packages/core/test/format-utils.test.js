@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import {
   formatBytes, formatDuration, typeTag, buildHistogram, VISIBLE_LIMIT, worstImpactBand,
   formatFindingMagnitude, formatFindingChipDetail, stageWidgetFrequency, formatStageIdsLabel,
-  escHtml, trimCallsite, runLabel, recommendPartitions,
+  escHtml, trimCallsite, runLabel, recommendPartitions, partitionHint,
 } from '../src/format-utils.js';
 
 test('formatBytes scales units', () => {
@@ -156,6 +156,22 @@ test('recommendPartitions returns null when the recommendation is not a meaningf
 test('recommendPartitions recommends more partitions when current parallelism is too low', () => {
   const result = recommendPartitions({ shuffleReadBytes: 10 * 1024 * 1024 * 1024, taskCount: 4 });
   expect(result).toEqual({ recommended: 80, current: 4 });
+});
+
+test('partitionHint advises a count only when the finding says spark.sql.shuffle.partitions sized the stage', () => {
+  const stage = { shuffleReadBytes: 10 * 1024 * 1024 * 1024, taskCount: 4 };
+  const shuffle = (partitions) => ({ type: 'shuffle', stageId: 1, impactBand: 'warning', value: stage.shuffleReadBytes, partitions });
+  expect(partitionHint(shuffle('raise'), stage)).toEqual({ recommended: 80, current: 4 });
+  for (const partitions of ['ownPartitioning', 'aqeCoalesced', 'sufficient', undefined]) {
+    expect(partitionHint(shuffle(partitions), stage)).toBeNull();
+  }
+});
+
+test('partitionHint gives no count for a spill finding whose input is the job\'s own repartition(n)', () => {
+  const stage = { shuffleReadBytes: 10 * 1024 * 1024 * 1024, taskCount: 4 };
+  const spill = (origin) => ({ type: 'spill', stageId: 1, impactBand: 'warning', value: 1, exchanges: [{ nodeId: 'e1', origin }] });
+  expect(partitionHint(spill('REPARTITION_BY_NUM'), stage)).toBeNull();
+  expect(partitionHint(spill('ENSURE_REQUIREMENTS'), stage)).toEqual({ recommended: 80, current: 4 });
 });
 
 test('buildHistogram returns empty labels/data for an empty input', () => {

@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
+import { runFindingKeys, useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
 import { TriageNavigationProvider, type TriageNavigation } from '@/view/TriageNavigationContext';
 import { testFinding } from './_shared/finding';
 
@@ -24,6 +24,9 @@ function stageShapeFinding(stageId = 1): Finding {
   return testFinding({ type: 'stageShape', stageId, impactBand: 'info', recommendation: 'Check partition count.', rule: 'lowParallelism' });
 }
 
+// Module-level so the navigation bundle keeps its identity across re-renders.
+const typeAndStageKey: TriageNavigation['findingKey'] = (finding) => `${finding.type}:${finding.stageId}`;
+
 function AnchorProbe({ findings }: { findings: Finding[] }) {
   const ref = useFindingAnchor(findings);
   const flashed = useIsRouteFlash(findings);
@@ -38,16 +41,19 @@ function AnchorProbe({ findings }: { findings: Finding[] }) {
 function Harness({
   findings,
   registerFindingAnchor = noop,
+  findingKey = typeAndStageKey,
   flashedFinding = null,
 }: {
   findings: Finding[];
   registerFindingAnchor?: TriageNavigation['registerFindingAnchor'];
+  findingKey?: TriageNavigation['findingKey'];
   flashedFinding?: Finding | null;
 }) {
   return (
     <TriageNavigationProvider
       registerWidget={noop}
       registerFindingAnchor={registerFindingAnchor}
+      findingKey={findingKey}
       reportWidgetOpen={reportWidgetOpen}
       clearRouteFocus={clearRouteFocus}
       focusedCardKey={null}
@@ -59,7 +65,7 @@ function Harness({
   );
 }
 
-test('registers the mounted element under every finding in the group', () => {
+test('registers the mounted element under the key of every finding in the group', () => {
   const registerFindingAnchor = vi.fn(() => vi.fn());
   const f1 = skewFinding(1);
   const f2 = stageShapeFinding(1);
@@ -68,8 +74,8 @@ test('registers the mounted element under every finding in the group', () => {
 
   const element = screen.getByTestId('anchor');
   expect(registerFindingAnchor).toHaveBeenCalledTimes(2);
-  expect(registerFindingAnchor).toHaveBeenNthCalledWith(1, f1, element);
-  expect(registerFindingAnchor).toHaveBeenNthCalledWith(2, f2, element);
+  expect(registerFindingAnchor).toHaveBeenNthCalledWith(1, 'skew:1', element);
+  expect(registerFindingAnchor).toHaveBeenNthCalledWith(2, 'stageShape:1', element);
 });
 
 test('unregisters every finding on unmount', () => {
@@ -103,6 +109,22 @@ test('a same-contents different-reference findings array does not cause a spurio
   // Brand-new array AND brand-new finding objects, but same type:stageId signature.
   rerender(<Harness findings={[skewFinding(1), stageShapeFinding(1)]} registerFindingAnchor={registerFindingAnchor} />);
   expect(registerFindingAnchor).toHaveBeenCalledTimes(2); // still unchanged
+});
+
+test('re-registers under the new keys when another run gives the same findings different keys', () => {
+  const cleanup = vi.fn();
+  const registerFindingAnchor = vi.fn(() => cleanup);
+  const finding = skewFinding(1);
+  const runKey = (run: string): TriageNavigation['findingKey'] => (f) => `${run}|${f.type}:${f.stageId}`;
+
+  const { rerender } = render(<Harness findings={[finding]} findingKey={runKey('a')} registerFindingAnchor={registerFindingAnchor} />);
+  const element = screen.getByTestId('anchor');
+  expect(registerFindingAnchor).toHaveBeenLastCalledWith('a|skew:1', element);
+
+  // Same type and stage id, new run: the row registers under the new run's key.
+  rerender(<Harness findings={[skewFinding(1)]} findingKey={runKey('b')} registerFindingAnchor={registerFindingAnchor} />);
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(registerFindingAnchor).toHaveBeenLastCalledWith('b|skew:1', element);
 });
 
 test('re-registers when the set of findings actually changes', () => {
@@ -151,4 +173,15 @@ test('useIsRouteFlash is false for a different finding object even with the same
   const lookalike = skewFinding(1); // same shape, different identity, not in the group
   render(<Harness findings={[f1]} flashedFinding={lookalike} />);
   expect(screen.getByTestId('flashed')).toHaveTextContent('false');
+});
+
+test('runFindingKeys gives findings that share a core key one key each, and leaves a lone finding its core key', () => {
+  const [a, b, lone] = [skewFinding(1), skewFinding(2), stageShapeFinding(3)];
+  const keys = runFindingKeys([a, b, lone]);
+  expect([keys(a), keys(b), keys(lone)]).toEqual(['skew|skew|stage:#1', 'skew|skew|stage:#2', 'stageShape|lowParallelism|stage:#3']);
+  const twin = skewFinding(1);
+  const twins = runFindingKeys([a, twin]);
+  expect([twins(a), twins(twin)]).toEqual(['skew|skew|stage:#1', 'skew|skew|stage:#1#1']);
+  // A finding outside the run's list falls back to the core key.
+  expect(twins(skewFinding(9))).toBe('skew|skew|stage:#9');
 });

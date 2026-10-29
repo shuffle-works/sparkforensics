@@ -218,7 +218,8 @@ export const COMPARISON_METRIC_KEYS: readonly string[] = [
 // checkRegression, so a `--regression-metric inputBytes` budget cannot read more data as a regression.
 export const NEUTRAL_METRIC_KEYS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes', 'taskCount', 'executorsAdded']);
 
-function direction(key: string, baseline: number | null, candidate: number | null): MetricDeltaRow['direction'] {
+/** Which way a change in the metric reads: neutral for volume and count metrics, else less is better. */
+export function direction(key: string, baseline: number | null, candidate: number | null): MetricDeltaRow['direction'] {
   if (baseline == null || candidate == null) return 'unavailable';
   if (NEUTRAL_METRIC_KEYS.has(key)) return candidate === baseline ? 'unchanged' : 'neutral';
   const d = candidate - baseline;
