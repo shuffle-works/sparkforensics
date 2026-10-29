@@ -10,14 +10,13 @@ import { useRouteFlashedFinding, useTriageNavigation } from './TriageNavigationC
  * onto a single row). Registers the mounted element under every finding in
  * `findings` so a triage badge for any of them routes here.
  *
- * Anchors are keyed by the core `findingKey` (the navigation's `findingKey`), so a
- * finding of another run lands on the row that shows the same finding. Re-registers
- * only when the group's keys (joined, order-sensitive) change, not on every render:
- * widgets frequently rebuild the `findings` array with new-but-equivalent objects.
- * Cleanup runs
- * via the element itself changing/unmounting or the callback identity
- * changing (React calls the previous ref callback with `null` first), so a
- * `useRef`-held list of unregister functions survives across those calls.
+ * Anchors are keyed by the core `findingKey`, so a finding of another run lands on the
+ * row that shows the same finding. Re-registers only when the group's keys (joined,
+ * order-sensitive) change, not on every render: widgets frequently rebuild the
+ * `findings` array with new-but-equivalent objects. Cleanup runs via the element
+ * itself changing/unmounting or the callback identity changing (React calls the
+ * previous ref callback with `null` first), so a `useRef`-held list of unregister
+ * functions survives across those calls.
  */
 export function useFindingAnchor(findings: Finding[]): (element: HTMLElement | null) => void {
   const navigation = useTriageNavigation();
