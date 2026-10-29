@@ -1,11 +1,44 @@
 import { lazy, type ComponentType } from 'react';
 
 import { warmLazy } from '@/lib/warm-lazy';
-import { allRows, evidencePanel, unstatedRows, type AnyEvidencePanel, type ContentCheck, type PanelInput } from '@/view/evidence-panel';
-import { retryWasteContent } from '@/view/widgets/RetryWaste.content';
-import { rightSizingContent } from '@/view/widgets/RightSizing.content';
-import { stageSlownessContent } from '@/view/widgets/StageSlowness.content';
+import { evidencePanel, type AnyEvidencePanel, type PanelInput, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
+import type { FindingWidgetModel } from '@/view/finding-widget';
+import { autoscalingChurnModel } from '@/view/widgets/AutoscalingChurn.rows';
+import { cacheUtilizationModel } from '@/view/widgets/CacheUtilization.rows';
+import { cachingOpportunityModel } from '@/view/widgets/CachingOpportunity.rows';
+import { coldStartModel } from '@/view/widgets/ColdStart.rows';
+import { configAuditModel } from '@/view/widgets/ConfigAudit.rows';
+import { coreUsageModel } from '@/view/widgets/CoreUsageArea.rows';
+import { duplicatePlanSubtreeModel } from '@/view/widgets/DuplicatePlanSubtree.rows';
+import { executorUtilizationModel } from '@/view/widgets/ExecutorUtilization.rows';
+import { gcModel } from '@/view/widgets/GcPressure.rows';
+import { incompleteRunModel } from '@/view/widgets/IncompleteRun.rows';
+import { jobFailuresModel } from '@/view/widgets/JobFailures.rows';
+import { joinKeyCastModel } from '@/view/widgets/JoinKeyCast.rows';
+import { memoryUtilizationModel } from '@/view/widgets/MemoryUtilization.rows';
+import { mergeRewriteModel } from '@/view/widgets/MergeRewrite.rows';
+import { nestedLoopJoinModel } from '@/view/widgets/NestedLoopJoin.rows';
+import { overBroadcastModel } from '@/view/widgets/OverBroadcast.rows';
+import { partitionSizingModel } from '@/view/widgets/PartitionSizing.rows';
+import { pythonUdfModel } from '@/view/widgets/PythonUdf.rows';
+import { retryWasteModel } from '@/view/widgets/RetryWaste.rows';
+import { rightSizingModel } from '@/view/widgets/RightSizing.rows';
+import { shuffleModel } from '@/view/widgets/ShuffleIO.rows';
+import { skewModel } from '@/view/widgets/Skew.rows';
+import { slowHostModel } from '@/view/widgets/SlowHost.rows';
+import { smallFilesModel } from '@/view/widgets/SmallFiles.rows';
+import { speculationWasteModel } from '@/view/widgets/SpeculationWaste.rows';
+import { spillModel } from '@/view/widgets/Spill.rows';
+import { stageFailedModel } from '@/view/widgets/StageFailed.rows';
+import { stageShapeModel } from '@/view/widgets/StageShape.rows';
+import { stageSlownessModel } from '@/view/widgets/StageSlowness.rows';
+import { stragglerModel } from '@/view/widgets/Straggler.rows';
+import { taskFailuresModel } from '@/view/widgets/TaskFailures.rows';
+import { tinyTaskModel } from '@/view/widgets/TinyTask.rows';
+import { underBroadcastModel } from '@/view/widgets/UnderBroadcast.rows';
+import { unprunedScanModel } from '@/view/widgets/UnprunedScan.rows';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
+import { FINDING_PRESENTATION } from '@sparkforensics/core/finding-presentation.ts';
 import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types.ts';
 
 // Each widget module is dynamically imported so Vite/Rollup splits it into
@@ -138,94 +171,93 @@ export interface WidgetProps {
 
 export type WidgetRegion = 'action' | 'reference';
 
-export interface RegistryEntryOf<T extends FindingType> {
-  // Every real REGISTRY widget is code-split via
-  // `React.lazy`, which is a `ComponentType` but not an `FC`: this stays
-  // `ComponentType` (rather than `LazyExoticComponent<FC<WidgetProps>>`) so
-  // `tests/view/triage-navigation.test.tsx`'s plain-function test doubles
-  // (substituted directly into `REGISTRY.spill.component` for deterministic
-  // route/focus assertions) keep typechecking too.
+export type RegistryEntryOf<T extends FindingType> = {
+  // Every real REGISTRY widget is code-split via `React.lazy`, which is a `ComponentType` but not an
+  // `FC`: this stays `ComponentType` so `tests/view/triage-navigation.test.tsx`'s plain-function test
+  // doubles keep typechecking too.
   component: ComponentType<WidgetProps>;
-  region: WidgetRegion;
   widgetId: string;
   routeable: boolean;
-  /** The rows the widget shows in an evidence panel (see `ContentCheck`). Required for every
-   * finding type, so a widget cannot be added without deciding what its panel shows: `allRows` for
-   * a widget whose rows always show something. A check lives next to its widget in
-   * `<Widget>.content.ts`, not in the lazy-loaded widget file. */
-  content: ContentCheck<T>;
-}
+  /** What the widget decides about its type: the rows it shows, which the panel check and the
+   * widget read alike. Lives in `<Widget>.rows.ts`, not in the lazy-loaded widget file. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the row type is the widget's own.
+  model: FindingWidgetModel<T, any>;
+};
 
-/** An entry as `REGISTRY` is read by finding type name, where the type is not known to the compiler:
- * the check takes no input it could type, and `evidencePanelFor` is its one caller. */
-export type RegistryEntry = Omit<RegistryEntryOf<FindingType>, 'content'> & {
-  content: (input: never) => readonly Finding[];
+/** An entry as `REGISTRY` is read by finding type name, where the type is not known to the compiler. */
+export type RegistryEntry = Omit<RegistryEntryOf<FindingType>, 'model'> & {
+  model: FindingWidgetModel<FindingType, WidgetRow>;
+  /** The board region, from the type's `FINDING_PRESENTATION` row. */
+  region: WidgetRegion;
 };
 
 /**
- * `finding.type` -> component + region, one entry per emitted finding type.
- * View-only concerns: a type's name, tag and labels live in core's
+ * `finding.type` -> component and row model, one entry per emitted finding type.
+ * View-only concerns: a type's name, tag, labels and region live in core's
  * `FINDING_PRESENTATION`, and its scope and order in `DETECTORS`. Every type
  * maps to its own component: no two `REGISTRY` entries ever share a
  * `component` value. `satisfies` requires exactly one entry per emitted
  * `FindingType`.
  */
 const ENTRIES = {
-  incompleteRun: { component: IncompleteRun, region: 'action', widgetId: 'incomplete-run', routeable: true, content: unstatedRows },
+  incompleteRun: { component: IncompleteRun, widgetId: 'incomplete-run', routeable: true, model: incompleteRunModel },
 
-  skew: { component: Skew, region: 'action', widgetId: 'skew', routeable: true, content: allRows },
-  stageShape: { component: StageShape, region: 'action', widgetId: 'stage-shape', routeable: true, content: allRows },
-  tinyTask: { component: TinyTask, region: 'action', widgetId: 'tiny-task', routeable: true, content: allRows },
+  skew: { component: Skew, widgetId: 'skew', routeable: true, model: skewModel },
+  stageShape: { component: StageShape, widgetId: 'stage-shape', routeable: true, model: stageShapeModel },
+  tinyTask: { component: TinyTask, widgetId: 'tiny-task', routeable: true, model: tinyTaskModel },
 
-  shuffle: { component: ShuffleIO, region: 'action', widgetId: 'shuffle-io', routeable: true, content: allRows },
-  partitionSizing: { component: PartitionSizing, region: 'action', widgetId: 'partition-sizing', routeable: true, content: allRows },
+  shuffle: { component: ShuffleIO, widgetId: 'shuffle-io', routeable: true, model: shuffleModel },
+  partitionSizing: { component: PartitionSizing, widgetId: 'partition-sizing', routeable: true, model: partitionSizingModel },
 
-  spill: { component: Spill, region: 'action', widgetId: 'spill', routeable: true, content: allRows },
+  spill: { component: Spill, widgetId: 'spill', routeable: true, model: spillModel },
 
-  gc: { component: GcPressure, region: 'action', widgetId: 'gc-pressure', routeable: true, content: allRows },
+  gc: { component: GcPressure, widgetId: 'gc-pressure', routeable: true, model: gcModel },
 
-  stageFailed: { component: StageFailed, region: 'action', widgetId: 'stage-failed', routeable: true, content: allRows },
-  failures: { component: TaskFailures, region: 'action', widgetId: 'task-failures', routeable: true, content: allRows },
+  stageFailed: { component: StageFailed, widgetId: 'stage-failed', routeable: true, model: stageFailedModel },
+  failures: { component: TaskFailures, widgetId: 'task-failures', routeable: true, model: taskFailuresModel },
   retryWaste: {
-    component: RetryWaste, region: 'action', widgetId: 'retry-waste', routeable: true,
-    content: retryWasteContent,
+    component: RetryWaste, widgetId: 'retry-waste', routeable: true,
+    model: retryWasteModel,
   },
 
-  slowHost: { component: SlowHost, region: 'action', widgetId: 'slow-host', routeable: true, content: allRows },
+  slowHost: { component: SlowHost, widgetId: 'slow-host', routeable: true, model: slowHostModel },
   stageSlowness: {
-    component: StageSlowness, region: 'action', widgetId: 'stage-slowness', routeable: true,
-    content: stageSlownessContent,
+    component: StageSlowness, widgetId: 'stage-slowness', routeable: true,
+    model: stageSlownessModel,
   },
-  straggler: { component: Straggler, region: 'action', widgetId: 'straggler', routeable: true, content: allRows },
-  speculationWaste: { component: SpeculationWaste, region: 'action', widgetId: 'speculation-waste', routeable: true, content: allRows },
-  coldStart: { component: ColdStart, region: 'action', widgetId: 'cold-start', routeable: true, content: unstatedRows },
+  straggler: { component: Straggler, widgetId: 'straggler', routeable: true, model: stragglerModel },
+  speculationWaste: { component: SpeculationWaste, widgetId: 'speculation-waste', routeable: true, model: speculationWasteModel },
+  coldStart: { component: ColdStart, widgetId: 'cold-start', routeable: true, model: coldStartModel },
 
-  memoryUtilization: { component: MemoryUtilization, region: 'reference', widgetId: 'memory-utilization', routeable: true, content: allRows },
-  utilization: { component: ExecutorUtilization, region: 'reference', widgetId: 'executor-utilization', routeable: true, content: allRows },
+  memoryUtilization: { component: MemoryUtilization, widgetId: 'memory-utilization', routeable: true, model: memoryUtilizationModel },
+  utilization: { component: ExecutorUtilization, widgetId: 'executor-utilization', routeable: true, model: executorUtilizationModel },
   rightSizing: {
-    component: RightSizing, region: 'action', widgetId: 'right-sizing', routeable: true,
-    content: rightSizingContent,
+    component: RightSizing, widgetId: 'right-sizing', routeable: true,
+    model: rightSizingModel,
   },
-  coreLocality: { component: CoreUsageArea, region: 'reference', widgetId: 'core-usage-area', routeable: true, content: allRows },
-  cachingOpportunity: { component: CachingOpportunity, region: 'action', widgetId: 'caching-opportunity', routeable: true, content: allRows },
-  cacheUtilization: { component: CacheUtilization, region: 'reference', widgetId: 'cache-utilization', routeable: true, content: allRows },
-  jobFailureRate: { component: JobFailures, region: 'action', widgetId: 'job-failures', routeable: true, content: allRows },
-  autoscalingChurn: { component: AutoscalingChurn, region: 'action', widgetId: 'autoscaling-churn', routeable: true, content: allRows },
+  coreLocality: { component: CoreUsageArea, widgetId: 'core-usage-area', routeable: true, model: coreUsageModel },
+  cachingOpportunity: { component: CachingOpportunity, widgetId: 'caching-opportunity', routeable: true, model: cachingOpportunityModel },
+  cacheUtilization: { component: CacheUtilization, widgetId: 'cache-utilization', routeable: true, model: cacheUtilizationModel },
+  jobFailureRate: { component: JobFailures, widgetId: 'job-failures', routeable: true, model: jobFailuresModel },
+  autoscalingChurn: { component: AutoscalingChurn, widgetId: 'autoscaling-churn', routeable: true, model: autoscalingChurnModel },
 
-  configAudit: { component: ConfigAudit, region: 'action', widgetId: 'config-audit', routeable: true, content: allRows },
+  configAudit: { component: ConfigAudit, widgetId: 'config-audit', routeable: true, model: configAuditModel },
 
-  duplicatePlanSubtree: { component: DuplicatePlanSubtree, region: 'action', widgetId: 'duplicate-plan-subtree', routeable: true, content: unstatedRows },
-  smallFiles: { component: SmallFiles, region: 'action', widgetId: 'small-files', routeable: true, content: allRows },
-  pythonUdf: { component: PythonUdf, region: 'action', widgetId: 'python-udf', routeable: true, content: unstatedRows },
-  mergeRewrite: { component: MergeRewrite, region: 'action', widgetId: 'merge-rewrite', routeable: true, content: allRows },
-  unprunedScan: { component: UnprunedScan, region: 'action', widgetId: 'unpruned-scan', routeable: true, content: allRows },
-  nestedLoopJoin: { component: NestedLoopJoin, region: 'action', widgetId: 'nested-loop-join', routeable: true, content: allRows },
-  joinKeyCast: { component: JoinKeyCast, region: 'action', widgetId: 'join-key-cast', routeable: true, content: allRows },
-  underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', routeable: true, content: unstatedRows },
-  overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', routeable: true, content: unstatedRows },
+  duplicatePlanSubtree: { component: DuplicatePlanSubtree, widgetId: 'duplicate-plan-subtree', routeable: true, model: duplicatePlanSubtreeModel },
+  smallFiles: { component: SmallFiles, widgetId: 'small-files', routeable: true, model: smallFilesModel },
+  pythonUdf: { component: PythonUdf, widgetId: 'python-udf', routeable: true, model: pythonUdfModel },
+  mergeRewrite: { component: MergeRewrite, widgetId: 'merge-rewrite', routeable: true, model: mergeRewriteModel },
+  unprunedScan: { component: UnprunedScan, widgetId: 'unpruned-scan', routeable: true, model: unprunedScanModel },
+  nestedLoopJoin: { component: NestedLoopJoin, widgetId: 'nested-loop-join', routeable: true, model: nestedLoopJoinModel },
+  joinKeyCast: { component: JoinKeyCast, widgetId: 'join-key-cast', routeable: true, model: joinKeyCastModel },
+  underBroadcast: { component: UnderBroadcast, widgetId: 'under-broadcast', routeable: true, model: underBroadcastModel },
+  overBroadcast: { component: OverBroadcast, widgetId: 'over-broadcast', routeable: true, model: overBroadcastModel },
 } satisfies { [T in FindingType]: RegistryEntryOf<T> };
 
-export const REGISTRY: Readonly<Record<string, RegistryEntry>> = ENTRIES;
+// Read by a type name the compiler cannot know, each model's rows take the input of its own type.
+export const REGISTRY = Object.fromEntries(
+  Object.entries(ENTRIES).map(([type, entry]) => [type, { ...entry, region: FINDING_PRESENTATION[type as FindingType].region ?? 'action' }]),
+) as unknown as Readonly<Record<string, RegistryEntry>>;
 
 const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
 
@@ -259,7 +291,7 @@ export function orderedWidgets(
 export function evidencePanelFor(type: string, input: PanelInput<FindingType>): AnyEvidencePanel | null {
   const entry = REGISTRY[type];
   if (!entry) return null;
-  return evidencePanel(type as FindingType, entry.content as ContentCheck<FindingType>, input) as AnyEvidencePanel | null;
+  return evidencePanel(type as FindingType, entry.model.rows as RowsOf<FindingType, WidgetRow>, { ...input, inPanel: true }) as AnyEvidencePanel | null;
 }
 
 export function registryTypes(): string[] {

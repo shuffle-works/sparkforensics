@@ -1,0 +1,28 @@
+id: rows-are-pure
+valid:
+  - |
+    import { isStated, type RowsOf } from '@/view/evidence-panel';
+    export const rows: RowsOf<'coldStart', { findings: never[] }> = ({ findings, stated }) => (
+      findings.filter((finding) => !isStated(finding, stated)).map((finding) => ({ findings: [finding] }))
+    );
+  - |
+    import type { Finding } from '@sparkforensics/core/types.ts';
+    export const total = (findings: Finding[]) => findings.length;
+  - "const useless = 1;"
+invalid:
+  - "import { useState } from 'react';"
+  - "import { useStore } from '@/store/store';"
+  - "import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';"
+  - "import { useWidgetDensity } from '@/view/useWidgetDensity';"
+  - "import { stageIdOf } from '@/view/impact-sort';"
+  - "import { ROW_SEPARATOR_CLASS } from '@/view/finding-anchor';"
+  - "export const rows = ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []);"
+  - "export const rows = ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []);"
+  - "export const rows = ({ findings }) => (window.matchMedia('(min-width: 1px)').matches ? findings : []);"
+  - "export const rows = ({ findings }) => (Math.random() > 0.5 ? findings : []);"
+  - "export const rows = ({ findings }) => (Date.now() % 2 ? findings : []);"
+  - "export const rows = ({ findings }) => (new Date().getDay() === 0 ? findings : []);"
+  # A helper the rows function calls.
+  - |
+    const blank = () => document.querySelector('[data-evidence-blank]') !== null;
+    export const rows = ({ findings }) => (blank() ? [] : findings);

@@ -1,16 +1,15 @@
-import { memo, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Rectangle, Tooltip, XAxis, YAxis } from 'recharts';
 import type { BarShapeProps } from 'recharts';
 
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { DocsLink } from '@/view/DocsContext';
+import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
-import { WidgetCard } from '../WidgetCard';
+import { ImpactDot } from '@/view/ImpactBadge';
 import { WidgetLeadSummary } from '../WidgetLeadSummary';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
+import { autoscalingChurnModel, type AutoscalingChurnRow } from './AutoscalingChurn.rows';
 
 const TARGET_BUCKETS = 60;
 const MIN_BUCKET_MS = 60_000; // 1 minute floor
@@ -70,17 +69,6 @@ function skipSubPixelBars(props: BarShapeProps) {
   return Math.abs(props.height) < 1 ? null : <Rectangle {...props} />;
 }
 
-export interface AutoscalingChurnProps {
-  appModel: AppModel;
-  // `applySnapshot` mutates `appModel`'s fields in place on a cached-file switch
-  // rather than replacing the object, so `activeFileId` is a memo key below.
-  activeFileId?: string | null;
-  // REGISTRY always passes a real `catalog`, but direct test/callers that only
-  // want the descriptive chart may omit it (optional, default []).
-  catalog?: Finding[];
-  defaultCollapsed?: boolean;
-}
-
 interface ChurnRow {
   t: string;
   added: number;
@@ -88,44 +76,42 @@ interface ChurnRow {
 }
 
 type ChurnModel =
-  | { hasEvents: false; added: { timestamp: number }[]; removed: { timestamp: number }[] }
-  | { hasEvents: true; added: { timestamp: number }[]; removed: { timestamp: number }[]; rows: ChurnRow[]; yAxisScale: ReturnType<typeof computeYAxisScale> };
+  | { hasEvents: false }
+  | { hasEvents: true; rows: ChurnRow[]; yAxisScale: ReturnType<typeof computeYAxisScale> };
 
-/** Single-row body for an active `autoscalingChurn` finding: stat line,
- * `ImpactEstimate` and the tuning link; the card states the fix (there's only
- * ever one active churn finding, so no per-row location is needed). */
-function AutoscalingChurnRow({ finding }: { finding: Finding }) {
-  const stated = useStatedAbove(finding);
+const NO_EVENTS = 'No executor add/remove events (static allocation).';
+
+/** Body for an active `autoscalingChurn` finding: stat line, `ImpactEstimate` and the tuning link; the
+ * card states the fix (there's only ever one active churn finding, so no per-row location is needed). */
+function Row({ row: { finding, stated } }: FindingRowProps<AutoscalingChurnRow>) {
   return (
-    <div className="flex flex-col gap-1 transition-colors">
+    <>
       {/* The line above states the short-lived share. */}
       {stated ? null : (
         <p className="text-xs text-muted-foreground">
           Short-lived share of removed executors: <strong>{finding.value}%</strong>
         </p>
       )}
-      <ImpactEstimate finding={finding} />
+      {stated ? null : <ImpactEstimate finding={finding} />}
       <p className="flex flex-wrap items-start gap-2 text-sm">
         <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <span>
           <DocsLink anchor="#config-autoscale-bounds">Tuning executorIdleTimeout and the min/max bounds</DocsLink>
         </span>
       </p>
-    </div>
+    </>
   );
 }
 
-// memo: skip recomputing bucketChurn when only the finding filter changes.
-export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activeFileId, catalog = [], defaultCollapsed = true }: AutoscalingChurnProps) {
+// The series is keyed on the executor lists and the app, which `applySnapshot` replaces on a
+// cached-file switch, so it never shows the previous file's churn.
+const Lead: NonNullable<FindingWidgetView<AutoscalingChurnRow>['Lead']> = ({ appModel }) => {
+  const { added, removed } = appModel.executors;
+  const app = appModel.app;
   // Whole derived-series pipeline (including the empty-events guard) in one `useMemo`.
   const churn: ChurnModel = useMemo(() => {
-    const added = appModel.executors.added;
-    const removed = appModel.executors.removed;
-    if (added.length === 0 && removed.length === 0) {
-      return { hasEvents: false, added, removed };
-    }
+    if (added.length === 0 && removed.length === 0) return { hasEvents: false };
 
-    const app = appModel.app;
     const startTime = app?.startTime ?? 0;
     const endTime = app?.endTime ?? startTime;
     const width = chooseBucketWidth(startTime, endTime);
@@ -138,77 +124,62 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
       added: b.adds,
       removed: -b.removes,
     }));
-    const yAxisScale = computeYAxisScale(rows);
+    return { hasEvents: true, rows, yAxisScale: computeYAxisScale(rows) };
+  }, [added, removed, app]);
 
-    return { hasEvents: true, added, removed, rows, yAxisScale };
-  }, [appModel, activeFileId]);
-
-  if (!churn.hasEvents) {
-    return (
-      <WidgetCard
-        title="Autoscaling Churn"
-        summary={<span className="text-muted-foreground text-xs">No executor add/remove events (static allocation).</span>}
-      >
-        <p className="text-muted-foreground text-xs">
-          No executor add/remove events (static allocation).
-        </p>
-      </WidgetCard>
-    );
-  }
-  const { added, removed, rows, yAxisScale } = churn;
-  const finding = catalog.find((f) => f.type === 'autoscalingChurn');
+  if (!churn.hasEvents) return <p className="text-muted-foreground text-xs">{NO_EVENTS}</p>;
+  const { rows, yAxisScale } = churn;
 
   return (
-    <WidgetCard
-      title="Autoscaling Churn"
-      impactBand={finding?.impactBand}
-      fixFor={finding ? [finding] : []}
-      badges={finding && <TagBadge type="autoscalingChurn" impactBand={finding.impactBand} />}
-      defaultCollapsed={defaultCollapsed}
-      summary={
-        <WidgetLeadSummary
-          value={`${added.length} added / ${removed.length} removed`}
-          context={finding ? `${finding.value}% short-lived executors, ${finding.impactBand}` : 'executor churn events'}
-        />
-      }
-    >
-      <div className="space-y-2">
-        {finding && <AutoscalingChurnRow finding={finding} />}
-        <p className="text-muted-foreground text-xs">executors added / removed over time</p>
-        <ChartFrame
-          ariaLabel="Executor added and removed counts per time bucket over the run."
-          height={HEIGHT}
-          table={{
-            caption: 'Executor added/removed counts by time bucket',
-            columns: ['Time', 'Executors added', 'Executors removed'],
-            rows: rows.map((r) => [r.t, r.added, Math.abs(r.removed)]),
-            align: ['right', 'right', 'right'],
-          }}
-        >
-            <ComposedChart data={rows}>
-              <CartesianGrid stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
-              <XAxis dataKey="t" tick={{ fontSize: 11 }} />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                width={32}
-                domain={yAxisScale.domain}
-                ticks={yAxisScale.ticks}
-              />
-              <Tooltip formatter={(value, name) => [Math.abs(Number(value)), name]} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="added" name="Added" stackId="churn" fill={CHART_COLORS.stage} shape={skipSubPixelBars} />
-              {/* Scale-down is normal autoscaling, not a problem: use the muted
-                  token, not the critical impact-band color. */}
-              <Bar
-                dataKey="removed"
-                name="Removed"
-                stackId="churn"
-                fill={CHART_COLORS.muted}
-                shape={skipSubPixelBars}
-              />
-            </ComposedChart>
-        </ChartFrame>
-      </div>
-    </WidgetCard>
+    <div className="mb-2 space-y-2">
+      <p className="text-muted-foreground text-xs">executors added / removed over time</p>
+      <ChartFrame
+        ariaLabel="Executor added and removed counts per time bucket over the run."
+        height={HEIGHT}
+        table={{
+          caption: 'Executor added/removed counts by time bucket',
+          columns: ['Time', 'Executors added', 'Executors removed'],
+          rows: rows.map((r) => [r.t, r.added, Math.abs(r.removed)]),
+          align: ['right', 'right', 'right'],
+        }}
+      >
+        <ComposedChart data={rows}>
+          <CartesianGrid stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
+          <XAxis dataKey="t" tick={{ fontSize: 11 }} />
+          <YAxis
+            tick={{ fontSize: 11 }}
+            width={32}
+            domain={yAxisScale.domain}
+            ticks={yAxisScale.ticks}
+          />
+          <Tooltip formatter={(value, name) => [Math.abs(Number(value)), name]} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar dataKey="added" name="Added" stackId="churn" fill={CHART_COLORS.stage} shape={skipSubPixelBars} />
+          {/* Scale-down is normal autoscaling, not a problem: use the muted
+              token, not the critical impact-band color. */}
+          <Bar
+            dataKey="removed"
+            name="Removed"
+            stackId="churn"
+            fill={CHART_COLORS.muted}
+            shape={skipSubPixelBars}
+          />
+        </ComposedChart>
+      </ChartFrame>
+    </div>
   );
-});
+};
+
+const Summary: NonNullable<FindingWidgetView<AutoscalingChurnRow>['Summary']> = ({ appModel, rows: [{ finding }] }) => {
+  const { added, removed } = appModel.executors;
+  if (added.length === 0 && removed.length === 0) return <span className="text-muted-foreground text-xs">{NO_EVENTS}</span>;
+  return (
+    <WidgetLeadSummary
+      value={`${added.length} added / ${removed.length} removed`}
+      context={`${finding.value}% short-lived executors, ${finding.impactBand}`}
+    />
+  );
+};
+
+/** Executor add/remove churn over the run, flagged when many executors were short-lived. */
+export const AutoscalingChurn = defineFindingWidget(autoscalingChurnModel, { Row, Lead, Summary });

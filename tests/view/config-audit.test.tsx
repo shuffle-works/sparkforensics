@@ -55,21 +55,19 @@ test('renders the WidgetCard heading and every triggered config warning, not jus
   store.getState().setWidgetDensity('basic');
 });
 
-test('shows a muted clean state when config was captured but nothing is misconfigured', () => {
+test('renders nothing when config was captured but nothing is misconfigured', () => {
   // Kryo configured (avoids the serializer finding); allocation/overhead checks short-circuit with no resources.
   const model = buildAppModel({
     config: { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
     resources: {},
   });
 
-  renderWidget(model.app);
+  const { container } = renderWidget(model.app);
 
-  expect(screen.getByRole('heading', { name: /config audit/i })).toBeInTheDocument();
-  expect(screen.getByText(/no misconfigurations detected/i)).toBeInTheDocument();
-  expect(screen.queryByText('CFG')).not.toBeInTheDocument();
+  expect(container).toBeEmptyDOMElement();
 });
 
-test('shows a muted no-data state when the ledger says sparkConfiguration was not emitted', () => {
+test('renders nothing when the ledger says sparkConfiguration was not emitted', () => {
   const ledger: AppModel['evidenceAvailability'] = {
     schemaVersion: 1,
     entries: [{
@@ -94,21 +92,17 @@ test('shows a muted no-data state when the ledger says sparkConfiguration was no
     },
   }, ledger);
 
-  // The evidence marker is gated behind Advanced density like every other
-  // widget's RowStatusCluster, so it's absent here at the default 'basic'.
-  const first = renderWidget(model.app, ledger);
-  expect(screen.getByText(/no environment info captured/i)).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /evidence: spark configuration/i })).not.toBeInTheDocument();
-  expect(screen.queryByText(/no misconfigurations detected/i)).not.toBeInTheDocument();
-  first.unmount();
+  const basic = renderWidget(model.app, ledger);
+  expect(basic.container).toBeEmptyDOMElement();
+  basic.unmount();
 
   store.getState().setWidgetDensity('advanced');
-  renderWidget(model.app, ledger);
-  expect(screen.getByRole('button', { name: /evidence: spark configuration/i })).toBeInTheDocument();
+  const advanced = renderWidget(model.app, ledger);
+  expect(advanced.container).toBeEmptyDOMElement();
   store.getState().setWidgetDensity('basic');
 });
 
-test('shows the parse-incomplete summary when the ledger cannot trust an incomplete parse', () => {
+test('renders nothing when the ledger cannot trust an incomplete parse', () => {
   const ledger: AppModel['evidenceAvailability'] = {
     schemaVersion: 1,
     entries: [{
@@ -133,16 +127,13 @@ test('shows the parse-incomplete summary when the ledger cannot trust an incompl
     },
   }, ledger);
 
-  // Same Advanced-density gate applies to the parse-incomplete branch.
-  const first = renderWidget(model.app, ledger);
-  expect(screen.getByText(/cannot determine from an incomplete parse/i)).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /evidence: spark configuration/i })).not.toBeInTheDocument();
-  expect(screen.queryByText(/no environment info captured/i)).not.toBeInTheDocument();
-  first.unmount();
+  const basic = renderWidget(model.app, ledger);
+  expect(basic.container).toBeEmptyDOMElement();
+  basic.unmount();
 
   store.getState().setWidgetDensity('advanced');
-  renderWidget(model.app, ledger);
-  expect(screen.getByRole('button', { name: /evidence: spark configuration/i })).toBeInTheDocument();
+  const advanced = renderWidget(model.app, ledger);
+  expect(advanced.container).toBeEmptyDOMElement();
   store.getState().setWidgetDensity('basic');
 });
 

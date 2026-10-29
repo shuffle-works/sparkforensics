@@ -7,13 +7,13 @@ e.g. `JobFailures.tsx`, `MemoryUtilization.tsx`.)
 
 Beyond the stage-level cards, fourteen app- and plan-level cards render in the
 Findings tab, all `region: 'action'` in `detector-registry.tsx`: Incomplete
-Run, Job Failures, Caching Opportunities, Autoscaling Churn, Config Audit, and
-the nine Plan Advisor cards (Redundant Plan Subtree, Excessive Small Files,
-Nested Loop Join, Join Key Casts, MERGE rewrites, Unpruned Partitioned Scan, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join).
+Run, Job Failure Rate, Caching Opportunities, Autoscaling Churn, Config Audit, and
+the nine Plan Advisor cards (Duplicate Plan Subtree, Small Files,
+Nested Loop Join, Cast On A Join Key, MERGE Rewrite, Unpruned Partitioned Scan, Row-At-A-Time Python UDF, Missed Broadcast Join, Oversized Broadcast Join).
 `REGISTRY` maps every finding type to its own component: 30 `action` and 4
 `reference` entries.
 
-The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advisor.md); Caching Opportunities, Memory Utilization and Cache Storage in [Caching and memory](./board-widgets/caching-and-memory.md); the visual system and templating rules in [Visual system and templating](./board-widgets/visual-system-and-templating.md).
+The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advisor.md); Caching Opportunities, Memory Utilization and Cache Utilization in [Caching and memory](./board-widgets/caching-and-memory.md); the visual system and templating rules in [Visual system and templating](./board-widgets/visual-system-and-templating.md).
 
 - **Incomplete Run** (tag `INCMP`, `IncompleteRun.tsx`): app-level "the
   capture never finished" caveat (DETECTORS entry `incompleteRun`). Fires
@@ -33,7 +33,7 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   categories, never becomes a `DETECTORS` finding itself, and this card does
   not read it. No `docAnchor` is set: this is a tool-specific signal with no
   upstream `spark-tuning-reference` section.
-- **Job Failures** (tag `JOBS`): app-level job-failure-rate rollup
+- **Job Failure Rate** (tag `JOBS`): app-level job-failure-rate rollup
   (DETECTORS entry `jobFailureRate` in `packages/core/src/detectors.ts`), computed from
   the run's `jobs` map (`ctx.jobs`, `SparkListenerJobEnd` results):
   ≥10% info, ≥30% warning, ≥50% critical. Complements the per-stage,
@@ -91,8 +91,8 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   finding also fired (idle-core ratio itself is not duplicated here).
 
 Documented ALL-CAPS tag vocabulary: `SKEW`, `SHFL`, `SPILL`, `GC`, `COLD`,
-`UTIL`, `MEM` (Memory Utilization), `CSTOR` (Cache Storage), `LOCAL`
-(Core Usage by Locality), plus `FAIL` (Failed Tasks), `JOBS` (Job Failures),
+`UTIL`, `MEM` (Memory Utilization), `CSTOR` (Cache Utilization), `LOCAL`
+(Core Usage by Locality), plus `FAIL` (Failed Tasks), `JOBS` (Job Failure Rate),
 `CFG` (Config Audit), `PLAN` (Plan Advisor), `SFAIL` (stage failed outright),
 `PART` (partition sizing), `SLOW` (stage overall slowness), `SHAPE` (stage
 shape smells), `CACHE` (caching opportunity), `CHRN` (autoscaling churn),

@@ -1,29 +1,13 @@
-import { memo, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { GitMerge } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatBytes } from '@sparkforensics/core/format-utils.ts';
-import { GitMerge } from 'lucide-react';
-import { useAnchoredRow } from '@/view/finding-anchor';
-import { AdvancedOnly } from '@/view/AdvancedOnly';
+import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { RowPagination } from '@/view/RowPagination';
-import { TagBadge } from '@/view/ImpactBadge';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
-import { usePagedRows } from '@/view/usePagedRows';
-import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
-import type { WidgetProps } from '@/view/detector-registry';
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { cachingOpportunityModel, type CachingRow } from './CachingOpportunity.rows';
 
 /** Renders a composite's leaf relation names with the join/union connector word
  * emphasized between them. Real space characters are kept around the connector
@@ -49,17 +33,11 @@ function CompositeRelationNames({ relations, operator }: { relations: { relation
 }
 
 /** One flagged relation's row. */
-function CachingRow({ finding }: { finding: FindingOf<'cachingOpportunity'> }) {
-  const anchor = useAnchoredRow([finding]);
+function Row({ row: { finding, stated, showStatus } }: FindingRowProps<CachingRow>) {
   const isComposite = finding.variant === 'composite';
 
   return (
-    <TableRow
-      ref={anchor.ref}
-      tabIndex={anchor.tabIndex}
-      data-flashed={anchor.dataFlashed}
-      className={`transition-colors ${anchor.flashClassName}`}
-    >
+    <>
       <TableCell>
         <span className="inline-flex items-center gap-2">
           {isComposite ? <GitMerge className="size-3.5 text-muted-foreground" aria-hidden="true" /> : null}
@@ -82,75 +60,38 @@ function CachingRow({ finding }: { finding: FindingOf<'cachingOpportunity'> }) {
       <TableCell>{finding.value} queries</TableCell>
       <TableCell className="text-right">{formatBytes(finding.totalReadBytes)}</TableCell>
       <TableCell>
-        <ImpactEstimate finding={finding} />
-        <AdvancedOnly>
-          <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
-        </AdvancedOnly>
+        {stated ? null : <ImpactEstimate finding={finding} />}
+        {showStatus ? <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} /> : null}
       </TableCell>
-    </TableRow>
+    </>
   );
 }
 
-/** App-scope card for the cross-execution relation-reuse detector: one row per
- * input relation scanned by two or more SQL executions, sorted by bytes read
- * (then reuse count) so the highest-impact re-read sits first. Renders nothing
- * when clean. */
-export const CachingOpportunity = memo(function CachingOpportunity({ catalog, defaultCollapsed = true }: WidgetProps) {
-  const [page, setPage] = useState(0);
-  // Depends only on `catalog`; memoized to skip recompute on unrelated re-renders.
-  const findings = useMemo(() => findingsOfType(catalog, 'cachingOpportunity')
-    .sort((a, b) => b.totalReadBytes - a.totalReadBytes || (b.value ?? 0) - (a.value ?? 0)), [catalog]);
-
-  const activeRouteTarget = useActiveRouteTarget();
-  const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;
-  const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
-
-  if (findings.length === 0) return null;
-
-  const top = findings[0];
-
+function Frame({ children }: { children: ReactNode }) {
   return (
-    <WidgetCard
-      title="Caching Opportunities"
-      fixFor={findings}
-      impactBand="info"
-      badges={<TagBadge type="cachingOpportunity" impactBand="info" />}
-      defaultCollapsed={defaultCollapsed}
-      summary={
-        <WidgetLeadSummary
-          value={`${top.value}×`}
-          context={`read by ${top.value} queries: ${top.relation}`}
-        />
-      }
-    >
-      <div className="space-y-3">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Relation</TableHead>
-              <TableHead>Read by</TableHead>
-              <TableHead className="text-right">Data read</TableHead>
-              <TableHead>Estimate</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visible.map((f, i) => (
-              <CachingRow key={`${f.format}:${f.relation}:${(f.executionIds ?? []).join(',')}:${i}`} finding={f} />
-            ))}
-          </TableBody>
-        </Table>
-        <AdvancedOnly>
-          <p className="text-xs text-muted-foreground">
-            Reuse is inferred from plan structure, not confirmed by execution. Verify before caching.
-          </p>
-        </AdvancedOnly>
-        <RowPagination
-          page={effectivePage}
-          totalPages={totalPages}
-          onPrev={() => setPage((p) => p - 1)}
-          onNext={() => setPage((p) => p + 1)}
-        />
-      </div>
-    </WidgetCard>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Relation</TableHead>
+          <TableHead>Read by</TableHead>
+          <TableHead className="text-right">Data read</TableHead>
+          <TableHead>Estimate</TableHead>
+        </TableRow>
+      </TableHeader>
+      {children}
+    </Table>
   );
-});
+}
+
+const Lead: NonNullable<FindingWidgetView<CachingRow>['Lead']> = ({ density }) => (
+  density === 'advanced' ? (
+    <p className="mb-3 text-xs text-muted-foreground">
+      Reuse is inferred from plan structure, not confirmed by execution. Verify before caching.
+    </p>
+  ) : null
+);
+
+/** App-scope card for the cross-execution relation-reuse detector: one row per input relation scanned
+ * by two or more SQL executions, sorted by bytes read (then reuse count) so the highest-impact re-read
+ * sits first. */
+export const CachingOpportunity = defineFindingWidget(cachingOpportunityModel, { Row, Lead, Frame });

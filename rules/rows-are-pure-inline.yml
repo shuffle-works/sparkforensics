@@ -1,0 +1,35 @@
+id: rows-are-pure-inline
+language: tsx
+severity: error
+message: A widget's rows function reads something other than its input.
+note: |
+  A rows function outside `*.rows.ts` (a `RowsOf`-typed value) decides what a widget shows from its
+  PanelInput (findings, stated ids, density, appModel) alone. It may not call a hook, read a global
+  such as `document` or `window`, or use the clock or randomness. Move it to `<Widget>.rows.ts`; if
+  it needs a value, add that value to PanelInput.
+utils:
+  rows-type:
+    has:
+      stopBy: end
+      kind: type_identifier
+      regex: ^RowsOf$
+rule:
+  matches: rows-impurity
+  inside:
+    stopBy: end
+    any:
+      # const rows: RowsOf<'x', Row> = ...
+      - kind: variable_declarator
+        has:
+          field: type
+          matches: rows-type
+      # (...) satisfies RowsOf<'x', Row>, (...) as RowsOf<'x', Row>
+      - any:
+          - kind: satisfies_expression
+          - kind: as_expression
+        matches: rows-type
+files:
+  - src/**
+ignores:
+  - src/view/widgets/*.rows.ts
+  - src/view/evidence-panel.ts

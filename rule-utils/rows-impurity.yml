@@ -1,5 +1,5 @@
-# What a content check may not read: anything but its PanelInput.
-id: content-check-impurity
+# What a widget's rows function may not read: anything but its PanelInput.
+id: rows-impurity
 language: tsx
 rule:
   any:
@@ -7,7 +7,7 @@ rule:
       has:
         field: source
         kind: string
-        regex: ^['"](react|react-dom|zustand)(/.*)?['"]$|@/store/|Context['"]$|@/view/use[A-Z]
+        regex: ^['"](react|react-dom|zustand)(/.*)?['"]$|@/store/|Context['"]$|@/view/(use[A-Z]|finding-anchor|impact-sort|interpretation)
     - kind: call_expression
       has:
         field: function

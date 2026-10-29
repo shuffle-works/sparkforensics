@@ -5,12 +5,12 @@ import userEvent from '@testing-library/user-event';
 import { MemoryUtilization } from '../../src/view/widgets/MemoryUtilization';
 import { EvidenceAvailabilityProvider } from '../../src/view/EvidenceAvailabilityContext';
 import { DocsProvider } from '../../src/view/DocsContext';
-import { store } from '../../src/store/store';
+import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
 test('renders nothing when there are no memoryUtilization findings (collapses to a Clean-checks row instead)', () => {
-  const { container } = render(<MemoryUtilization catalog={[]} />);
+  const { container } = render(<MemoryUtilization appModel={emptyAppModel()} catalog={[]} />);
   expect(container).toBeEmptyDOMElement();
 });
 
@@ -24,7 +24,7 @@ test('renders nothing when the only memoryUtilization finding is the dataUnavail
   ];
   // Not real evidence of an issue (the fact already lives in the Evidence
   // availability ledger), so this collapses like a genuinely clean run.
-  const { container } = render(<MemoryUtilization catalog={catalog} />);
+  const { container } = render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} />);
   expect(container).toBeEmptyDOMElement();
 });
 
@@ -50,7 +50,7 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
 
   // No density set: defaults to Basic. The card's fixes must already be
   // visible here, unlike the diagnosis clause asserted below.
-  const { unmount } = render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  const { unmount } = render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
 
   expect(screen.getByRole('heading', { name: 'Memory Utilization' })).toBeInTheDocument();
   expect(screen.getByText('MEM')).toBeInTheDocument();
@@ -70,7 +70,7 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
   unmount();
 
   store.getState().setWidgetDensity('advanced');
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   // At Advanced tier the diagnosis clause for the rule-discriminated row
   // becomes visible too, alongside the advice that was already shown at Basic.
   expect(screen.getAllByText(/The busiest of 4 sampled executors peaked at 20% of allocated heap\./).length).toBeGreaterThan(0);
@@ -95,7 +95,7 @@ test('the header MEM badge links to the docs anchor for memoryUtilization findin
   ];
   render(
     <DocsProvider>
-      <MemoryUtilization catalog={catalog} defaultCollapsed={false} />
+      <MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
     </DocsProvider>,
   );
 
@@ -117,7 +117,7 @@ test('shows a low-confidence caveat for the waste-model finding', async () => {
   ];
 
   store.getState().setWidgetDensity('advanced');
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
 
   const caveat = screen.getByText(/low confidence/i);
   expect(caveat).toBeInTheDocument();
@@ -149,7 +149,7 @@ test('shows a muted data-unavailable note with no bold label, impact dot, or evi
   store.getState().setWidgetDensity('advanced');
   render(
     <EvidenceAvailabilityProvider>
-      <MemoryUtilization catalog={catalog} defaultCollapsed={false} />
+      <MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
     </EvidenceAvailabilityProvider>,
   );
 
@@ -169,7 +169,7 @@ test('attaches executor-metrics evidence to ordinary memory findings (uniform di
   store.getState().setWidgetDensity('advanced');
   render(
     <EvidenceAvailabilityProvider>
-      <MemoryUtilization catalog={[{
+      <MemoryUtilization appModel={emptyAppModel()} catalog={[{
         type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3',
         impactBand: 'warning', recommendation: 'Executor 3 needs more memory.',
       }]} defaultCollapsed={false} />
@@ -192,7 +192,7 @@ test('a memoryUtilization row has no per-row toggle; the card fix is always visi
   ];
   const advice = 'Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
 
-  const { unmount } = render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  const { unmount } = render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   // Basic tier: the detail line (idle-core rate) and the card's fix are both
   // visible, with no toggle needed to reveal either.
   expect(screen.getByText(/of available core-time idle/)).toBeInTheDocument();
@@ -201,7 +201,7 @@ test('a memoryUtilization row has no per-row toggle; the card fix is always visi
   unmount();
 
   store.getState().setWidgetDensity('advanced');
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText(advice)).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
@@ -216,7 +216,7 @@ test('renders the wasted MB-seconds raw-waste figure for a wasteModel finding', 
     },
   ];
   installInterpretation(catalog);
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   // formatRawWaste pins locale to en-US so the figure doesn't drift with the host locale.
   expect(screen.getByText(`${(12345).toLocaleString('en-US')} MB-s`)).toBeInTheDocument();
 });
@@ -228,7 +228,7 @@ test('stays domain-agnostic: no company/industry copy leaks', () => {
       impactBand: 'warning', recommendation: 'Over half of available core-time ran no task.',
     },
   ];
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.queryByText(/scanntech/i)).not.toBeInTheDocument();
 });
 
@@ -244,13 +244,13 @@ test('the header status badge (confidence + evidence) is Advanced-only', () => {
   ];
 
   store.getState().setWidgetDensity('basic');
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /evidence:/i })).not.toBeInTheDocument();
   cleanup();
 
   store.getState().setWidgetDensity('advanced');
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByRole('button', { name: /evidence:/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
@@ -268,7 +268,7 @@ test('confidence and evidence markers stay out of the summary view until the car
   ];
 
   store.getState().setWidgetDensity('advanced');
-  render(<MemoryUtilization catalog={catalog} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} />);
   expect(screen.queryByText(/low confidence/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /evidence:/i })).not.toBeInTheDocument();
 
@@ -292,7 +292,7 @@ test('card defaults collapsed with worst-row summary when there are findings', (
     },
   ];
 
-  render(<MemoryUtilization catalog={catalog} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} />);
   // Should show the summary with worst-row label and count
   expect(screen.getByText('2 findings')).toBeInTheDocument();
 });
@@ -306,7 +306,7 @@ test('states a run-sized waste-model figure in GB-hours, matching the savings fi
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10_956_685.3, unit: 'mbSeconds' } },
     },
   ];
-  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText(/~3\.0 GB-h wasted/)).toBeInTheDocument();
   expect(screen.queryByText(/MB-seconds/)).not.toBeInTheDocument();
 });

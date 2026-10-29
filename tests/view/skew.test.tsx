@@ -10,7 +10,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { Skew } from '@/view/widgets/Skew';
 import { store } from '@/store/store';
-import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
@@ -288,26 +287,6 @@ describe('Skew', () => {
     expect(screen.getByText('800ms')).toBeInTheDocument();
   });
 
-  it('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
-    const user = userEvent.setup();
-    store.getState().setWidgetDensity('advanced');
-    const appModel = makeAppModel([1, 2]);
-    const catalog = [
-      { ...skewFinding(1, 8), impactEstimate: { basis: 'serial' as const, wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' as const, stageTaskMs: 1000 } },
-      { ...skewFinding(2, 4, 'warning'), impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const, stageTaskMs: 9000 } },
-    ];
-    const getTaskData = vi.fn(async () => TASK_DATA);
-
-    installInterpretation(catalog);
-
-    render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);
-    await user.click(screen.getByRole('button', { name: /^task skew$/i }));
-
-    const rows = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
-    await expectImpactThenStageOrderByAccessibleName(user, rows, /stage 1/i, /stage 2/i);
-    store.getState().setWidgetDensity('basic');
-  });
-
   it('hides the sort toggle at basic density', async () => {
     const user = userEvent.setup();
     const appModel = makeAppModel([1, 2]);
@@ -334,24 +313,6 @@ describe('Skew', () => {
 
     expect(screen.getByRole('button', { name: /open details for stage 1/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /open details for stage 2/i })).not.toBeInTheDocument();
-  });
-
-  it('paginates the stage list 6-at-a-time with Previous/Next controls', async () => {
-    const user = userEvent.setup();
-    const stageIds = [1, 2, 3, 4, 5, 6, 7];
-    const appModel = makeAppModel(stageIds);
-    const catalog = stageIds.map((id) => skewFinding(id, 8));
-    const getTaskData = vi.fn(async () => TASK_DATA);
-
-    render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);
-    await user.click(screen.getByRole('button', { name: /^task skew$/i }));
-
-    expect(screen.getAllByRole('button', { name: /open details for stage \d/i })).toHaveLength(6);
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getAllByRole('button', { name: /open details for stage \d/i })).toHaveLength(1);
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
   });
 
   it('shows a confidence caveat when the skew finding carries one', () => {

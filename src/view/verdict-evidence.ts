@@ -1,7 +1,7 @@
 import type { InterpretationState } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { evidencePlacement } from '@/view/evidence-placement';
 import { findingAt } from '@/view/interpretation';
-import { triageTargetFor } from '@/view/triage-target';
 
 /** The findings the verdict's steps lead with, in step order. */
 export function verdictLeadFindings(interpretation: InterpretationState): Finding[] {
@@ -20,9 +20,8 @@ export function verdictEvidenceOwners(
 ): Map<number, string> {
   const owners = new Map<number, string>();
   verdictLeadFindings(interpretation).forEach((finding, index) => {
-    const widgetId = triageTargetFor(finding)?.widgetId;
-    if (!widgetId || !available.has(widgetId)) return;
-    owners.set(index, widgetId);
+    const placement = evidencePlacement(interpretation, finding, available);
+    if (placement.kind === 'step' && placement.widgetId && available.has(placement.widgetId)) owners.set(index, placement.widgetId);
   });
   return owners;
 }

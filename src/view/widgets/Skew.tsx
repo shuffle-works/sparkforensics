@@ -1,20 +1,7 @@
-import { memo } from 'react';
+import { defineFindingWidget } from '@/view/finding-widget';
+import { skewModel } from './Skew.rows';
+import { StageGroupRowBody } from './StageGroup';
 
-import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
-import { formatMetricValue, numericValue } from '@sparkforensics/core/format-utils.ts';
-import { StageFindingGroupWidget } from './StageFindingGroup';
-
-function findingLabel(f: Finding): string {
-  const dataRatio = f.type === 'skew' ? f.dataRatio : undefined;
-  return `${f.metric}: ${formatMetricValue('ratio', numericValue(f))}${dataRatio != null ? `, data ${formatMetricValue('ratio', dataRatio)}` : ''}`;
-}
-
-export type SkewProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;
-
-/** Per-stage task-duration skew board: flags every stage carrying a `skew`
- * finding (never just the worst one). Thin wrapper over
- * `StageFindingGroupWidget` (`StageFindingGroup.tsx`). */
-export const Skew = memo(function Skew(props: SkewProps) {
-  return <StageFindingGroupWidget {...props} type="skew" title="Task Skew" idPrefix="skew" findingLabel={findingLabel} />;
-});
+/** Per-stage task-duration skew board: flags every stage carrying a `skew` finding (never just the
+ * worst one). */
+export const Skew = defineFindingWidget(skewModel, { Row: StageGroupRowBody });

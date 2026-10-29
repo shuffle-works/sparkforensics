@@ -1,189 +1,44 @@
-import { memo, useMemo, useState } from 'react';
-
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WidgetCard } from '@/view/WidgetCard';
-import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { TagBadge } from '@/view/ImpactBadge';
-import { StagePillGroup } from '@/view/StagePill';
+import { formatBytes } from '@sparkforensics/core/format-utils.ts';
 import { StageHeader } from '@/view/StageHeader';
-import { useInlineEvidence, useStatedAbove } from '@/view/InlineEvidenceContext';
-import { formatBytes, partitionHint as hintFor, IMPACT_BAND_ORDER, numericValue, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
-import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
-import { useWidgetDensity } from '@/store/store';
+import { StagePillGroup } from '@/view/StagePill';
+import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { SortModeToggle } from '@/view/SortModeToggle';
-import { useSortMode } from '@/view/useSortMode';
-import { RowPagination } from '@/view/RowPagination';
-import { usePagedRows } from '@/view/usePagedRows';
 import { PartitionHint } from './PartitionHint';
 import { PlanExplorer } from './PlanExplorer';
-import { resolvePlanTree } from './PlanView';
+import { shuffleModel, type ShuffleRow } from './ShuffleIO.rows';
 
-interface StageEntry {
-  stageId: StageId;
-  shuffle: Finding;
-  impactBand: ImpactBand;
-  peak: number;
-}
-
-function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetProps['appModel'] }) {
-  const density = useWidgetDensity();
-  const anchor = useAnchoredRow([entry.shuffle]);
-  const stated = useStatedAbove(entry.shuffle);
-  const stage = appModel.stages.get(entry.stageId);
-  const writeBytes = stage?.shuffleWriteBytes ?? 0;
-  const partitionHint = stage ? hintFor(entry.shuffle, stage) : null;
-  const showPlanExplorer = density === 'advanced' && resolvePlanTree(entry.stageId, appModel);
-
+function Row({ row: { finding, stageId, stated, usage, detail, partitionHint, showPlanExplorer }, appModel }: FindingRowProps<ShuffleRow>) {
   return (
-    <div
-      ref={anchor.ref}
-      tabIndex={anchor.tabIndex}
-      data-flashed={anchor.dataFlashed}
-      className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
-    >
-      <StageHeader stageId={entry.stageId} appModel={appModel} stated={stated} />
-      {stated && writeBytes === 0 ? null : (
+    <>
+      <StageHeader stageId={stageId} appModel={appModel} stated={stated} />
+      {usage ? (
         <p className="text-sm">
-          {/* The line above an evidence panel states the shuffle read. */}
-          {stated ? null : (
+          {usage.readBytes === null ? null : (
             <>
-              Shuffle read: <strong>{formatBytes(numericValue(entry.shuffle))}</strong>
+              Shuffle read: <strong>{formatBytes(usage.readBytes)}</strong>
               {' · '}
             </>
           )}
-          Write: {formatBytes(writeBytes)}
-        </p>
-      )}
-      {stated && stage?.taskCount ? (
-        <p className="text-xs text-muted-foreground">
-          {stage.taskCount} tasks read a median of {formatBytes(stage.shuffleReadP50)} each, the largest {formatBytes(stage.shuffleReadMax)}.
+          Write: {formatBytes(usage.writeBytes)}
         </p>
       ) : null}
-      <ImpactEstimate finding={entry.shuffle} />
+      {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
+      {stated ? null : <ImpactEstimate finding={finding} />}
       {partitionHint || showPlanExplorer ? (
         <div className="space-y-2 pt-1">
           {partitionHint ? <PartitionHint hint={partitionHint} /> : null}
-          {showPlanExplorer ? <PlanExplorer stageId={entry.stageId} appModel={appModel} /> : null}
+          {showPlanExplorer ? <PlanExplorer stageId={stageId} appModel={appModel} /> : null}
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
+// A stage the line above an evidence panel names needs no pill.
+const Lead: NonNullable<FindingWidgetView<ShuffleRow>['Lead']> = ({ rows }) => {
+  const pills = rows.filter((row) => !row.stated).map((row) => ({ id: row.stageId }));
+  return pills.length > 0 ? <div className="mb-4"><StagePillGroup pills={pills} /></div> : null;
+};
+
 /** Shuffle read/write board. Serves the `shuffle` detector type only. */
-export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCollapsed = true }: WidgetProps) {
-  const [page, setPage] = useState(0);
-  const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
-  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
-  const activeRouteTarget = useActiveRouteTarget();
-  const inline = useInlineEvidence();
-
-  const { shuffleFindings, sorted, orderedEntries } = useMemo(() => {
-    const shuffleFindings = catalog.filter((f) => f.type === 'shuffle');
-    const entries: StageEntry[] = shuffleFindings
-      .filter((f) => f.stageId != null)
-      .map((f) => ({ stageId: f.stageId as StageId, shuffle: f, impactBand: f.impactBand, peak: numericValue(f) }));
-
-    const sorted = [...entries].sort(
-      (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || b.peak - a.peak,
-    );
-    const orderedEntries = orderBy(sorted, (e) => [e.shuffle], (e) => e.stageId);
-
-    return { shuffleFindings, sorted, orderedEntries };
-  }, [catalog, sortMode]);
-
-  const routeIndex = activeRouteTarget
-    ? orderedEntries.findIndex((entry) => entry.shuffle === activeRouteTarget.finding)
-    : null;
-  const { totalPages, effectivePage, visible } = usePagedRows(orderedEntries, page, setPage, routeIndex);
-
-  if (shuffleFindings.length === 0) {
-    let maxRead = 0;
-    for (const stage of appModel.stages.values()) {
-      maxRead = Math.max(maxRead, stage.shuffleReadBytes ?? 0);
-    }
-    return (
-      <WidgetCard
-        title="Shuffle I/O"
-        open={cardOpen}
-        onOpenChange={setCardOpen}
-        summary={<WidgetLeadSummary value={formatBytes(maxRead)} context="no issue detected: peak shuffle read" />}
-      >
-        <div className="flex flex-col gap-1">
-          <p className="text-xs text-muted-foreground">No shuffle read/write issues detected.</p>
-        </div>
-      </WidgetCard>
-    );
-  }
-
-  const combinedImpactBand = worstImpactBand(shuffleFindings);
-  // A stage the line above an evidence panel names needs no pill.
-  const pills = orderedEntries
-    .filter((e) => e.shuffle.id == null || !inline?.stated.has(e.shuffle.id))
-    .map((e) => ({ id: e.stageId }));
-  const canSortByImpact = canToggleSort(sorted, (e) => [e.shuffle], (e) => e.stageId, cardOpen);
-
-  return (
-    <WidgetCard
-      title="Shuffle I/O"
-      impactBand={combinedImpactBand}
-      fixFor={shuffleFindings}
-      open={cardOpen}
-      onOpenChange={setCardOpen}
-      summary={
-        <WidgetLeadSummary
-          value={formatBytes(sorted[0].peak)}
-          context={`Peak shuffle read · ${findingCount(sorted.length)}`}
-        />
-      }
-      badges={
-        <>
-          <TagBadge type="shuffle" impactBand={combinedImpactBand ?? 'info'} />
-          {canSortByImpact ? (
-            <SortModeToggle
-              mode={sortMode}
-              onChange={(next) => {
-                setSortMode(next);
-                setPage(0);
-              }}
-            />
-          ) : null}
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {pills.length > 0 || !inline ? <StagePillGroup pills={pills} /> : null}
-        {visible.map((entry) => (
-          <ShuffleRow key={entry.stageId} entry={entry} appModel={appModel} />
-        ))}
-        <RowPagination
-          page={effectivePage}
-          totalPages={totalPages}
-          onPrev={() => setPage((p) => p - 1)}
-          onNext={() => setPage((p) => p + 1)}
-          renderJumpControl={() => (
-            <Select
-              value={String(effectivePage * VISIBLE_LIMIT)}
-              onValueChange={(value) => setPage(Math.floor(Number(value) / VISIBLE_LIMIT))}
-            >
-              <SelectTrigger size="sm" aria-label="Jump to stage">
-                <SelectValue placeholder="Jump to stage" />
-              </SelectTrigger>
-              <SelectContent>
-                {orderedEntries.map((entry, i) => (
-                  <SelectItem key={entry.stageId} value={String(i)}>
-                    Stage {entry.stageId} ({formatBytes(entry.peak)})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        />
-      </div>
-    </WidgetCard>
-  );
-});
+export const ShuffleIO = defineFindingWidget(shuffleModel, { Row, Lead });

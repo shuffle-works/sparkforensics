@@ -149,9 +149,10 @@ function FilteredBoard({
   // lists the rest. Cards come from the unfiltered catalog, like the verdict.
   const detectors = interpretation?.data.detectors;
   const evidenceWidgets = useMemo(
-    () => (detectors ? computeActiveWidgets(catalog, configFindings ?? [], detectors) : []),
-    [catalog, configFindings, detectors],
+    () => (detectors ? computeActiveWidgets(catalog, configFindings ?? [], detectors, appModel, density) : []),
+    [catalog, configFindings, detectors, appModel, density],
   );
+  const evidenceTypes = useMemo(() => new Set(evidenceWidgets.map((widget) => widget.type)), [evidenceWidgets]);
   const verdictLeads = useMemo(
     () => new Set<Finding>(interpretation ? verdictLeadFindings(interpretation) : []),
     [interpretation],
@@ -170,8 +171,8 @@ function FilteredBoard({
   const verdictPanel = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
     const scope = verdictScopes.get(lead) ?? [lead];
-    return evidencePanelOf(widget, appModel, scope, scope, density);
-  }, [evidenceWidgets, verdictScopes, appModel, density]);
+    return evidencePanelOf(widget, appModel, scope, scope, density, interpretation?.data.coreLocality?.chart);
+  }, [evidenceWidgets, verdictScopes, appModel, density, interpretation]);
   const renderVerdictEvidence = useCallback((panel: AnyEvidencePanel) => {
     const widget = evidenceWidgets.find((candidate) => candidate.type === panel.type);
     return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={panel.rows} panel={panel} /> : null;
@@ -321,6 +322,7 @@ function FilteredBoard({
             <ImpactBoard
               verdictLeads={verdictLeads}
               verdictWidgetIds={verdictWidgetIds}
+              evidenceTypes={evidenceTypes}
               fullCardWidgetIds={fullCardWidgetIds}
               appModel={appModel}
               catalog={filteredCatalog}

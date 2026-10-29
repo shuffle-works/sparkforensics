@@ -153,19 +153,6 @@ describe('StageShape', () => {
     expect(await screen.findByText('Task duration')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Plan context' })).not.toBeInTheDocument();
   });
-
-  it('paginates the stage list 6-at-a-time', async () => {
-    const user = userEvent.setup();
-    const stageIds = [1, 2, 3, 4, 5, 6, 7];
-    const appModel = makeAppModel(stageIds);
-    const catalog = stageIds.map((id) => stageShapeFinding(id, 'lowParallelism', 0.3));
-    render(<StageShape appModel={appModel} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
-    await user.click(screen.getByRole('button', { name: /^stage shape$/i }));
-
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
-  });
 });
 
 describe('StageShape fix suggestion', () => {

@@ -1,8 +1,10 @@
 import { Suspense, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
+import type { LocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
 import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { useWidgetDensity } from '@/store/store';
+import { useInterpretation } from '@/view/interpretation';
 import { EvidenceInitiallyOpenContext, InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import { evidencePanelFor, type WidgetProps } from '@/view/detector-registry';
 import type { AnyEvidencePanel } from '@/view/evidence-panel';
@@ -34,10 +36,11 @@ export function evidencePanelOf(
   scope: readonly Finding[],
   stated: readonly Finding[],
   density: 'basic' | 'advanced',
+  localityChart?: LocalityChart,
 ): AnyEvidencePanel | null {
   if (!widget || !appModel) return null;
   const ids = new Set(stated.flatMap((finding) => (finding.id != null ? [finding.id] : [])));
-  return evidencePanelFor(widget.type, { findings: scope, stated: ids, density, appModel });
+  return evidencePanelFor(widget.type, { findings: scope, stated: ids, density, appModel, localityChart });
 }
 
 /** `evidencePanelOf` at the current widget density, so a host re-decides when the density changes. */
@@ -48,7 +51,8 @@ export function useEvidencePanel(
   stated: readonly Finding[],
 ): AnyEvidencePanel | null {
   const density = useWidgetDensity();
-  return useMemo(() => evidencePanelOf(widget, appModel, scope, stated, density), [widget, appModel, scope, stated, density]);
+  const localityChart = useInterpretation()?.data.coreLocality?.chart;
+  return useMemo(() => evidencePanelOf(widget, appModel, scope, stated, density, localityChart), [widget, appModel, scope, stated, density, localityChart]);
 }
 
 /** Lets a route to a finding of `widgetId` land on the step or row that has no evidence panel:

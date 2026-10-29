@@ -61,10 +61,10 @@ links stay real `<a>`s. The HTML export renders no badge links at all
 The Plan Explorer (`src/view/widgets/PlanExplorer.tsx`) is embedded inside a
 flagged stage's own row, not as a standalone widget. It has four call
 sites (`ShuffleIO.tsx`, `PartitionSizing.tsx`, `Spill.tsx`, and the shared
-`StageFindingGroup.tsx` row behind `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`),
+`StageGroup.tsx` row behind `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`),
 each Advanced-density only and only when the stage's plan tree resolves.
 The first three have no row-expansion toggle, so the trigger renders as a
-direct sibling in the row body; `StageFindingGroup.tsx` renders it inside
+direct sibling in the row body; `StageGroup.tsx` renders it inside
 the expanded Task detail. In an HTML export, which carries no task data, that
 toggle remains only for the stage plan it holds. The same stage's plan is also
 reachable from `StageDetailDialog`.
@@ -91,6 +91,29 @@ Stage Summary Table (`src/view/widgets/StageTable.tsx`) defaults to the
 **top 10 stages by duration**, with a header toggle to **problems only**
 (stages carrying a finding). It
 renders inside the Full app report tab, not as a standalone board section.
+
+### Evidence placement {#evidence-placement}
+
+One function, `evidencePlacement` (`src/view/evidence-placement.ts`), decides
+where a finding's evidence shows. It takes the run interpretation, the finding
+and the ids of the widgets the board mounts, and returns one of four
+placements:
+
+- `step`: the finding leads a verdict step. The step shows the evidence panel.
+- `row`: the finding is eligible, so it has a Findings row. The row shows the
+  panel.
+- `card`: the finding is neither, but its type has a mounted widget. The
+  widget's card shows it.
+- `none`: nothing on the page shows the finding.
+
+A step and a row stay useful when their widget has no evidence panel. Only a
+card needs a mounted widget.
+
+The dashboard and the docs example page read the same function, so a finding
+sits in the same place in both (`src/docs-widget/FindingExample.tsx`). Every
+committed docs example must place as something other than `none`, because a
+page for a detector that shows nothing is an empty frame
+(`tests/view/docs-widget.test.tsx` checks each one).
 
 ### Full render sequence
 
@@ -156,8 +179,9 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    value first, then any `stageFailed`, then the job exception), the run is
    never called clean, and `buildNextSteps` ranks `stageFailed` and
    `jobFailureRate` steps first (a failed job's stage leading). Evidence
-   caveats (a finding with `dataUnavailable`, or one `isRealFinding`
-   drops), a log with no finished stage, and an `incompleteRun` log (whose
+   caveats (`isCaveat` in `packages/core/src/recommendation-rollup.ts`: a
+   `memoryUtilization` `memoryBand` or `cacheUtilization` `storageUnobserved`
+   finding with `dataUnavailable`), a log with no finished stage, and an `incompleteRun` log (whose
    `RUN_SPAN_CHECK_TYPES` had no run length to measure) are gaps
    (`verdictGaps`, `packages/core/src/check-coverage.ts`): any gap keeps the run from being called clean, and a
    log with no finished stage and no finding gets its own title. The
@@ -204,10 +228,13 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
      active (see "Render order" above).
 
 Report lenses carry no impact-band chip and self-hide when their input data is
-absent. Every widget self-wraps in `WidgetCard` (`src/view/WidgetCard.tsx`: an
-`<h3>` title, one level below the board's `<h2>` section headers) for the
-document outline, except Scorecard, which renders its own header band, and
-RunVerdict, a plain `<section>` with its own `<h2>` title.
+absent. Every finding widget gets its `WidgetCard` (`src/view/WidgetCard.tsx`: an
+`<h3>` title, one level below the board's `<h2>` section headers) from one
+shell, `defineFindingWidget` (`src/view/finding-widget.tsx`; see
+[Finding widget shell](./widget-rendering/finding-widget-shell.md)). The other
+widgets wrap themselves in `WidgetCard` for the document outline, except
+Scorecard, which renders its own header band, and RunVerdict, a plain
+`<section>` with its own `<h2>` title.
 
 Every card is collapsible, except in an in-place evidence panel (see
 "In-place evidence panel" in

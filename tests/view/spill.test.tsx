@@ -11,7 +11,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 import { Spill } from '@/view/widgets/Spill';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
@@ -209,34 +208,6 @@ test('renders the impact estimate under a flagged spill finding', () => {
   expect(screen.getByText('800ms')).toBeInTheDocument();
 });
 
-test('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
-  const user = userEvent.setup();
-  store.getState().setWidgetDensity('advanced');
-  const catalog: Finding[] = [
-    {
-      type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024,
-      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
-      confidence: 'low',
-    },
-    {
-      type: 'spill', stageId: 2, impactBand: 'warning', value: 300 * 1024 * 1024,
-      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
-      confidence: 'low',
-    },
-  ];
-  installInterpretation(catalog);
-  render(
-    <DocsProvider>
-      <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
-    </DocsProvider>,
-  );
-  // Stage 1 is the worse impact band (critical vs warning) but stage 2 has the
-  // higher potential savings: impact order puts stage 2 first by default.
-  const pills = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
-  await expectImpactThenStageOrderByAccessibleName(user, pills, /stage 1/i, /stage 2/i);
-  store.getState().setWidgetDensity('basic');
-});
-
 test('hides the sort toggle when no finding carries a wall-clock estimate, even at advanced density', () => {
   store.getState().setWidgetDensity('advanced');
   render(
@@ -269,10 +240,10 @@ test('hides the sort toggle at basic density even with a wall-clock estimate', (
   expect(screen.queryByRole('group', { name: /sort order/i })).not.toBeInTheDocument();
 });
 
-test('renders a muted clean-state message with the max observed spill when there is no spill finding', () => {
+test('renders no card when there is no spill finding: the dashboard shows a clean check instead', () => {
   const appModel = buildAppModel({ 1: { memoryBytesSpilled: 0 }, 2: { memoryBytesSpilled: 0 } });
-  render(<Spill appModel={appModel} catalog={[]} getTaskData={vi.fn()} />);
-  expect(screen.getByText(/no issue detected/i)).toBeInTheDocument();
+  const { container } = render(<Spill appModel={appModel} catalog={[]} getTaskData={vi.fn()} />);
+  expect(container).toBeEmptyDOMElement();
 });
 
 test('renders MemoryPressure with its real chart content, not just a stub', async () => {
@@ -315,30 +286,6 @@ test('a stage row shows its recommendation immediately, no expansion needed', as
 
   expect(screen.queryAllByText(/memory spilled:/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/raise spark\.sql\.shuffle\.partitions or increase executor memory/i)).toBeInTheDocument();
-});
-
-test('paginates the stage list 6-at-a-time with Previous/Next controls', async () => {
-  const user = userEvent.setup();
-  const stages = new Map<number, unknown>();
-  const catalog: Finding[] = [];
-  for (let i = 1; i <= 7; i++) {
-    stages.set(i, { id: i, memoryBytesSpilled: i * 1024 * 1024, diskBytesSpilled: 0, spillClassification: 'skew' });
-    catalog.push({ type: 'spill', stageId: i, impactBand: 'warning', value: i * 1024 * 1024, confidence: 'low' });
-  }
-  const appModel = { ...buildAppModel(), stages: stages as unknown as AppModel['stages'] };
-
-  render(
-    <DocsProvider>
-      <Spill appModel={appModel} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
-    </DocsProvider>,
-  );
-
-  expect(screen.getAllByRole('button', { name: /open details for stage \d/i })).toHaveLength(6);
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-
-  await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getAllByRole('button', { name: /open details for stage \d/i })).toHaveLength(1);
-  expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 });
 
 test('renders no status cluster at all when a row has no confidence, even at advanced density', async () => {

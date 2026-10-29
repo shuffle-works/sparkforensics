@@ -29,6 +29,13 @@ function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return { ...emptyAppModel(), ...overrides };
 }
 
+// The card exists exactly when the run has an autoscalingChurn finding.
+const churnFinding = () => testFinding({
+  type: 'autoscalingChurn', stageId: null, impactBand: 'warning' as const,
+  metric: 'shortLivedExecutorPct', value: 60, shortLivedExecutorCount: 3,
+  recommendation: '60% of executors ran for under 2 minutes before being removed.',
+});
+
 describe('bucketChurn', () => {
   it('counts adds and removes per bucket, keeping zero-churn buckets (ported verbatim from src/widgets/autoscaling-churn.js)', () => {
     const added = [{ timestamp: 0 }, { timestamp: 500 }, { timestamp: 2500 }];
@@ -59,7 +66,7 @@ describe('AutoscalingChurn', () => {
 
     render(
       <DocsProvider>
-        <AutoscalingChurn appModel={appModel} />
+        <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} />
       </DocsProvider>,
     );
 
@@ -81,7 +88,7 @@ describe('AutoscalingChurn', () => {
 
     render(
       <DocsProvider>
-        <AutoscalingChurn appModel={appModel} />
+        <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} />
       </DocsProvider>,
     );
 
@@ -123,7 +130,11 @@ describe('AutoscalingChurn', () => {
   it('renders a muted no-churn message and no chart region when there are no executor events', () => {
     const appModel = makeAppModel({ app: { startTime: 0, endTime: 1000 } as AppModel['app'] });
 
-    render(<AutoscalingChurn appModel={appModel} />);
+    render(
+      <DocsProvider>
+        <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} defaultCollapsed={false} />
+      </DocsProvider>,
+    );
 
     expect(screen.getByRole('heading', { name: /autoscaling churn/i })).toBeInTheDocument();
     expect(screen.getByText(/no executor add\/remove events/i)).toBeInTheDocument();
@@ -218,7 +229,7 @@ describe('AutoscalingChurn', () => {
     expect(screen.queryByRole('button', { name: /show recommendation/i })).not.toBeInTheDocument();
   });
 
-  it('renders no impact-band banner when no autoscalingChurn finding is present, preserving the descriptive-only chart', async () => {
+  it('renders nothing when no autoscalingChurn finding is present, however much churn the run has', async () => {
     const appModel = makeAppModel({
       app: { startTime: 0, endTime: 120_000 } as AppModel['app'],
       executors: {
@@ -227,14 +238,13 @@ describe('AutoscalingChurn', () => {
       },
     });
 
-    render(
+    const { container } = render(
       <DocsProvider>
         <AutoscalingChurn appModel={appModel} catalog={[]} />
       </DocsProvider>,
     );
 
-    expect(screen.queryByText('CHRN')).not.toBeInTheDocument();
-    expect(screen.getByText(/executors added \/ removed over time/i)).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('downsamples a large bucketed churn series to the shared chart budget', () => {
@@ -261,7 +271,7 @@ describe('AutoscalingChurn', () => {
 
     render(
       <DocsProvider>
-        <AutoscalingChurn appModel={appModel} />
+        <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} />
       </DocsProvider>,
     );
 
@@ -295,7 +305,7 @@ describe('AutoscalingChurn', () => {
       return (
         <DocsProvider>
           <button onClick={() => setTick((t) => t + 1)}>tick</button>
-          <AutoscalingChurn appModel={appModel} />
+          <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} />
         </DocsProvider>
       );
     }
@@ -321,7 +331,7 @@ describe('AutoscalingChurn', () => {
 
     const { rerender } = render(
       <DocsProvider>
-        <AutoscalingChurn appModel={appModel} activeFileId="file-a" />
+        <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} activeFileId="file-a" />
       </DocsProvider>,
     );
     // The bucketed churn series handed to `downsample` is the observable: it's
@@ -343,7 +353,7 @@ describe('AutoscalingChurn', () => {
 
     rerender(
       <DocsProvider>
-        <AutoscalingChurn appModel={appModel} activeFileId="file-b" />
+        <AutoscalingChurn appModel={appModel} catalog={[churnFinding()]} activeFileId="file-b" />
       </DocsProvider>,
     );
 

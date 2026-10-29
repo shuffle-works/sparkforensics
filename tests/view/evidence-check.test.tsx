@@ -41,7 +41,7 @@ afterEach(() => {
 test.each(exampleRuns())('%s: every panel a content check keeps renders evidence', async (log) => {
   expect(loadExampleRun(log)).toBeNull();
   const { appModel, catalog, configFindings, interpretation } = store.getState();
-  const widgets = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors);
+  const widgets = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, 'advanced');
   const widgetProps = { appModel, catalog, configFindings, getTaskData: vi.fn(), activeFileId: null };
   const empty: string[] = [];
 
@@ -91,7 +91,7 @@ test.each(exampleRuns())('%s: a row offers the evidence control exactly when its
     const rowCatalog = configFindings.includes(finding) ? [] : [finding];
     const rowConfig = configFindings.includes(finding) ? [finding] : [];
     installInterpretation(rowCatalog, appModel, rowConfig);
-    const widget = computeActiveWidgets(rowCatalog, rowConfig, store.getState().interpretation!.data.detectors)[0];
+    const widget = computeActiveWidgets(rowCatalog, rowConfig, store.getState().interpretation!.data.detectors, appModel, 'advanced')[0];
     for (const density of ['basic', 'advanced'] as const) {
       store.setState({ widgetDensity: density });
       const expected = evidencePanelOf(widget, appModel, [finding], [finding], density) !== null;

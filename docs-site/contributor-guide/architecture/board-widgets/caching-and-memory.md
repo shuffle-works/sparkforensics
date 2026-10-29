@@ -21,7 +21,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
   in the DOM). One row per relation: name + format badge, reuse count, `Data
   read` (`formatBytes`, em-dash when unknown), sorted by `totalReadBytes` then
   reuse count descending; the card states the fix once (`fixFor`), not per row. Rows are paged `VISIBLE_LIMIT`
-  (6) at a time (`usePagedRows` + `RowPagination`), and a route to a row jumps
+  (6) at a time by the finding widget shell, and a route to a row jumps
   to its page. Pure-RDD-API apps (no SQL executions) produce no finding:
   a deliberate trade-off, since an RDD-lineage heuristic surfaces only
   internal query-engine RDDs on DataFrame/SQL workloads.
@@ -74,7 +74,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
   allocated core time below 60%) has its own card, **Executor Utilization** (tag
   `UTIL`, `ExecutorUtilization.tsx`): a `reference`-region widget in its own
   right that renders only with an active finding.
-- **Cache Storage** (tag `CSTOR`): app-level card driven by the
+- **Cache Utilization** (tag `CSTOR`): app-level card driven by the
   `cacheUtilization` DETECTORS entry (`packages/core/src/detectors.ts`), evaluating two
   per-RDD proxies over `ctx.app.rddInfo` since Spark event logs carry no
   runtime block-access/read-count data. `rddInfo`'s cache figures come from
@@ -104,11 +104,12 @@ The board widgets for caching opportunities, memory utilization and cache storag
   enabled in the app config, a recorded Spark version of 2.3 or later, and every RDD
   Info figure 0),
   the detector emits one `storageUnobserved` caveat (`dataUnavailable: true`,
-  `info`) naming `spark.eventLog.logBlockUpdates.enabled`. Unlike
-  `memoryUtilization`'s caveat it counts for `isRealFinding`, so the card
-  still mounts (with the caveat and no table) and Cache Storage never lands
-  in Clean checks for a run that couldn't be checked; `isEligible` keeps it
-  out of Fix these first. The RDD
-  table renders unconditionally; flagged rows get an inline `CSTOR`
-  tag next to the RDD name, and every flagged RDD's recommendation renders
-  below the table, worst-first.
+  `info`) naming `spark.eventLog.logBlockUpdates.enabled`. `isCaveat` names
+  it, and `isEligible` keeps it out of Fix these first. Unlike
+  `memoryUtilization`'s caveat, which alone never makes a card, its row is a
+  row of the widget, so the card still mounts (with the caveat row and no
+  table) and Cache Utilization never lands in Clean checks for a run that
+  couldn't be checked. The card
+  shows the RDD table above its finding rows; flagged RDDs get an impact dot
+  next to the name, and every flagged RDD's detail line renders below the
+  table, worst-first.

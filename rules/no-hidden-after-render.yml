@@ -38,5 +38,10 @@ rule:
       regex: has-\[.*\]:(hidden|invisible)
     - kind: template_string
       regex: has-\[.*\]:(hidden|invisible)
+    # className="empty:hidden": hidden by CSS because the element rendered nothing
+    - kind: string
+      regex: (^|[^\w-])empty:(hidden|invisible)
+    - kind: template_string
+      regex: (^|[^\w-])empty:(hidden|invisible)
 files:
   - src/**

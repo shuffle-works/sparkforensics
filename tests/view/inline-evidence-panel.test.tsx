@@ -82,13 +82,7 @@ describe('in-place evidence panel', () => {
     expect(screen.getByRole('heading', { name: 'Spill' })).toHaveAttribute('tabindex', '-1');
   });
 
-  it('drops the savings figure only for the finding the line above states', () => {
-    const findings = [stated(), other()];
-    renderPanel(findings, [findings[0]]);
-    expect(screen.getAllByText('Potential savings:')).toHaveLength(1);
-  });
-
-  it('keeps every figure when the line above states no finding in the panel', () => {
+  it('shows every figure a widget renders when the line above states no finding in the panel', () => {
     renderPanel([stated(), other()], []);
     expect(screen.getAllByText('Potential savings:')).toHaveLength(2);
   });

@@ -28,7 +28,7 @@ availability and the report lenses) are `collapsedTile`s: they start
 collapsed at a uniform height and widen to the full row when opened;
 `revealEvidence` opens the Evidence availability tile. Core Usage by Locality is the only detector-driven `REGISTRY`
 card in this section, always mounted; Memory Utilization, Executor
-Utilization, and Cache Storage live in the Findings tab above and surface
+Utilization, and Cache Utilization live in the Findings tab above and surface
 there only when they have an active finding.
 
 The Evidence availability card is the persistent, non-impact-band ledger

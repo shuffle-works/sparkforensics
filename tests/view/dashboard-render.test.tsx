@@ -32,14 +32,19 @@ function CleanAlert() {
 // typesByComponent map looks up findings by that exact object identity.
 vi.mock('@/view/detector-registry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/view/detector-registry')>();
+  // A double has one row per finding of its type.
+  const model = (type: string) => ({
+    type, rows: ({ findings }: { findings: readonly unknown[] }) => findings.map((finding) => ({ findings: [finding] })),
+    stageOf: () => null, summary: () => ({ value: '' }),
+  });
   return {
     ...actual,
     REGISTRY: {
       ...actual.REGISTRY,
-      criticalAlert: { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', routeable: false },
-      warningAlert: { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', routeable: false },
-      infoAlert: { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', routeable: false },
-      cleanAlert: { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', routeable: false },
+      criticalAlert: { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', routeable: false, model: model('criticalAlert') },
+      warningAlert: { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', routeable: false, model: model('warningAlert') },
+      infoAlert: { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', routeable: false, model: model('infoAlert') },
+      cleanAlert: { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', routeable: false, model: model('cleanAlert') },
     },
     orderedWidgets: () => [
       { component: actual.REGISTRY.spill.component, region: 'action' as const, widgetId: 'spill', type: 'spill' },
@@ -164,7 +169,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  // Memory/Executor Utilization and Cache Storage are not always-mounted, so
+  // Memory/Executor Utilization and Cache Utilization are not always-mounted, so
   // they're absent from this catalog-less run; Core Usage by Locality lives
   // in Full app report.
   await within(findingsPanel).findByRole('heading', { name: 'Info alert' });
@@ -178,7 +183,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
     ]);
   // Clean widgets render a CleanCheckRow, not their real component, so there is no "Clean alert" heading.
   expect(within(findingsPanel).queryByRole('heading', { name: 'Clean alert' })).not.toBeInTheDocument();
-  expect(within(findingsPanel).queryByRole('heading', { name: 'Cache Storage' })).not.toBeInTheDocument();
+  expect(within(findingsPanel).queryByRole('heading', { name: 'Cache Utilization' })).not.toBeInTheDocument();
   expect(within(findingsPanel).queryByRole('heading', { name: 'Memory Utilization' })).not.toBeInTheDocument();
   expect(within(findingsPanel).queryByRole('heading', { name: 'Executor Utilization' })).not.toBeInTheDocument();
   expect(screen.queryByText('clean alert')).not.toBeInTheDocument();
@@ -187,7 +192,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   expect(screen.queryByRole('heading', { name: 'Clean alert' })).not.toBeInTheDocument();
   // A test-double type has no presentation row, so its row is labeled with the raw type.
   expect(screen.getByText('CleanAlert')).toBeInTheDocument();
-  // Cache Storage, Memory Utilization, and Executor Utilization all have no
+  // Cache Utilization, Memory Utilization, and Executor Utilization all have no
   // finding here, so each shows as an ordinary Clean-checks row (the row
   // label itself still comes from the finding-type name).
   expect(screen.getByText('Cache utilization')).toBeInTheDocument();

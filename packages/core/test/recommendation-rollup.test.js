@@ -151,36 +151,35 @@ describe('buildRecommendationRollup', () => {
   });
 });
 
-import { isEligible, isRealFinding } from '../src/recommendation-rollup.ts';
+import { isCaveat, isEligible } from '../src/recommendation-rollup.ts';
 
-describe('isRealFinding', () => {
-  it('excludes memoryUtilization\'s dataUnavailable memoryBand caveat', () => {
-    expect(isRealFinding({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true, impactBand: 'info' })).toBe(false);
+describe('isCaveat', () => {
+  it('matches memoryUtilization\'s dataUnavailable memoryBand finding', () => {
+    expect(isCaveat({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true, impactBand: 'info' })).toBe(true);
   });
 
-  it('includes an ordinary memoryUtilization finding without the caveat', () => {
-    expect(isRealFinding({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning' })).toBe(true);
+  it('matches cacheUtilization\'s storageUnobserved finding', () => {
+    expect(isCaveat({ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, impactBand: 'info' })).toBe(true);
   });
 
-  it('includes every other type, including incompleteRun', () => {
-    expect(isRealFinding({ type: 'incompleteRun', impactBand: 'warning' })).toBe(true);
-    expect(isRealFinding({ type: 'skew', impactBand: 'critical' })).toBe(true);
+  it('does not match an ordinary memoryUtilization finding', () => {
+    expect(isCaveat({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning' })).toBe(false);
+  });
+
+  it('does not match any other type, including incompleteRun', () => {
+    expect(isCaveat({ type: 'incompleteRun', impactBand: 'warning' })).toBe(false);
+    expect(isCaveat({ type: 'skew', impactBand: 'critical' })).toBe(false);
   });
 });
 
 describe('isEligible', () => {
-  it('excludes incompleteRun, unlike isRealFinding', () => {
+  it('excludes incompleteRun', () => {
     expect(isEligible({ type: 'incompleteRun', impactBand: 'warning' })).toBe(false);
   });
 
-  it('still excludes the dataUnavailable caveat via isRealFinding', () => {
+  it('excludes both caveats', () => {
     expect(isEligible({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true, impactBand: 'info' })).toBe(false);
-  });
-
-  it('excludes cacheUtilization\'s storageUnobserved caveat, which isRealFinding keeps for its widget card', () => {
-    const caveat = { type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, impactBand: 'info' };
-    expect(isRealFinding(caveat)).toBe(true);
-    expect(isEligible(caveat)).toBe(false);
+    expect(isEligible({ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, impactBand: 'info' })).toBe(false);
   });
 
   it('includes an ordinary finding', () => {

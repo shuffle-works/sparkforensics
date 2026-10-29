@@ -1,28 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-
-import { IMPACT_BAND_ORDER, formatMetricValue, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
-import { StagePill } from '@/view/StagePill';
-import { WidgetCard } from '@/view/WidgetCard';
-import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import type { WidgetProps } from '@/view/detector-registry';
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from '@sparkforensics/core/task-failure.ts';
-import { useAnchoredRow } from '@/view/finding-anchor';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
+import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
+import { ImpactDot } from '@/view/ImpactBadge';
+import { StagePill } from '@/view/StagePill';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { SortModeToggle } from '@/view/SortModeToggle';
-import { useSortMode } from '@/view/useSortMode';
-import { RowPagination } from '@/view/RowPagination';
-import { usePagedRows } from '@/view/usePagedRows';
-
-export type TaskFailuresProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
-
-function hasStage<F extends Finding>(f: F): f is F & { stageId: number } {
-  return f.stageId != null;
-}
+import { taskFailuresModel, type TaskFailuresRow } from './TaskFailures.rows';
 
 // One entry per distinct error, each with its bounded stack excerpt (task-failure.ts).
 function FailureGroupList({ groups, otherFailedTasks }: { groups: TaskFailureGroup[]; otherFailedTasks: number }) {
@@ -48,24 +29,15 @@ function FailureGroupList({ groups, otherFailedTasks }: { groups: TaskFailureGro
   );
 }
 
-function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageId: number } }) {
-  const anchor = useAnchoredRow([finding]);
-  const stated = useStatedAbove(finding);
-  const dominantError = finding.dominantError ?? finding.dominantReason;
+function Row({ row: { finding, stageId, stated, dominantError } }: FindingRowProps<TaskFailuresRow>) {
   return (
-    <li
-      ref={anchor.ref}
-      tabIndex={anchor.tabIndex}
-      data-flashed={anchor.dataFlashed}
-      className={`flex flex-col gap-1 transition-colors ${anchor.flashClassName}`}
-    >
+    <>
       {stated ? null : (
         <div className="flex items-center gap-2">
-          <StagePill stageId={finding.stageId} />
+          <StagePill stageId={stageId} />
           <ImpactDot impactBand={finding.impactBand} />
         </div>
       )}
-      {/* The line above states the rate and the dominant error; only the task count is new. */}
       <p className="text-xs text-muted-foreground">
         {stated ? (
           <><strong>{finding.failedTasks}</strong> failed tasks</>
@@ -80,74 +52,10 @@ function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageI
         groups={finding.failureGroups}
         otherFailedTasks={finding.otherFailedTasks}
       />
-      <ImpactEstimate finding={finding} />
-    </li>
+      {stated ? null : <ImpactEstimate finding={finding} />}
+    </>
   );
 }
 
-/** Board section for task-level `failures` findings: every flagged stage
- * gets its own row (never just the worst). */
-export function TaskFailures({ appModel, catalog, defaultCollapsed = true }: TaskFailuresProps) {
-  const [page, setPage] = useState(0);
-  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
-  const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
-  const activeRouteTarget = useActiveRouteTarget();
-
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
-    setPage(0);
-  }, [appModel]);
-
-  const findings = findingsOfType(catalog, 'failures').filter(hasStage);
-  const sorted = [...findings].sort(
-    (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.stageId - b.stageId,
-  );
-  const ordered = orderBy(sorted, (f) => [f], (f) => f.stageId);
-
-  const routeIndex = activeRouteTarget ? ordered.findIndex((f) => f === activeRouteTarget.finding) : null;
-  const { totalPages, effectivePage, visible } = usePagedRows(ordered, page, setPage, routeIndex);
-
-  if (findings.length === 0) return null;
-
-  return (
-    <WidgetCard
-      title="Failed Tasks"
-      fixFor={findings}
-      impactBand={worstImpactBand(findings)}
-      badges={
-        <>
-          <TagBadge type="failures" impactBand={worstImpactBand(findings)!} />
-          {canToggleSort(sorted, (f) => [f], (f) => f.stageId, cardOpen) ? (
-            <SortModeToggle
-              mode={sortMode}
-              onChange={(next) => {
-                setSortMode(next);
-                setPage(0);
-              }}
-            />
-          ) : null}
-        </>
-      }
-      open={cardOpen}
-      onOpenChange={setCardOpen}
-      summary={
-        <WidgetLeadSummary
-          value={formatMetricValue('pct', numericValue(sorted[0]))}
-          context={findingCount(findings.length)}
-        />
-      }
-    >
-      <ul className="space-y-3">{visible.map((f) => <TaskFailureRow key={f.id} finding={f} />)}</ul>
-      <RowPagination
-        page={effectivePage}
-        totalPages={totalPages}
-        onPrev={() => setPage((p) => p - 1)}
-        onNext={() => setPage((p) => p + 1)}
-      />
-    </WidgetCard>
-  );
-}
+/** Task-level `failures` findings: every flagged stage gets its own row (never just the worst). */
+export const TaskFailures = defineFindingWidget(taskFailuresModel, { Row });

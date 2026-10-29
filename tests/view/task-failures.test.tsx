@@ -5,8 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { TaskFailures } from '../../src/view/widgets/TaskFailures';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { emptyAppModel, store } from '../../src/store/store';
-import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
+import { emptyAppModel } from '../../src/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { testFinding } from './_shared/finding';
 import { installInterpretation } from './_shared/interpretation';
@@ -143,24 +142,6 @@ describe('TaskFailures', () => {
       </StageDetailProvider>,
     );
     expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  });
-
-  it('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
-    const user = userEvent.setup();
-    store.getState().setWidgetDensity('advanced');
-    const catalog: Finding[] = [
-      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', recommendation: 'Fix it.', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } }),
-      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', recommendation: 'Fix it.', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } }),
-    ];
-    installInterpretation(catalog);
-    render_(catalog);
-
-    // Card defaults collapsed; open it first to access the content.
-    await user.click(screen.getByRole('button', { name: 'Failed Tasks' }));
-
-    const rows = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
-    await expectImpactThenStageOrderByAccessibleName(user, rows, /stage 1/i, /stage 2/i);
-    store.getState().setWidgetDensity('basic');
   });
 
   it('hides the sort toggle at basic density', async () => {

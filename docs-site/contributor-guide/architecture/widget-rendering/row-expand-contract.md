@@ -2,46 +2,51 @@
 
 The row and expand contract every widget in the registry follows.
 
-Every `REGISTRY` widget renders its content as N≥1 rows, using
-`Skew.tsx` as the reference implementation. A widget's data shape
+Every finding widget renders its content as N≥1 rows. Its `<Widget>.rows.ts`
+decides the rows and its `<Widget>.tsx` renders one of them through the shell
+(see [Finding widget shell](./finding-widget-shell.md)). `RetryWaste.rows.ts`
+and `RetryWaste.tsx` are the smallest example; `Skew.tsx` shows a row with a
+toggle. A widget's data shape
 (chart, table, single app-scoped scalar) is never by itself a reason to
 skip this: the four named exceptions below (one histogram toggle, three
 partial exceptions) are the only ones. Any further
 exception must get its own entry here, justified in the same PR that
 introduces it.
 
-- Tier A (universal): `WidgetCard` chrome, an impact-band left-border + dot,
-  ALL-CAPS `TagBadge`s, a
-  `SortModeToggle` when `canToggleSort` is true, a `finding-anchor` ref
-  on any focusable/deep-linkable unit, and an early `null` return on an
-empty catalog filter (except Core Usage by Locality, the one always-mounted
-  widget that renders unconditionally from `appModel` via
-  `alwaysMountedWidgets()`/`isAlwaysMountedType()` rather than
-  early-returning on an empty catalog filter).
+- Tier A (universal), all from the shell: `WidgetCard` chrome with the core
+  finding name as its title, an impact-band left-border + dot, the ALL-CAPS
+  `TagBadge`, a `SortModeToggle` when the rows can be re-sorted, a
+  `finding-anchor` ref on every row, the route index and the paging. A widget
+  file writes none of these. A widget mounts when `rows(...)` is not empty and
+  renders nothing otherwise. Core Usage by Locality is the one always-mounted
+  widget: its model sets `alwaysMounted`, and it renders from `appModel` via
+  `alwaysMountedWidgets()`/`isAlwaysMountedType()` even with no rows.
 - Tier B (the row/expand pattern): a row's collapsed state shows its core
   metric(s), `ImpactEstimate`, any config-hint code snippet/list, and docs
   links, all unconditionally. The fix is stated once per card: `WidgetCard`'s
   `fixFor` prints each distinct `coreFindingGenericRecommendation` above the
   body, so rows don't repeat a recommendation that restates their number.
-  Every finding-row widget passes it, Shuffle I/O and the Skew, Stage Shape
-  and Tiny Tasks groups (`StageFindingGroup`) included; Incomplete Run is the
-  one that doesn't.
+  The shell passes the shown findings for every widget, Shuffle I/O and the
+  Skew, Stage Shape and Tiny Tasks groups (`StageGroup`) included. A type with
+  no generic fix, Incomplete Run, prints none.
   Where the detector's sentence is a row's only measurement (Excessive Small
   Files, Missed Broadcast Join, Oversized Broadcast Join, Config Audit), the
   row shows its measured half, split off by core's `recommendationParts`.
   Three rows keep their own sentence because their type has no generic fix
   for them: Incomplete Run, and a data-unavailable Memory Utilization or
-  Cache Storage row, which names the setting to enable.
+  Cache Utilization row, which names the setting to enable.
   Confidence and evidence are unconditional too: `RowStatusCluster`
   (`src/view/RowStatusCluster.tsx`) is a single, fixed-position pill
-  combining both. Every widget that
-  carries one wraps it in `AdvancedOnly` (`src/view/AdvancedOnly.tsx`), so it
-  only renders at the Advanced density tier: this is a content-visibility
-  gate (Basic vs. Advanced), not a per-row collapse, and it's applied
-  consistently across every adopting widget. No widget gates confidence or
-  evidence behind a per-row click. A
-  widget-header `RowStatusCluster` (passed as `WidgetCard`'s `statusBadge`
-  prop) carries one further, unrelated gate on top of `AdvancedOnly`: `open &&
+  combining both. It only renders at the
+  Advanced density tier, and the row decides that as data: its `rows` function
+  sets a `showStatus` flag from the density, and the `Row` renders the cluster
+  only when the flag is set. A widget file does not wrap it in `AdvancedOnly`.
+  This is a content-visibility gate (Basic vs. Advanced), not a per-row
+  collapse, and every adopting widget applies it the same way. No widget gates
+  confidence or evidence behind a per-row click. A
+  widget-header `RowStatusCluster` (the view's `Status` slot, which the shell
+  passes to `WidgetCard` as `statusBadge`) carries one further, unrelated gate
+  on top of the density: `open &&
   statusBadge` (`WidgetCard.tsx`'s header) keeps it out of the collapsed
   header, matching the comment on `statusBadge` itself ("kept separate so
   tag/impact badges stay visible in the collapsed summary while a
@@ -65,11 +70,10 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   page-based navigation (Previous/Next, `usePagedRows`/`RowPagination`,
   `src/view/usePagedRows.ts`/`src/view/RowPagination.tsx`) instead of
   rendering unconditionally: the one sanctioned cap mechanism across every
-  Tier B widget. A Tier B widget whose rows are also triage-routable (wires
-  `useFindingAnchor`) must pass its `routeIndex` (the routed finding's
-  position in the paginated list) into `usePagedRows`, or a deep-linked route
-  to a finding beyond the first page silently degrades to focusing the
-  widget's disclosure title instead of the row.
+  Tier B widget. The shell owns it. It passes the routed finding's position in
+  the list (the route index) to the pager, so a deep-linked route to a finding
+  beyond the first page opens that page and focuses the row. A new file or a
+  new sort order starts the list on its first page.
 
 The following widgets carry a `RowStatusCluster`, all Advanced-only:
 `Spill.tsx` (confidence only), `ConfigAudit.tsx`'s widget-header control
@@ -93,7 +97,7 @@ per-row, no `evidenceKey` passed), `GcPressure.tsx`'s rows, `Straggler.tsx`'s
 rows, `CachingOpportunity.tsx`'s rows (the `cachingOpportunity` detector
 scales `confidence` per finding via `cachingReuseConfidence`, so the badge
 sits next to each row rather than as a single caveat below
-the table), and the shared `StageFindingGroup.tsx` row (adopted by
+the table), and the shared `StageGroup.tsx` row (adopted by
 `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`, though only `skew`
 findings carry a `confidence` field).
 
@@ -102,7 +106,7 @@ One named exception:
 - `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`: their per-row histogram toggle
   (`ExpandToggleButton` + `useExpandableRow`) gates a lazily-fetched duration
   histogram, unrelated to confidence/evidence. It sits alongside
-  `RowStatusCluster` in the shared `StageFindingGroup.tsx` row; the two
+  `RowStatusCluster` in the shared `StageGroup.tsx` row; the two
   controls coexist per row. `ExpandToggleButton` is single-purpose
   (always the task-detail toggle) since these three are its only adopters.
 
@@ -150,11 +154,12 @@ routing" in [investigation-routing](./investigation-routing.md)).
 - `TagBadge` renders nothing, and `WidgetCard` leaves out its `fixFor` sentence:
   the line above carries the tag and the fix.
 - The line above states one finding per step (its lead) or per single-finding
-  row; a group row states none. The context lists those findings' ids, and
-  `useStatedAbove` / `useAnyStatedAbove` tell a widget row that its finding is
-  stated. A stated finding's row leaves out the stage chip (`StageHeader`'s
-  `stated` keeps the stage name), the savings (`ImpactEstimate` renders
-  nothing), and any figure the finding's sentence repeats. It keeps whatever
+  row; a group row states none. The context lists those findings' ids, and the
+  shell passes them to `rows` as `stated`. A row records whether its finding is
+  stated (`isStated`), as data, and renders from that. A stated finding's row
+  leaves out the stage chip (`StageHeader`'s `stated` keeps the stage name),
+  the savings (`ImpactEstimate` renders nothing), and any figure the finding's
+  sentence repeats. It keeps whatever
   the line lacks: call sites, breakdowns, hints, charts, the status marker. A
   finding the line does not state keeps all its facts, so one panel can hold
   both kinds.
@@ -164,8 +169,8 @@ routing" in [investigation-routing](./investigation-routing.md)).
   Utilization the chart, the heap peak or the allocated memory-time, Excessive
   Small Files the average file size, Stragglers the straggling task count and
   the stage's task duration spread with its histogram, Slow Executor Host the
-  deviating executor's measured amount, Nested Loop Joins the join node, type,
-  condition and input rows, MERGE rewrites the unmodified and changed row counts
+  deviating executor's measured amount, Nested Loop Join the join node, type,
+  condition and input rows, MERGE Rewrite the unmodified and changed row counts
   with the file and partition counts (a row names its query and target, and
   merges commands with identical counts). A panel leaves out a core usage chart with
   fewer than 3 points. Never drop a row's own evidence to avoid a
@@ -175,34 +180,37 @@ routing" in [investigation-routing](./investigation-routing.md)).
   besides its stage chip, stage name and call site (`data-panel-identity`).
 - A step or row whose widget has nothing to show beyond the line above offers
   no evidence control and no panel. The decision is data, never a render. Every
-  `REGISTRY` entry has a typed `content: ContentCheck<T>`
-  (`src/view/evidence-panel.ts`) that takes the findings, the stated ids, the
-  density and the `appModel` and returns the rows the panel shows; a missing
-  check is a compile error. A check that keeps every row is `allRows`; a widget
-  whose rows are only the stated figure uses `unstatedRows`; any other lives in
-  `<Widget>.content.ts` beside the lazy-loaded widget (`RetryWaste.content.ts`,
-  `RightSizing.content.ts`, `StageSlowness.content.ts`). `evidencePanelFor`
-  (`detector-registry.tsx`) turns the check into an `EvidencePanel`, a branded
-  value that is null when no row is kept. The verdict step, the Findings row and
-  the group row take the panel from `evidencePanelOf` / `useEvidencePanel`
+  `REGISTRY` entry has a `model` (`FindingWidgetModel`,
+  `src/view/finding-widget.tsx`) whose `rows` function
+  (`RowsOf`, `src/view/evidence-panel.ts`) takes the findings, the stated ids,
+  the density and the `appModel` and returns the rows the widget shows; a
+  missing model is a compile error. The model lives in `<Widget>.rows.ts`
+  beside the lazy-loaded widget (`RetryWaste.rows.ts`, `RightSizing.rows.ts`,
+  `StageSlowness.rows.ts`). `evidencePanelFor` (`detector-registry.tsx`) runs
+  the same `rows` and turns the result into an `EvidencePanel`, a branded value
+  that is null when there is no row. The verdict step, the Findings row and the
+  group row take the panel from `evidencePanelOf` / `useEvidencePanel`
   (`InlineEvidence.tsx`), which follows the density; the evidence control, the
-  panel row and `InlineEvidence` accept only that value, and the widget renders
-  only `panel.rows`, so the check and the panel are one decision. A route to a
-  finding with no panel still lands: the step or row registers through
-  `useRouteLanding`, and the route scrolls to it and focuses its title or label.
-  `tests/view/evidence-panel-types.test.ts` holds the `@ts-expect-error` cases.
+  panel row and `InlineEvidence` accept only that value, and the shell renders
+  only the rows `rows` gives, so the panel and the widget are one decision. A
+  route to a finding with no panel still lands: the step or row registers
+  through `useRouteLanding`, and the route scrolls to it and focuses its title
+  or label. `tests/view/evidence-panel-types.test.ts` holds the
+  `@ts-expect-error` cases.
   Three behaviour tests hold the decision to the data, whatever way a change
   observes the output: `tests/view/evidence-check.test.tsx` renders every panel
-  the checks keep for every finding of every example run, in both densities,
+  the rows give for every finding of every example run, in both densities,
   with and without the finding stated above, and fails on one that shows nothing
   under its title (hidden output counts as not shown), and checks that a row
-  offers its evidence control exactly when its check keeps a row;
+  offers its evidence control exactly when its widget has a row;
   `tests/view/closed-evidence-panels.test.tsx` renders the dashboard with every
   panel closed and fails when a widget renders under a verdict step or a
   Findings row; `tests/view/route-focus.test.tsx` routes to each example finding
   and fails unless the focused element is visible and in that finding's row,
   panel or card. The ast-grep rules in `rules/` ban the observe-and-correct
   shapes in view code (see [Structure rules](../../testing.md#structure-rules)).
+  Where a step, a row or a card shows a finding is `evidencePlacement` (see
+  [Evidence placement](../widget-rendering.md#evidence-placement)).
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

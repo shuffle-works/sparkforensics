@@ -1,42 +1,15 @@
-import { memo, useMemo, useState } from 'react';
-
-import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { DocsLink } from '@/view/DocsContext';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
-import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { useAnchoredRow } from '@/view/finding-anchor';
+import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
-import { RowPagination } from '@/view/RowPagination';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
-import { usePagedRows } from '@/view/usePagedRows';
-import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import type { WidgetProps } from '@/view/detector-registry';
-import type { ReactNode } from 'react';
-import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import type { EvidenceAvailabilityEntry, FindingOf } from '@sparkforensics/core/types.ts';
-
-export type ConfigAuditProps = WidgetProps;
+import { ImpactDot } from '@/view/ImpactBadge';
+import { configAuditModel, type ConfigAuditRow } from './ConfigAudit.rows';
 
 /** One flagged config property's row. */
-function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
-  const anchor = useAnchoredRow([finding]);
-  // The line above the panel already shows the sentence (with the value it measured)
-  // and the savings; the docs link, or without one the audited setting, is the evidence.
-  const stated = useStatedAbove(finding);
-
+function Row({ row: { finding, showSetting, measured, showParagraph, stated } }: FindingRowProps<ConfigAuditRow>) {
   return (
-    <li
-      ref={anchor.ref}
-      tabIndex={anchor.tabIndex}
-      data-flashed={anchor.dataFlashed}
-      className={`space-y-1 transition-colors ${anchor.flashClassName}`}
-    >
-      {stated && finding.docAnchor ? null : (
+    <>
+      {showSetting ? (
         <div className="flex items-center gap-2">
           <ImpactDot impactBand={finding.impactBand} />
           <code className="text-xs">{finding.property}</code>
@@ -45,134 +18,33 @@ function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
             {finding.valueText}
           </code>
         </div>
-      )}
+      ) : null}
       {stated ? null : <ImpactEstimate finding={finding} />}
-      {stated && !finding.docAnchor ? null : (
+      {showParagraph ? (
         <p className="text-sm">
-          {stated ? null : recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation}
+          {measured}
           {finding.docAnchor ? (
             <>
-              {stated ? null : ' '}
+              {measured === null ? null : ' '}
               <DocsLink anchor={finding.docAnchor}>Why {finding.property} matters</DocsLink>
             </>
           ) : null}
         </p>
-      )}
-    </li>
+      ) : null}
+    </>
   );
 }
 
+// The `CFG` tag and the `sparkConfiguration` evidence marker each appear once, on the header, not per
+// row: the evidence key is a widget-wide constant, not per-finding data.
+const Status: NonNullable<FindingWidgetView<ConfigAuditRow>['Status']> = ({ density }) => (
+  density === 'advanced' ? <RowStatusCluster evidenceKey="sparkConfiguration" /> : null
+);
+
 /**
- * Static Spark-config sanity audit (`auditConfig`), a config-derived finding
- * category separate from the runtime bottleneck `catalog`: config-scope
- * detectors have `inScorecard: false`, so `analyze()` never emits them into
- * `catalog`; only `auditConfig(app)` does. Every offending property is listed
- * with its own impact dot, never just the worst. The `CFG` tag and the
- * `sparkConfiguration` evidence marker each appear once, on the header
- * badge, not per row, the evidence key is a widget-wide constant, not
- * per-finding data.
+ * Static Spark-config sanity audit (`auditConfig`), a config-derived finding category separate from
+ * the runtime bottleneck `catalog`: config-scope detectors have `inScorecard: false`, so `analyze()`
+ * never emits them into `catalog`; only `auditConfig(app)` does. Every offending property is listed
+ * with its own impact dot, never just the worst.
  */
-export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings, defaultCollapsed = true }: ConfigAuditProps) {
-  const [page, setPage] = useState(0);
-  // The store's config findings (useIngest in the live app, the payload in an
-  // export), threaded from Dashboard; memoized to skip the re-sort on unrelated
-  // re-renders.
-  // Guard: auditConfig only emits configAudit today; the filter documents that
-  // contract so a future type doesn't silently slip through.
-  const findings = useMemo(() => findingsOfType(configFindings ?? [], 'configAudit')
-    .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]), [configFindings]);
-
-  const activeRouteTarget = useActiveRouteTarget();
-  const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;
-  const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
-
-  if (findings.length === 0) {
-    const sparkConfiguration = appModel.evidenceAvailability?.entries.find(
-      (entry): entry is EvidenceAvailabilityEntry => entry.key === 'sparkConfiguration',
-    );
-
-    let message: ReactNode;
-    if (sparkConfiguration) {
-      if (sparkConfiguration.state === 'present') {
-        message = 'No misconfigurations detected.';
-      } else if (sparkConfiguration.state === 'unknown' && sparkConfiguration.reasonCode === 'parseIncomplete') {
-        message = (
-          <>
-            <span>{sparkConfiguration.summary} </span>
-            <AdvancedOnly>
-              <RowStatusCluster evidenceKey="sparkConfiguration" />
-            </AdvancedOnly>
-          </>
-        );
-      } else {
-        message = (
-          <>
-            <span>No environment info captured in this log. </span>
-            <AdvancedOnly>
-              <RowStatusCluster evidenceKey="sparkConfiguration" />
-            </AdvancedOnly>
-          </>
-        );
-      }
-    } else {
-      // Restored snapshot with no evidence-availability ledger: fall back to the
-      // config/resources heuristic.
-      const evidenceInputs = appModel.app?.evidenceInputs;
-      const hasConfig = evidenceInputs
-        ? evidenceInputs.environmentUpdates > 0
-        : Object.keys(appModel.app?.config ?? {}).length > 0 || !!appModel.app?.resources;
-      message = hasConfig
-        ? 'No misconfigurations detected.'
-        : (
-          <>
-            <span>No environment info captured in this log. </span>
-            <AdvancedOnly>
-              <RowStatusCluster evidenceKey="sparkConfiguration" />
-            </AdvancedOnly>
-          </>
-        );
-    }
-
-    const body = <p className="text-muted-foreground text-xs">{message}</p>;
-    return (
-      <WidgetCard title="Config Audit" compact summary={body}>
-        {body}
-      </WidgetCard>
-    );
-  }
-
-  const impactBand = worstImpactBand(findings);
-
-  return (
-    <WidgetCard
-      title="Config Audit"
-      fixFor={findings}
-      impactBand={impactBand}
-      badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
-      statusBadge={
-        <AdvancedOnly>
-          <RowStatusCluster evidenceKey="sparkConfiguration" />
-        </AdvancedOnly>
-      }
-      defaultCollapsed={defaultCollapsed}
-      summary={
-        <WidgetLeadSummary
-          value={`${findings.length}`}
-          context={`misconfiguration${findings.length === 1 ? '' : 's'} flagged`}
-        />
-      }
-    >
-      <ul className="space-y-4">
-        {visible.map((f) => (
-          <ConfigAuditRow key={f.id} finding={f} />
-        ))}
-      </ul>
-      <RowPagination
-        page={effectivePage}
-        totalPages={totalPages}
-        onPrev={() => setPage((p) => p - 1)}
-        onNext={() => setPage((p) => p + 1)}
-      />
-    </WidgetCard>
-  );
-});
+export const ConfigAudit = defineFindingWidget(configAuditModel, { Row, Status });

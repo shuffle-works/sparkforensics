@@ -9,6 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { StageTable } from '@/view/widgets/StageTable';
+import { SPILL_CLASS_SHORT } from '@sparkforensics/core/format-utils.ts';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
@@ -486,24 +487,50 @@ describe('StageTable', () => {
     store.getState().setWidgetDensity('basic');
   });
 
-  it('shows a plain flag label, not the raw percentage, in the Fetch Wait chip at Basic density', () => {
+  it('chips a failed-task count only for a stage the retry detector flagged, in that finding\'s band', () => {
+    const appModel = buildAppModel([[1, makeStage(1, { failedTasks: 3 })], [2, makeStage(2, { failedTasks: 3 })]]);
+    const catalog: Finding[] = [testFinding({ type: 'retryWaste', stageId: 1, impactBand: 'info' })];
+
+    render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
+
+    const rows = screen.getAllByRole('row').slice(1);
+    // The flagged stage has the Operation tag and the cell chip; the other stage has neither.
+    expect(rows.map((row) => within(row).queryAllByText('RETRY').length).sort()).toEqual([0, 2]);
+  });
+
+  it('chips spilled memory only for a stage the spill detector flagged, and shows the raw size otherwise', () => {
+    const appModel = buildAppModel([
+      [1, makeStage(1, { memoryBytesSpilled: 2048, spillClassification: 'skew' })],
+      [2, makeStage(2, { memoryBytesSpilled: 2048, spillClassification: 'skew' })],
+    ]);
+    const catalog: Finding[] = [testFinding({ type: 'spill', stageId: 1, impactBand: 'warning' })];
+
+    render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
+
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows.map((row) => within(row).queryAllByText(SPILL_CLASS_SHORT.skew).length).sort()).toEqual([0, 1]);
+    expect(rows.every((row) => /2(\.0)? ?KB/i.test(row.textContent ?? ''))).toBe(true);
+  });
+
+  it('shows raw fetch wait without a severity chip when no detector flagged the stage for it', () => {
     const appModel = buildAppModel([[1, makeStage(1, { fetchWaitTime: 400, executorRunTime: 1000 })]]);
     const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
 
-    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(screen.queryByText('High')).not.toBeInTheDocument();
+    expect(screen.queryByText('Elevated')).not.toBeInTheDocument();
     expect(screen.queryByText('40%')).not.toBeInTheDocument();
   });
 
-  it('shows the raw fetch-wait percentage in the chip at Advanced density', () => {
+  it('does not add a numeric-derived fetch wait severity at Advanced density', () => {
     store.getState().setWidgetDensity('advanced');
     const appModel = buildAppModel([[1, makeStage(1, { fetchWaitTime: 400, executorRunTime: 1000 })]]);
     const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
 
-    expect(screen.getByText('40%')).toBeInTheDocument();
+    expect(screen.queryByText('40%')).not.toBeInTheDocument();
     expect(screen.queryByText('High')).not.toBeInTheDocument();
     store.getState().setWidgetDensity('basic');
   });

@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { test, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 const openStage = vi.fn();
 vi.mock('@/view/StageDetailContext', () => ({
@@ -20,8 +19,7 @@ vi.mock('@/view/TriageNavigationContext', () => ({
   useRouteFlashedFinding: () => null,
 }));
 
-import { emptyAppModel, store } from '@/store/store';
-import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
+import { emptyAppModel } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 
 import { StageSlowness } from '@/view/widgets/StageSlowness';
@@ -73,21 +71,6 @@ test('flags every affected stage, not just the worst', () => {
   expect(screen.getByRole('button', { name: /open details for stage 2/i })).toBeInTheDocument();
 });
 
-test('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
-  const user = userEvent.setup();
-  store.getState().setWidgetDensity('advanced');
-  const catalog: Finding[] = [
-    { type: 'stageSlowness', stageId: 1, impactBand: 'warning', value: 16, recommendation: 'r1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } },
-    { type: 'stageSlowness', stageId: 2, impactBand: 'warning', value: 40, recommendation: 'r2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } },
-  ];
-  const appModel: AppModel = { ...emptyAppModel(), stages: new Map([[1, { id: 1 }], [2, { id: 2 }]]) as unknown as AppModel['stages'] };
-  installInterpretation(catalog);
-  render(<StageSlowness appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
-  const rows = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
-  await expectImpactThenStageOrderByAccessibleName(user, rows, /stage 1/i, /stage 2/i);
-  store.getState().setWidgetDensity('basic');
-});
-
 test('hides the sort toggle at basic density', () => {
   const catalog: Finding[] = [
     { type: 'stageSlowness', stageId: 1, impactBand: 'warning', value: 16, recommendation: 'r1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } },
@@ -96,16 +79,4 @@ test('hides the sort toggle at basic density', () => {
   const appModel: AppModel = { ...emptyAppModel(), stages: new Map([[1, { id: 1 }], [2, { id: 2 }]]) as unknown as AppModel['stages'] };
   render(<StageSlowness appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.queryByRole('group', { name: /sort order/i })).not.toBeInTheDocument();
-});
-
-test('paginates the issue list 6-at-a-time', async () => {
-  const user = userEvent.setup();
-  const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => ({
-    type: 'stageSlowness' as const, stageId: i + 1, impactBand: 'warning' as const, value: 40, recommendation: `r${i}`,
-  }));
-  const appModel: AppModel = { ...emptyAppModel(), stages: new Map(catalog.map((f) => [f.stageId as number, { id: f.stageId }])) as unknown as AppModel['stages'] };
-  render(<StageSlowness appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 });

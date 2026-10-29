@@ -190,6 +190,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { text: 'Findings tab', link: '/contributor-guide/architecture/widget-rendering/findings-tab' },
+                    { text: 'Finding widget shell', link: '/contributor-guide/architecture/widget-rendering/finding-widget-shell' },
                     { text: 'List sort mode', link: '/contributor-guide/architecture/widget-rendering/list-sort-mode' },
                     { text: 'Row/expand contract', link: '/contributor-guide/architecture/widget-rendering/row-expand-contract' },
                     { text: 'ReferenceSection', link: '/contributor-guide/architecture/widget-rendering/reference-section' },

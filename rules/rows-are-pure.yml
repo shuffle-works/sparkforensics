@@ -1,0 +1,14 @@
+id: rows-are-pure
+language: tsx
+severity: error
+message: A widget's rows function reads something other than its input.
+note: |
+  A widget's rows (`*.rows.ts`, and the shared types in `evidence-panel.ts`) decide what the widget
+  shows from its PanelInput (findings, stated ids, density, appModel) alone. They may not import
+  React, the store, a context or a hook module, call a hook, read a global such as `document` or
+  `window`, or use the clock or randomness. If they need a value, add that value to PanelInput.
+rule:
+  matches: rows-impurity
+files:
+  - src/view/widgets/*.rows.ts
+  - src/view/evidence-panel.ts

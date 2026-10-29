@@ -35,7 +35,7 @@ function renderWidget(appModel: AppModel, catalog: Finding[]) {
 
 test('renders the WidgetCard heading', () => {
   renderWidget(buildAppModel(), [finding()]);
-  expect(screen.getByRole('heading', { name: 'Job Failures' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Job Failure Rate' })).toBeInTheDocument();
 });
 
 test('shows the JOBS tag badge with the finding impact band', () => {
@@ -49,7 +49,7 @@ test('shows the failure-rate summary and task-failure context', async () => {
   renderWidget(buildAppModel(), [finding()]);
 
   // Expand the card to see the detailed content
-  const cardToggle = screen.getByRole('button', { name: 'Job Failures' });
+  const cardToggle = screen.getByRole('button', { name: 'Job Failure Rate' });
   await user.click(cardToggle);
 
   expect(screen.getByText(/Failure rate:/)).toBeInTheDocument();
@@ -65,7 +65,7 @@ test('hides the task-failure context line at Basic density', async () => {
   const user = userEvent.setup();
   renderWidget(buildAppModel(), [finding()]);
 
-  const cardToggle = screen.getByRole('button', { name: 'Job Failures' });
+  const cardToggle = screen.getByRole('button', { name: 'Job Failure Rate' });
   await user.click(cardToggle);
 
   expect(screen.getByText(/Failure rate:/)).toBeInTheDocument();
@@ -106,7 +106,7 @@ test('states the card fix instead of the finding recommendation, with no toggle 
   renderWidget(buildAppModel(), [finding({ recommendation: 'Inspect the driver log for job failures.' })]);
 
   // Expand the card first since it starts collapsed with the summary
-  const cardToggle = screen.getByRole('button', { name: 'Job Failures' });
+  const cardToggle = screen.getByRole('button', { name: 'Job Failure Rate' });
   await user.click(cardToggle);
 
   expect(screen.getByText(/Failure rate:/)).toBeInTheDocument();
@@ -125,7 +125,7 @@ test('card defaults collapsed with the job-failure-rate summary', async () => {
   renderWidget(buildAppModel(), [finding()]);
 
   // Card starts collapsed: aria-expanded="false"
-  const toggle = screen.getByRole('button', { name: 'Job Failures' });
+  const toggle = screen.getByRole('button', { name: 'Job Failure Rate' });
   expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
   // Summary should be visible when collapsed
