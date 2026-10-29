@@ -16,6 +16,12 @@ vi.mock('@sparkforensics/core/recent-files.ts', () => ({
   entryId: (name: string, size: number, lastModified: number) => `${name}::${size}::${lastModified}`,
 }));
 
+// A 'parsing' status makes App preload the dashboard and its widget chunks.
+// No test here renders the dashboard, so stub both: otherwise those imports
+// can still be loading when the file's environment is torn down.
+vi.mock('@/view/Dashboard', () => ({ Dashboard: () => null }));
+vi.mock('@/view/detector-registry', () => ({ warmWidgetChunks: vi.fn() }));
+
 beforeEach(() => {
   store.getState().resetModel();
   store.setState({ sessionCache: new Map(), activeFileId: null });
