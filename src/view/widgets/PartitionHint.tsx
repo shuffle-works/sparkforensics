@@ -1,4 +1,4 @@
-/** The shuffle-partition count to try for a stage (`recommendPartitions`), in the one form
+/** The shuffle-partition count to try for a stage (`partitionHint`), in the one form
  * Shuffle I/O and Spill share. */
 export function PartitionHint({ hint }: { hint: { recommended: number; current: number } }) {
   return (

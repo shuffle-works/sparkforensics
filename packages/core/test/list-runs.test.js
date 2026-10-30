@@ -1,16 +1,15 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { listRunsLocal, listRunsShs, listRuns } from '../src/list-runs.js';
+import { corpusLog } from './corpus-log.js';
 
 // Real multi-attempt fixtures: same appId, disambiguated only by the `_1`/`_2` filename suffix.
 // dev/log-corpus is a git submodule (public corpus repo), checked out in CI; tests depending on
 // these skip locally until `git submodule update --init dev/log-corpus`.
-const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
-const ATTEMPT_FIXTURE_1 = join(FIXTURES_DIR, 'external-local-1430917381535_1.ndjson');
-const ATTEMPT_FIXTURE_2 = join(FIXTURES_DIR, 'external-local-1430917381535_2.ndjson');
+const ATTEMPT_FIXTURE_1 = corpusLog('external/external-local-1430917381535_1.ndjson');
+const ATTEMPT_FIXTURE_2 = corpusLog('external/external-local-1430917381535_2.ndjson');
 
 const cleanupDirs = [];
 afterEach(() => {
@@ -135,7 +134,7 @@ describe('listRunsLocal', () => {
 
   // Local mode must carry an attempt id in source (like SHS mode's attempts[0]/attemptId), so two
   // attempts of the same Spark app (same appId, different `_<n>` filename suffix) are told apart.
-  it.skipIf(!existsSync(ATTEMPT_FIXTURE_1) || !existsSync(ATTEMPT_FIXTURE_2))(
+  it.skipIf(!ATTEMPT_FIXTURE_1 || !ATTEMPT_FIXTURE_2)(
     'stamps a distinct attemptId per numbered-suffix attempt of the same app',
     async () => {
       const dir = tmpDir();

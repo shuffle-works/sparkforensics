@@ -9,7 +9,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { describeSpillRatio, formatBytes, formatRowWidth, recommendPartitions, IMPACT_BAND_ORDER, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
+import { describeSpillRatio, formatBytes, formatRowWidth, partitionHint as hintFor, IMPACT_BAND_ORDER, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import type { SpillExchange } from '@sparkforensics/core/finding-types.ts';
@@ -82,9 +82,7 @@ function SpillRow({
   const stated = useStatedAbove(finding);
   const stage = appModel.stages.get(finding.stageId);
   const cls = classificationOf(appModel, finding.stageId);
-  // A job's own repartition(n) sets the input partitioning, so spark.sql.shuffle.partitions would not change it.
-  const ownPartitioning = finding.type === 'spill' && finding.exchanges?.[0]?.origin === 'REPARTITION_BY_NUM';
-  const partitionHint = cls === 'volume' && stage && !ownPartitioning ? recommendPartitions(stage) : null;
+  const partitionHint = cls === 'volume' && stage ? hintFor(finding, stage) : null;
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(finding.stageId, appModel);
 
   return (

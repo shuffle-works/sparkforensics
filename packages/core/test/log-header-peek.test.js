@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { peekLogHeader } from '../src/log-header-peek.js';
 import { gzipSync, strToU8 } from '../src/vendor/fflate.js';
 import { zstdCompressSync } from 'node:zlib';
+import { corpusLog } from './corpus-log.js';
 
-const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
-const MINIMAL_FIXTURE = join(FIXTURES_DIR, 'external-minimal-eventlog.ndjson');
+const MINIMAL_FIXTURE = corpusLog('external/external-minimal-eventlog.ndjson');
 
 function fileFromBytes(name, bytes) {
   return {
@@ -23,7 +21,7 @@ function fileFromBytes(name, bytes) {
 describe('peekLogHeader', () => {
   // dev/log-corpus is a git submodule (public corpus repo), checked out in CI; skipped locally
   // until `git submodule update --init dev/log-corpus`.
-  it.skipIf(!existsSync(MINIMAL_FIXTURE))('extracts appId/name/sparkVersion/startTime from a real uncompressed fixture', async () => {
+  it.skipIf(!MINIMAL_FIXTURE)('extracts appId/name/sparkVersion/startTime from a real uncompressed fixture', async () => {
     const raw = readFileSync(MINIMAL_FIXTURE);
     const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
     const result = await peekLogHeader(fileFromBytes('eventlog', bytes));

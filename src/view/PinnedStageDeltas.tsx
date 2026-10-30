@@ -4,6 +4,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { WidgetCard } from '@/view/WidgetCard';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDuration } from '@sparkforensics/core/format-utils.ts';
+import { direction } from '@sparkforensics/core/run-comparison.ts';
 
 export interface StageMetrics {
   duration: number | null;
@@ -39,13 +40,16 @@ const FIELDS: { key: keyof StageMetrics; label: string; fmt: (v: number) => stri
 function fmtAbs(v: number | null, fmt: (v: number) => string) {
   return v == null ? '—' : fmt(v);
 }
-// Signed delta with the field's own unit; more = worse (cost metrics), so a
-// positive delta is a regression. Color mirrors the aggregate Metrics table.
-function DeltaCell({ base, cand, fmt }: { base: number | null; cand: number | null; fmt: (v: number) => string }) {
+const DELTA_CLASS = { regression: 'text-critical', improvement: 'text-clean' } as const;
+
+// Signed delta with the field's own unit. Color follows the core direction, as in the
+// aggregate Metrics table: volume and count metrics stay neutral.
+function DeltaCell({ metric, base, cand, fmt }: { metric: keyof StageMetrics; base: number | null; cand: number | null; fmt: (v: number) => string }) {
   if (base == null || cand == null) return <TableCell className="text-muted-foreground">—</TableCell>;
   const d = cand - base;
   const text = d === 0 ? 'unchanged' : (d < 0 ? '-' : '+') + fmt(Math.abs(d));
-  const color = d === 0 ? 'text-muted-foreground' : d < 0 ? 'text-clean' : 'text-critical';
+  const dir = direction(metric, base, cand);
+  const color = dir === 'regression' || dir === 'improvement' ? DELTA_CLASS[dir] : 'text-muted-foreground';
   return <TableCell className={cn('font-medium', color)}>{text}</TableCell>;
 }
 
@@ -66,7 +70,7 @@ export function PairTable({ base, cand }: { base: StageSummary; cand: StageSumma
             <TableHead scope="row" className="text-left">{f.label}</TableHead>
             <TableCell>{fmtAbs(base.metrics[f.key], f.fmt)}</TableCell>
             <TableCell>{fmtAbs(cand.metrics[f.key], f.fmt)}</TableCell>
-            <DeltaCell base={base.metrics[f.key]} cand={cand.metrics[f.key]} fmt={f.fmt} />
+            <DeltaCell metric={f.key} base={base.metrics[f.key]} cand={cand.metrics[f.key]} fmt={f.fmt} />
           </TableRow>
         ))}
       </TableBody>

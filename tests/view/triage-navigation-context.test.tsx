@@ -53,6 +53,8 @@ function Probe({ capture }: { capture: (navigation: TriageNavigation | null) => 
   );
 }
 
+const noopKey = () => '';
+
 test('threads focusedCardKey, activeRouteTarget, and flashedFinding through their own hooks', () => {
   const finding = spillFinding();
   const target = spillTarget(finding);
@@ -62,6 +64,7 @@ test('threads focusedCardKey, activeRouteTarget, and flashedFinding through thei
     <TriageNavigationProvider
       registerWidget={noop}
       registerFindingAnchor={noop}
+      findingKey={noopKey}
       reportWidgetOpen={vi.fn()}
       clearRouteFocus={vi.fn()}
       focusedCardKey="spill"
@@ -78,7 +81,6 @@ test('threads focusedCardKey, activeRouteTarget, and flashedFinding through thei
 });
 
 test('exposes registerFindingAnchor on the navigation bundle, forwarding args and the returned cleanup', () => {
-  const finding = spillFinding();
   const element = document.createElement('div');
   const cleanup = vi.fn();
   const registerFindingAnchor = vi.fn(() => cleanup);
@@ -88,6 +90,7 @@ test('exposes registerFindingAnchor on the navigation bundle, forwarding args an
     <TriageNavigationProvider
       registerWidget={noop}
       registerFindingAnchor={registerFindingAnchor}
+      findingKey={noopKey}
       reportWidgetOpen={vi.fn()}
       clearRouteFocus={vi.fn()}
       focusedCardKey={null}
@@ -99,8 +102,8 @@ test('exposes registerFindingAnchor on the navigation bundle, forwarding args an
   );
 
   const navigation = capture.mock.calls.at(-1)?.[0] as TriageNavigation;
-  const unregister = navigation.registerFindingAnchor(finding, element);
-  expect(registerFindingAnchor).toHaveBeenCalledWith(finding, element);
+  const unregister = navigation.registerFindingAnchor('spill|spill|stage:a', element);
+  expect(registerFindingAnchor).toHaveBeenCalledWith('spill|spill|stage:a', element);
 
   unregister();
   expect(cleanup).toHaveBeenCalledTimes(1);
@@ -121,6 +124,7 @@ test('the stable navigation bundle keeps its identity when only focus/target/fla
       <TriageNavigationProvider
         registerWidget={noop}
         registerFindingAnchor={noop}
+        findingKey={noopKey}
         reportWidgetOpen={reportWidgetOpen}
         clearRouteFocus={clearRouteFocus}
         focusedCardKey={focusedCardKey}

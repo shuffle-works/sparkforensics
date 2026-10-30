@@ -47,10 +47,17 @@ test('flags every affected stage, not just the worst', () => {
 test('suggests a shuffle partition count in the form Spill shares', () => {
   // 600 MiB over 2 tasks: 5 partitions of 128 MB each.
   const appModel = buildAppModel({ 1: { shuffleReadBytes: 600 * 1024 * 1024, shuffleWriteBytes: 0, taskCount: 2 } });
-  const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', value: 600 * 1024 * 1024 }];
+  const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', value: 600 * 1024 * 1024, partitions: 'raise' }];
   render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
   expect(screen.getByText('spark.sql.shuffle.partitions = 5')).toBeInTheDocument();
   expect(screen.getByText(/\(now 2 tasks; target 128 MB per partition\)/)).toBeInTheDocument();
+});
+
+test.each(['ownPartitioning', 'aqeCoalesced', 'sufficient'] as const)('shows no partition hint when the finding says spark.sql.shuffle.partitions is not the lever (%s)', (partitions) => {
+  const appModel = buildAppModel({ 1: { shuffleReadBytes: 600 * 1024 * 1024, shuffleWriteBytes: 0, taskCount: 2 } });
+  const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', value: 600 * 1024 * 1024, partitions }];
+  render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
+  expect(screen.queryByText(/spark\.sql\.shuffle\.partitions =/)).not.toBeInTheDocument();
 });
 
 test('shows the SHFL tag for a shuffle finding', () => {

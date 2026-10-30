@@ -1,14 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { collectRun } from '../src/cli/collect-run.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
+import { corpusLog } from './corpus-log.js';
 
 // Write targets on the public corpus's Delta DML runs: one table written, then merged into, updated
 // or deleted from in a local session. dev/log-corpus is a git submodule: the suite skips without it.
-const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs');
-const corpusLog = (name) => join(CORPUS_DIR, `${name}.ndjson`);
 
 const TABLE_PATH = '/tmp/spark-workload-output/data-delta-table';
 // The initial save names its table as a plain path; a DML command's target is read from the
@@ -17,7 +13,7 @@ const SAVE = { command: 'SaveIntoDataSourceCommand', kind: 'path', target: TABLE
 const dml = (command) => ({ command, kind: 'path', target: `file://${TABLE_PATH}` });
 
 async function writesOf(name) {
-  const { appModel, skippedLines } = await collectRun(corpusLog(name));
+  const { appModel, skippedLines } = await collectRun(corpusLog(`${name}.ndjson`));
   const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
   expect(writeTargets.skippedLines).toBe(skippedLines);
   expect(writeTargets.executionsWithoutPlan).toEqual([]);
@@ -26,21 +22,21 @@ async function writesOf(name) {
 }
 
 describe('Delta DML write targets on public corpus logs', () => {
-  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('names the table of a SQL MERGE', async () => {
+  it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('names the table of a SQL MERGE', async () => {
     expect(await writesOf('delta-merge-sql')).toEqual([
       { sqlExecutionId: 0, recognized: true, ...SAVE },
       { sqlExecutionId: 4, recognized: true, ...dml('MergeIntoCommand') },
     ]);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-update')))('names the table of an UPDATE', async () => {
+  it.skipIf(!corpusLog('delta-update.ndjson'))('names the table of an UPDATE', async () => {
     expect(await writesOf('delta-update')).toEqual([
       { sqlExecutionId: 0, recognized: true, ...SAVE },
       { sqlExecutionId: 3, recognized: true, ...dml('UpdateCommand') },
     ]);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-delete')))('names the table of a DELETE', async () => {
+  it.skipIf(!corpusLog('delta-delete.ndjson'))('names the table of a DELETE', async () => {
     expect(await writesOf('delta-delete')).toEqual([
       { sqlExecutionId: 0, recognized: true, ...SAVE },
       { sqlExecutionId: 3, recognized: true, ...dml('DeleteCommand') },
@@ -48,7 +44,7 @@ describe('Delta DML write targets on public corpus logs', () => {
   });
 
   // Two threads each run a MERGE in one session: two root executions, interleaved sub-queries.
-  it.skipIf(!existsSync(corpusLog('delta-concurrent-merge')))('names the table of both concurrent MERGEs', async () => {
+  it.skipIf(!corpusLog('delta-concurrent-merge.ndjson'))('names the table of both concurrent MERGEs', async () => {
     expect(await writesOf('delta-concurrent-merge')).toEqual([
       { sqlExecutionId: 0, recognized: true, ...SAVE },
       { sqlExecutionId: 3, recognized: true, ...dml('MergeIntoCommand') },
@@ -58,7 +54,7 @@ describe('Delta DML write targets on public corpus logs', () => {
 
   // The DeltaTable API runs its merge as a MergeIntoCommand execution, so it is reported as one
   // command write, not as a DeltaMerge group of sub-queries.
-  it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reports the DeltaTable API merge as a MergeIntoCommand write', async () => {
+  it.skipIf(!corpusLog('delta-merge-api.ndjson'))('reports the DeltaTable API merge as a MergeIntoCommand write', async () => {
     const writes = await writesOf('delta-merge-api');
     expect(writes.map((w) => w.command)).toEqual(['SaveIntoDataSourceCommand', 'MergeIntoCommand']);
     expect(writes[1]).toMatchObject({ sqlExecutionId: 3, recognized: true, kind: 'path', target: `file://${TABLE_PATH}` });
@@ -70,18 +66,18 @@ describe('MERGE row counts on public corpus logs', () => {
   const MERGE_ROWS = { inserted: 100000, updated: 200000, deleted: 0, copied: 800000 };
 
   async function mergeWrite(name) {
-    const { appModel } = await collectRun(corpusLog(name));
+    const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
     const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
     return writeTargets.writes.find((w) => w.command === 'MergeIntoCommand');
   }
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reads them from a SQL MERGE node', async () => {
+  it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('reads them from a SQL MERGE node', async () => {
     const write = await mergeWrite('delta-merge-sql');
     expect(write.mergeRows).toEqual(MERGE_ROWS);
     expect(write.outputRows).toBe(1_100_000);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reads them from a DeltaTable API merge that has a command node', async () => {
+  it.skipIf(!corpusLog('delta-merge-api.ndjson'))('reads them from a DeltaTable API merge that has a command node', async () => {
     expect((await mergeWrite('delta-merge-api')).mergeRows).toEqual(MERGE_ROWS);
   });
 });
@@ -90,23 +86,23 @@ describe('MERGE row counts on public corpus logs', () => {
 // and equal the stage sums of its root execution.
 describe('DML output figures on public corpus logs', () => {
   async function dmlWrites(name) {
-    const { appModel } = await collectRun(corpusLog(name));
+    const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
     const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
     return writeTargets.writes.filter((w) => w.command !== 'SaveIntoDataSourceCommand');
   }
   const figures = ({ outputRows, outputRowsSource, outputBytes }) => ({ outputRows, outputRowsSource, outputBytes });
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reports inserted + updated + copied rows and the bytes added for a SQL MERGE', async () => {
+  it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('reports inserted + updated + copied rows and the bytes added for a SQL MERGE', async () => {
     const [merge] = await dmlWrites('delta-merge-sql');
     expect(figures(merge)).toEqual({ outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_600 });
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reports the same figures for a DeltaTable API merge', async () => {
+  it.skipIf(!corpusLog('delta-merge-api.ndjson'))('reports the same figures for a DeltaTable API merge', async () => {
     const [merge] = await dmlWrites('delta-merge-api');
     expect(figures(merge)).toEqual({ outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_661 });
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-concurrent-merge')))('reports each concurrent MERGE from its own node', async () => {
+  it.skipIf(!corpusLog('delta-concurrent-merge.ndjson'))('reports each concurrent MERGE from its own node', async () => {
     const merges = await dmlWrites('delta-concurrent-merge');
     expect(merges.map((w) => [w.sqlExecutionId, ...Object.values(figures(w))])).toEqual([
       [3, 275_000, 'commandMetric', 3_578_545],
@@ -114,13 +110,13 @@ describe('DML output figures on public corpus logs', () => {
     ]);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-update')))('reports the rows touched, and the bytes added for an UPDATE', async () => {
+  it.skipIf(!corpusLog('delta-update.ndjson'))('reports the rows touched, and the bytes added for an UPDATE', async () => {
     const [update] = await dmlWrites('delta-update');
     expect(figures(update)).toEqual({ outputRows: 500_000, outputRowsSource: 'commandMetric', outputBytes: 6_010_388 });
     expect(update.mergeRows).toBeNull();
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-delete')))('reports 0 rows and 0 bytes written for a DELETE', async () => {
+  it.skipIf(!corpusLog('delta-delete.ndjson'))('reports 0 rows and 0 bytes written for a DELETE', async () => {
     const [del] = await dmlWrites('delta-delete');
     expect(figures(del)).toEqual({ outputRows: 0, outputRowsSource: 'commandMetric', outputBytes: 0 });
   });

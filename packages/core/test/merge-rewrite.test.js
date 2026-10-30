@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { analyze } from '../src/analyzer.js';
 import { collectRun } from '../src/cli/collect-run.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
+import { corpusLog } from './corpus-log.js';
 
 const metrics = (values) => Object.entries(values).map(([name, value]) => ({ name, value, metricType: 'sum' }));
 
@@ -87,30 +85,28 @@ describe('mergeRewrite', () => {
 });
 
 // dev/log-corpus is a git submodule: the suite skips without it.
-const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs');
-const corpusLog = (name) => join(CORPUS_DIR, `${name}.ndjson`);
 
 async function corpusFindings(name) {
-  const { appModel } = await collectRun(corpusLog(name));
+  const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
   return analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates).filter((f) => f.type === 'mergeRewrite');
 }
 
 describe('mergeRewrite on public corpus logs', () => {
-  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('flags the SQL MERGE that copied 800000 rows to change 300000', async () => {
+  it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('flags the SQL MERGE that copied 800000 rows to change 300000', async () => {
     const findings = await corpusFindings('delta-merge-sql');
     expect(findings.map((f) => [f.rule, f.rewrittenRows, f.changedRows])).toEqual([['rewrittenRows', 800_000, 300_000]]);
     expect(findings[0].target).toBe('file:///tmp/spark-workload-output/data-delta-table');
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-api')))('flags the DeltaTable API MERGE', async () => {
+  it.skipIf(!corpusLog('delta-merge-api.ndjson'))('flags the DeltaTable API MERGE', async () => {
     expect((await corpusFindings('delta-merge-api')).map((f) => f.rule)).toEqual(['rewrittenRows']);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-concurrent-merge')))('flags both concurrent MERGEs', async () => {
+  it.skipIf(!corpusLog('delta-concurrent-merge.ndjson'))('flags both concurrent MERGEs', async () => {
     expect((await corpusFindings('delta-concurrent-merge')).map((f) => [f.executionId, f.rule])).toEqual([[4, 'rewrittenRows'], [3, 'rewrittenRows']]);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-update')))('stays silent on an UPDATE', async () => {
+  it.skipIf(!corpusLog('delta-update.ndjson'))('stays silent on an UPDATE', async () => {
     expect(await corpusFindings('delta-update')).toEqual([]);
   });
 });

@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { collectRun } from '../src/cli/collect-run.js';
 import { analyze } from '../src/analyzer.js';
+import { corpusLog } from './corpus-log.js';
 
 // Hand-built Spark 3.5 log with spark.eventLog.logBlockUpdates.enabled=true and reduced storage
 // memory: a MEMORY_ONLY RDD with 4 of 10 partitions cached (later unpersisted), and a
@@ -47,13 +48,11 @@ describe('cacheUtilization end to end on a block-update log', () => {
 
 // Public corpus runs of Spark with spark.eventLog.logBlockUpdates.enabled=true and storage memory
 // cut to a sliver of the heap. dev/log-corpus is a git submodule: skipped when it isn't checked out.
-const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs');
 
 describe('cacheUtilization on public corpus caching runs', () => {
-  const corpusLog = (name) => join(CORPUS_DIR, `${name}.ndjson`);
 
-  it.skipIf(!existsSync(corpusLog('cache-memory-only')))('flags the MEMORY_ONLY run as partially cached', async () => {
-    const findings = await cacheFindings(corpusLog('cache-memory-only'));
+  it.skipIf(!corpusLog('cache-memory-only.ndjson'))('flags the MEMORY_ONLY run as partially cached', async () => {
+    const findings = await cacheFindings(corpusLog('cache-memory-only.ndjson'));
     expect(findings.map(({ variant, impactBand, value, numCachedPartitions, numPartitions }) =>
       ({ variant, impactBand, value, numCachedPartitions, numPartitions }))).toEqual([
       // Peak residency: 14 of 20 partitions fit at once before LRU eviction took it back to 12.
@@ -61,8 +60,8 @@ describe('cacheUtilization on public corpus caching runs', () => {
     ]);
   });
 
-  it.skipIf(!existsSync(corpusLog('cache-memory-and-disk')))('flags the MEMORY_AND_DISK run as spilled entirely to disk', async () => {
-    const findings = await cacheFindings(corpusLog('cache-memory-and-disk'));
+  it.skipIf(!corpusLog('cache-memory-and-disk.ndjson'))('flags the MEMORY_AND_DISK run as spilled entirely to disk', async () => {
+    const findings = await cacheFindings(corpusLog('cache-memory-and-disk.ndjson'));
     expect(findings.map(({ variant, impactBand, value, numCachedPartitions, memorySize }) =>
       ({ variant, impactBand, value, numCachedPartitions, memorySize }))).toEqual([
       { variant: 'diskSpillover', impactBand: 'warning', value: 100, numCachedPartitions: 20, memorySize: 0 },

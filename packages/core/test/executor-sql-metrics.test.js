@@ -1,14 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createState, dispatchLine, resolvePlanTree } from '../src/event-handlers.ts';
 import { computePlanShapes } from '../src/detectors.ts';
 import { collectRun } from '../src/cli/collect-run.ts';
 import { walkPlanTree } from '../src/plan-tree-walk.ts';
+import { corpusLog } from './corpus-log.js';
 
 const SQL = 'org.apache.spark.sql.execution.ui.SparkListener';
-const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs');
 
 // One execution: Project over an Exchange over a Scan. The Exchange's `data size` and the scan's
 // `number of output rows` are executor-side (task updates); the scan's `number of files read` is
@@ -173,8 +170,8 @@ describe('plan fingerprints', () => {
 describe('public corpus', () => {
   const logs = ['spark-3.5-parquet-baseline', 'spark-4.0-parquet-baseline', 'spark-4.1-parquet-baseline', 'spark-4.2-parquet-baseline'];
   for (const name of logs) {
-    it.skipIf(!existsSync(join(CORPUS_DIR, `${name}.ndjson`)))(`${name}: every shuffle Exchange resolves a non-zero data size`, async () => {
-      const { appModel } = await collectRun(join(CORPUS_DIR, `${name}.ndjson`));
+    it.skipIf(!corpusLog(`${name}.ndjson`))(`${name}: every shuffle Exchange resolves a non-zero data size`, async () => {
+      const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
       const sizes = [];
       for (const exec of appModel.sql.values()) {
         if (!exec.planTree) continue;
