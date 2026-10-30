@@ -1,0 +1,1 @@
+import{Tt as e,wt as t}from"./WidgetCard-Cu2j6ake.js";Object.fromEntries(Object.keys(t).map(e=>[e,t[e].name]));function n(t){return e(t)?.name??t}function r(e){return(typeof e.recommendation==`string`?e.recommendation.trim():``)||n(e.type)}function i(e){let t=e.lastIndexOf(`: `);return t>0?{measured:e.slice(0,t),fix:e.slice(t+2)}:{measured:null,fix:e}}export{i as n,r,n as t};

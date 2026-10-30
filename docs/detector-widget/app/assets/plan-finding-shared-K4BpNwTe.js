@@ -1,0 +1,1 @@
+var e=`bg-plan-aggregate/8 text-plan-aggregate`;export{e as t};
