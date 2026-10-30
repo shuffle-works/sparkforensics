@@ -1,5 +1,26 @@
 # sparkforensics
 
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies [bd7499c]
+- Updated dependencies [be0eb32]
+- Updated dependencies [8ecc03a]
+- Updated dependencies [32f661d]
+- Updated dependencies [7d2f0ec]
+- Updated dependencies [3ef528e]
+- Updated dependencies [175b70d]
+- Updated dependencies [901d314]
+- Updated dependencies [d1940d5]
+- Updated dependencies [a0312b6]
+- Updated dependencies [bede8a6]
+- Updated dependencies [fda4639]
+- Updated dependencies [3ef528e]
+- Updated dependencies [069cb67]
+- Updated dependencies [912e726]
+  - sparkforensics-cli@0.12.0
+
 ## 0.11.0
 
 ### Patch Changes
