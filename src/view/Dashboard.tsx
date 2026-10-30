@@ -105,7 +105,7 @@ function ReferenceSection({
         {hasEtlPhases(interpretation) && <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>}
         {hasScalingSim(appModel, interpretation) && <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>}
         {hasEfficiencyModel(interpretation) && <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>}
-        {hasCoreUsageHistogram(appModel) && <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>}
+        {hasCoreUsageHistogram(appModel) && <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>}
       </WidgetGrid>
     </div>
   );
@@ -584,7 +584,7 @@ function DashboardContent() {
         Skip to the verdict
       </button>
 
-      <FindingFilterProvider options={options} fileId={activeFileId}>
+      <FindingFilterProvider options={options}>
         <TriageNavigationProvider
           registerWidget={registerWidget}
           registerFindingAnchor={registerFindingAnchor}

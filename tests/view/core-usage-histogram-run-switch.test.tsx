@@ -7,6 +7,7 @@ import App from '@/App';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { loadCoreUsageHistogram } from '@/view/core-usage-histogram-data';
+import { runState } from './_shared/run';
 
 vi.mock('@/view/core-usage-histogram-data', () => ({
   loadCoreUsageHistogram: vi.fn(async () => ({ histogram: [0, 1000], incomplete: false })),
@@ -35,8 +36,7 @@ function readyAppModel(name: string): AppModel {
 function showRun(name: string, activeFileId: string) {
   store.setState({
     status: 'ready',
-    appModel: readyAppModel(name),
-    catalog: [],
+    ...runState({ appModel: readyAppModel(name) }, activeFileId),
     activeFileId,
     taskDataCache: new Map(),
     errorMessage: null,
@@ -65,6 +65,7 @@ test('the core-usage histogram loads again for the run a recent-run pick switche
   await waitFor(() => expect(loadCoreUsageHistogram).toHaveBeenCalledTimes(1));
 
   act(() => showRun('run B', 'file-b'));
+  await user.click(await screen.findByRole('tab', { name: 'Full app report' }));
   await user.click(await screen.findByRole('button', { name: /core-usage distribution/i }));
 
   await waitFor(() => expect(loadCoreUsageHistogram).toHaveBeenCalledTimes(2));
