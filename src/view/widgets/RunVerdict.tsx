@@ -82,7 +82,7 @@ export function NextStepItem({
   evidence,
 }: {
   step: InterpretedStep;
-  /** The step's lead finding, resolved from `step.leadIndex`. */
+  /** The step's lead finding, resolved from `step.leadId`. */
   finding: Finding;
   interpretation: InterpretationState;
   index: number;
