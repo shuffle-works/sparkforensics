@@ -173,8 +173,9 @@ the selection names the info band. Every change writes those params back with
 `popstate` listener re-seeds the selection from the URL, so Back and forward
 re-apply filters.
 
-Switching files resets the selection to empty, keyed on the stable file id. A
-page reload re-reads the address bar, so deep-linked filtered URLs still
+Switching runs resets the selection to empty: the provider sits inside the
+`runKey`-keyed `DashboardRoute`, and its unmount strips the filter params so the
+remount seeds a clean slate. A page reload re-reads the address bar, so deep-linked filtered URLs still
 restore. Filters are seeded only from the URL and never persisted anywhere
 else (no localStorage, no restore-as-default): a filtered view silently
 becoming the default on reload would risk hiding findings from a user who
