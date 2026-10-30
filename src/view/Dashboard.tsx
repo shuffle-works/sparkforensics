@@ -103,7 +103,7 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
         <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
         <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
       </WidgetGrid>
     </div>
   );
@@ -354,6 +354,9 @@ function DashboardContent() {
   const { resetToDropZone, startLoad, getTaskData, compareWithAnotherRun } = useIngest();
   const appModel = useStore(selectAppModel);
   const catalog = useStore(selectCatalog);
+  // Config-scope findings are part of the installed run, built once by `analyzeRun`; Dashboard
+  // never calls the analyzer directly.
+  const configFindings = useStore(selectConfigFindings);
   const activeFileId = useStore((s) => s.activeFileId);
   const exportMode = useStore((s) => s.exportMode);
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
@@ -531,9 +534,6 @@ function DashboardContent() {
     if (route && !resolveRoute(route)) clearRoute(route.token);
   }, [activeFileId, catalog, clearRoute, resolveRoute]);
 
-  // Config-scope findings are part of the installed run, built once by `analyzeRun`; Dashboard
-  // never calls the analyzer directly.
-  const configFindings = useStore(selectConfigFindings);
   // Filter options are derived from the values actually present in the full
   // catalog∪config; passed to the provider (seeds/validates the URL selection)
   // and to the bar.
@@ -580,7 +580,7 @@ function DashboardContent() {
         Skip to the verdict
       </button>
 
-      <FindingFilterProvider options={options} fileId={activeFileId}>
+      <FindingFilterProvider options={options}>
         <TriageNavigationProvider
           registerWidget={registerWidget}
           registerFindingAnchor={registerFindingAnchor}
