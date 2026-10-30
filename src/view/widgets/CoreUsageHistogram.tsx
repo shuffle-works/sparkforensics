@@ -25,7 +25,7 @@ export interface CoreUsageHistogramProps {
 }
 
 export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogramProps) {
-  const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
+  const { unavailable: noTaskData, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const [histogram, setHistogram] = useState<number[] | null>(null);
   const [incomplete, setIncomplete] = useState(false);
   // Controlled disclosure so the task-data fetch below can be gated on the card
@@ -72,8 +72,8 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
       }
     >
       {histogram === null ? (
-        exportMode ? (
-          <p className="text-muted-foreground text-xs">Core-usage detail isn&rsquo;t included in exported reports.</p>
+        noTaskData ? (
+          <p className="text-muted-foreground text-xs">Core-usage detail isn&rsquo;t available for this run.</p>
         ) : (
           <p className="text-muted-foreground text-xs">Loading core usage…</p>
         )

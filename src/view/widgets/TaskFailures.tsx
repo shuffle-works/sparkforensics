@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { IMPACT_BAND_ORDER, formatMetricValue, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
@@ -87,20 +87,12 @@ function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageI
 
 /** Board section for task-level `failures` findings: every flagged stage
  * gets its own row (never just the worst). */
-export function TaskFailures({ appModel, catalog, defaultCollapsed = true }: TaskFailuresProps) {
+export function TaskFailures({ catalog, defaultCollapsed = true }: TaskFailuresProps) {
   const [page, setPage] = useState(0);
   const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
-    setPage(0);
-  }, [appModel]);
 
   const findings = findingsOfType(catalog, 'failures').filter(hasStage);
   const sorted = [...findings].sort(

@@ -58,6 +58,11 @@ rendered output and correct it afterwards:
 - `no-panel-forgery`: an `EvidencePanel` made by a cast, a `type`/`rows` literal
   or a direct `evidencePanel(...)` call outside `evidence-panel.ts` and
   `detector-registry.tsx`.
+- `no-run-reset-effect`: a `useEffect` or `useLayoutEffect` in `src/` that lists
+  `appModel` or `activeFileId` in its dependencies and calls a state setter in its
+  body. A new run remounts the dashboard, which keyed by `runKey` starts per-run
+  state fresh (see [State model](./architecture/state-and-history.md#state-model)). A
+  setter inside a callback, such as a fetch's `.then`, is not matched.
 
 Each rule's message names the remedy. A legitimate use gets a suppression on the
 line above it, `// ast-grep-ignore: <rule-id>`, with the reason in the comment
@@ -338,8 +343,9 @@ Before adding a widget test file, or a per-widget or per-detector test:
 - Cross-cutting widget behavior (impact/stage sort-toggle default and flip,
   density-gated visibility, 6-at-a-time pagination) belongs in a shared
   helper under `tests/view/_shared/`, called from each widget's test file.
-  It holds `testFinding` (`finding.ts`), `installInterpretation` and
-  the sort-order helpers (`sort-order-toggle.ts`); add a density or
+  It holds `testFinding` (`finding.ts`), `installInterpretation`,
+  `makeRun`/`runState` (`run.ts`, which build and install a run from hand-made
+  parts) and the sort-order helpers (`sort-order-toggle.ts`); add a density or
   pagination helper there the first time two widget tests would share one.
   Extract into it only when a test body is identical to an existing one apart
   from the widget name, fixture or label. A widget with a real difference

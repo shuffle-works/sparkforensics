@@ -1,6 +1,6 @@
 import { findingName } from '@sparkforensics/core/finding-names.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import type { InterpretationState } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import { REGISTRY } from './detector-registry';
 import type { WidgetRegion } from './detector-registry';
 import { rankedBySavings } from './interpretation';

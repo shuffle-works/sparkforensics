@@ -17,7 +17,7 @@ import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { normalizeStageName, stageIdentityWith, type DetailNormalizer } from './stage-identity.ts';
 import { alignSequences } from './sequence-alignment.ts';
 import { attributeNamesOf, detailTokens, jaccard, structuralKey } from './stage-structure.ts';
-import type { SessionSnapshot } from './session-snapshot.ts';
+import type { ComparedRun } from './compared-run.ts';
 import type { Stage, PlanNode } from './types.ts';
 
 /** Version of the comparison block (`stagePairs`, `unmatched`, `replanned`, `bookkeepingStageIds`,
@@ -96,7 +96,7 @@ export function comparisonDetailNormalizer(callerPatterns: readonly RegExp[] = [
 /** `stageIdentity`'s recipe (normalized stage name plus the attributed nodes' fingerprint) with the
  * comparison normalizer. Internal to the aligner: consumers key on a pair's `pairId`. */
 export function comparisonIdentity(
-  stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>, normalizer: DetailNormalizer, nodes?: PlanNode[],
+  stage: Stage, snapshot: Pick<ComparedRun, 'sql'>, normalizer: DetailNormalizer, nodes?: PlanNode[],
 ): string {
   return stageIdentityWith(stage, snapshot, normalizer, nodes);
 }
@@ -109,7 +109,7 @@ function isScanNode(node: PlanNode): boolean {
  * and every scan is internal Delta metadata. Such a stage is table bookkeeping, not query work.
  * A stage with no attributed plan nodes has no scans to test, so it is never flagged. */
 export function isDeltaBookkeepingStage(
-  stage: Pick<Stage, 'id' | 'sqlExecutionId'>, sql: SessionSnapshot['sql'], nodes: PlanNode[] = planNodesOfStage(stage, sql),
+  stage: Pick<Stage, 'id' | 'sqlExecutionId'>, sql: ComparedRun['sql'], nodes: PlanNode[] = planNodesOfStage(stage, sql),
 ): boolean {
   let scans = 0;
   for (const node of nodes) {
@@ -282,7 +282,7 @@ interface ExecInfo {
 }
 
 interface RunIndex {
-  snap: SessionSnapshot;
+  snap: ComparedRun;
   nodesOf: Map<number, PlanNode[]>;
   bookkeeping: Set<number>;
   exactKey: Map<number, string>;
@@ -325,7 +325,7 @@ function planStructure(root: PlanNode): string[] {
 }
 
 function indexRun(
-  snap: SessionSnapshot, normalizer: DetailNormalizer, signatures: Map<string, number>, interned: Map<string, number>,
+  snap: ComparedRun, normalizer: DetailNormalizer, signatures: Map<string, number>, interned: Map<string, number>,
 ): RunIndex {
   const intern = (tokens: string[]): Int32Array => {
     const ids = new Int32Array(tokens.length);
@@ -472,7 +472,7 @@ function alignWithin(
  * details (`aligned`), or position among plan-less stages of one name (`aligned`). Stages an
  * execution pair with different stage counts leaves over are `replanned`; with equal counts they
  * stay `unmatched`. Deterministic, and swapping the runs mirrors the pairs. */
-export function alignStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, options: AlignOptions = {}): StageAlignment {
+export function alignStages(baseSnap: ComparedRun, candSnap: ComparedRun, options: AlignOptions = {}): StageAlignment {
   const normalizer = comparisonDetailNormalizer(options.normalizePath);
   const signatures = new Map<string, number>();
   const interned = new Map<string, number>();
@@ -507,7 +507,7 @@ export function alignStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot
   }
 
   const baseFigures = new Map<number, Figures>(), candFigures = new Map<number, Figures>();
-  const figures = (cache: Map<number, Figures>, snap: SessionSnapshot, id: number): Figures => {
+  const figures = (cache: Map<number, Figures>, snap: ComparedRun, id: number): Figures => {
     let f = cache.get(id);
     if (!f) { f = stageFigures(snap.stages.get(id)!); cache.set(id, f); }
     return f;
@@ -543,12 +543,12 @@ export function alignStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot
   const pairedCand = new Set(pairs.flatMap((p) => p.candStageIds));
   const replannedBase = new Set(replanned.flatMap((g) => g.baseStageIds));
   const replannedCand = new Set(replanned.flatMap((g) => g.candStageIds));
-  const unmatchedOf = (snap: SessionSnapshot, book: Set<number>, paired: Set<number>, replannedIds: Set<number>): number[] =>
+  const unmatchedOf = (snap: ComparedRun, book: Set<number>, paired: Set<number>, replannedIds: Set<number>): number[] =>
     [...snap.stages.keys()].filter((id) => !book.has(id) && !paired.has(id) && !replannedIds.has(id)).sort(ascending);
 
   // Run time counts every attempt, the same figure the stage-pair deltas and the run totals use.
   let total = 0, matched = 0;
-  const tally = (cache: Map<number, Figures>, snap: SessionSnapshot, book: Set<number>, paired: Set<number>, replannedIds: Set<number>) => {
+  const tally = (cache: Map<number, Figures>, snap: ComparedRun, book: Set<number>, paired: Set<number>, replannedIds: Set<number>) => {
     for (const id of snap.stages.keys()) {
       if (book.has(id)) continue;
       const t = figures(cache, snap, id).executorRunTime ?? 0;

@@ -1,12 +1,12 @@
-import type { InterpretationState } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { findingAt } from '@/view/interpretation';
+import { findingById } from '@/view/interpretation';
 import { triageTargetFor } from '@/view/triage-target';
 
 /** The findings the verdict's steps lead with, in step order. */
 export function verdictLeadFindings(interpretation: InterpretationState): Finding[] {
   return interpretation.data.verdict.steps
-    .map((step) => findingAt(interpretation, step.leadIndex))
+    .map((step) => findingById(interpretation, step.leadId))
     .filter((finding): finding is Finding => finding != null);
 }
 

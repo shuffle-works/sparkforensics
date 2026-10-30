@@ -5,6 +5,7 @@ import type { Finding, Stage } from '@sparkforensics/core/types.ts';
 import { makeApp, makeStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
 import { byStageAsc, canToggleSort, orderByImpact, stageIdOf } from '../../src/view/impact-sort';
 import { installInterpretation } from './_shared/interpretation';
+import { findingById } from '../../src/view/interpretation';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {
   return {
@@ -122,7 +123,7 @@ test('orderByImpact lists rows in verdict step order when stage task time and wa
     onStage('gc', 3, 40_000, 4_000_000),
   ];
   const interpreted = installInterpretation(catalog);
-  const verdictOrder = interpreted.data.verdict.steps.map((step) => interpreted.findings[step.leadIndex]);
+  const verdictOrder = interpreted.data.verdict.steps.map((step) => findingById(interpreted, step.leadId));
 
   expect(verdictOrder).toEqual([catalog[1], catalog[2], catalog[0]]);
   expect(orderByImpact(interpreted, catalog, identityFindings)).toEqual(verdictOrder);
@@ -155,7 +156,7 @@ test('an analyzed run ranks its idle allocation before a stage finding with less
   expect(catalog.find((f) => f.type === 'utilization')?.impactBand).toBe('warning');
   expect(catalog.find((f) => f.type === 'spill')?.impactBand).not.toBe('info');
   const interpreted = installInterpretation(catalog);
-  const steps = interpreted.data.verdict.steps.map((step) => interpreted.findings[step.leadIndex].type);
+  const steps = interpreted.data.verdict.steps.map((step) => findingById(interpreted, step.leadId)!.type);
 
   expect(steps.slice(0, 2)).toEqual(['utilization', 'spill']);
   expect(orderByImpact(interpreted, catalog, identityFindings).map((f) => f.type).slice(0, 2)).toEqual(['utilization', 'spill']);

@@ -4,9 +4,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '@/App';
 import { store, emptyAppModel } from '@/store/store';
-import { captureSnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import { serializeRun } from '@sparkforensics/core/run-serialization.ts';
 import { clearPlanGraphModelCache } from '@/view/PlanGraphRoute';
 import { testFinding } from './_shared/finding';
+import { makeRun, runState } from './_shared/run';
 
 // PlanGraphCanvas (React Flow) needs a ResizeObserver on mount; jsdom has none.
 // Keep the stub file-scoped: a global one makes Recharts render 0×0 by dropping
@@ -53,13 +54,12 @@ beforeEach(() => {
   recentFilesMock.touch.mockResolvedValue(undefined);
   store.getState().resetModel();
   store.setState({ sessionCache: new Map(), activeFileId: 'file-1', status: 'ready' });
-  // Clear PlanGraphRoute's memo cache explicitly to isolate tests even if the
-  // resetModel store.subscribe wiring that also evicts it changes.
+  // Clear PlanGraphRoute's memo cache explicitly to isolate tests from each other.
   clearPlanGraphModelCache();
 });
 
 test('openPlanGraph shows an accessible loading state before resolving the full-screen PlanGraphRoute', async () => {
-  store.setState({ appModel: planTreePlanModel(7) });
+  store.setState({ ...runState({ appModel: planTreePlanModel(7) }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -70,7 +70,7 @@ test('openPlanGraph shows an accessible loading state before resolving the full-
 });
 
 test('opening with initialScope "full" resolves the lazy route to the full graph without an additional click', async () => {
-  store.setState({ appModel: planTreePlanModel(7) });
+  store.setState({ ...runState({ appModel: planTreePlanModel(7) }) });
   store.getState().openPlanGraph(7, { initialScope: 'full' });
 
   render(<App />);
@@ -84,7 +84,7 @@ test('confirming an oversized initial full-scope request keeps the graph withhel
   const appModel = planTreePlanModel(7);
   appModel.app = { name: 'Oversized run' } as never;
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(320), stageIds: [7] } as never);
-  store.setState({ appModel, status: 'ready' });
+  store.setState({ status: 'ready', ...runState({ appModel }) });
 
   render(<App />);
   await waitForDashboard();
@@ -106,7 +106,7 @@ test('cancelling an oversized initial full-scope request reveals the segment gra
   const user = userEvent.setup();
   const appModel = planTreePlanModel(7);
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(320), stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7, { initialScope: 'full' });
 
   render(<App />);
@@ -128,7 +128,7 @@ test('picking a cached recent file closes the plan graph before restoring the ne
   currentModel.app = { name: 'Current run' } as never;
   const nextModel = planTreePlanModel(9);
   nextModel.app = { name: 'Cached run' } as never;
-  const nextSnapshot = captureSnapshot(nextModel, [], new Map());
+  const nextSnapshot = serializeRun(makeRun({ appModel: nextModel, taskData: { kind: 'none' } }));
 
   recentFilesMock.entries = [{
     id: 'file-2',
@@ -138,12 +138,12 @@ test('picking a cached recent file closes the plan graph before restoring the ne
     appName: 'Cached run',
     issueCount: 0,
   }];
-  // Keep pickRecent suspended after applySnapshot mutates the live appModel.
+  // Keep pickRecent suspended after the cached run is installed.
   // The graph must already be closed at that boundary, not only after the
   // asynchronous recent-file bookkeeping finishes.
   recentFilesMock.touch.mockReturnValueOnce(new Promise(() => {}));
   store.setState({
-    appModel: currentModel,
+    ...runState({ appModel: currentModel }),
     activeFileId: 'file-1',
     sessionCache: new Map([['file-2', nextSnapshot]]),
     status: 'ready',
@@ -154,7 +154,7 @@ test('picking a cached recent file closes the plan graph before restoring the ne
   await user.click(screen.getByRole('button', { name: /current run/i }));
   await user.click(await screen.findByRole('button', { name: /cached run/i }));
 
-  expect(store.getState().appModel.app?.name).toBe('Cached run');
+  expect(store.getState().run?.appModel.app?.name).toBe('Cached run');
   expect(store.getState().planGraph).toEqual({ active: false, stageId: null, initialScope: 'segment' });
 });
 
@@ -166,7 +166,7 @@ test('opening a different stage remounts the route and resets its scope/focus st
     planTree: { id: 'n0', name: 'BroadcastHashJoin', detail: 'BroadcastHashJoin', metrics: [], children: [] },
     stageIds: [9],
   } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7, { initialScope: 'full' });
 
   const { rerender } = render(<App />);
@@ -186,7 +186,7 @@ test('opening a different stage remounts the route and resets its scope/focus st
 test('the plan graph always opens on the segment view by default, never the full plan', () => {
   const appModel = planTreePlanModel(7);
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(10), stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -198,7 +198,7 @@ test('the plan graph always opens on the segment view by default, never the full
 
 test('closing the plan graph route returns to the plain dashboard', async () => {
   const user = userEvent.setup();
-  store.setState({ appModel: planTreePlanModel(7) });
+  store.setState({ ...runState({ appModel: planTreePlanModel(7) }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -209,7 +209,7 @@ test('closing the plan graph route returns to the plain dashboard', async () => 
 });
 
 test('renders the graph canvas with the plan node once opened', () => {
-  store.setState({ appModel: planTreePlanModel(7) });
+  store.setState({ ...runState({ appModel: planTreePlanModel(7) }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -222,7 +222,7 @@ test('renders the graph canvas with the plan node once opened', () => {
 test('the tag in the stage panel opens the reference panel', () => {
   const appModel = planTreePlanModel(7);
   const finding = testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' });
-  store.setState({ appModel, catalog: [finding] });
+  store.setState({ ...runState({ appModel, catalog: [finding] }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -241,7 +241,7 @@ test('a finding that only carries stageIds (not stageId) still reaches the plan 
     type: 'smallFiles', stageId: null, stageIds: [7], impactBand: 'warning' as const,
     recommendation: 'Compact the upstream output',
   });
-  store.setState({ appModel, catalog: [finding] });
+  store.setState({ ...runState({ appModel, catalog: [finding] }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -258,7 +258,7 @@ test('Basic filter mode hides boilerplate nodes by default', async () => {
     children: [{ id: 'n1', name: 'WholeStageCodegen (1)', detail: 'WholeStageCodegen (1)', metrics: [], children: [] }],
   };
   appModel.sql.set(1, { executionId: 1, planTree, stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -281,7 +281,7 @@ test('opens on Advanced and disables I/O only and Basic when neither shows a nod
     leaf('n1', 'WriteFiles', [leaf('n2', 'WholeStageCodegen (1)', [leaf('n3', 'Project', [leaf('n4', 'Range')])])]),
   ]);
   appModel.sql.set(1, { executionId: 1, planTree, stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -313,7 +313,7 @@ test('Basic filter mode hides a pass-through node but keeps its neighbors visibl
     }],
   };
   appModel.sql.set(1, { executionId: 1, planTree, stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -335,7 +335,7 @@ test('expanding a plan over the 300-node threshold shows the guardrail dialog in
   const user = userEvent.setup();
   const appModel = planTreePlanModel(7);
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(320), stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -354,7 +354,7 @@ test('pressing Escape while the guardrail dialog is open closes only the dialog,
   const user = userEvent.setup();
   const appModel = planTreePlanModel(7);
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(320), stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -383,7 +383,7 @@ test('expanding a plan under the 300-node threshold proceeds immediately with no
   const user = userEvent.setup();
   const appModel = planTreePlanModel(7);
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(10), stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -399,7 +399,7 @@ test('clicking "Back to segment view" after an explicit expand actually returns 
   const user = userEvent.setup();
   const appModel = planTreePlanModel(7);
   appModel.sql.set(1, { executionId: 1, planTree: bigPlanTree(10), stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -430,7 +430,7 @@ test('a segment lookup failure on an oversized plan shows the guardrail dialog o
   const appModel = competingStageAppModel(320);
   // The segment-lookup-failure fallback fires with no click; it must still be
   // gated by the same 300-node guardrail as an explicit "Expand to full plan".
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -445,7 +445,7 @@ test('a segment lookup failure on an oversized plan shows the guardrail dialog o
 test('dismissing the guardrail dialog on a segment-lookup-failure fallback keeps the render blocked (no unguarded oversized graph)', async () => {
   const user = userEvent.setup();
   const appModel = competingStageAppModel(320);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -466,7 +466,7 @@ test('dismissing the guardrail dialog on a segment-lookup-failure fallback keeps
 // screen (full plan), keyed off `model?.scope`, not the unclicked `requestedScope`.
 test('an automatic segment-lookup-failure fallback that stays under the threshold renders immediately and labels the toggle "Back to segment view"', () => {
   const appModel = competingStageAppModel(10);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -488,7 +488,7 @@ test('an automatic segment-lookup-failure fallback that stays under the threshol
 test('an automatic under-threshold fallback keeps focal-stage findings reachable even when no segment maps to that stage', () => {
   const appModel = competingStageAppModel(10);
   const finding = testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' });
-  store.setState({ appModel, catalog: [finding] });
+  store.setState({ ...runState({ appModel, catalog: [finding] }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -517,7 +517,7 @@ function twoStagePlanModel() {
 
 test('clicking a stage box in the full graph switches focus to that stage\'s segment view', async () => {
   const user = userEvent.setup();
-  store.setState({ appModel: twoStagePlanModel() });
+  store.setState({ ...runState({ appModel: twoStagePlanModel() }) });
   store.getState().openPlanGraph(7, { initialScope: 'full' });
 
   render(<App />);
@@ -535,11 +535,10 @@ test('clicking a stage box in the full graph switches focus to that stage\'s seg
 test('selecting a stage from the full graph shows only that stage\'s findings', async () => {
   const appModel = twoStagePlanModel();
   store.setState({
-    appModel,
-    catalog: [
+    ...runState({ appModel, catalog: [
       testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' }),
       testFinding({ type: 'shuffle', stageId: 8, impactBand: 'warning' as const, recommendation: 'Reduce shuffle output' }),
-    ],
+    ] }),
   });
   store.getState().openPlanGraph(7, { initialScope: 'full' });
 
@@ -561,9 +560,9 @@ test('selecting a stage from the full graph shows only that stage\'s findings', 
 // re-renders once other tests have imported the module): mutate the planTree's
 // object identity for the same stageId/activeFileId between two openPlanGraph(7)
 // calls; the node still reflecting the *first* planTree proves the memo was reused.
-test('re-opening the same stage does not rebuild the model (memoized per activeFileId/stageId/scope)', () => {
+test('re-opening the same stage does not rebuild the model (memoized per run model/stageId/scope)', () => {
   const appModel = planTreePlanModel(7);
-  store.setState({ appModel, activeFileId: 'file-1' });
+  store.setState({ activeFileId: 'file-1', ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
   const { unmount } = render(<App />);
   expect(screen.getByText('SortMergeJoin')).toBeInTheDocument();
@@ -580,24 +579,24 @@ test('re-opening the same stage does not rebuild the model (memoized per activeF
   expect(screen.queryByText('BroadcastHashJoin')).not.toBeInTheDocument();
 });
 
-// resetModel() must evict planGraphModelCache: after a reload, reopening the
-// same stageId/activeFileId key must rebuild from the new planTree, not a stale
-// pre-reset cache entry.
-test('resetModel() clears the plan-graph memo cache, so a changed planTree for the same key is rebuilt on reopen', () => {
+// The memo is per run model: a reload of the same file installs a new model, so reopening the
+// same stageId/activeFileId key rebuilds from the new planTree rather than reusing the old model.
+test('a reloaded run with a changed planTree for the same key is rebuilt on reopen', () => {
   const appModel = planTreePlanModel(7);
-  store.setState({ appModel, activeFileId: 'file-1' });
+  store.setState({ activeFileId: 'file-1', ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
   const { unmount } = render(<App />);
   expect(screen.getByText('SortMergeJoin')).toBeInTheDocument();
   unmount();
 
-  appModel.sql.get(1)!.planTree = {
+  const reloadedModel = planTreePlanModel(7);
+  reloadedModel.sql.get(1)!.planTree = {
     id: 'n0', name: 'BroadcastHashJoin', detail: 'BroadcastHashJoin', metrics: [], children: [],
   } as never;
   store.getState().resetModel();
-  // resetModel() also clears appModel/activeFileId/planGraph; restore enough to
-  // reopen against the same cache key as before the reset.
-  store.setState({ appModel, activeFileId: 'file-1' });
+  // resetModel() also clears the run/activeFileId/planGraph; restore enough to
+  // reopen against the same key as before the reset.
+  store.setState({ activeFileId: 'file-1', ...runState({ appModel: reloadedModel }) });
   store.getState().openPlanGraph(7);
   render(<App />);
 
@@ -629,7 +628,7 @@ test('re-renders the graph with hand-verified inclusive duration percentages aft
   };
   appModel.stages.set(7, { id: 7, sqlExecutionId: 1, submittedAt: 0, completedAt: 900 } as never);
   appModel.sql.set(1, { executionId: 1, planTree, stageIds: [7] } as never);
-  store.setState({ appModel });
+  store.setState({ ...runState({ appModel }) });
   store.getState().openPlanGraph(7);
 
   render(<App />);
@@ -657,11 +656,10 @@ test('re-renders the graph with hand-verified inclusive duration percentages aft
 test('hides info findings in the graph until "Show info notes" is checked', async () => {
   const user = userEvent.setup();
   store.setState({
-    appModel: planTreePlanModel(7),
-    catalog: [
+    ...runState({ appModel: planTreePlanModel(7), catalog: [
       testFinding({ type: 'skew', stageId: 7, impactBand: 'warning' as const, recommendation: 'Rebalance partitions' }),
       testFinding({ type: 'gc', stageId: 7, impactBand: 'info' as const, recommendation: 'Check GC settings' }),
-    ],
+    ] }),
   });
   store.getState().openPlanGraph(7);
 
@@ -681,8 +679,7 @@ test('hides info findings in the graph until "Show info notes" is checked', asyn
 test('"Next problem" has no stops for info-only stages until info notes are shown', async () => {
   const user = userEvent.setup();
   store.setState({
-    appModel: twoStagePlanModel(),
-    catalog: [testFinding({ type: 'gc', stageId: 7, impactBand: 'info' as const, recommendation: 'Check GC settings' })],
+    ...runState({ appModel: twoStagePlanModel(), catalog: [testFinding({ type: 'gc', stageId: 7, impactBand: 'info' as const, recommendation: 'Check GC settings' })] }),
   });
   store.getState().openPlanGraph(7, { initialScope: 'full' });
 
@@ -698,8 +695,7 @@ test('"Next problem" has no stops for info-only stages until info notes are show
 test('offers no info toggle when the run has no info findings', async () => {
   const user = userEvent.setup();
   store.setState({
-    appModel: planTreePlanModel(7),
-    catalog: [testFinding({ type: 'skew', stageId: 7, impactBand: 'warning' as const, recommendation: 'Rebalance partitions' })],
+    ...runState({ appModel: planTreePlanModel(7), catalog: [testFinding({ type: 'skew', stageId: 7, impactBand: 'warning' as const, recommendation: 'Rebalance partitions' })] }),
   });
   store.getState().openPlanGraph(7);
 

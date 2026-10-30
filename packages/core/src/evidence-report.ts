@@ -1,7 +1,7 @@
 // Portable, redacted evidence report. Pure builder over an appModel: runs the detectors,
 // then serializes a run summary + findings into a deterministic, byte-stable JSON + Markdown.
 // Raw task records are never included (privacy baseline); redaction is opt-in via { redact: true }.
-import { analyze, auditConfig } from './analyzer.ts';
+import { cacheFor, runFindings, type ReportCache } from './analyzed-run.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import {
   describeTunedThresholds, tunedDetectorCatalog, tunedDetectors, tunedRunNote, tunedThresholdsForType,
@@ -467,46 +467,10 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
   };
 }
 
-// Keyed by appModel object identity: mcp-tools.ts caches one fixed appModel per runId (never
-// mutated), so re-running analyze()/auditConfig() reproduces the same catalog. getFindingEvidence
-// calls buildEvidenceReport once per drill-down; the cache spares each lookup a detector re-run.
-// A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
-// Each cache is split first by the overrides object the report ran under (one fixed, frozen object
-// per CLI invocation or MCP server process; DEFAULT_THRESHOLDS for the specification's).
-export type ReportCache<T = EvidenceReportJson> = WeakMap<object, WeakMap<AppModel, T>>;
-const DEFAULT_THRESHOLDS = {};
-const jsonCache: ReportCache = new WeakMap();
+// The report and the redacted report, each cached per appModel and overrides (see `cacheFor`).
+const jsonCache: ReportCache<EvidenceReportJson> = new WeakMap();
 // The redacted report, keyed by the unredacted appModel it was built from.
-const redactedJsonCache: ReportCache = new WeakMap();
-
-export function cacheFor<T>(cache: ReportCache<T>, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, T> {
-  const key = thresholds ?? DEFAULT_THRESHOLDS;
-  let byModel = cache.get(key);
-  if (!byModel) {
-    byModel = new WeakMap();
-    cache.set(key, byModel);
-  }
-  return byModel;
-}
-
-const findingsCache: ReportCache<{ catalog: Finding[]; config: Finding[] }> = new WeakMap();
-
-/** The run's detector catalog and config audit, computed once per run and overrides so the report
- * and the blocks built beside it (run-output.ts) share one analysis. */
-export function runFindings(appModel: AppModel, thresholds: ThresholdOverrides | undefined): { catalog: Finding[]; config: Finding[] } {
-  const cache = cacheFor(findingsCache, thresholds);
-  const cached = cache.get(appModel);
-  if (cached) return cached;
-  const { app, stages, executors, sql, jobs, runAggregates } = appModel;
-  const catalog = analyze(
-    app, stages, executors?.added ?? [], executors?.removed ?? [],
-    jobs ?? new Map(), sql ?? new Map(),
-    runAggregates ?? null, { thresholds },
-  );
-  const result = { catalog, config: auditConfig(app, stages) };
-  cache.set(appModel, result);
-  return result;
-}
+const redactedJsonCache: ReportCache<EvidenceReportJson> = new WeakMap();
 
 // Redacts the model and findings before the report derives any text from them, the same order
 // the HTML export uses: the verdict truncates Spark's failure reason, and redacting that

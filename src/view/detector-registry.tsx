@@ -109,20 +109,10 @@ export interface WidgetProps {
   appModel: AppModel;
   catalog: Finding[];
   getTaskData: (id: number) => Promise<TaskData>;
-  // The store's `configFindings` (the `auditConfig(appModel.app)` result),
+  // The run's `configFindings` (the `auditConfig(appModel.app)` result),
   // threaded from Dashboard. Optional: only ConfigAudit reads it, and treats an
   // omitted prop as no config findings.
   configFindings?: Finding[];
-  // The store's `activeFileId` (src/store/store.ts): the one thing that
-  // reliably changes identity when the active file switches. `applySnapshot`
-  // (packages/core/src/session-snapshot.ts, used by useIngest.ts's `pickRecent`
-  // "restored" fast path and `drillIntoRun`) mutates `appModel`'s fields in
-  // place rather than replacing the `appModel` object itself, so a widget
-  // that memoizes on `appModel`'s reference alone (ExecutorCountChart.tsx,
-  // CoreUsageArea.tsx, AutoscalingChurn.tsx) would otherwise keep showing
-  // the previous file's derived data. Optional: only widgets that memoize
-  // on `appModel` need it; direct callers (tests) may omit it.
-  activeFileId?: string | null;
   // Region is read again for exactly the three single-purpose reference
   // widgets (Memory Utilization, Executor Utilization, Core Usage by
   // Locality): the Full app report (Dashboard.tsx's ReferenceSection) always

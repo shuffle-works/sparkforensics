@@ -3,11 +3,11 @@ import { existsSync, statSync, readFileSync, readdirSync, type Stats } from 'nod
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { collectRun } from './cli/collect-run.ts';
-import { deriveEvidenceAvailability } from './evidence-availability.ts';
+import { analyzeRun, runFindings, type AnalyzedRun } from './analyzed-run.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
 import {
-  buildEvidenceReport, runFindings, toFindingsFilter,
+  buildEvidenceReport, toFindingsFilter,
   type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type VerdictJson, type VerdictStepRow,
 } from './evidence-report.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -74,9 +74,9 @@ function envInt(name: string, fallback: number): number {
 const CACHE_CAP = envInt('SPARKFORENSICS_MCP_CACHE_CAP', 8);
 const CACHE_TTL_MS = envInt('SPARKFORENSICS_MCP_CACHE_TTL_MS', 15 * 60 * 1000);
 
-interface CacheEntry { appModel: AppModel; cacheKey: string; lastAccess: number }
+interface CacheEntry { run: AnalyzedRun; cacheKey: string; lastAccess: number }
 
-const byRunId = new Map<string, CacheEntry>();   // runId -> { appModel, cacheKey, lastAccess }
+const byRunId = new Map<string, CacheEntry>();   // runId -> { run, cacheKey, lastAccess }
 const byCacheKey = new Map<string, string>(); // cacheKey -> runId
 // Built comparisons, keyed by both runs and every option that changes the output. Each entry follows
 // its runs' TTL and eviction (deleteRunEntry), and the map is capped on its own: a comparison holds
@@ -193,13 +193,7 @@ export function getCachedAppModel(runId: string): AppModel {
   const entry = byRunId.get(runId);
   if (!entry) throw mcpError('run-not-found', `No cached run for runId ${runId}.`);
   touch(runId);
-  return entry.appModel;
-}
-
-async function resolveFromPath(path: string): Promise<AppModel> {
-  const { appModel, skippedLines } = await collectRun(path);
-  appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-  return appModel;
+  return entry.run.appModel;
 }
 
 export async function resolveOrCreateRun(
@@ -219,7 +213,7 @@ export async function resolveOrCreateRun(
   const cached = byCacheKey.get(cacheKey);
   if (cached && byRunId.has(cached)) {
     touch(cached);
-    return { runId: cached, appModel: byRunId.get(cached)!.appModel };
+    return { runId: cached, appModel: byRunId.get(cached)!.run.appModel };
   }
 
   // Concurrent calls for the same not-yet-cached source must await one shared parse, not each race
@@ -230,17 +224,18 @@ export async function resolveOrCreateRun(
 
   const resolution = (async () => {
     try {
-      const appModel = 'path' in source
-        ? await resolveFromPath(source.path)
-        : (await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs })).appModel;
+      const { appModel: parsed } = 'path' in source
+        ? await collectRun(source.path)
+        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs });
       // The attempt the caller asked the History Server for, when the log itself does not name one.
-      if (!('path' in source) && source.attemptId && appModel.app && !appModel.app.attemptId) appModel.app.attemptId = source.attemptId;
+      if (!('path' in source) && source.attemptId && parsed.app && !parsed.app.attemptId) parsed.app.attemptId = source.attemptId;
+      const run = analyzeRun(parsed);
 
       const newRunId = randomUUID();
-      byRunId.set(newRunId, { appModel, cacheKey, lastAccess: Date.now() });
+      byRunId.set(newRunId, { run, cacheKey, lastAccess: Date.now() });
       byCacheKey.set(cacheKey, newRunId);
       evictOverflow();
-      return { runId: newRunId, appModel };
+      return { runId: newRunId, appModel: run.appModel };
     } finally {
       pendingByCacheKey.delete(cacheKey);
     }
@@ -524,10 +519,8 @@ export async function compareRuns(
     { runId: runIdB, appModel: appModelB, catalog: catalogB },
   ] = await Promise.all([resolveAndAnalyze(a, opts?.thresholds), resolveAndAnalyze(b, opts?.thresholds)]);
 
-  // buildComparison's captureSnapshot uses an empty taskDataCache: that arg only feeds the
-  // interactive stage-detail drill-down, which none of compare/matchStages/metricDeltas/findingsDelta
-  // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
-  // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
+  // Comparison reads findings and metrics from `catalog` and appModel.stages/sql, both fully populated,
+  // and no per-task data, so it produces the same output as the dashboard.
   const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
   const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
   let built = comparisonCache.get(cacheKey)?.built;

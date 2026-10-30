@@ -1,33 +1,48 @@
 import { rankedRollup, type RankedRollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { FindingSavings } from '@sparkforensics/core/run-interpretation.ts';
+import type { AnalyzedRun } from '@sparkforensics/core/analyzed-run.ts';
+import type { FindingSavings, RunInterpretation } from '@sparkforensics/core/run-interpretation.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { useStore, type InterpretationState } from '@/store/store';
+import { useStore } from '@/store/store';
 
-// Read-only access to the store's run interpretation (see store.ts). Views render the
+// Read-only access to the installed run's interpretation (see store.ts). Views render the
 // conclusions it carries; the one thing recomputed here is the Findings board under a filter,
 // which answers what the viewer selected (see `boardRollup`).
 
+/** A run's interpretation with the findings its ids point at. */
+export interface InterpretationState {
+  data: RunInterpretation;
+  /** The run's findings, detector findings then configuration findings. */
+  findings: Finding[];
+  byId: ReadonlyMap<string, Finding>;
+}
+
+const interpretationStates = new WeakMap<AnalyzedRun, InterpretationState>();
+
+export function interpretationOf(run: AnalyzedRun): InterpretationState {
+  let state = interpretationStates.get(run);
+  if (!state) {
+    const findings = [...run.catalog, ...run.configFindings];
+    const byId = new Map(findings.flatMap((finding): Array<[string, Finding]> => (finding.id == null ? [] : [[finding.id, finding]])));
+    state = { data: run.interpretation, findings, byId };
+    interpretationStates.set(run, state);
+  }
+  return state;
+}
+
 export function useInterpretation(): InterpretationState | null {
-  return useStore((s) => s.interpretation);
+  return useStore((s) => (s.run ? interpretationOf(s.run) : null));
 }
 
-/** The finding an interpretation index points at. */
-export function findingAt(state: InterpretationState, index: number): Finding | undefined {
-  return state.findings[index];
+/** The finding an interpretation id points at. */
+export function findingById(state: InterpretationState, id: string): Finding | undefined {
+  return state.byId.get(id);
 }
-
-const savingsByFinding = new WeakMap<InterpretationState, Map<Finding, FindingSavings>>();
 
 /** A finding's formatted savings from the interpretation, or null for a finding it does not
- * cover (none loaded yet, or a finding object from outside the interpreted run). */
+ * cover (none loaded yet, or a finding from outside the interpreted run). */
 export function savingsOf(state: InterpretationState | null, finding: Finding): FindingSavings | null {
-  if (!state) return null;
-  let index = savingsByFinding.get(state);
-  if (!index) {
-    index = new Map(state.findings.map((f, i) => [f, state.data.savings[i]]));
-    savingsByFinding.set(state, index);
-  }
-  return index.get(finding) ?? null;
+  if (!state || finding.id == null) return null;
+  return state.data.savings[finding.id] ?? null;
 }
 
 export function useFindingSavings(finding: Finding): FindingSavings | null {
@@ -39,13 +54,13 @@ export function useFindingSavings(finding: Finding): FindingSavings | null {
 export function rankedBySavings(state: InterpretationState | null, findings: Finding[]): Finding[] {
   if (!state) return [];
   const wanted = new Set(findings);
-  return state.data.savingsRank.map((i) => state.findings[i]).filter((f): f is Finding => f != null && wanted.has(f));
+  return state.data.savingsRank.map((id) => state.byId.get(id)).filter((f): f is Finding => f != null && wanted.has(f));
 }
 
 /** The findings the Findings board lists (rollup-eligible, with a widget to route to). */
 export function eligibleFindings(state: InterpretationState | null): Finding[] {
   if (!state) return [];
-  return state.data.rollup.eligibleIndexes.map((i) => state.findings[i]).filter((f): f is Finding => f != null);
+  return state.data.rollup.eligibleIds.map((id) => state.byId.get(id)).filter((f): f is Finding => f != null);
 }
 
 /** A Findings-board group with its members resolved, representative first. */
@@ -73,8 +88,8 @@ export function boardRollup(
   const eligible = eligibleFindings(state).filter((finding) => kept.has(finding));
   const unfiltered = state.findings.every((finding) => kept.has(finding));
   const groups = unfiltered
-    ? state.data.rollup.groups.map(({ memberIndexes, ...group }) => boardGroup({
-      ...group, members: memberIndexes.map((i) => state.findings[i]).filter((f): f is Finding => f != null),
+    ? state.data.rollup.groups.map(({ memberIds, ...group }) => boardGroup({
+      ...group, members: memberIds.map((id) => state.byId.get(id)).filter((f): f is Finding => f != null),
     }))
     : rankedRollup(eligible, stages).map(boardGroup);
   return { eligible, groups };
@@ -99,7 +114,7 @@ export function stepCodes(state: InterpretationState | null): StepCodes {
     const byStage = new Map<number, string>();
     state.data.verdict.steps.forEach((step, i) => {
       const code = `F${i + 1}`;
-      const lead = state.findings[step.leadIndex];
+      const lead = state.byId.get(step.leadId);
       if (lead) byFinding.set(lead, code);
       // The first step that names a stage owns its code.
       if (step.stageId != null && !byStage.has(step.stageId)) byStage.set(step.stageId, code);

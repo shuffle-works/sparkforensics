@@ -103,25 +103,4 @@ describe('StageFailed', () => {
     await user.click(screen.getByRole('button', { name: /^next$/i }));
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
   });
-
-  it('paginates the stage list 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
-    const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) =>
-      stageFailedFinding(i + 1, 'ExecutorLostFailure', `r${i}`),
-    );
-    const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
-    const { rerender } = render_(catalog, makeAppModel(stageNames));
-
-    await user.click(screen.getByRole('button', { name: 'Failed Stages' }));
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^next$/i }));
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
-
-    rerender(
-      <StageDetailProvider>
-        <StageFailed appModel={makeAppModel(stageNames)} catalog={catalog} />
-      </StageDetailProvider>,
-    );
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  });
 });

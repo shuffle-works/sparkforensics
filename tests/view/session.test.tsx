@@ -2,14 +2,14 @@
 //
 // After a parse with a real FileSystemFileHandle, `recentFiles.add` registers
 // it in IndexedDB; switching away and back restores the catalog from the
-// in-session snapshot cache instead of re-parsing.
+// in-session cache instead of re-parsing.
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { test, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
 import { useIngest } from '../../src/store/useIngest';
-import { store, emptyAppModel } from '../../src/store/store';
+import { store, selectAppModel } from '../../src/store/store';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 
 // Methods are non-enumerable so `recentFiles.add`'s IndexedDB `put()`
@@ -49,8 +49,8 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   store.setState({
     ...store.getState(),
-    appModel: emptyAppModel(),
-    catalog: [],
+    run: null,
+    runKey: null,
     activeFileId: null,
     sessionCache: new Map(),
     taskDataCache: new Map(),
@@ -79,7 +79,7 @@ test('a successful parse registers the file in recentFiles', async () => {
   expect(store.getState().activeFileId).toBe(idA);
 });
 
-test('picking a cached file restores the catalog via applySnapshot without re-parsing', async () => {
+test('picking a cached file restores the run from the session cache without re-parsing', async () => {
   const client = makeClient();
   const { result } = renderHook(() => useIngest({ makeClient: () => client as any }));
 
@@ -93,7 +93,7 @@ test('picking a cached file restores the catalog via applySnapshot without re-pa
   // Load A, then switch to B via pickRecent (an uncached recent entry): this
   // is the only path that snapshots the outgoing file (A) into sessionCache.
   act(() => result.current.startLoad(fileA, { handle: handleA }));
-  expect(store.getState().appModel.app?.name).toBe('app-a');
+  expect(selectAppModel(store.getState()).app?.name).toBe('app-a');
   // Let A's parse fully settle (catalog + recentFiles.add) before switching,
   // so the snapshot captured for A below reflects its finished state.
   await waitFor(() => expect(store.getState().status).toBe('ready'));
@@ -102,7 +102,7 @@ test('picking a cached file restores the catalog via applySnapshot without re-pa
     const outcome = await result.current.pickRecent(idB, handleB);
     expect(outcome).toBe('started');
   });
-  expect(store.getState().appModel.app?.name).toBe('app-b');
+  expect(selectAppModel(store.getState()).app?.name).toBe('app-b');
   expect(store.getState().activeFileId).toBe(idB);
   expect(client.startParse).toHaveBeenCalledTimes(2);
 
@@ -113,8 +113,8 @@ test('picking a cached file restores the catalog via applySnapshot without re-pa
   });
 
   expect(client.startParse).toHaveBeenCalledTimes(2); // unchanged: no re-parse
-  expect(store.getState().appModel.app?.name).toBe('app-a');
-  expect(store.getState().appModel.stages.get(1)?.name).toBe('stage-a');
+  expect(selectAppModel(store.getState()).app?.name).toBe('app-a');
+  expect(selectAppModel(store.getState()).stages.get(1)?.name).toBe('stage-a');
   expect(store.getState().activeFileId).toBe(idA);
   expect(store.getState().status).toBe('ready');
 });

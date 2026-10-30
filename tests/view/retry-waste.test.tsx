@@ -113,28 +113,6 @@ describe('RetryWaste', () => {
     expect(screen.getByRole('button', { name: /open details for stage 1$/i })).toBeInTheDocument();
   });
 
-  it('paginates 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
-    const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => testFinding({
-      type: 'retryWaste', stageId: i + 1, impactBand: 'warning', metric: 'retryWasteMs', value: 1000 * (i + 1),
-      numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [],
-    }));
-    const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
-    const { rerender } = render_(catalog, makeAppModel(stageNames));
-
-    await user.click(screen.getByRole('button', { name: /^retry waste$/i }));
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^next$/i }));
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
-
-    rerender(
-      <StageDetailProvider>
-        <RetryWaste appModel={makeAppModel(stageNames)} catalog={catalog} />
-      </StageDetailProvider>,
-    );
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  });
-
   it('renders the impact estimate for a flagged finding', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [testFinding({

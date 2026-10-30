@@ -12,14 +12,15 @@ import { EXPORT_TEMPLATE_FILE } from '@/export/single-file';
 import * as reportBuilder from '@sparkforensics/core/evidence-report.ts';
 import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import { buildHtmlExportData } from '@sparkforensics/core/html-export.ts';
+import { runState } from './_shared/run';
 
 function seedRun() {
-  store.setState({
+  store.setState(runState({
     appModel: {
       ...emptyAppModel(),
       app: { id: 'application_123', name: 'demo', startTime: 0, endTime: 5000, sparkVersion: '3.4.0', config: {} },
     },
-  });
+  }));
 }
 
 // Capture the actual Blob + filename so a swapped MD/JSON branch or bad filename can't slip by.
@@ -27,7 +28,7 @@ let lastBlob: Blob | null;
 let lastDownloadName: string | null;
 
 beforeEach(() => {
-  store.setState({ ...store.getState(), appModel: emptyAppModel() });
+  store.setState({ ...store.getState(), ...runState() });
   lastBlob = null;
   lastDownloadName = null;
   // jsdom has no object-URL / blob-download plumbing; capture the Blob here.
@@ -160,9 +161,8 @@ test('download HTML fetches the template on demand and inlines the run as one fi
 test('the payload spliced into the downloaded HTML decodes back to the same run data', async () => {
   seedRun();
   stubTemplateFetch();
-  const s = store.getState();
   // Under vitest there is no Vite `define`, so src/build-info.ts falls back to 'dev'.
-  const expected = buildHtmlExportData(s.appModel, s.catalog, s.skippedLines, {
+  const expected = buildHtmlExportData(store.getState().run!, {
     redact: false, buildId: 'dev', producer: 'sparkforensics-web dev',
   });
 

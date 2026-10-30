@@ -10,7 +10,7 @@ import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
 function timed(type, stageId, highMs, impactBand = 'warning') {
   return {
-    type, stageId, impactBand, recommendation: `Fix ${type} in Stage ${stageId}.`,
+    id: `${type}-${stageId}`, type, stageId, impactBand, recommendation: `Fix ${type} in Stage ${stageId}.`,
     impactEstimate: { basis: 'serial', wallClock: { low: highMs, high: highMs }, estimateMethod: 'modeled' },
   };
 }
@@ -33,23 +33,39 @@ const failedJob = (id, stageIds) => ({
 });
 
 describe('interpretRun', () => {
-  it('indexes findings in catalog-then-config order, with savings parallel to them', () => {
+  it('refers to findings by id, with savings keyed by id', () => {
     const catalog = [timed('spill', 3, 1_000), timed('skew', 7, 2_400)];
-    const config = [{ type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    const config = [{ id: 'config-serializer', type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
     const interpretation = interpretRun(appModel(), catalog, config);
-    const all = [...catalog, ...config];
+    const byId = new Map([...catalog, ...config].map((finding) => [finding.id, finding]));
 
-    expect(interpretation.savings).toHaveLength(3);
-    expect(interpretation.savings[1]).toEqual({
+    expect(Object.keys(interpretation.savings).sort()).toEqual(['config-serializer', 'skew-7', 'spill-3']);
+    expect(interpretation.savings[catalog[1].id]).toEqual({
       figure: impactFigure(catalog[1]),
       meaning: 'of run time',
       board: impactEstimateFigure(catalog[1].impactEstimate).text,
       compact: impactEstimateCompact(catalog[1].impactEstimate),
       provenance: expect.stringContaining('point estimate'),
     });
-    expect(interpretation.savings[2].figure).toBeNull();
-    expect(interpretation.verdict.steps.map((step) => all[step.leadIndex])).toEqual([catalog[1], catalog[0], config[0]]);
-    expect(interpretation.savingsRank.map((index) => all[index])).toEqual([catalog[1], catalog[0], config[0]]);
+    expect(interpretation.savings['config-serializer'].figure).toBeNull();
+    expect(interpretation.verdict.steps.map((step) => byId.get(step.leadId))).toEqual([catalog[1], catalog[0], config[0]]);
+    expect(interpretation.savingsRank.map((id) => byId.get(id))).toEqual([catalog[1], catalog[0], config[0]]);
+  });
+
+  it('gives the same conclusions whatever order the findings arrive in', () => {
+    const catalog = [timed('spill', 3, 1_000), timed('skew', 7, 2_400), timed('gc', 7, 500, 'critical')];
+    const config = [{ id: 'config-serializer', type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    const forward = interpretRun(appModel(), catalog, config);
+    const shuffled = interpretRun(appModel(), [catalog[2], catalog[0], catalog[1]], config);
+
+    expect(shuffled.verdict.steps.map((step) => step.leadId)).toEqual(forward.verdict.steps.map((step) => step.leadId));
+    expect(shuffled.savingsRank).toEqual(forward.savingsRank);
+    expect(shuffled.savings).toEqual(forward.savings);
+    expect(shuffled.stages['7'].findingIds.slice().sort()).toEqual(forward.stages['7'].findingIds.slice().sort());
+  });
+
+  it('refuses a finding without an id, which nothing could point at', () => {
+    expect(() => interpretRun(appModel(), [{ type: 'skew', stageId: 7, impactBand: 'warning' }], [])).toThrow(/skew finding has no id/);
   });
 
   it('words the verdict exactly as buildRunVerdict does', () => {
@@ -67,7 +83,7 @@ describe('interpretRun', () => {
   });
 
   it('carries the failure: its reason and the quoted-reason step text', () => {
-    const stageFailed = { type: 'stageFailed', stageId: 3, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
+    const stageFailed = { id: 'stageFailed-3', type: 'stageFailed', stageId: 3, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
     const model = appModel({ jobs: new Map([[1, failedJob(1, [3])]]) });
     const interpretation = interpretRun(model, [timed('skew', 7, 2_400), stageFailed], []);
 
@@ -78,7 +94,7 @@ describe('interpretRun', () => {
 
   it('records which checks could not run, with the reasons checkCoverage gives', () => {
     const model = appModel({ stages: new Map([[1, makeStage({ id: 1, completedAt: undefined })]]) });
-    const incomplete = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
+    const incomplete = { id: 'incompleteRun', type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
     const { coverage } = interpretRun(model, [incomplete], []);
     const expected = checkCoverage(model.stages, [incomplete]);
 
@@ -103,14 +119,14 @@ describe('interpretRun', () => {
   });
 
   it('orders a stage\'s finding types by its own verdict step, then worst band', () => {
-    const info = { type: 'tinyTask', stageId: 7, impactBand: 'info', recommendation: 'r' };
-    const critical = { type: 'gc', stageId: 7, impactBand: 'critical', recommendation: 'r' };
+    const info = { id: 'tinyTask-7', type: 'tinyTask', stageId: 7, impactBand: 'info', recommendation: 'r' };
+    const critical = { id: 'gc-7', type: 'gc', stageId: 7, impactBand: 'critical', recommendation: 'r' };
     const quantified = timed('skew', 7, 2_400, 'warning');
-    const unrankable = { type: 'spill', stageId: 7, impactBand: 'critical' };
+    const unrankable = { id: 'spill-7', type: 'spill', stageId: 7, impactBand: 'critical' };
     const catalog = [info, critical, quantified, unrankable];
     const { stages } = interpretRun(appModel(), catalog, []);
 
-    expect(stages['7'].findingIndexes).toEqual([0, 1, 2, 3]);
+    expect(stages['7'].findingIds).toEqual(catalog.map((finding) => finding.id));
     // skew leads (quantified), gc and tinyTask follow as its related types, then the unrankable spill.
     expect(stages['7'].typeOrder).toEqual(['skew', 'gc', 'tinyTask', 'spill']);
   });
@@ -130,8 +146,7 @@ describe('interpretRun', () => {
     const { wallClockMs, efficiencyPct, unusedCoreTimePct } = json.summary.runShape;
     expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct });
     // The Findings board lists the report's "Fix these first" groups, members in the same order.
-    const all = [...catalog, ...auditConfig(model.app)];
-    expect(interpretation.rollup.groups.map((group) => ({ type: group.type, ids: group.memberIndexes.map((i) => all[i].id) })))
+    expect(interpretation.rollup.groups.map((group) => ({ type: group.type, ids: group.memberIds })))
       .toEqual(json.recommendations.map((row) => ({ type: row.type, ids: row.findingIds })));
     expect(interpretation.rollup.groups.length).toBeGreaterThan(0);
   });
@@ -162,16 +177,16 @@ describe('interpretRun', () => {
   });
 
   it('carries the Findings board: eligible findings, groups in fix-first order, bands and figures', () => {
-    const incomplete = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
+    const incomplete = { id: 'incompleteRun', type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
     const bigInfo = timed('skew', 7, 5_000, 'info');
     const smallCritical = timed('skew', 3, 1_000, 'critical');
     const spill = timed('spill', 3, 800);
     const catalog = [incomplete, bigInfo, smallCritical, spill];
     const { rollup } = interpretRun(appModel(), catalog, []);
 
-    expect(rollup.eligibleIndexes).toEqual([1, 2, 3]);
+    expect(rollup.eligibleIds).toEqual([bigInfo.id, smallCritical.id, spill.id]);
     expect(rollup.groups.map((group) => group.type)).toEqual(['skew', 'spill']);
     // Members representative first; the group sits under its worst member's band.
-    expect(rollup.groups[0]).toMatchObject({ kind: 'time', band: 'critical', memberIndexes: [1, 2], stat: '×2 · 6.0s recoverable' });
+    expect(rollup.groups[0]).toMatchObject({ kind: 'time', band: 'critical', memberIds: [bigInfo.id, smallCritical.id], stat: '×2 · 6.0s recoverable' });
   });
 });

@@ -109,9 +109,9 @@ tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). `list
 records from `buildDetectorCatalog()` in `packages/core/src/detector-catalog.ts`). None
 re-implement detector logic: `list_runs` lists candidates
 (`packages/core/src/list-runs.ts`), and the rest repackage
-`analyze`/`buildEvidenceReport`/`compareRuns`/`captureSnapshot`/`evaluateBudgets`
+`analyzeRun`/`buildEvidenceReport`/`compareRuns`/`evaluateBudgets`
 from `packages/core/src/mcp-tools.ts`, which resolves a `source` (event-log `path`, or an SHS
-`shsBaseUrl`/`appId`/`attemptId` triple) into a cached `AppModel`. The SHS
+`shsBaseUrl`/`appId`/`attemptId` triple) into a cached `AnalyzedRun`. The SHS
 source path calls `resolveFromShs` (`packages/core/src/shs-load.ts`, also used directly by
 the CLI's `--shs-base-url` mode above), which reuses two extractions shared
 with the browser ingestion flow: `fetchShsEventLog` (`packages/core/src/proxy.js`, the

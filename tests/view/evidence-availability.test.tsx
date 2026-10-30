@@ -13,6 +13,7 @@ import { EvidenceAvailabilityProvider, useEvidenceAvailabilityNavigation } from 
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { testFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 const presentLedger: EvidenceAvailability = {
   schemaVersion: 1,
@@ -34,6 +35,16 @@ function readyModel(evidenceAvailability: EvidenceAvailability | null = presentL
     app: { startTime: 0, endTime: 60_000 },
     evidenceAvailability,
   };
+}
+
+/** A plan finding whose evidence panel keeps its row: it reads the resolved SQL plan, so the panel
+ * links to that evidence. (A finding the verdict step already states leaves some types' panels empty.) */
+function unprunedScan() {
+  return [testFinding({
+    type: 'unprunedScan', stageId: null, impactBand: 'warning', stageIds: [1], relation: 'db.events',
+    partitionsRead: 400, dataFilters: ['user_id'], value: 5e9,
+    recommendation: 'Filter on the partition column.',
+  })];
 }
 
 function renderDashboard() {
@@ -59,10 +70,8 @@ async function openVerdictEvidence(user: ReturnType<typeof userEvent.setup>, car
 beforeEach(() => {
   store.setState({
     ...store.getState(),
-    appModel: readyModel(),
-    catalog: [],
-    // A leftover Config Audit finding from an earlier test would add a second verdict step.
-    configFindings: [],
+    // A fresh run: a leftover Config Audit finding from an earlier test would add a second verdict step.
+    ...runState({ appModel: readyModel() }),
     status: 'ready',
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
@@ -101,7 +110,7 @@ test('keeps the Full app report tab initially unselected and renders every ledge
 
 test('renders a terse unavailable card when a legacy model has no ledger', async () => {
   const user = userEvent.setup();
-  store.setState({ ...store.getState(), appModel: readyModel(null) });
+  store.setState({ ...store.getState(), ...runState({ appModel: readyModel(null) }) });
   renderDashboard();
 
   await user.click(screen.getByRole('tab', { name: 'Full app report' }));
@@ -121,10 +130,10 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
     // An ordinary (non-dataUnavailable) row: the dataUnavailable placeholder
     // carries no evidence pill of its own (it would be circular, its
     // whole content IS the "evidence unavailable" note).
-    catalog: [{
+    ...runState({ appModel: readyModel(), catalog: [{
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3', impactBand: 'info',
       recommendation: 'Executor 3 used only 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
-    }],
+    }] }),
   });
   renderDashboard();
 
@@ -135,19 +144,16 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
   expect(document.activeElement).toHaveClass('focus:ring-2');
 });
 
-test('Redundant Plan Subtree finding opens SQL-plan evidence with keyboard activation', async () => {
+test('Unpruned Scan finding opens SQL-plan evidence with keyboard activation', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   store.setState({
     ...store.getState(),
-    catalog: [testFinding({
-      type: 'duplicatePlanSubtree', stageId: null, impactBand: 'warning', stageIds: [1],
-      recommendation: 'Consider caching the shared computation.',
-    })],
+    ...runState({ appModel: readyModel(), catalog: unprunedScan() }),
   });
   renderDashboard();
 
-  await openVerdictEvidence(user, /^redundant plan subtree$/i);
+  await openVerdictEvidence(user, /^unpruned partitioned scan$/i);
   const link = screen.getByRole('button', { name: /^evidence: sql plan$/i });
   link.focus();
   await user.keyboard('{Enter}');
@@ -166,8 +172,7 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   };
   store.setState({
     ...store.getState(),
-    appModel: { ...readyModel(), app },
-    configFindings: auditConfig(app),
+    ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app) }),
   });
   renderDashboard();
 
@@ -182,19 +187,16 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sparkConfiguration'));
 });
 
-test('Redundant Plan Subtree finding opens SQL-plan evidence', async () => {
+test('Unpruned Scan finding opens SQL-plan evidence', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   store.setState({
     ...store.getState(),
-    catalog: [testFinding({
-      type: 'duplicatePlanSubtree', stageId: null, impactBand: 'warning', stageIds: [1],
-      recommendation: 'Consider caching the shared computation.',
-    })],
+    ...runState({ appModel: readyModel(), catalog: unprunedScan() }),
   });
   renderDashboard();
 
-  await openVerdictEvidence(user, /^redundant plan subtree$/i);
+  await openVerdictEvidence(user, /^unpruned partitioned scan$/i);
   await user.click(screen.getByRole('button', { name: /^evidence: sql plan$/i }));
 
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sqlPlan'));
@@ -205,14 +207,11 @@ test('a second evidence click after returning to Findings switches tabs again', 
   store.getState().setWidgetDensity('advanced');
   store.setState({
     ...store.getState(),
-    catalog: [testFinding({
-      type: 'duplicatePlanSubtree', stageId: null, impactBand: 'warning', stageIds: [1],
-      recommendation: 'Consider caching the shared computation.',
-    })],
+    ...runState({ appModel: readyModel(), catalog: unprunedScan() }),
   });
   renderDashboard();
 
-  await openVerdictEvidence(user, /^redundant plan subtree$/i);
+  await openVerdictEvidence(user, /^unpruned partitioned scan$/i);
   const evidence = screen.getByRole('button', { name: /^evidence: sql plan$/i });
   await user.click(evidence);
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
@@ -236,8 +235,7 @@ test('Config Audit finding opens Spark-configuration evidence', async () => {
   };
   store.setState({
     ...store.getState(),
-    appModel: { ...readyModel(), app },
-    configFindings: auditConfig(app),
+    ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app) }),
   });
   renderDashboard();
 
@@ -253,15 +251,17 @@ test('unavailable ScalingSim opens task-and-core-time evidence', async () => {
   const user = userEvent.setup();
   store.setState({
     ...store.getState(),
-    appModel: {
-      ...readyModel(),
-      evidenceAvailability: {
-        ...presentLedger,
-        entries: presentLedger.entries.map((entry) => entry.key === 'taskCoreTime'
-          ? { key: 'taskCoreTime', state: 'notEmitted' as const, reasonCode: 'noUsableCoreTimeAggregate' as const, summary: 'No usable aggregate was emitted.' }
-          : entry),
+    ...runState({
+      appModel: {
+        ...readyModel(),
+        evidenceAvailability: {
+          ...presentLedger,
+          entries: presentLedger.entries.map((entry) => entry.key === 'taskCoreTime'
+            ? { key: 'taskCoreTime', state: 'notEmitted' as const, reasonCode: 'noUsableCoreTimeAggregate' as const, summary: 'No usable aggregate was emitted.' }
+            : entry),
+        },
       },
-    },
+    }),
   });
   renderDashboard();
 

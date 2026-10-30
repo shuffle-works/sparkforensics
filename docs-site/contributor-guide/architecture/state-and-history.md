@@ -4,31 +4,53 @@
 
 `src/store/store.ts` is a single Zustand store (`createStore` from
 `zustand/vanilla`, wrapped by a `useStore` hook). It holds all shared state; no
-component keeps a `useState` of its own for anything shared. Run state:
-`appModel: AppModel`, `catalog: Finding[]`, `configFindings: Finding[]`,
-`interpretation` (see [Run interpretation](#run-interpretation)),
-`taskDataCache`, `skippedLines` (malformed-JSON-line count from the parser's
-`done` payload). File and parse state: `activeFileId`, `sessionCache`
-(in-memory snapshot cache for instant file-switching, see
-`packages/core/src/session-snapshot.ts`), `parse: {pct, lines, etaMs}`,
+component keeps a `useState` of its own for anything shared. Run state is one
+value: `run: AnalyzedRun | null` and its `runKey`, plus `taskDataCache` (the
+per-task detail fetched so far). The `AnalyzedRun`
+(`packages/core/src/analyzed-run.ts`) holds the parsed `appModel` (with the
+evidence ledger, `skippedLines` and `unreadableSqlExecutions`), the detector
+`catalog`, the `configFindings`, the `interpretation` (see
+[Run interpretation](#run-interpretation)) and a `taskData` source. Views read it
+through `selectAppModel`, `selectCatalog` and `selectConfigFindings`, or
+`run.interpretation` through `src/view/interpretation.ts`. File and parse state:
+`activeFileId`, `sessionCache` (in-memory snapshots, each a `SerializedRun`, for
+instant file-switching), `parse: {pct, lines, etaMs}`,
 `status: 'idle'|'parsing'|'ready'|'error'`, `shsParsing`, `errorMessage`,
 `errorNonce`. View state: `theme`, `widgetDensity`,
 `comparison`/`compareLoad`/`compareSeed`, `planGraph`. Export-only:
 `exportMode` and `exportProvenance`, both set by `src/export/hydrate-store.ts`.
 
-`src/store/useIngest.ts` is the only writer during a parse. It builds
-`createModelCallbacks`' `onProgress`/`onDone`/`onError` handlers to call the
-store's setters directly (`setParse`, `setFindings`, `setStatus`,
-`setSkippedLines`, `setTaskData`, ...). Components never talk to the worker:
+A run enters the store one way: `installRun(run, runKey)`. It replaces `run` and
+`runKey` whole, sets `status` to `ready` and starts `taskDataCache` from the
+run's task data. There is no setter for a single run field. `runKey` is the file
+id, else a generated `run-N` for a folder or History Server load; `App.tsx`
+renders `<DashboardRoute key={runKey} />`, so a new run remounts the dashboard and
+every piece of per-run view state (page, sort, open cards, the core-usage
+histogram) starts fresh. A view does not reset that state from an effect on
+`appModel` or `activeFileId`; the ast-grep rule `no-run-reset-effect` flags one.
+
+A run's `taskData` says where its per-task detail comes from. A live parse
+holds `{ kind: 'worker', request }`, and `getTaskData` asks the worker for a
+stage the cache lacks. A restored or drilled-into run has no worker: it holds
+`{ kind: 'snapshot', stages }`, the stages prefetched before it left the screen,
+or `{ kind: 'none' }`. A run read from an export is always `none`. The stage
+dialog, the core-usage histogram and the task spread read it through
+`useLiveTaskData` and say "isn't available for this run" instead of fetching.
+
+`src/store/useIngest.ts` is the only writer during a parse. Each load builds
+into a fresh `AppModel` it owns. On `done` it calls `analyzeRun` (the one place
+the detectors, the config audit, the evidence ledger and the interpretation run)
+and installs the result. Components never talk to the worker:
 they use `useIngest()`'s returned actions
 (`startLoad`/`startLoadFolder`/`startLoadFromUrl`/`pickRecent`/`getTaskData`/
 `resetToDropZone`/`cancelParse`, plus the comparison actions
 `prepareComparison`/`startCompareLoad`/`compareWithAnotherRun`/`drillIntoRun`)
 and the store's read state.
-`resetToDropZone` snapshots the current run into `sessionCache` before
-resetting; `cancelParse` (the parse screen's **Cancel**) terminates the worker
-and never snapshots, so a half-parsed model with no findings can't be restored
-later.
+`resetToDropZone` snapshots the current run into `sessionCache` with
+`serializeRun` before resetting; `pickRecent` and `drillIntoRun` install
+`deserializeRun(snapshot)`. `cancelParse` (the parse screen's **Cancel**)
+terminates the worker and never snapshots, so a half-parsed model can't be
+restored later.
 
 Every parse ends in `ready` or `error`, never in a stuck `parsing`. A throw in
 `runDone` before the run is ready (analysis on odd log data) and a throw while
@@ -37,21 +59,33 @@ task-data prefetch or recent-files write is logged and the dashboard stays.
 
 Render errors stay local. `ErrorBoundary` (`src/view/ErrorBoundary.tsx`) wraps
 each grid card in `WidgetGridItem`, so a widget that throws on a log's data
-shows an error card with **Retry** while its siblings keep rendering. The card
-clears itself when `activeFileId` changes (its `resetKey`), so picking another
-recent run does not keep the previous run's error.
+shows an error card with **Retry** while its siblings keep rendering. Picking
+another recent run remounts the dashboard, so the new run never shows the
+previous run's error.
 `AppErrorBoundary` wraps the app routes in `src/App.tsx`: a throw outside a
 card, or a lazy chunk that fails to load, shows a page with **Reload page** and
 **Load another log** (which runs `cancelParse`).
 
-`resetModel()` empties the run state (`appModel`, `catalog`,
-`configFindings`, `interpretation`, `taskDataCache`, `skippedLines`), returns
-`status` to idle, clears `shsParsing` and `errorMessage`, closes any comparison or plan-graph view, and bumps
-`modelResetCount`. It runs on every new parse, reset-to-drop-zone, cancelled
-parse, typed SHS failure and compare-load parse. That
-counter has no setter of its own; only `PlanGraphRoute.tsx`'s `store.subscribe`
-reads it, to evict the plan-graph model memo cache (see
-[Plan graph view](./drill-down/plan-graph.md#plan-graph-view)).
+`resetModel()` clears `run`, `runKey` and `taskDataCache`, returns
+`status` to idle, clears `shsParsing` and `errorMessage`, and closes any comparison or plan-graph view.
+It runs on every new parse, reset-to-drop-zone, cancelled
+parse, typed SHS failure and compare-load parse. The plan-graph model memo cache
+is keyed by the run's `appModel`, so a new run never reads a previous run's
+models (see [Plan graph view](./drill-down/plan-graph.md#plan-graph-view)).
+
+### Serializing a run
+
+`serializeRun` and `deserializeRun` (`packages/core/src/run-serialization.ts`)
+are the one pair that turns an `AnalyzedRun` into plain data and back, for the
+session snapshots in `sessionCache` and for the HTML export. `SerializedRun`
+lists every field with its collections as arrays, and the `FIELDS` table gives
+each one the run or model field it carries and its redaction policy: `redact`
+(pseudonymized), `keep` (counts and ids), `derive` (recomputed from the
+redacted run) or `drop`. `FIELDS` and the `SerializedRun` type are checked
+against `AnalyzedRun` and `AppModel`, so a new field does not compile until it
+is serialized and given a policy, and `redactRun` (`packages/core/src/redact.ts`)
+follows the table instead of listing fields. `packages/core/test/run-serialization.test.js`
+round-trips every fixture log and fails when a run or model field has no entry.
 
 ### Run interpretation
 
@@ -59,27 +93,25 @@ The rule: whatever states a conclusion about this run is computed once by the
 producer, whatever responds to what the viewer does is computed live.
 
 `interpretRun` (`packages/core/src/run-interpretation.ts`) is that one
-computation; its `RunInterpretation` interface lists what it returns (verdict
+computation, and `analyzeRun` calls it, so the interpretation is a field of the
+run; its `RunInterpretation` interface lists what it returns (verdict
 and next steps, which checks could not run and why, formatted savings and their
 rank, the Scorecard figures and flags, per-stage finding order, the Findings
 board's rollup, and per finding type the widget order, doc anchor and
-clean-check criterion). It refers to findings by index into
-`[...catalog, ...configFindings]`, so a renderer resolves them to the objects it
-already holds and reference-identity routing keeps working.
+clean-check criterion). It refers to findings by their `id`, which is unique
+across `catalog` and `configFindings`, so the order the findings are held in
+never matters. `src/view/interpretation.ts` resolves the ids to the finding
+objects the run holds, so reference-identity routing keeps working.
 
-The store's `interpretation` holds that result with the findings it indexes.
-The live app fills it from `src/store/live-interpretation.ts`, a
-`store.subscribe` installed by `src/main.tsx` (and `tests/view/setup.ts`) that
-reinterprets whenever `appModel`, `catalog` or `configFindings` changes.
-Widgets read it through `src/view/interpretation.ts`. What stays live responds
+Widgets read the interpretation through `src/view/interpretation.ts`. What stays live responds
 to the viewer: filtering, sorting and expanding; the Findings board regrouped
 over the findings a filter keeps (`boardRollup`: unfiltered, it renders the
 carried groups as is; a time group's recoverable figure is capped by the union
 of its members' stage intervals, so a filtered subset cannot be re-totalled
 from the carried per-group numbers); and the Scaling Simulator's
 `simulateScaling`, a what-if the viewer drives. A widget test that renders one
-widget with findings as props installs an interpretation first with
-`tests/view/_shared/interpretation.ts`.
+widget with findings as props installs a run first with
+`tests/view/_shared/interpretation.ts` or `tests/view/_shared/run.ts`.
 
 Some view judgments sit outside the rule. StageTable's RETRY, fetch-wait,
 spill and I/O-ratio chips, PlanView's cross-join, long-filter and exchange-count
@@ -88,16 +120,17 @@ the view code, with no finding behind them. Do not copy that pattern.
 
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and
-the dashboard's download, calls `interpretRun` and writes it into the payload
-(`EXPORT_DATA_SCHEMA_VERSION` 3) with a provenance stamp: core version, core
+the dashboard's download, takes the `AnalyzedRun` and writes it as an
+`ExportRunData` (`SerializedRun` plus provenance, `EXPORT_DATA_SCHEMA_VERSION` 4;
+`taskData` is always null) with a provenance stamp: core version, core
 build id (`coreSourceHash` of the core sources: `coreBuildId` in
 `load-vendored.js` for the CLI, a Vite `define` for the web build, see
 `src/build-info.ts`) and producer, all shown in the export footer. With
-redaction on, it redacts the run model and findings first and interprets the
-redacted copy, so no text derived from a redacted value (a quoted failure
+redaction on, `redactRun` redacts the run model and findings first and derives
+the interpretation from the redacted copy, so no text derived from a redacted value (a quoted failure
 reason cut mid-host, say) keeps a fragment of it; the md/json report does the
-same. The export bundle never installs the live interpreter:
-`hydrateExportStore` installs the payload's interpretation as is, and
+same. The export bundle never analyzes a run:
+`hydrateExportStore` installs the payload's run with `installRun`, interpretation as is.
 `src/export/main-export.tsx` refuses, before rendering, any payload whose
 `schemaVersion` it was not built for, or that lacks its `configFindings`,
 `interpretation`, `stages`, `sql` or `jobs` (`unsupportedPayloadReason`). A
@@ -111,7 +144,7 @@ What the bundle may import is checked at build time.
 `vite.export.config.ts` resolves the live-only modules to stand-ins in
 `src/export/live-only-stubs/` (`useIngest`, `useRecentFiles`, `EvidenceExport`,
 `core-usage-histogram-data`), whose controls the exported dashboard hides or
-replaces with an "isn't included in exported reports" note. Then
+replaces with an "isn't available for this run" note. Then
 `exportAnalysisGuard` (`scripts/export-analysis-guard.mjs`) fails the build if
 the graph from `src/export/main-export.tsx` reaches a `packages/core/` module
 missing from `ALLOWED_EXPORT_CORE_MODULES`, or any of `LIVE_ONLY_MODULES`,
@@ -140,9 +173,9 @@ the selection names the info band. Every change writes those params back with
 `popstate` listener re-seeds the selection from the URL, so Back and forward
 re-apply filters.
 
-Switching files resets the selection to empty, keyed on the stable file id
-rather than `catalog`, so a same-file catalog refresh keeps the active filter. A
-page reload re-reads the address bar, so deep-linked filtered URLs still
+Switching runs resets the selection to empty: the provider sits inside the
+`runKey`-keyed `DashboardRoute`, and its unmount strips the filter params so the
+remount seeds a clean slate. A page reload re-reads the address bar, so deep-linked filtered URLs still
 restore. Filters are seeded only from the URL and never persisted anywhere
 else (no localStorage, no restore-as-default): a filtered view silently
 becoming the default on reload would risk hiding findings from a user who

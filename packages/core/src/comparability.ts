@@ -5,7 +5,7 @@ import { allocatedCoreMs, computeAllocation, lastObservedTimestamp } from './all
 import { buildEffectiveConf } from './effective-conf.ts';
 import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
 import { totalOutputRows, withEarlierAttempts } from './run-totals.ts';
-import type { SessionSnapshot } from './session-snapshot.ts';
+import type { ComparedRun } from './compared-run.ts';
 import type { StageAlignment } from './stage-alignment.ts';
 import type { Stage } from './types.ts';
 
@@ -139,7 +139,7 @@ export function compileConfIgnorePatterns(patterns: readonly string[] | undefine
   });
 }
 
-function compareConf(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, ignore: RegExp[], userPattern?: string): ConfComparability {
+function compareConf(baseSnap: ComparedRun, candSnap: ComparedRun, ignore: RegExp[], userPattern?: string): ConfComparability {
   const base = buildEffectiveConf(baseSnap.app, { userPattern });
   const cand = buildEffectiveConf(candSnap.app, { userPattern });
   if (base == null || cand == null) return { equal: null, differences: [], ignoredKeys: [], withheldKeys: [] };
@@ -170,7 +170,7 @@ const QUEUE_CONF_KEY = 'spark.yarn.queue';
 const CODE_FILE_CONF = /^spark\.(jars|submit\.pyFiles|yarn\.dist\..+)$/;
 
 function buildCaveats(
-  baseSnap: SessionSnapshot, alignment: Pick<StageAlignment, 'unmatched' | 'replanned' | 'bookkeepingStageIds'>, conf: ConfComparability,
+  baseSnap: ComparedRun, alignment: Pick<StageAlignment, 'unmatched' | 'replanned' | 'bookkeepingStageIds'>, conf: ConfComparability,
   meanExecutors: BridgeFactor, taskTime: BridgeFactor, tasks: VolumeFigure, thresholds: CaveatThresholds,
 ): Caveats {
   const { ratio } = meanExecutors;
@@ -233,7 +233,7 @@ function factor(baseline: number | null, candidate: number | null): BridgeFactor
   return { baseline, candidate, ratio: ratio(baseline, candidate) };
 }
 
-function runWindow(snap: SessionSnapshot): [number, number] | null {
+function runWindow(snap: ComparedRun): [number, number] | null {
   const start = snap.app?.startTime;
   const end = snap.app?.endTime ?? (snap.executors ? lastObservedTimestamp(snap) : null);
   return start != null && end != null && end >= start ? [start, end] : null;
@@ -242,16 +242,16 @@ function runWindow(snap: SessionSnapshot): [number, number] | null {
 /** The comparability facts of a comparison. `metrics` are the comparison's own rows, so the
  * volume and bridge figures are the ones the metrics table shows. */
 export function buildComparability(
-  baseSnap: SessionSnapshot, candSnap: SessionSnapshot,
+  baseSnap: ComparedRun, candSnap: ComparedRun,
   alignment: Pick<StageAlignment, 'unmatched' | 'replanned' | 'bookkeepingStageIds'>,
   metrics: Array<{ key: string; baseline: number | null; candidate: number | null }>,
   { ignoreConf, confRedactRegex, noiseBand, caveatThresholds }: ComparabilityOptions,
 ): Comparability {
-  const attempts = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
-  const allocation = (snap: SessionSnapshot) => (snap.executors ? computeAllocation(snap) : null);
+  const attempts = (snap: ComparedRun): Stage[] => withEarlierAttempts([...snap.stages.values()]);
+  const allocation = (snap: ComparedRun) => (snap.executors ? computeAllocation(snap) : null);
   const baseAlloc = allocation(baseSnap), candAlloc = allocation(candSnap);
   const row = (key: string) => metrics.find((m) => m.key === key);
-  const share = (snap: SessionSnapshot, runTimeMs: number | null): number | null => {
+  const share = (snap: ComparedRun, runTimeMs: number | null): number | null => {
     const allocated = snap.executors ? allocatedCoreMs(snap) : null;
     return runTimeMs != null && allocated != null ? runTimeMs / allocated : null;
   };

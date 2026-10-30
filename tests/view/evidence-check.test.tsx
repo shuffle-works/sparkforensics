@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { store } from '@/store/store';
+import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
@@ -40,9 +40,12 @@ afterEach(() => {
 // every finding of every example run. Output that is hidden counts as not shown.
 test.each(exampleRuns())('%s: every panel a content check keeps renders evidence', async (log) => {
   expect(loadExampleRun(log)).toBeNull();
-  const { appModel, catalog, configFindings, interpretation } = store.getState();
-  const widgets = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors);
-  const widgetProps = { appModel, catalog, configFindings, getTaskData: vi.fn(), activeFileId: null };
+  const state = store.getState();
+  const appModel = selectAppModel(state);
+  const catalog = selectCatalog(state);
+  const configFindings = selectConfigFindings(state);
+  const widgets = computeActiveWidgets(catalog, configFindings, state.run!.interpretation.detectors);
+  const widgetProps = { appModel, catalog, configFindings, getTaskData: vi.fn() };
   const empty: string[] = [];
 
   for (const widget of widgets) {
@@ -83,15 +86,18 @@ const TYPES_WITHOUT_ROW = ['incompleteRun'];
 
 test.each(exampleRuns())('%s: a row offers the evidence control exactly when its content check keeps a row', async (log) => {
   expect(loadExampleRun(log)).toBeNull();
-  const { appModel, catalog, configFindings } = store.getState();
+  const state = store.getState();
+  const appModel = selectAppModel(state);
+  const catalog = selectCatalog(state);
+  const configFindings = selectConfigFindings(state);
   const wrong: string[] = [];
 
   for (const finding of [...catalog, ...configFindings]) {
     // One finding on its own board: a step or a row states its own finding.
     const rowCatalog = configFindings.includes(finding) ? [] : [finding];
     const rowConfig = configFindings.includes(finding) ? [finding] : [];
-    installInterpretation(rowCatalog, appModel, rowConfig);
-    const widget = computeActiveWidgets(rowCatalog, rowConfig, store.getState().interpretation!.data.detectors)[0];
+    const interpreted = installInterpretation(rowCatalog, appModel, rowConfig);
+    const widget = computeActiveWidgets(rowCatalog, rowConfig, interpreted.data.detectors)[0];
     for (const density of ['basic', 'advanced'] as const) {
       store.setState({ widgetDensity: density });
       const expected = evidencePanelOf(widget, appModel, [finding], [finding], density) !== null;

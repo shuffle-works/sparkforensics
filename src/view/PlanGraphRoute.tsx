@@ -2,7 +2,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button';
 import { resolvePlanTree } from '@/view/widgets/PlanView';
 import { buildPlanGraphModel } from '@sparkforensics/core/plan-graph-model.ts';
-import { store } from '@/store/store';
 import { PlanGraphCanvas, type CenterRequest } from '@/view/plan-graph/PlanGraphCanvas';
 import { PlanGraphStageDetail } from '@/view/plan-graph/PlanGraphStageDetail';
 import { StageSelectionProvider, type StageSelection } from '@/view/plan-graph/stage-selection';
@@ -103,46 +102,38 @@ function safeBuildPlanGraphModel(
   }
 }
 
-// Module-level memo: rebuilding the model on every re-render or re-open is wasted
-// work. Keyed on (activeFileId, stageId, scope, durationMode, showInfo), not stageId alone
+// Memo per run model: rebuilding the model on every re-render or re-open is wasted work. A run is
+// a new AppModel, so its entries never outlive it and a reload of the same file starts empty.
+// Keyed on (stageId, scope, durationMode, showInfo) within a run, not stageId alone
 // (docs-site/contributor-guide/architecture/drill-down/plan-graph.md).
 type CacheKey = string;
-const planGraphModelCache = new Map<CacheKey, PlanGraphModel>();
+let planGraphModelCache = new WeakMap<AppModel, Map<CacheKey, PlanGraphModel>>();
 
-function cacheKey(activeFileId: string | null, stageId: StageId, scope: 'segment' | 'full', durationMode: PlanGraphDurationMode, showInfo: boolean): CacheKey {
-  return `${activeFileId ?? 'none'}::${stageId}::${scope}::${durationMode}::${showInfo}`;
+function cacheKey(stageId: StageId, scope: 'segment' | 'full', durationMode: PlanGraphDurationMode, showInfo: boolean): CacheKey {
+  return `${stageId}::${scope}::${durationMode}::${showInfo}`;
 }
 
 /** Exposed for tests: clears every memoized model, e.g. between test cases
- * so a stale entry from one test can't leak into the next. Production code
- * never calls this directly; see the store.subscribe wiring below, which
- * calls it in response to resetModel() (a fresh parse/reload). */
+ * so a stale entry from one test can't leak into the next. */
 export function clearPlanGraphModelCache(): void {
-  planGraphModelCache.clear();
+  planGraphModelCache = new WeakMap();
 }
-
-// resetModel() must evict this cache, or a reload of the same file renders a stale
-// model. store.ts has no view imports, so this subscribes to its `modelResetCount`
-// counter instead of being called directly.
-let lastModelResetCount = store.getState().modelResetCount;
-store.subscribe((state) => {
-  if (state.modelResetCount !== lastModelResetCount) {
-    lastModelResetCount = state.modelResetCount;
-    clearPlanGraphModelCache();
-  }
-});
 
 function memoizedBuildPlanGraphModel(
   planTree: NonNullable<ReturnType<typeof resolvePlanTree>>,
   opts: { scope: 'segment' | 'full'; stageId: StageId; appModel: AppModel; findings: Finding[]; durationMode: PlanGraphDurationMode },
-  activeFileId: string | null,
   showInfo: boolean,
 ): PlanGraphModel | null {
-  const key = cacheKey(activeFileId, opts.stageId, opts.scope, opts.durationMode, showInfo);
-  const cached = planGraphModelCache.get(key);
+  let models = planGraphModelCache.get(opts.appModel);
+  if (!models) {
+    models = new Map();
+    planGraphModelCache.set(opts.appModel, models);
+  }
+  const key = cacheKey(opts.stageId, opts.scope, opts.durationMode, showInfo);
+  const cached = models.get(key);
   if (cached) return cached;
   const result = safeBuildPlanGraphModel(planTree, opts);
-  if (result) planGraphModelCache.set(key, result);
+  if (result) models.set(key, result);
   return result;
 }
 
@@ -211,7 +202,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   const planTree = resolvePlanTree(focusStageId, appModel);
 
   const segmentModel = planTree
-    ? memoizedBuildPlanGraphModel(planTree, { scope: 'segment', stageId: focusStageId, appModel, findings, durationMode }, activeFileId, showInfo)
+    ? memoizedBuildPlanGraphModel(planTree, { scope: 'segment', stageId: focusStageId, appModel, findings, durationMode }, showInfo)
     : null;
 
   // A 'segment' request can fall back to a 'full' model inside
@@ -232,7 +223,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   }, [segmentFellBackUnguarded]);
 
   const fullModel = planTree && (requestedScope === 'full' || confirmExpandOpen)
-    ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId, showInfo)
+    ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, showInfo)
     : null;
 
   // `initialScope: 'full'` is not consent to render any size: the dialog opens on
@@ -302,7 +293,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
 
   function handleExpandClick() {
     const candidateModel = planTree
-      ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId, showInfo)
+      ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, showInfo)
       : null;
     if (candidateModel && candidateModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD) {
       setConfirmExpandOpen(true);

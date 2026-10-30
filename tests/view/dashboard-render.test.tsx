@@ -8,6 +8,7 @@ import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import { store, emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { testFinding, unknownTypeFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 function CriticalAlert() {
   return <h3>Critical alert</h3>;
@@ -97,9 +98,8 @@ beforeEach(() => {
   // These tests list info findings too.
   window.history.replaceState({}, '', '/?impact=critical,warning,info');
   store.setState({
-    appModel: emptyAppModel(),
-    catalog: [],
-    configFindings: [],
+    run: null,
+    runKey: null,
     status: 'idle',
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
@@ -120,7 +120,7 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 0.4 },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
 
   render(<App />);
   await waitForDashboard();
@@ -158,7 +158,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
     unknownTypeFinding({ type: 'warningAlert', stageId: 1, impactBand: 'warning' }),
     unknownTypeFinding({ type: 'criticalAlert', stageId: 1, impactBand: 'critical' }),
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
 
   render(<App />);
   await waitForDashboard();
@@ -202,7 +202,7 @@ test('a clean type still gets its own clean-check line when a sibling sharing it
   const catalog: Finding[] = [
     { type: 'skew', stageId: 1, impactBand: 'warning' },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
 
   render(<App />);
   await waitForDashboard();
@@ -216,7 +216,7 @@ test('a clean type still gets its own clean-check line when a sibling sharing it
 });
 
 test('empty catalog shows the "no findings to fix" empty state alongside the Full app report tab and its always-mounted chart', async () => {
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [] });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog: [] }) });
 
   render(<App />);
   await waitForDashboard();
@@ -236,7 +236,7 @@ test('shows real Config Audit findings as a row in All recommendations without a
     resources: { dynamicAllocationEnabled: true },
   };
   // configFindings is computed at ingest, not by Dashboard; seed it as runDone would.
-  store.setState({ status: 'ready', appModel: appModel as any, catalog: [], configFindings: auditConfig(appModel.app) });
+  store.setState({ status: 'ready', ...runState({ appModel: appModel as any, catalog: [], configFindings: auditConfig(appModel.app) }) });
 
   render(<App />);
   await waitForDashboard();
@@ -259,7 +259,7 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
   const configFindings: Finding[] = [
     testFinding({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors', valueText: '(unset)', stageId: null, impactBand: 'critical', recommendation: 'Cap the executor count.' }),
   ];
-  store.setState({ status: 'ready', appModel, catalog: [], configFindings });
+  store.setState({ status: 'ready', ...runState({ appModel, catalog: [], configFindings }) });
 
   render(<App />);
   await waitForDashboard();
@@ -281,7 +281,7 @@ test('reads configFindings from the store rather than recomputing it from appMod
   const configFindings: Finding[] = [
     testFinding({ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', recommendation: 'x', stageId: null }),
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [], configFindings });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog: [], configFindings }) });
 
   render(<App />);
   await waitForDashboard();
@@ -296,7 +296,7 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 0.4 },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
 
   render(<App />);
   await waitForDashboard();
@@ -348,7 +348,7 @@ test('switching Findings <-> Full app report keeps an expanded finding group ope
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
     { type: 'spill', stageId: 2, impactBand: 'warning', value: 456 },
   ];
-  store.setState({ status: 'ready', appModel, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel, catalog }) });
 
   render(<App />);
   await waitForDashboard();
@@ -371,7 +371,7 @@ test('switching Findings <-> Full app report keeps an expanded finding group ope
 
 test('Reference-section grid items render with collapsedTile', async () => {
   const user = userEvent.setup();
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [] });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog: [] }) });
 
   render(<App />);
   await waitForDashboard();
@@ -397,7 +397,7 @@ test('Reference-section grid items render with collapsedTile', async () => {
 
 test('the first Tab stop skips past the top bar to the verdict', async () => {
   const user = userEvent.setup();
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [], configFindings: [] });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog: [], configFindings: [] }) });
   render(<App />);
   await waitForDashboard();
 
@@ -415,7 +415,7 @@ test('the top bar count chip opens Findings on the band it counts', async () => 
   ));
   const appModel = readyAppModel() as any;
   appModel.stages = new Map([1, 2, 3, 4].map((id) => [id, { id, submittedAt: 0, completedAt: 1000 }]));
-  store.setState({ status: 'ready', appModel, catalog, configFindings: [] });
+  store.setState({ status: 'ready', ...runState({ appModel, catalog, configFindings: [] }) });
   render(<App />);
   await waitForDashboard();
 
@@ -428,7 +428,7 @@ test('the top bar count chip opens Findings on the band it counts', async () => 
 test('the top bar count chip lands on the verdict when the verdict holds every finding of its band', async () => {
   const user = userEvent.setup();
   const skew: Finding = { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Rebalance Stage 1.' };
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [skew], configFindings: [] });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog: [skew], configFindings: [] }) });
   render(<App />);
   await waitForDashboard();
 

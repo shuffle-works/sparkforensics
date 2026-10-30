@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
@@ -34,14 +34,14 @@ vi.mock('@/view/Dashboard', () => {
 });
 
 import App from '@/App';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
 
 beforeEach(() => {
   // React logs every caught render error; keep the test output readable.
   vi.spyOn(console, 'error').mockImplementation(() => {});
   cancelParse.mockClear();
   store.getState().resetModel();
-  store.setState({ appModel: emptyAppModel(), catalog: [], status: 'idle', activeFileId: null });
+  store.setState({ run: null, runKey: null, status: 'idle', activeFileId: null });
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -67,22 +67,6 @@ test('a widget that throws shows an error card and leaves its siblings rendered'
 
   widgetShouldThrow = false;
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-  expect(screen.getByText('widget ok')).toBeInTheDocument();
-  expect(screen.queryByRole('alert')).toBeNull();
-});
-
-test('a widget error card clears when another run becomes active', () => {
-  widgetShouldThrow = true;
-  store.setState({ activeFileId: 'run-a' });
-  render(
-    <WidgetGrid>
-      <WidgetGridItem cardId="a"><FlakyWidget /></WidgetGridItem>
-    </WidgetGrid>,
-  );
-  expect(screen.getByRole('alert')).toHaveTextContent('widget exploded');
-
-  widgetShouldThrow = false;
-  act(() => store.setState({ activeFileId: 'run-b' }));
   expect(screen.getByText('widget ok')).toBeInTheDocument();
   expect(screen.queryByRole('alert')).toBeNull();
 });

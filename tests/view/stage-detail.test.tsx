@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
@@ -11,6 +11,7 @@ import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding, PlanNode, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 function makeStage(overrides: Record<string, unknown> = {}) {
   return {
@@ -157,19 +158,21 @@ describe('StageDetailDialog', () => {
     expect(screen.queryByText(/loading task data/i)).not.toBeInTheDocument();
   });
 
-  it('shows an honest export-mode message instead of fetching task data, with no Retry button', async () => {
+  it('shows an honest message instead of fetching task data when the run has none, with no Retry button', async () => {
     const user = userEvent.setup();
     const getTaskData = vi.fn(async () => TASK_DATA);
-    store.setState({ exportMode: true });
+    const appModel = makeAppModel();
 
-    renderHarness(makeAppModel(), getTaskData);
+    renderHarness(appModel, getTaskData);
+    // A run with no task data, as an export or a restored run carries.
+    act(() => { store.setState(runState({ appModel, taskData: { kind: 'none' } })); });
     await user.click(screen.getByRole('button', { name: 'open stage 1' }));
     const dialog = await screen.findByRole('dialog');
 
-    expect(await within(dialog).findByText(/isn.t included in exported reports/i)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/isn.t available for this run/i)).toBeInTheDocument();
     expect(getTaskData).not.toHaveBeenCalled();
     expect(within(dialog).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
-    store.setState({ exportMode: false });
+    store.getState().resetModel();
   });
 
   it('renders a locality section with a chart image when the stage has locality stats', async () => {

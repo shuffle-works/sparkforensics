@@ -7,6 +7,7 @@ import App from '@/App';
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import { store, emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { runState } from './_shared/run';
 
 function readyAppModel() {
   return {
@@ -61,7 +62,7 @@ async function clickDimension(user: User, dimension: 'type' | 'stage', value: st
 beforeEach(() => {
   window.history.replaceState({}, '', '/');
   store.setState({
-    appModel: emptyAppModel(), catalog: [], configFindings: [], status: 'idle', errorMessage: null,
+    run: null, runKey: null, status: 'idle', errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
     // The filter bar is an Advanced-mode control; the Basic-mode visibility
     // rules have their own tests at the end of this file.
@@ -75,7 +76,7 @@ test('a stage filter narrows the board to the selected stage', async () => {
     { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' },
     { type: 'skew', stageId: 2, impactBand: 'warning', recommendation: 'y' },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
   render(<App />);
   await waitForDashboard();
 
@@ -92,7 +93,7 @@ test('info findings are hidden until the impact filter names the info band, with
     { type: 'tinyTask', stageId: 2, impactBand: 'info', recommendation: 'y' },
     ...verdictLeads(),
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
   render(<App />);
   await waitForDashboard();
 
@@ -119,7 +120,7 @@ test('naming the info band in the impact filter lists info findings alone', asyn
     { type: 'tinyTask', stageId: 2, impactBand: 'info', recommendation: 'y' },
     ...verdictLeads(),
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
   render(<App />);
   await waitForDashboard();
 
@@ -136,7 +137,7 @@ test('filtered-to-empty shows the distinct no-match banner with an inline clear,
     { type: 'spill', stageId: 1, impactBand: 'warning' },
     { type: 'skew', stageId: 2, impactBand: 'critical' },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
   render(<App />);
   await waitForDashboard();
 
@@ -150,7 +151,7 @@ test('filtered-to-empty shows the distinct no-match banner with an inline clear,
 });
 
 test('empty catalog still shows the no-findings-to-fix empty state (distinct from no-match)', async () => {
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [] });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog: [] }) });
   render(<App />);
   await waitForDashboard();
   expect(screen.getByText(/no findings to fix/i)).toBeInTheDocument();
@@ -163,7 +164,7 @@ test('mounting with URL filter params filters the board on load', async () => {
     { type: 'spill', stageId: 1, impactBand: 'critical' },
     { type: 'skew', stageId: 2, impactBand: 'info' },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
   render(<App />);
   await waitForDashboard();
   expect(screen.getByRole('button', { name: 'Filter by impact: critical' })).toHaveAttribute('aria-pressed', 'true');
@@ -175,7 +176,7 @@ test('an active stage filter drops the configAudit row from the Findings tab', a
   const appModel = readyAppModel() as any;
   appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
   const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }, ...verdictLeads()];
-  store.setState({ status: 'ready', appModel, catalog, configFindings: auditConfig(appModel.app) });
+  store.setState({ status: 'ready', ...runState({ appModel, catalog, configFindings: auditConfig(appModel.app) }) });
   render(<App />);
   await waitForDashboard();
 
@@ -191,7 +192,7 @@ test('filtering to a CFG-only type keeps config matches and does not show the no
   const appModel = readyAppModel() as any;
   appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
   const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }, ...verdictLeads()];
-  store.setState({ status: 'ready', appModel, catalog, configFindings: auditConfig(appModel.app) });
+  store.setState({ status: 'ready', ...runState({ appModel, catalog, configFindings: auditConfig(appModel.app) }) });
   render(<App />);
   await waitForDashboard();
 
@@ -208,7 +209,7 @@ test('switching to a different file clears the previous file\'s filter (no repar
     { type: 'spill', stageId: 1, impactBand: 'warning' },
     { type: 'skew', stageId: 2, impactBand: 'critical' },
   ];
-  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: catalogA, activeFileId: 'file-A' });
+  store.setState({ status: 'ready', activeFileId: 'file-A', ...runState({ appModel: readyAppModel() as any, catalog: catalogA }) });
   render(<App />);
   await waitForDashboard();
 
@@ -220,7 +221,7 @@ test('switching to a different file clears the previous file\'s filter (no repar
 
   // Switch files with no reparse (dashboard stays mounted); the stale filter must drop.
   await act(async () => {
-    store.setState({ catalog: [{ type: 'spill', stageId: 1, impactBand: 'warning' }], activeFileId: 'file-B' });
+    store.setState({ activeFileId: 'file-B', ...runState({ appModel: readyAppModel() as any, catalog: [{ type: 'spill', stageId: 1, impactBand: 'warning' }] }, 'file-B') });
     await Promise.resolve();
   });
 
@@ -231,8 +232,9 @@ test('switching to a different file clears the previous file\'s filter (no repar
 
 test('Basic mode hides the filter bar while no filter is active', async () => {
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
-    catalog: [{ type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' }],
+    status: 'ready',
+    widgetDensity: 'basic',
+    ...runState({ appModel: readyAppModel() as any, catalog: [{ type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' }] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -242,11 +244,12 @@ test('Basic mode hides the filter bar while no filter is active', async () => {
 test('Basic mode still shows the filter bar when a filter is active, so it can be read and cleared', async () => {
   window.history.replaceState({}, '', '/?stage=1');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
-    catalog: [
+    status: 'ready',
+    widgetDensity: 'basic',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' },
       { type: 'skew', stageId: 2, impactBand: 'warning', recommendation: 'y' },
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -259,11 +262,11 @@ test('Show evidence in the stage dialog clears the filter that hides the target,
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
   window.history.replaceState({}, '', '/?type=spill');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.' },
       { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Fix skew.' },
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -284,12 +287,12 @@ test('a verdict step opens its own evidence panel and leaves the board filter al
   window.history.replaceState({}, '', '/?impact=critical&type=skew');
   const saving = (ms: number) => ({ basis: 'serial', wallClock: { low: ms, high: ms }, estimateMethod: 'modeled' }) as Finding['impactEstimate'];
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.', impactEstimate: saving(9_000) },
       { type: 'spill', stageId: 2, impactBand: 'critical', recommendation: 'Fix more spill.', impactEstimate: saving(8_000) },
       { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -314,11 +317,11 @@ test('a verdict step for a Full app report widget leaves the board filter alone'
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
   window.history.replaceState({}, '', '/?type=spill');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
       { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.', nonLocalTaskCount: 0 },
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -339,13 +342,13 @@ test('the top bar count chip clears the filter that hides the band it counts, an
   const user = userEvent.setup();
   window.history.replaceState({}, '', '/?type=spill&stage=1');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
       { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
       { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
       ...verdictLeads('critical'),
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -365,12 +368,12 @@ test('the top bar count chip reveals a band whose only finding is core locality'
   const user = userEvent.setup();
   window.history.replaceState({}, '', '/?type=spill');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
       { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.', nonLocalTaskCount: 0 },
       ...verdictLeads(),
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -386,8 +389,8 @@ test('the top bar count chip still lands when the filter empties the board', asy
   const user = userEvent.setup();
   window.history.replaceState({}, '', '/?impact=info');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' }, ...verdictLeads('critical')],
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' }, ...verdictLeads('critical')] }),
   });
   render(<App />);
   const chip = await screen.findByRole('button', { name: '4 critical: show them in Findings' });
@@ -404,12 +407,13 @@ test('in Basic view, a route that clears the last active filter hides the bar an
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
   window.history.replaceState({}, '', '/?impact=info');
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
-    catalog: [
+    status: 'ready',
+    widgetDensity: 'basic',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.', impactEstimate: { basis: 'serial', wallClock: { low: 9_000, high: 9_000 }, estimateMethod: 'modeled' } },
       { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix more skew.', impactEstimate: { basis: 'serial', wallClock: { low: 8_000, high: 8_000 }, estimateMethod: 'modeled' } },
       { type: 'spill', stageId: 3, impactBand: 'info', recommendation: 'Fix spill.' },
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -430,11 +434,11 @@ test('in Basic view, a route that clears the last active filter hides the bar an
 
 test('the verdict links to the rest with the Findings tab\'s count when each place has a second finding', async () => {
   store.setState({
-    status: 'ready', appModel: readyAppModel() as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: readyAppModel() as any, catalog: [
       ...verdictLeads(),
       ...[3, 4, 5].map((stageId) => ({ type: 'spill', stageId, impactBand: 'warning', recommendation: 'Fix spill.' }) as Finding),
-    ],
+    ] }),
   });
   render(<App />);
   await waitForDashboard();
@@ -449,11 +453,11 @@ test('a caveat card left after the verdict is not counted as a finding and the v
   const model = readyAppModel();
   model.stages.set(7, { id: 7, submittedAt: 0, completedAt: 15_000 });
   store.setState({
-    status: 'ready', appModel: model as any,
-    catalog: [
+    status: 'ready',
+    ...runState({ appModel: model as any, catalog: [
       { type: 'skew', stageId: 7, impactBand: 'critical', recommendation: 'Fix skew.', impactEstimate: { basis: 'serial', wallClock: { low: 2_400, high: 2_400 }, estimateMethod: 'modeled' } },
       { type: 'incompleteRun', stageId: null, impactBand: 'warning', valueText: 'missing', recommendation: 'No ApplicationEnd.' },
-    ] as Finding[],
+    ] as Finding[] }),
   });
   render(<App />);
   await waitForDashboard();

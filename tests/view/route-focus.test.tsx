@@ -5,7 +5,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ExportApp } from '@/export/ExportApp';
-import { store } from '@/store/store';
+import { selectCatalog, selectConfigFindings, store } from '@/store/store';
 import { runFindingKeys } from '@/view/finding-anchor';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 import type { WidgetRegistration } from '@/view/TriageNavigationContext';
@@ -90,8 +90,8 @@ afterEach(() => {
 /** Where a route to `finding` lands: its row, else the card or panel registered for it (the panel
  * scoped to it before the widget's full card), as the dashboard resolves it. */
 function landingOf(finding: Finding, widgetId: string): HTMLElement | undefined {
-  const { catalog, configFindings } = store.getState();
-  const anchor = tap.anchors.get(runFindingKeys([...catalog, ...(configFindings ?? [])])(finding));
+  const state = store.getState();
+  const anchor = tap.anchors.get(runFindingKeys([...selectCatalog(state), ...selectConfigFindings(state)])(finding));
   if (anchor) return anchor;
   const registrations = tap.widgets.filter((entry) => entry.widgetId === widgetId).map((entry) => entry.registration);
   return (registrations.find((candidate) => candidate.holds?.(finding)) ?? registrations.find((candidate) => !candidate.holds))?.wrapperElement;
@@ -109,7 +109,9 @@ test.each(
   render(<ExportApp />);
   await screen.findByRole('tab', { name: 'Findings' });
 
-  const { catalog, configFindings } = store.getState();
+  const state = store.getState();
+  const catalog = selectCatalog(state);
+  const configFindings = selectConfigFindings(state);
   const found = Object.values(examples).flatMap((example) => {
     if (!example || `${example.source}/${example.log}` !== log) return [];
     const finding = [...catalog, ...configFindings].find((candidate) => candidate.id === example.finding.id);

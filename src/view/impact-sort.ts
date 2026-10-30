@@ -1,6 +1,6 @@
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
-import type { InterpretationState } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import { rankedBySavings } from './interpretation';
 
 /** `'impact'` ranks as the verdict does (stage task time or idle core time, then potential savings);

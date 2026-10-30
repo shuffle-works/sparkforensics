@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
@@ -50,20 +50,12 @@ function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { sta
 
 /** Board section for outright `stageFailed` attempts: every flagged stage
  * gets its own row (never just the worst). */
-export function StageFailed({ appModel, catalog, defaultCollapsed = true }: StageFailedProps) {
+export function StageFailed({ catalog, defaultCollapsed = true }: StageFailedProps) {
   const [page, setPage] = useState(0);
   const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
-    setPage(0);
-  }, [appModel]);
 
   const findings = findingsOfType(catalog, 'stageFailed').filter(hasStage);
   const sorted = [...findings].sort(
