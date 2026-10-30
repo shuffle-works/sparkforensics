@@ -519,10 +519,8 @@ export async function compareRuns(
     { runId: runIdB, appModel: appModelB, catalog: catalogB },
   ] = await Promise.all([resolveAndAnalyze(a, opts?.thresholds), resolveAndAnalyze(b, opts?.thresholds)]);
 
-  // buildComparison's captureSnapshot uses an empty taskDataCache: that arg only feeds the
-  // interactive stage-detail drill-down, which none of compare/matchStages/metricDeltas/findingsDelta
-  // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
-  // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
+  // Comparison reads findings and metrics from `catalog` and appModel.stages/sql, both fully populated,
+  // and no per-task data, so it produces the same output as the dashboard.
   const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
   const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
   let built = comparisonCache.get(cacheKey)?.built;

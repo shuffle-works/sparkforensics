@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildExportRunData, CORE_VERSION, encodeCollections, EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections, upgradeExportPayload,
+  buildExportRunData, CORE_VERSION, encodeCollections, EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections,
 } from '../src/export-data.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 import { buildHtmlExportData, encodeRunPayload } from '../src/html-export.js';
@@ -168,59 +168,5 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
 
   it('runPayloadScript assigns the payload global the export app reads', () => {
     expect(runPayloadScript('QUJD')).toBe('window.__SPARKFORENSICS_RUN_GZ__ = "QUJD";');
-  });
-});
-
-// The interpretation as a version 3 export wrote it: findings by position in [...catalog, ...config].
-function asVersion3(data) {
-  const findings = [...data.catalog, ...data.configFindings];
-  const indexOf = (id) => findings.findIndex((finding) => finding.id === id);
-  const { interpretation } = data;
-  const rest = { ...data };
-  delete rest.unreadableSqlExecutions;
-  delete rest.taskData;
-  return {
-    ...rest,
-    schemaVersion: 3,
-    interpretation: {
-      ...interpretation,
-      savings: findings.map((finding) => interpretation.savings[finding.id]),
-      verdict: {
-        ...interpretation.verdict,
-        steps: interpretation.verdict.steps.map(({ leadId, ...step }) => ({ ...step, leadIndex: indexOf(leadId) })),
-        costSteps: interpretation.verdict.costSteps.map(({ leadId, ...step }) => ({ ...step, leadIndex: indexOf(leadId) })),
-      },
-      savingsRank: interpretation.savingsRank.map(indexOf),
-      stages: Object.fromEntries(Object.entries(interpretation.stages).map(([stageId, { findingIds, ...stage }]) => [
-        stageId, { ...stage, findingIndexes: findingIds.map(indexOf) },
-      ])),
-      rollup: {
-        eligibleIndexes: interpretation.rollup.eligibleIds.map(indexOf),
-        groups: interpretation.rollup.groups.map(({ memberIds, ...group }) => ({ ...group, memberIndexes: memberIds.map(indexOf) })),
-      },
-    },
-  };
-}
-
-describe('upgradeExportPayload', () => {
-  it('rewrites a version 3 payload, which pointed at findings by position, to the current one', () => {
-    const appModel = makeAppModel({
-      stages: new Map([[1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 9_000, taskCount: 10 })]]),
-    });
-    const run = analyzeRun(appModel);
-    expect(run.catalog.length).toBeGreaterThan(0);
-    const current = buildExportRunData(run, PROVENANCE);
-
-    const upgraded = upgradeExportPayload(asVersion3(current));
-
-    expect(upgraded.schemaVersion).toBe(EXPORT_DATA_SCHEMA_VERSION);
-    expect(upgraded).toEqual(current);
-  });
-
-  it('refuses an interpretation that points at a finding with no id', () => {
-    const current = buildExportRunData(runOf(makeAppModel(), [{ id: 'skew-1', type: 'skew', stageId: 1, impactBand: 'warning' }]), PROVENANCE);
-    const v3 = asVersion3(current);
-    v3.catalog = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
-    expect(() => upgradeExportPayload(v3)).toThrow(/has no id/);
   });
 });

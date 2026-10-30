@@ -132,10 +132,8 @@ reason cut mid-host, say) keeps a fragment of it; the md/json report does the
 same. The export bundle never analyzes a run:
 `hydrateExportStore` installs the payload's run with `installRun`, interpretation as is.
 `src/export/main-export.tsx` refuses, before rendering, any payload whose
-`schemaVersion` it cannot read, or that lacks its `configFindings`,
-`interpretation`, `stages`, `sql` or `jobs` (`unsupportedPayloadReason`). It reads
-version 4 and version 3: `upgradeExportPayload` rewrites a version 3 payload,
-whose interpretation pointed at findings by position, to ids. A
+`schemaVersion` it was not built for, or that lacks its `configFindings`,
+`interpretation`, `stages`, `sql` or `jobs` (`unsupportedPayloadReason`). A
 missing or damaged `data.js` (no payload global, truncated gzip, invalid JSON)
 gets the same view with a "missing or unreadable" reason: `loadExportPayload`
 never throws. An exported file therefore shows

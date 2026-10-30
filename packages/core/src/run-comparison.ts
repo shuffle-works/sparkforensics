@@ -457,9 +457,6 @@ function stageList(snap: ComparedRun): Array<{ id: number; name: string; metrics
   return [...snap.stages].map(([id, s]) => ({ id, name: s.name ?? `Stage ${id}`, metrics: perStageMetrics(s) }));
 }
 
-// captureSnapshot copies this into a fresh Map internally and never mutates the
-// caller's reference, so one shared empty Map is safe here.
-
 export interface CompareOptions {
   /** Caller-supplied regular expressions (sources), applied to plan node detail before stages are
    * paired: every match is replaced with a fixed token, so run-specific text such as a per-run

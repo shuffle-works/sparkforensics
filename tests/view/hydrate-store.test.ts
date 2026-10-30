@@ -3,7 +3,7 @@ import { test, expect, beforeEach, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { store, selectAppModel, selectCatalog, selectConfigFindings } from '@/store/store';
 import { hydrateExportStore, loadExportPayload, unsupportedPayloadReason } from '@/export/hydrate-store';
-import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData, type ExportRunDataV3 } from '@sparkforensics/core/export-data.ts';
+import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { interpretationOf } from '@/view/interpretation';
 import { testFinding } from './_shared/finding';
@@ -81,49 +81,6 @@ test('installs the payload\'s interpretation as is, indexing the store\'s own fi
   // Catalog then config: the order the producer interpreted them in.
   expect(interpretation.findings[0]).toBe(catalog[0]);
   expect(interpretation.findings[1]).toBe(configFindings[0]);
-});
-
-// A version 3 file names findings by their position (catalog, then config findings) where this
-// version names them by id.
-function versionThreeData(): ExportRunDataV3 {
-  const base = sampleData();
-  const ids = [...base.catalog, ...base.configFindings].map((finding) => finding.id!);
-  const at = (id: string) => ids.indexOf(id);
-  const { interpretation } = base;
-  const { taskData: _taskData, unreadableSqlExecutions: _unreadable, ...rest } = base;
-  return {
-    ...rest,
-    schemaVersion: 3,
-    interpretation: {
-      ...interpretation,
-      savings: ids.map((id) => interpretation.savings[id]),
-      verdict: {
-        ...interpretation.verdict,
-        steps: interpretation.verdict.steps.map(({ leadId, ...step }) => ({ ...step, leadIndex: at(leadId) })),
-        costSteps: interpretation.verdict.costSteps.map(({ leadId, ...step }) => ({ ...step, leadIndex: at(leadId) })),
-      },
-      savingsRank: interpretation.savingsRank.map(at),
-      stages: Object.fromEntries(Object.entries(interpretation.stages).map(([stageId, { findingIds, ...stage }]) => [
-        stageId, { ...stage, findingIndexes: findingIds.map(at) },
-      ])),
-      rollup: {
-        eligibleIndexes: interpretation.rollup.eligibleIds.map(at),
-        groups: interpretation.rollup.groups.map(({ memberIds, ...group }) => ({ ...group, memberIndexes: memberIds.map(at) })),
-      },
-    },
-  } as ExportRunDataV3;
-}
-
-test('reads a version 3 payload, pointing its interpretation at the findings by id', () => {
-  const data = versionThreeData();
-  expect(unsupportedPayloadReason(data)).toBeNull();
-  hydrateExportStore(data);
-  const state = store.getState();
-  const interpretation = interpretationOf(state.run!);
-  expect(interpretation.data.verdict.title).toBe('Stamped by the producer');
-  const [eligible] = interpretation.data.rollup.eligibleIds;
-  expect(interpretation.byId.get(eligible)).toBe(selectCatalog(state)[0]);
-  expect(state.run!.taskData).toEqual({ kind: 'none' });
 });
 
 test('keeps the provenance stamp for the footer', () => {
