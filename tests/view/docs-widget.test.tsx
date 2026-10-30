@@ -11,6 +11,7 @@ import { loadExportPayload } from '@/export/hydrate-store';
 import { store } from '@/store/store';
 import { eligibleFindings, findingAt } from '@/view/interpretation';
 import { evidencePlacement } from '@/view/evidence-placement';
+import { verdictEvidenceOwners } from '@/view/verdict-evidence';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
 import { keptRows, showsEvidence } from './_shared/evidence-panel';
 
@@ -96,6 +97,28 @@ test.each(Object.entries(examples))('%s: the dashboard places its example findin
   const placement = evidencePlacement(interpretation!, finding, new Set(widgets.map((widget) => widget.widgetId)));
 
   expect(placement.kind).not.toBe('none');
+});
+
+// The always-mounted Core Locality tile has no card on the Findings board, so a verdict step it
+// leads has no panel: the dashboard routes to the tile, and the page, with nowhere to route, offers
+// no control at all.
+test('a step led by a finding with no board card offers no evidence control', async () => {
+  const example = examples.coreLocality;
+  expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
+  const { appModel, catalog, configFindings, interpretation, widgetDensity } = store.getState();
+  const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
+  const available = new Set(
+    computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity).map((widget) => widget.widgetId),
+  );
+  const placement = evidencePlacement(interpretation!, finding, available);
+  expect(placement).toMatchObject({ kind: 'step', widgetId: null });
+  if (placement.kind !== 'step') return;
+  expect(verdictEvidenceOwners(interpretation!, available).has(placement.index)).toBe(false);
+
+  render(<DocsWidgetApp findingId={example.finding.id} />);
+
+  expect(await screen.findByTestId('next-step', {}, { timeout: 10_000 })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /evidence/i })).toBeNull();
 });
 
 test('says so when the run has no such finding', () => {
