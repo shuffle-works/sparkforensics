@@ -4,7 +4,9 @@
 // handed to the renderer as data. `analyzeRun` calls `interpretRun` for every surface, and `redactRun`
 // calls it again over the redacted findings; the exported bundle only renders what it carries, so an
 // exported file shows the conclusions of the core that wrote it, not of the core that opens it.
-import { checkCoverage, hasFinishedStage, verdictGaps } from './check-coverage.ts';
+import {
+  hasFinishedStage, partitionChecks, verdictGaps, type CheckEntry, type NotRunCheck,
+} from './check-coverage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { buildLocalityChart, type LocalityChart } from './core-usage-locality.ts';
 import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
@@ -23,6 +25,7 @@ import { runTiming, type RunTiming } from './run-timing.ts';
 import {
   buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, quotedReasonText, rankBySavings, stepCopyText,
 } from './run-verdict.ts';
+import { extractWriteTargets, notRunWriteFigures } from './write-targets.ts';
 import { recommendationText } from './finding-names.ts';
 import { getScorecardEstimates } from './scorecard-estimates.ts';
 import { singleStageId, stagesOfFinding } from './finding-filter-predicate.ts';
@@ -91,8 +94,11 @@ export interface RunVerdictData {
 
 export interface CoverageData {
   noFinishedStages: boolean;
-  /** Why each check type could not run, keyed by finding type. A type absent here ran. */
-  notRunReasons: Record<string, string>;
+  /** The checks that ran and found nothing, in detector order (`partitionChecks`, the split the
+   * CLI/MCP report lists too). */
+  clean: CheckEntry[];
+  /** The checks the log lacked the data to run, each with why. */
+  notRun: NotRunCheck[];
   /** The log-wide reasons checks could not run, each naming what to turn on next time. */
   gaps: string[];
 }
@@ -201,13 +207,12 @@ function interpretEfficiency(appModel: AppModel): EfficiencyData | null {
 
 function interpretCoverage(appModel: AppModel, allFindings: Finding[]): CoverageData {
   const noFinishedStages = !hasFinishedStage(appModel.stages);
-  const { notRunReason } = checkCoverage(appModel.stages, allFindings);
-  const notRunReasons: Record<string, string> = {};
-  for (const type of FINDING_DISPLAY_ORDER) {
-    const reason = notRunReason(type);
-    if (reason != null) notRunReasons[type] = reason;
-  }
-  return { noFinishedStages, notRunReasons, gaps: verdictGaps(allFindings, noFinishedStages) };
+  const writeTargets = extractWriteTargets(appModel.sql ?? new Map(), {
+    stages: appModel.stages, skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
+  });
+  const unfiguredWrites = notRunWriteFigures(writeTargets);
+  const { clean, notRun } = partitionChecks(appModel.stages, allFindings, unfiguredWrites ? [unfiguredWrites] : []);
+  return { noFinishedStages, clean, notRun, gaps: verdictGaps(allFindings, noFinishedStages) };
 }
 
 // The stage dialog's grouping: every finding about the stage (`stagesOfFinding`), ordered by the

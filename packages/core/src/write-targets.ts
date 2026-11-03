@@ -8,6 +8,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import { apiMergeWrites } from './api-merge-writes.ts';
 import { indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { IDENT_PARTS, isCut, splitArgs, tableName, type Arg } from './write-target-args.ts';
+import type { NotRunCheck } from './check-coverage.ts';
 import type { PlanNode, SqlExecution, Stage, StageId } from './types.ts';
 
 /** The row counts a MergeIntoCommand node reports in its SQL metrics. */
@@ -424,4 +425,25 @@ export function extractWriteTargets(sql: Map<number, SqlExecution>, input: Write
   const executionsWithoutPlan = [...withoutPlan].sort((a, b) => a[0] - b[0])
     .map(([sqlExecutionId, reason]) => ({ sqlExecutionId, reason }));
   return { writes, executionsWithoutPlan, skippedLines: input.skippedLines ?? null };
+}
+
+// A plain write with no output row count (no node metric, and its root execution's stages report no
+// rows written or the root holds another write) is not a check the log could run, so a consumer that
+// compares row counts sees it listed as not run instead of reading the null as a match.
+const WRITE_FIGURES_CHECK = 'writeOutputRows';
+const LISTED_WRITES = 5;
+
+export function notRunWriteFigures(report: WriteTargetsReport): NotRunCheck | null {
+  const missing = report.writes.filter((w) => isPlainWrite(w) && w.outputRows === null);
+  if (missing.length === 0) return null;
+  const named = missing.slice(0, LISTED_WRITES)
+    .map((w) => `execution ${w.sqlExecutionId} ${w.command}`).join(', ');
+  const more = missing.length > LISTED_WRITES ? ` and ${missing.length - LISTED_WRITES} more` : '';
+  return {
+    type: WRITE_FIGURES_CHECK,
+    tag: 'INCMP',
+    label: 'Write output rows',
+    thresholdSummary: 'an output row count for every plain write, from its node metric or from the stages of its root execution',
+    reason: `${missing.length} write${missing.length === 1 ? ' has' : 's have'} no output row count (${named}${more}): the write node has no row metric and the stages under its root execution report no rows written, or that root holds more than one write.`,
+  };
 }

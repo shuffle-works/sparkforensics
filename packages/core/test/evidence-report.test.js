@@ -483,11 +483,11 @@ describe('buildEvidenceReport', () => {
       }
     });
 
-    it('includes the always-mounted reference types (utilization, coreLocality) when they have zero findings, unlike Alerts.tsx', () => {
+    it('lists utilization but not the coreLocality reference widget when they have zero findings', () => {
       const { json } = buildEvidenceReport(fixture());
       const types = json.cleanChecks.map((c) => c.type);
       expect(types).toContain('utilization');
-      expect(types).toContain('coreLocality');
+      expect(types).not.toContain('coreLocality');
     });
 
     it('moves every per-stage check to notRunChecks when no stage finished', () => {

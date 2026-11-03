@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.ts';
+import { analyzeRun } from '../src/analyzed-run.ts';
 import { checkCoverage } from '../src/check-coverage.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { impactEstimateCompact, impactEstimateFigure, impactFigure } from '../src/impact-format.ts';
-import { rankedRollup } from '../src/recommendation-rollup.ts';
+import { isCaveat, rankedRollup } from '../src/recommendation-rollup.ts';
 import { interpretRun } from '../src/run-interpretation.ts';
 import { computeRunShape } from '../src/run-shape.ts';
 import { buildRunVerdict, FINDING_DISPLAY_ORDER } from '../src/run-verdict.ts';
@@ -121,12 +122,35 @@ describe('interpretRun', () => {
     const { coverage } = interpretRun(model, [incomplete], []);
     const expected = checkCoverage(model.stages, [incomplete]);
 
+    const notRunByType = Object.fromEntries(coverage.notRun.map((check) => [check.type, check.reason]));
     for (const type of FINDING_DISPLAY_ORDER) {
-      expect(coverage.notRunReasons[type] ?? null).toBe(expected.notRunReason(type));
+      if (type === 'coreLocality') continue;
+      expect(notRunByType[type] ?? null).toBe(expected.notRunReason(type));
     }
-    expect(coverage.notRunReasons.skew).toMatch(/No stage in this log recorded an end/);
+    expect(notRunByType.skew).toMatch(/No stage in this log recorded an end/);
     expect(coverage.noFinishedStages).toBe(true);
     expect(coverage.gaps).toHaveLength(2);
+  });
+
+  it('lists the same clean and not-run checks as the CLI/MCP report, including an unreported write', () => {
+    const write = { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '/out/t, false, Parquet', metrics: [], children: [] };
+    const model = appModel({ sql: new Map([[4, { id: 4, planTree: write }]]) });
+    const run = analyzeRun(model);
+    const { interpretation } = run;
+    const { cleanChecks, notRunChecks } = buildEvidenceReport(model, { markdown: false }).json;
+    const typesOf = (checks) => checks.map((check) => check.type);
+
+    expect(typesOf(interpretation.coverage.clean)).toEqual(typesOf(cleanChecks));
+    expect(typesOf(interpretation.coverage.notRun)).toEqual(typesOf(notRunChecks));
+    expect(typesOf(notRunChecks)).toContain('writeOutputRows');
+    expect(interpretation.coverage.notRun.find((check) => check.type === 'writeOutputRows'))
+      .toMatchObject({ tag: 'INCMP', label: 'Write output rows' });
+    // A type with a real finding is neither, and a reference widget is not a check.
+    const fired = [...run.catalog, ...run.configFindings].filter((finding) => !isCaveat(finding)).map((finding) => finding.type);
+    expect(fired.length).toBeGreaterThan(0);
+    for (const type of [...fired, 'coreLocality']) {
+      expect(typesOf([...cleanChecks, ...notRunChecks])).not.toContain(type);
+    }
   });
 
   it('carries the run shape and the Scorecard flags', () => {

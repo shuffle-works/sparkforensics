@@ -190,8 +190,8 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
 
   await user.click(screen.getByRole('button', { name: /clean checks/i }));
   expect(screen.queryByRole('heading', { name: 'Clean alert' })).not.toBeInTheDocument();
-  // A test-double type has no presentation row, so its row is labeled with the raw type.
-  expect(screen.getByText('CleanAlert')).toBeInTheDocument();
+  // The run's coverage lists detector types, so a test-double type gets no row.
+  expect(screen.queryByText('CleanAlert')).not.toBeInTheDocument();
   // Cache Utilization, Memory Utilization, and Executor Utilization all have no
   // finding here, so each shows as an ordinary Clean-checks row (the row
   // label itself still comes from the finding-type name).

@@ -2,6 +2,9 @@
 // and the CLI/MCP evidence report, so a check the log lacked the data for never reads as passed on
 // one path and "not checked" on another.
 import { detectorCatalog } from './detector-catalog.ts';
+import { detectorInfoByType } from './detector-docs.ts';
+import { findingName } from './finding-names.ts';
+import { typeTag } from './finding-presentation.ts';
 import { isCaveat } from './recommendation-rollup.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
 import type { AppModel, Finding } from './types.ts';
@@ -82,4 +85,46 @@ export function checkCoverage(stages: AppModel['stages'], allFindings: Finding[]
     return caveatReasons.has(type) ? 'The log lacked the data this check needs.' : null;
   };
   return { isNotRun: (type) => notRunReason(type) != null, notRunReason };
+}
+
+/** One check the run could be held to: its type and tag, its readable label and the criterion it
+ * is measured against. */
+export interface CheckEntry {
+  type: string;
+  tag: string;
+  label: string;
+  thresholdSummary: string;
+}
+
+/** A check the log lacked the data to run, with why. */
+export interface NotRunCheck extends CheckEntry {
+  reason: string;
+}
+
+export interface CheckPartition {
+  clean: CheckEntry[];
+  notRun: NotRunCheck[];
+}
+
+/** Reference widgets that show a figure, not a check: never listed as clean or not run. */
+const NON_CHECK_TYPES: ReadonlySet<string> = new Set(['coreLocality']);
+
+/** The one clean / not-run split of a run, shared by the dashboard and the CLI/MCP report. Every
+ * detector type with no real (non-caveat) finding is either clean or not run (`checkCoverage`'s
+ * reason); `extraNotRun` are checks outside the detector catalog that could not run, listed after. */
+export function partitionChecks(
+  stages: AppModel['stages'], allFindings: Finding[], extraNotRun: NotRunCheck[] = [],
+): CheckPartition {
+  const firedTypes = new Set<string>(allFindings.filter((finding) => !isCaveat(finding)).map((finding) => finding.type));
+  const { notRunReason } = checkCoverage(stages, allFindings);
+  const clean: CheckEntry[] = [];
+  const notRun: NotRunCheck[] = [];
+  for (const [type, { thresholdSummary }] of Object.entries(detectorInfoByType())) {
+    if (firedTypes.has(type) || NON_CHECK_TYPES.has(type)) continue;
+    const entry: CheckEntry = { type, tag: typeTag(type), label: findingName(type), thresholdSummary };
+    const reason = notRunReason(type);
+    if (reason) notRun.push({ ...entry, reason });
+    else clean.push(entry);
+  }
+  return { clean, notRun: [...notRun, ...extraNotRun] };
 }

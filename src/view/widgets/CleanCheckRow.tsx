@@ -7,6 +7,8 @@ import { typeTag } from '@sparkforensics/core/view-model';
 export interface CleanCheckRowProps {
   type: string;
   label: string;
+  /** The row's tag; the type's own `typeTag` when omitted. */
+  tag?: string;
   thresholdSummary: string;
   /** `notRun`: the log lacked what the check needs, so it neither passed nor
    * failed. Drawn neutral, never in the clean green. */
@@ -21,7 +23,7 @@ function capitalize(text: string): string {
  * `typeTag` vocabulary (colored `clean` for a pass, muted for `notRun`,
  * instead of an impact band) so the collapsed disclosure reads the same
  * shorthand as the active findings. */
-export function CleanCheckRow({ type, label, thresholdSummary, status = 'passed' }: CleanCheckRowProps) {
+export function CleanCheckRow({ type, label, tag = typeTag(type), thresholdSummary, status = 'passed' }: CleanCheckRowProps) {
   const notRun = status === 'notRun';
   const Icon = notRun ? CircleDashedIcon : CircleCheckIcon;
   return (
@@ -35,7 +37,7 @@ export function CleanCheckRow({ type, label, thresholdSummary, status = 'passed'
           }
         >
           <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-          {typeTag(type)}
+          {tag}
         </span>
       </TableCell>
       <TableCell className="whitespace-normal">
