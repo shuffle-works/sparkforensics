@@ -87,10 +87,7 @@ const IncompleteRun = lazy(() => import('./widgets/IncompleteRun').then((m) => (
 
 // `React.lazy(...)` returns a plain object with no function `.name`: set
 // `displayName` on each (matching its widget's file basename) so React
-// DevTools and the source-scan contract test in
-// tests/view/finding-anchor-coverage.test.ts (which maps
-// `component.displayName`/`.name` back to `src/view/widgets/<name>.tsx`)
-// both still resolve every widget. React supports `displayName` on a
+// DevTools still resolves every widget. React supports `displayName` on a
 // `LazyExoticComponent` at runtime, but its type declaration doesn't include
 // the property, a narrow, localized cast, same class of gap as
 // Skew.tsx's `SlowHostFinding`/`StragglerFinding` bridge casts.
@@ -157,7 +154,7 @@ export interface WidgetProps {
   // on `appModel` need it; direct callers (tests) may omit it.
   activeFileId?: string | null;
   // Region is read again for exactly the three single-purpose reference
-  // widgets (Memory Utilization, Executor Utilization, Core Usage by
+  // widgets (Memory Utilization, Executor Utilization, Core
   // Locality): the Full app report (Dashboard.tsx's ReferenceSection) always
   // mounts the last from `appModel` regardless of finding state (see
   // `isAlwaysMountedType`/`alwaysMountedWidgets`). Every

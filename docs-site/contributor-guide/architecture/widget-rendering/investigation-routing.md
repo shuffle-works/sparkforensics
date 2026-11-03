@@ -42,8 +42,8 @@ contract; cross-session consumers (exports, URL-restored state) use
 the core `Finding.id` instead (see [Finding identity](../worker-protocol/evidence-report.md#finding-identity)).
 
 `Dashboard` owns disclosure and navigation. Every routeable `REGISTRY`
-widget lives in the Findings tab except the always-mounted Core Usage by
-Locality, which lives in Full app report (see "Render order" above), so
+widget lives in the Findings tab except the always-mounted Core Locality,
+which lives in Full app report (see "Render order" above), so
 `requestRoute` (`DashboardContent`, `src/view/Dashboard.tsx`) starts by
 switching to the tab holding the target's widget
 (`isAlwaysMountedType(target.finding.type)` picks Full app report), whether

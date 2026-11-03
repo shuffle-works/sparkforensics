@@ -220,10 +220,9 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
      checks" disclosure of `CleanCheckRow` lines built per detector type
      (every remaining `REGISTRY` key with zero findings).
    - **Full app report** (`ReferenceSection`): WallClock → Timeline →
-     Executor Count Over Time → StageTable → a grid of Core Usage by
-     Locality → Evidence availability → fixed
-     report-lens tail (ETL Phase Attribution → What-If Executor Scaling →
-     Compute Efficiency → Core-Usage Distribution).
+     Executor Count Over Time → StageTable → a grid of Core Locality →
+     Evidence availability → fixed report-lens tail (ETL Phase Attribution →
+     What-If Executor Scaling → Compute Efficiency → Core-Usage Distribution).
      Structural-only, as above. Hidden (not unmounted) while Findings is
      active (see "Render order" above).
 

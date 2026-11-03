@@ -44,7 +44,7 @@ const SCOPE_LABEL: Record<CleanCheckScope, string> = {
  * impact band, shown when at least one of its types has a finding in
  * `catalog` ∪ `configFindings`. A collapsed "Clean checks" disclosure: every
  * remaining `REGISTRY` type (not component) with zero findings gets its own
- * `CleanCheckRow`. The always-mounted reference widget (Core Usage by
+ * `CleanCheckRow`. The always-mounted reference widget (Core
  * Locality) lives in the Full app report tab instead, so it never collapses
  * to a clean-check line either. `configFindings` is a separate
  * stream from `catalog`, so the impact-band ranking must look at both.
