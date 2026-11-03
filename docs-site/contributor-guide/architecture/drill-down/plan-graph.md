@@ -257,10 +257,15 @@ known), and a **jump to the paired half** (`PlanGraphNodeData.pairedNodeId`). A
 and only when it is known. Because the two
 halves always sit in different segments, the jump selects the partner directly
 when it is already on screen (full plan) and otherwise expands to the full plan
-first, then selects it (`handleJumpToPaired` in `PlanGraphRoute.tsx`, carried
-past the selection-reset effect by a pending-jump state); either way the canvas
-recenters on it via a `centerRequest` token. The selected node id lives in
-`PlanGraphRoute.tsx`, not the canvas, so the route's one Escape handler closes
+first, then selects it (`handleJumpToPaired` in `PlanGraphRoute.tsx`); either
+way the canvas recenters on it via a `centerRequest` token. The route's view
+(the focused stage, the scope, the selected node and the recenter request) is
+one reducer, `planViewReducer`: an action that changes the scope also decides the
+selection, which is cleared or is the jump target the switch was made for, and a
+jump that waits on the oversized-plan confirmation carries its target in the
+pending expand request. A selected node counts only while it is on screen in the
+view. The selected node id lives in `PlanGraphRoute.tsx`, not the canvas, so the
+route's one Escape handler closes
 the inspector first and the whole route only on a second press. Nodes are
 `draggable: false` (a read-only, auto-laid-out graph); they click to inspect but
 don't move.
@@ -291,7 +296,9 @@ The remaining legibility aids sit on the canvas itself:
 
 - The **MiniMap** (bottom-right) shows by default only while part of the graph
   is off screen; a click on the rail's toggle forces it on or off from then on,
-  and the toggle's pressed state always matches whether it is on screen. It
+  and the toggle's pressed state always matches whether it is on screen.
+  `MiniMapGate` (`PlanGraphCanvas.tsx`) makes that decision where the viewport is
+  measured, from the graph bounds and the React Flow viewport during render. It
   colors each node by the
   worst finding band on it (`planGraphMiniMapNodeColor`, `plan-graph-minimap.ts`),
   so the overview shows where the problems are; a node with no finding keeps the

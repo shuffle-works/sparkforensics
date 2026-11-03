@@ -1,0 +1,21 @@
+id: no-dom-routing
+valid:
+  - "const route = resolveRoute(target, layout);"
+  - "const key = layout.keyOf(finding);"
+  - "const observer = new ResizeObserver(update);"
+  - "const ref = useCallback((element) => element?.focus(), []);"
+invalid:
+  # The frame wait that let a tab switch mount before the lookup.
+  - |
+    onActiveTabChange('findings');
+    requestAnimationFrame(() => {
+      const heading = document.getElementById('impact-band-critical-heading');
+      heading?.focus();
+    });
+  - "queueMicrotask(() => rowRefs.current.get(key)?.focus());"
+  - "const rows = document.querySelectorAll('[data-testid=\"fix-these-first-row\"]');"
+  - "const first = document.querySelector('[aria-label=\"Filter findings\"] button');"
+  - "const shown = element.getClientRects().length > 0;"
+  - "const visible = element.offsetParent !== null;"
+  - "const board = document.getElementById('suggested-improvements');"
+  - "window.requestAnimationFrame(update);"

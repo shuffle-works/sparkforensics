@@ -81,7 +81,7 @@ target. A row whose widget has no rows to show beyond the line above has no butt
 (`EvidencePanelRow`, `InlineEvidence`), scoped to the row's findings: the
 widget renders without its other findings of the same type. The panel starts
 at the text column, and stacks full width below `sm`. A route that targets one
-of the row's findings opens that row's panel too (`useEvidenceOpen`). A
+of the row's findings opens that row's panel too (`resolveRoute`). A
 `TypeGroupRow` has the same button, scoped to the group's members, and its
 text block is an inner button that toggles its expand state
 (`aria-expanded`). A group member's row routes via
@@ -114,7 +114,7 @@ own order: the interpretation's `DetectorInfo` sorted by region
 render collapsed (`defaultCollapsed`) in both Basic and Advanced view. A route
 to a finding that no step or row holds (a log note or an evidence caveat, which
 the rollup leaves out) adds its type's card to this grid, whatever else shows
-that type (`fullCardWidgetIds`, `Dashboard.tsx`).
+that type (a `route-only` card in the layout, `board-layout.ts`).
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
 Utilization, Memory Utilization, or Executor Utilization card with an active

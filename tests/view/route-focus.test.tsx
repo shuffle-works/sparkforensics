@@ -105,4 +105,4 @@ test.each(
   }
   expect(routed).toBeGreaterThan(0);
   expect(failures).toEqual([]);
-}, 120_000);
+}, 30_000);

@@ -62,7 +62,7 @@ introduces it.
   whose visible text is just the evidence label (e.g. "SQL plan") but whose
   accessible name always carries the "Evidence: ..." prefix via an explicit
   `aria-label`, regardless of what else sits nearby. Clicking it calls
-  `revealEvidence`.
+  a route to the ledger row (`routeTo` with an evidence target).
   `RowStatusCluster`'s fixed slot is the row's own stage-pill/title line
   (`justify-between`, cluster right-aligned), the same position in every
   adopting widget, not floating with the row's detail below.
@@ -188,13 +188,13 @@ routing" in [investigation-routing](./investigation-routing.md)).
   `StageSlowness.rows.ts`). `evidencePanelFor` (`detector-registry.tsx`) runs
   the same `rows` and turns the result into an `EvidencePanel`, a branded value
   that is null when there is no row. The verdict step, the Findings row and the
-  group row take the panel from `evidencePanelOf` / `useEvidencePanel`
-  (`InlineEvidence.tsx`), which follows the density; the evidence control, the
+  group row take the panel from `buildBoardLayout` (`board-layout.ts`,
+  `evidencePanelOf`), which follows the density; the evidence control, the
   panel row and `InlineEvidence` accept only that value, and the shell renders
   only the rows `rows` gives, so the panel and the widget are one decision. A
-  route to a finding with no panel still lands: the step or row registers
-  through `useRouteLanding`, and the route scrolls to it and focuses its title
-  or label. `tests/view/evidence-panel-types.test.ts` holds the
+  route to a finding with no panel still lands: the layout marks the step or
+  row as bare, and the route scrolls to it and focuses its title or label
+  (`useLine`). `tests/view/evidence-panel-types.test.ts` holds the
   `@ts-expect-error` cases.
   Three behaviour tests hold the decision to the data, whatever way a change
   observes the output: `tests/view/evidence-check.test.tsx` renders every panel

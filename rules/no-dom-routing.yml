@@ -1,0 +1,28 @@
+id: no-dom-routing
+language: tsx
+severity: error
+message: View code decides where to land or what to focus from the mounted DOM, or waits a frame for it.
+note: |
+  Routing and focus are decided as data. The board's layout (`board-layout.ts`) says which cards
+  exist, in which tab and order, and which rows each lists; `resolveRoute` turns a target into the
+  tab, the cards to open and the row to focus; a row focuses itself in its own ref callback
+  (`route-landing.ts`). Do not look an element up by id or selector, test whether it is shown, or
+  wait for a frame or a microtask for it to mount. Measured layout (charts, the plan graph, the
+  Stage Summary scroll hint) and a document this app does not render are the exceptions: allowlist
+  the file in this rule, or suppress the line with `// ast-grep-ignore: no-dom-routing` and the
+  reason on the line below.
+rule:
+  any:
+    - kind: property_identifier
+      regex: ^(getElementById|querySelector|querySelectorAll|getClientRects|offsetParent|requestAnimationFrame|queueMicrotask)$
+    - kind: identifier
+      regex: ^(requestAnimationFrame|queueMicrotask|getElementById|querySelector|querySelectorAll)$
+files:
+  - src/view/**
+  - src/docs-widget/**
+ignores:
+  - src/view/charts/**
+  - src/view/plan-graph/**
+  - src/view/widgets/StageTable.tsx
+  - src/docs-widget/host.ts
+  - src/docs-widget/main.tsx

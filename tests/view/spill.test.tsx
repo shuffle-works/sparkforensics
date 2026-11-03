@@ -353,7 +353,7 @@ test('card defaults collapsed and shows the peak-spill summary in the collapsed 
   // Summary shows `sorted[0]`'s peak value (stage 1, critical) plus stage count.
   const summaryContext = screen.getByText('peak · 2 stages');
   expect(summaryContext).toBeVisible();
-  // The row content (keepMounted) stays in the DOM but hidden while collapsed.
+  // A card on its own keeps its row content mounted, hidden, while collapsed.
   for (const row of screen.getAllByText(/memory spilled:/i)) {
     expect(row).not.toBeVisible();
   }

@@ -11,10 +11,11 @@ filter) and (only when an active filter empties both finding streams)
 the active filter doesn't empty the board) a two-tab `Tabs`
 (`src/components/ui/tabs.tsx`, a base-ui primitive): **Findings** and
 **Full app report**, the first grouped by impact band and the second
-always reachable. Both `TabsContent` panels pass
-`keepMounted`, so the inactive one is hidden (native `hidden` attribute)
-rather than unmounted: switching tabs keeps each widget's local state (e.g.
-ImpactBoard's expanded group) and scroll position.
+always reachable. Only the active `TabsContent` panel is mounted: the board
+state for the loaded run (the active tab, the open cards, the expanded group,
+and what each widget remembers, such as a page or a sort) lives in the store's
+`board` slice, so switching tabs loses none of it (see
+[First investigation routing](./widget-rendering/investigation-routing.md#widget-state-and-what-is-mounted)).
 
 `region` on `RegistryEntry` (`src/view/detector-registry.tsx`) is read
 only to decide whether a widget always mounts: `isAlwaysMountedType()`
@@ -242,10 +243,10 @@ title sits in a `CollapsibleTrigger` button with a chevron (`WidgetCard.tsx`),
 and each widget sets its own
 `defaultCollapsed` (most default to `true`; `ImpactBoard`'s action-region grid
 forces `defaultCollapsed` on every `REGISTRY` widget instance it mounts, so a
-marginal finding doesn't default open). Route navigation ("jump to this
-finding") goes through the grid coordinator instead of a fixed `tabIndex`:
-`WidgetGrid.tsx` tracks each card's disclosure button and bumps
-`openRequestGeneration` to force a collapsed card open and focus its trigger
-when the target finding has no anchored row of its own. How much a card shows
+marginal finding doesn't default open). A card the board lists is open when
+its key is in the store's `openCards`, and a route to one of its findings opens
+it and lands on the finding's row (see
+[First investigation routing](./widget-rendering/investigation-routing.md)). A
+board card's collapsed body is not mounted. How much a card shows
 beyond that is a board-wide choice, set by the Basic/Advanced density tier in
 the topbar.
