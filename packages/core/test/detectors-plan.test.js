@@ -3,7 +3,7 @@ import { existsSync, createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { analyze } from '../src/analyzer.js';
-import { computePlanShapes, normalizeDetail, findCompositeCandidates, planOperatorKind, findDuplicateSubtrees } from '../src/detectors.js';
+import { computePlanShapes, normalizeDetail, findCompositeCandidates, planOperatorKind, findDuplicateSubtrees } from '../src/detectors/plan-shape.js';
 import { createState, dispatchLine } from '../src/parser-worker.js';
 import { formatBytes, pathBasename } from '../src/format-utils.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
@@ -17,8 +17,8 @@ function makeSqlExec(id, planTree) {
   return { id, description: '', startTime: 0, endTime: 100, stageIds: [], planTree };
 }
 
-// Not imported anywhere in this file today; detectors.ts defines these as module-private
-// constants, so redefine locally, matching analyzer-finding-identity.test.js's pattern.
+// detectors/units.ts holds these; redefine them locally rather than import, matching
+// analyzer-finding-identity.test.js's pattern.
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 

@@ -106,7 +106,7 @@ evidence bundle for one finding, for drill-down after `diagnose_run`),
 `get_finding_documentation` (detection/tuning reference docs for one
 finding type, independent of any run), and `get_reference_doc` (a full
 tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). `list_detectors` (the detector catalog, no run needed; the CLI's `detectors` subcommand prints the same
-records from `buildDetectorCatalog()` in `packages/core/src/detector-catalog.ts`). None
+records from `buildDetectorCatalog()` in `packages/core/src/detector-listing.ts`). None
 re-implement detector logic: `list_runs` lists candidates
 (`packages/core/src/list-runs.ts`), and the rest repackage
 `analyze`/`buildEvidenceReport`/`compareRuns`/`captureSnapshot`/`evaluateBudgets`

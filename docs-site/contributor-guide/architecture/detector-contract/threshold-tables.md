@@ -4,7 +4,7 @@ The threshold tables for every bottleneck detector, and where each finding's imp
 
 ## Bottleneck thresholds
 
-Every change to `packages/core/src/detectors.ts` should reference this table.
+Every change to a detector entry under `packages/core/src/detectors/` should reference this table.
 
 Every finding's `impactBand` comes from one of two places. For any finding
 whose `impactEstimate` carries a `wallClock` estimate (the common case for
@@ -22,11 +22,11 @@ the occupancy sweep). For rules whose finding type never gets
 a wallClock estimate (`resourceOnly`/`informational` basis, e.g.
 `configAudit`, or a rule that keeps its own ratio-tiered classification,
 e.g. `failures`), the full threshold table below is
-the real, displayed classification: `detectors.ts` sets `impactBand`
+the real, displayed classification: the detector entry sets `impactBand`
 directly and nothing overwrites it. `partitionSizing`'s `maxPartitionTooBig`
 rule is a third case: it does carry a `wallClock` estimate but is explicitly
 exempted in `deriveImpactBand()` because it's a hardcoded-critical OOM/crash-risk
-safety signal, not a time-recovery one, so `detectors.ts`'s own classification
+safety signal, not a time-recovery one, so the detector's own classification
 stands regardless of how small that estimate is relative to the run.
 
 `analyzer.ts` then calls `capCriticalByTaskTime()` (`impact-band.ts`). It caps a `critical`
@@ -36,7 +36,7 @@ finding on no single stage and anything without recorded task time keep `critica
 
 ### Fixed fallback only (usually wallClock-derived instead)
 
-These rules have no *band* tiers in `packages/core/src/detectors.ts`
+These rules have no *band* tiers in `packages/core/src/detectors/`
 (`deriveImpactBand` sets the band whenever a wallClock estimate is
 available); the constant in the last column is only a floor-case fallback.
 Their *firing* gate lives in each entry's
@@ -74,7 +74,7 @@ stays documented here in full.
 #### Spill magnitude tiers
 
 The spill row's band is a fixed `warning` fallback, but `computeSpillMagnitude`
-(`packages/core/src/detectors.ts`) runs on every spill finding and sets its
+(`packages/core/src/detectors/speed-stages.ts`) runs on every spill finding and sets its
 `spillMagnitude` field, which the Spill widget displays. Its tiers, in
 evaluation order (first match wins, `null` when nothing matches):
 

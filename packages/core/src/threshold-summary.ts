@@ -1,4 +1,5 @@
-import { ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detector-catalog.ts';
+import type { ThresholdOverrides } from './detectors.ts';
 import { presentationOf } from './finding-presentation.ts';
 import { effectiveThresholds } from './threshold-overrides.ts';
 

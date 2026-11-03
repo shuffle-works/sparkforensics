@@ -1,9 +1,9 @@
 // Type-level doc anchors, read off the detector catalog. Kept out of docs-config.ts so the docs
 // URL helpers (used by every renderer) don't pull in the detectors themselves.
-import { DETECTORS, ENTRY_BY_TYPE } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE } from './detector-catalog.ts';
 import { isKnownDocAnchor } from './docs-config.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
-import type { Detector } from './detectors.ts';
+import type { Detector } from './detectors/types.ts';
 
 // DETECTORS is static, so this grouping is built once (lazily) instead of re-scanning per
 // docAnchorForType call (called once per TagBadge per render). Keyed by emitted finding type, so

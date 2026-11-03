@@ -69,7 +69,7 @@ the expanded Task detail. In an HTML export, which carries no task data, that
 toggle remains only for the stage plan it holds. The same stage's plan is also
 reachable from `StageDetailDialog`.
 
-Plan detection logic belongs in a `packages/core/src/detectors.ts` entry (`scope:'sql'`)
+Plan detection logic belongs in a `packages/core/src/detectors/plan.ts` entry (`scope:'sql'`)
 consuming `planTree`. `packages/core/src/plan-summary.ts` is display-only summarization; do
 not add detection heuristics there. It is best-effort: `summarizePlanTree` reads each resolved
 `planTree` node's `detail` with lenient regexes and silently omits a fragment it can't parse,

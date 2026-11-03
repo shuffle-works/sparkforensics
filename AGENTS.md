@@ -53,15 +53,15 @@ build config needs a `.changeset/*.md` (`scripts/check-changeset.sh`,
 - Treat `src/` and `tests/` as the source of truth, not old doc references.
   Detector ideas often come from other Spark log tools: check whether the
   category already exists before proposing one.
-- Detectors: thresholds live in each `packages/core/src/detectors.ts` entry
-  and are frozen; the dashboard always runs them, and only the CLI/MCP
+- Detectors: thresholds live in each entry under `packages/core/src/detectors/`
+  (assembled by `packages/core/src/detectors.ts`) and are frozen; the dashboard always runs them, and only the CLI/MCP
   `--thresholds` overrides them, through `analyze()`'s `thresholds` option.
   Read `architecture/detector-contract.md` and `architecture/widget-rendering.md`
   before adding a detector, changing a threshold or changing render order.
   Each finding type's name, tag, family, one-sentence pitch and summary is one row in
   `packages/core/src/finding-presentation.ts` (the pitch uses generic Spark terms only); its widget is in
   `src/view/detector-registry.tsx`'s `REGISTRY`.
-- Detector catalog: `buildDetectorCatalog()` (`packages/core/src/detector-catalog.ts`) feeds
+- Detector catalog: `buildDetectorCatalog()` (`packages/core/src/detector-listing.ts`) feeds
   the `list_detectors` MCP tool, the CLI `detectors` subcommand and the generated
   `/docs/detectors/` pages, which are never hand-edited. After an intended finding change,
   `node dev/detector-examples.mjs --update` refreshes the committed examples the pages show.
@@ -80,7 +80,7 @@ build config needs a `.changeset/*.md` (`scripts/check-changeset.sh`,
   export build fails when its graph reaches a core module off
   `ALLOWED_EXPORT_CORE_MODULES` (`scripts/export-analysis-guard.mjs`): never
   widen it to get past the guard, and keep `detectors.ts` imports type-only
-  there (`architecture/state-and-history.md#run-interpretation`).
+  there (only `analyzer.ts` and `detector-catalog.ts` import it by value) (`architecture/state-and-history.md#run-interpretation`).
 - Run comparison: stages pair in `packages/core/src/stage-alignment.ts` (the
   comparison normalizer, `stagePairs`, runtime coverage); `stageIdentity` stays
   the frozen exact key. A deliberate change to pairing updates

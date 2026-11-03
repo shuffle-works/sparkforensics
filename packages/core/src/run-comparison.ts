@@ -1,5 +1,5 @@
 import { computeWallClock } from './wall-clock.ts';
-import { normalizeDetail } from './detectors.ts';
+import { normalizeDetail } from './detectors/plan-shape.ts';
 import { normalizeStageName, stageIdentityWith, identityIndexWith, pairEqualCounts } from './stage-identity.ts';
 import { computeAllocation } from './allocation.ts';
 import { totalExecutorCpuMs, withEarlierAttempts, type AttemptRow } from './run-totals.ts';

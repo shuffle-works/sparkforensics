@@ -66,3 +66,32 @@ describe('core entry points', () => {
     expect(Object.keys(exports)).toEqual(expect.arrayContaining(SITE_ENTRY_POINTS.map((name) => `./${name}`)));
   });
 });
+
+// detectors.ts assembles the DETECTORS list. Only the analyzer and the entry catalog import it by
+// value; every other module reads the entries through detector-catalog.ts and the helpers from
+// the detectors/ modules, so the shared helpers never depend on the list that is built from them.
+describe('detector modules', () => {
+  const DETECTORS_MODULE = path.join(srcDir, 'detectors.ts');
+  const MAY_IMPORT_DETECTORS = ['analyzer.ts', 'detector-catalog.ts'].map((name) => path.join(srcDir, name));
+  const IMPORT_STATEMENT = /^import\s+(type\s+)?[^;]*?\sfrom\s+'([^']+)'/gm;
+  const MAX_DETECTOR_MODULE_LINES = 1200;
+
+  it('only the analyzer and the entry catalog import detectors.ts by value', () => {
+    const offenders = sourceFiles().flatMap((file) => {
+      if (MAY_IMPORT_DETECTORS.includes(file)) return [];
+      const source = readFileSync(file, 'utf8');
+      return [...source.matchAll(IMPORT_STATEMENT)]
+        .filter(([, typeOnly, specifier]) => !typeOnly && path.resolve(path.dirname(file), specifier.replace(/\.js$/, '.ts')) === DETECTORS_MODULE)
+        .map(() => path.relative(srcDir, file));
+    });
+    expect(offenders, `import type from detectors.ts, or read the entries through detector-catalog.ts:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('keeps each detectors/ module under the size limit', () => {
+    const oversized = sourceFiles(path.join(srcDir, 'detectors')).flatMap((file) => {
+      const lines = readFileSync(file, 'utf8').trimEnd().split('\n').length;
+      return lines > MAX_DETECTOR_MODULE_LINES ? [`${path.relative(srcDir, file)}: ${lines} lines`] : [];
+    });
+    expect(oversized, `split these by family or helper (limit ${MAX_DETECTOR_MODULE_LINES} lines):\n${oversized.join('\n')}`).toEqual([]);
+  });
+});

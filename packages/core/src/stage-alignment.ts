@@ -10,7 +10,7 @@
 // (`stage-structure.ts`) and a detail similarity pair what the exact key splits. `stageIdentity`
 // itself stays the frozen exact key.
 
-import { normalizeDetail } from './detectors.ts';
+import { normalizeDetail } from './detectors/plan-shape.ts';
 import { isDeltaLogRead, scanRelationId } from './plan-summary.ts';
 import { withEarlierAttempts, totalExecutorCpuMs, type AttemptRow } from './run-totals.ts';
 import { planNodesOfStage } from './stage-plan-nodes.ts';

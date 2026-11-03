@@ -1,7 +1,8 @@
 # Detector contract
 
-`packages/core/src/detectors.ts` is the single source of Spark-optimization logic: one
-declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
+`packages/core/src/detectors.ts` assembles `DETECTORS`, the single source of Spark-optimization
+logic: one declarative entry per pattern, each declared in its family's module under
+`packages/core/src/detectors/` (see [Module layout](#module-layout)) and each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, `version`, a
 `thresholds` object, an `emits` list, an optional `docAnchor` (every entry but
 `incompleteRun` sets one), optional `inScorecard`, `property` and
@@ -12,7 +13,7 @@ properties that copy names (`increaseConf`, `decreaseConf` and `setConf` in
 `packages/core/src/remediation.ts`). A detector adds an entry only for a property its
 recommendation already names, and leaves `suggested` null unless it computes the value itself.
 Entries apply together unless the recommendation words them as alternatives ("either ... or"):
-`idleCapacityFix` in `detectors.ts` gives an idle-capacity finding with dynamic allocation off the
+`idleCapacityFix` in `detectors/fixes.ts` gives an idle-capacity finding with dynamic allocation off the
 alternatives `set spark.dynamicAllocation.enabled` and `decrease spark.executor.instances`, and with
 it on `decrease spark.dynamicAllocation.maxExecutors` plus `decrease
 spark.dynamicAllocation.minExecutors` when the logged floor is above 0.
@@ -20,7 +21,7 @@ spark.dynamicAllocation.minExecutors` when the logged floor is above 0.
 property makes, which the skew family emits when its origin is `other` or skew-join handling is
 on and `aqe-skew.ts` finds the job's code is what has to change. Code that reads `key` checks `kind` first.
 
-Each entry is built by the helper for its scope: `defineStageDetector`,
+Each entry is built by the helper for its scope (`detectors/define.ts`): `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
 helper sets `scope`, infers the thresholds type from the entry's own
 `thresholds` literal, and types `detect` as a function property, so its
@@ -55,7 +56,7 @@ claim once (`skewTailClaim`/`stragglerTailClaim`) and both their floor and
 their `estimate()` read it through `tailClaimImpact`. Shared model constants
 and helpers live in `packages/core/src/impact-model.ts`.
 
-`DETECTORS` is declared `as const satisfies readonly Detector[]`, so each
+`DETECTORS` (`detectors.ts`) is declared `as const satisfies readonly Detector[]`, so each
 entry keeps its literal `type` and `emits`. Two unions derive from it:
 `DetectorType` (every entry's own `type`) and `FindingType` (every type an
 entry's `emits` lists, the finding types that actually appear on findings).
@@ -138,6 +139,41 @@ Default thresholds live only in each entry's `thresholds`; see
 the MCP server can override them, per run: see
 [Tuning thresholds](#tuning-thresholds).
 
+## Module layout {#module-layout}
+
+`detectors.ts` holds only the assembled list and what derives from it: `DETECTORS` (its order is
+the render order, see [Widget rendering](./widget-rendering.md#widget-rendering-order)),
+`ENTRY_BY_TYPE`, `DetectorType`, `FindingType`, `ThresholdsOf`, `ThresholdOverrides`,
+`skewThresholdsFor` and the compile-time checks. Everything else sits under
+`packages/core/src/detectors/`:
+
+| Module | Holds |
+| --- | --- |
+| `speed-tasks.ts` | `skew`, `slowHost`, `straggler`, `speculationWaste` |
+| `speed-stages.ts` | `stageShape`, `shuffle`, `partitionSizing`, `spill`, `gc`, `stageSlowness`, `tinyTask`, `coldStart` |
+| `reliability.ts` | `stageFailed`, `failures`, `retryWaste`, `jobFailureRate` |
+| `cost.ts` | `utilization`, `rightSizing`, `memoryUtilization`, `cacheUtilization`, `coreLocality`, `autoscalingChurn`, `cachingOpportunity` |
+| `plan.ts` | `duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`, `pythonUdf`, `nestedLoopJoin`, `mergeRewrite`, `unprunedScan`, `joinKeyCast` |
+| `setup.ts` | `incompleteRun` and the three `configAudit` entries |
+| `types.ts` | `DetectorCtx`, `DetectorStage`, `DetectorConfigTarget`, `DetectorThresholds`, `DetectorScope`, `Detector`, `SkewThresholds` and the other detector-facing types |
+| `define.ts` | the `define*Detector` helpers and `mergeThresholds`, which resolves a caller's threshold overrides |
+| `conf.ts` | effective-conf readers: `effectiveConf`, `queryApp`, `stageApp`, `loggedAs`, `dynamicAllocationOff`, `hasStageOutsideSql` |
+| `fixes.ts` | fix helpers several entries share: `switchFix`, `setConfUnlessLogged`, `dynamicAllocationFix`, `idleCapacityFix` |
+| `confidence.ts` | the confidence scalers each entry's `detect()` calls |
+| `plan-shape.ts` | `computePlanShapes`, `normalizeDetail`, `findCompositeCandidates`, `findDuplicateSubtrees` and the Spark file-metric names |
+| `plan-attribution.ts` | `sqlStageIds`, `unionStageIds`, `isExecutionWideStageIds` |
+| `plan-joins.ts` | the join-side shuffle and broadcast-candidate readers |
+| `runtime-floor.ts`, `tail.ts` | the runtime floor, `computeSkewRatio`, the tail claim and verdict that `skew` and `straggler` share |
+| `skew-fix.ts`, `partition.ts` | the skew advice and the partition-count advice several entries share |
+| `units.ts` | `MB` and `GB` |
+
+Only `analyzer.ts` and `detector-catalog.ts` import `detectors.ts` by value. Any other module
+reads `DETECTORS`, `ENTRY_BY_TYPE` and `detectorCatalog()` from `detector-catalog.ts`, takes
+helpers from the `detectors/` modules, and imports types from `detectors.ts` with `import type`.
+`packages/core/test/source-guards.test.js` fails on any other value import, and on a `detectors/`
+module over 1200 lines. The helpers import no entry, so a module in `detectors/` never depends on
+the list built from them.
+
 ## Confidence disclosure
 
 A `Finding` may carry `confidence: 'low' | 'medium' |
@@ -152,8 +188,8 @@ their widget. `skew`, `straggler`, and `gc` set `confidence` for exactly this re
 runtime-floor thresholds carry the same kind of unvalidated-noise-floor caveat `coreLocality`,
 `autoscalingChurn`, and `memoryUtilization`'s `wasteModel` variant already disclose. None of these
 hardcode a single confidence value: each scales `'low' | 'medium' | 'high'` off how far the
-finding sits past its own detector's threshold, via a small named helper placed just above the
-`DETECTORS` array (e.g. `skewConfidence`, `coreLocalityConfidence`, `cachingReuseConfidence`)
+finding sits past its own detector's threshold, via a small named helper in
+`detectors/confidence.ts` (e.g. `skewConfidence`, `coreLocalityConfidence`, `cachingReuseConfidence`)
 rather than an inline literal.
 
 ## The `fixEffort` field
@@ -172,9 +208,9 @@ for how it ranks findings.
 
 Two shared helpers back multiple detectors and reports. `packages/core/src/plan-tree-walk.ts`'s
 `walkPlanTree(root, visit, {dedupe})` is the iterative pre-order plan-tree
-traversal used by `detectors.ts`, `plan-summary.ts`,
+traversal used by the `detectors/` modules, `plan-summary.ts`,
 `plan-duration-attribution.ts`, `plan-dot.ts` and `plan-graph-model.ts`. `packages/core/src/core-count.ts` holds the shared core-count logic. Its
-`computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back `detectors.ts`'s
+`computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back the `detectors/cost.ts` entries,
 `efficiency-model.ts`'s zero-skew floor and the cluster size the `utilization` finding reports. The
 idle capacity the `utilization` and `memoryUtilization` entries, `efficiency-model.ts` and
 `wasted-core-hours.ts` measure against is the allocation (`allocatedCoreMs()` in `allocation.ts`,
@@ -200,7 +236,7 @@ with the release that introduced each of its defaults, and a per-version test.
 
 A detector scoped to one SQL execution (`skew`, `straggler`, `shuffle`,
 `partitionSizing`, `underBroadcast`, `overBroadcast`, `pythonUdf`) passes that execution's
-`modifiedConfigs`: `detectors.ts`'s `stageApp()` and `queryApp()` return the app with
+`modifiedConfigs`: `detectors/conf.ts`'s `stageApp()` and `queryApp()` return the app with
 them applied, so the helpers that take an app (`effectiveConf`, `loggedAs`,
 `switchFix`) need no second argument. Run-wide detectors use the app as logged.
 The frozen detection thresholds do not follow a per-query setting; only the advice does.
@@ -291,7 +327,7 @@ default-threshold analysis.
 
 ## Detector catalog
 
-`buildDetectorCatalog()` (`packages/core/src/detector-catalog.ts`) returns one
+`buildDetectorCatalog()` (`packages/core/src/detector-listing.ts`) returns one
 `DetectorCatalogRecord` per emitted finding type, with no run needed. A record
 joins the type's `DETECTORS` entries with its `FINDING_PRESENTATION` row in
 `finding-presentation.ts`, which also holds the outcome `family`
@@ -301,7 +337,8 @@ figures or names, and the `region` marker. The fields are listed in the
 
 The `list_detectors` MCP tool and the `sparkforensics-analyze detectors`
 command read the same builder, so they state the same default thresholds, docs
-and gates.
+and gates. The listing reads the entries through `detector-catalog.ts`, which also holds
+`detectorCatalog()`, the per-entry metadata the evidence report records.
 
 The docs site's `/docs/detectors/` pages are generated from the catalog by
 `scripts/build-detector-pages.mjs` (see

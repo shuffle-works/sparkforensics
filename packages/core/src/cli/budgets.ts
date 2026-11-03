@@ -1,6 +1,8 @@
 import { maxOf } from '../array-extremes.ts';
 import { computeEfficiencyModel } from '../efficiency-model.ts';
-import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
+import { ENTRY_BY_TYPE } from '../detector-catalog.ts';
+import { computeSkewRatio } from '../detectors/tail.ts';
+import type { ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { withEarlierAttempts } from '../run-totals.ts';
 import { IMPACT_BANDS } from '../format-utils.ts';

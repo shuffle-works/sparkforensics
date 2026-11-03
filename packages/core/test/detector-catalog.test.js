@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDetectorCatalog, listDetectors, renderDetectorCatalogMarkdown } from '../src/detector-catalog.js';
+import { buildDetectorCatalog, listDetectors, renderDetectorCatalogMarkdown } from '../src/detector-listing.js';
 import { ENTRY_BY_TYPE } from '../src/detectors.js';
 import { DETECTOR_FAMILIES, FINDING_PRESENTATION } from '../src/finding-presentation.js';
 

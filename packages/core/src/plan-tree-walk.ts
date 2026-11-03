@@ -1,6 +1,6 @@
 // Canonical iterative walk over a resolved planTree (resolvePlanTree in event-handlers.ts). Every
-// plan-*.ts consumer and the sql-scope detectors in detectors.ts need the same traversal: this is
-// the single implementation they all share, so it must not import from detectors.ts (or vice versa).
+// plan-*.ts consumer and the sql-scope detectors under detectors/ need the same traversal: this is
+// the single implementation they all share, so it must not import from detectors/ (or vice versa).
 //
 // Pre-order, left-to-right child order (children are reverse-pushed so the leftmost pops first):
 // plan-summary.ts's finding order depends on this. `visit(node, parent)` gets the parent so callers

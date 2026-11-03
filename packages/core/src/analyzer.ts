@@ -1,4 +1,6 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorConfigTarget, type DetectorCtx, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, skewThresholdsFor, type ThresholdOverrides } from './detectors.ts';
+import { hasStageOutsideSql } from './detectors/conf.ts';
+import type { Detector, DetectorConfigTarget, DetectorCtx } from './detectors/types.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';

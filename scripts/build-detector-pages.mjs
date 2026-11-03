@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildDetectorCatalog } from '../packages/core/src/detector-catalog.ts';
+import { buildDetectorCatalog } from '../packages/core/src/detector-listing.ts';
 import { runDetectorsCommand } from '../packages/core/src/cli/detectors-command.ts';
 import { DETECTOR_FAMILIES } from '../packages/core/src/finding-presentation.ts';
 import { createMcpServer } from '../packages/core/src/mcp-server-factory.ts';

@@ -56,7 +56,7 @@ function groupThousands(n: number): string {
   return Number.isSafeInteger(n) ? String(n).replace(/\B(?=(\d{3})+$)/g, ',') : n.toLocaleString('en-US');
 }
 
-// Whether the detector found `key` already logged on for this run. Its switchFix (detectors.ts)
+// Whether the detector found `key` already logged on for this run. Its switchFix (detectors/fixes.ts)
 // then worded the row's own text for that case and left the property out of the remediation, so
 // a generic line reads the same decision and never recommends a switch the row says is on.
 // A finding with no remediation (older or hand-built data) keeps the property wording.

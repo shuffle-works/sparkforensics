@@ -3,7 +3,9 @@
 // moves independently of the evidence report's. A figure the log cannot provide is null, never 0.
 import { computeAllocation, type Allocation } from './allocation.ts';
 import { maxOf } from './array-extremes.ts';
-import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detector-catalog.ts';
+import { computeSkewRatio } from './detectors/tail.ts';
+import type { ThresholdOverrides } from './detectors.ts';
 import { totalExecutorCpuMs, totalOutputRows, withEarlierAttempts, type AttemptRow } from './run-totals.ts';
 import { isPythonStage } from './python-stage.ts';
 import { stageIdentity } from './run-comparison.ts';

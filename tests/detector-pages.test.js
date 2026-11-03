@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { buildDetectorPages, DEFAULT_EXAMPLES_FILE, DEFAULT_RUNS_FILE } from '../scripts/build-detector-pages.mjs';
-import { buildDetectorCatalog } from '../packages/core/src/detector-catalog.ts';
+import { buildDetectorCatalog } from '../packages/core/src/detector-listing.ts';
 import { DETECTOR_FAMILIES } from '../packages/core/src/finding-presentation.ts';
 
 // The generated detector catalog pages (docs-site/detectors/): one page per finding type, the

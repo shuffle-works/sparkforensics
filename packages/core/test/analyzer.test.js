@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
-import { DETECTORS, detectorCatalog } from '../src/detectors.js';
+import { DETECTORS } from '../src/detectors.js';
+import { detectorCatalog } from '../src/detector-catalog.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
 import { FINDING_PRESENTATION } from '../src/finding-presentation.js';

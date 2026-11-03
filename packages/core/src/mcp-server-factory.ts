@@ -13,7 +13,7 @@ import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-al
 import { IMPACT_BANDS } from './format-utils.ts';
 import { COMPARISON_METRIC_KEYS } from './run-comparison.ts';
 import { FINDING_TYPES } from './cli/flag-values.ts';
-import { listDetectors } from './detector-catalog.ts';
+import { listDetectors } from './detector-listing.ts';
 
 // z.enum wants a non-empty tuple; these lists are never empty.
 const nonEmpty = (values: readonly string[]) => values as [string, ...string[]];

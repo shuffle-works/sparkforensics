@@ -1218,7 +1218,7 @@ test('a real CachingOpportunity.tsx row (Task 11) is anchor-routable: focus and 
 test('CachingOpportunity.tsx (widget-ui-unification Task 11) jumps its own pagination to the page containing a route target beyond the first page', async () => {
   // usePagedRows's page size is VISIBLE_LIMIT (6, packages/core/src/format-utils.ts). The
   // `cachingOpportunity` detector always emits `impactBand: 'info'`
-  // (packages/core/src/detectors.ts). The lead takes the verdict's step and the other
+  // (packages/core/src/detectors/cost.ts). The lead takes the verdict's step and the other
   // eight findings form a group whose panel paginates. The findings tie on impact, so the
   // board keeps the catalog order: `target` comes last and the smallest `totalReadBytes`
   // keeps it last in the widget's own descending-bytes order too. It sits on the *last*

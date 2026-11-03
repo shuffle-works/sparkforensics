@@ -119,7 +119,7 @@ because the stage has no ungated segment view to show instead.
 
 The nine Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
 `nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `unprunedScan`, `pythonUdf`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
-`packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
+`packages/core/src/detectors/plan.ts`) set `Finding.planNodeIds`, an unambiguous
 pointer to the specific plan-tree node(s) each finding is about (every node of
 each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
 scan/write node for `smallFiles`, the join node and the exchange after it for `joinKeyCast`, the join node for `nestedLoopJoin`, the MERGE command node for `mergeRewrite`, the scan nodes of one table for `unprunedScan`, the `BatchEvalPython` nodes for `pythonUdf`, the shuffle `data size`
@@ -169,7 +169,7 @@ Two other per-node UI features render independently of findings:
 One more identity subtlety: a split `Exchange`/`BroadcastExchange` pair
 (the write/read halves `resolvePlanTree` synthesizes, see above) counts as
 **one** node for `duplicatePlanSubtree`'s subtree-size and occurrence
-counting. `computePlanShapes` in `detectors.ts` walks straight through the
+counting. `computePlanShapes` in `detectors/plan-shape.ts` walks straight through the
 read half to the write half's real children, so every real Exchange in a
 matched subtree is counted once instead of twice.
 

@@ -16,7 +16,7 @@ Spot-checks for each estimate formula, how skew and straggler split a tail, the 
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired.
 The skew branch (P95 or max over P50) changes only the fallback single-task delta on a stage
 without the replay field. Which of the two reports a tail follows its cause (`tailVerdict` in
-`detectors.ts`, from the stage's `tailAttribution`): `skew` takes a tail whose extra time follows
+`detectors/tail.ts`, from the stage's `tailAttribution`): `skew` takes a tail whose extra time follows
 data volume, and `straggler` takes the rest, including a tail with no measured cause
 (`cause: 'unattributed'`) or a stage with no tail attribution. Both judge a tail with skew's
 resolved thresholds, so the two never fire on the same stage and their recoverable time is never
@@ -75,7 +75,7 @@ back the models. Single-stage examples sit in the coverage table below.
 
 ## Per-finding-type coverage
 
-One row per distinct `type` string `packages/core/src/detectors.ts` actually emits: every
+One row per distinct `type` string the `packages/core/src/detectors.ts` entries actually emit: every
 entry must declare an `estimate()` (the compiler rejects one without it), so every row below
 has one, and the table itself is the coverage count, not a number restated here. `broadcastSizing` is a `DETECTORS` entry
 label only, and the plan-walk it drives emits `overBroadcast`/`underBroadcast` findings

@@ -11,7 +11,19 @@ export * from './core-time-series.ts';
 export * from './core-usage-locality.ts';
 export * from './detector-catalog.ts';
 export * from './detector-docs.ts';
+export * from './detector-listing.ts';
 export * from './detectors.ts';
+export { hasStageOutsideSql } from './detectors/conf.ts';
+export { defineAppDetector, defineConfigDetector, defineSqlDetector, defineStageDetector } from './detectors/define.ts';
+export { isExecutionWideStageIds, unionStageIds } from './detectors/plan-attribution.ts';
+export {
+  computePlanShapes, findCompositeCandidates, findDuplicateSubtrees, normalizeDetail, planOperatorKind, type CompositeCandidate,
+} from './detectors/plan-shape.ts';
+export { computeSkewRatio } from './detectors/tail.ts';
+export type {
+  Detector, DetectorConfigTarget, DetectorCtx, DetectorScope, DetectorSqlExec, DetectorStage, DetectorThresholds, DetectResult,
+  SkewThresholds,
+} from './detectors/types.ts';
 export * from './evidence-report.ts';
 export * from './html-export.ts';
 export * from './impact-format.ts';

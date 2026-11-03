@@ -5,7 +5,7 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
 - **Plan Advisor** (tag `PLAN`): SQL-plan-level findings computed from
   `appModel.sql`'s resolved `planTree` (DETECTORS entries
   `duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `unprunedScan`, `broadcastSizing`, `pythonUdf` in
-  `packages/core/src/detectors.ts`): repeated plan subtrees (≥3 nodes, ≥2 occurrences; dropped when their
+  `packages/core/src/detectors/plan.ts`): repeated plan subtrees (≥3 nodes, ≥2 occurrences; dropped when their
   linked stages take under 0.5% of the run; banded from the recovered
   wall-clock like other findings, with a `warning`/`info` fallback; an
   `Exchange` root only changes the recommendation to a possible missed
