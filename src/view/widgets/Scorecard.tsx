@@ -4,7 +4,6 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import type { RunInterpretation, ScorecardFlag } from '@sparkforensics/core/run-interpretation.ts';
-import type { WidgetProps } from '@/view/detector-registry';
 import { IMPACT_BG_CLASS, ImpactDot } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
 
@@ -14,7 +13,7 @@ import { useWidgetDensity } from '@/store/store';
 // Efficiency (a share of time) and Unused core time (a share of core-hours) never
 // read as contradicting each other; Advanced view keeps the raw breakdowns.
 // Every figure and flag comes from the run's interpretation (run-interpretation.ts).
-export type ScorecardProps = Pick<WidgetProps, 'catalog'> & { interpretation: RunInterpretation };
+export type ScorecardProps = { interpretation: RunInterpretation };
 
 type FlagImpactBand = ScorecardFlag;
 
@@ -113,7 +112,7 @@ function TimingUnavailableNotice() {
   );
 }
 
-export function Scorecard({ interpretation, catalog }: ScorecardProps) {
+export function Scorecard({ interpretation }: ScorecardProps) {
   const density = useWidgetDensity();
   const { runShape, coverage, wallClock } = interpretation;
   if (runShape.wallClockMs == null) return <TimingUnavailableNotice />;
@@ -125,8 +124,6 @@ export function Scorecard({ interpretation, catalog }: ScorecardProps) {
   const measured = !coverage.noFinishedStages;
   const efficiency = runShape.efficiencyPct;
   const effFlag = runShape.efficiencyFlag;
-
-  const coldStart = catalog.find((f) => f.type === 'coldStart');
 
   const wastagePct = runShape.unusedCoreTimePct;
   const wastageFlag = runShape.unusedCoreTimeFlag;
@@ -148,7 +145,7 @@ export function Scorecard({ interpretation, catalog }: ScorecardProps) {
             density === 'advanced' || stagesActive <= 0 ? (
               <>
                 {formatRanLabel(stagesActive)}
-                {coldStart ? ` · ${coldStart.value}s cold start` : ''}
+                {runShape.coldStartSeconds != null ? ` · ${runShape.coldStartSeconds}s cold start` : ''}
               </>
             ) : (
               'Total run time.'

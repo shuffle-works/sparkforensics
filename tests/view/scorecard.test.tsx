@@ -5,6 +5,7 @@ import { Scorecard } from '../../src/view/widgets/Scorecard';
 import { store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { makeRun } from './_shared/run';
+import { testFinding } from './_shared/finding';
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return {
@@ -21,7 +22,7 @@ function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
 
 // The tiles render the run's interpretation (figures and flags), computed as the live app does.
 function scorecardProps(appModel: AppModel, catalog: Finding[]) {
-  return { interpretation: makeRun({ appModel, catalog }).interpretation, catalog };
+  return { interpretation: makeRun({ appModel, catalog }).interpretation };
 }
 
 test('renders the wall-clock and efficiency KPI labels', () => {
@@ -131,4 +132,15 @@ test('renders no domain/company strings', () => {
   const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
   const { container } = render(<Scorecard {...scorecardProps(makeAppModel(), catalog)} />);
   expect(container.textContent).not.toMatch(/scanntech|retail|cpg|latin america/i);
+});
+
+test('the cold-start note comes from the run interpretation, not a filtered catalog', () => {
+  store.getState().setWidgetDensity('advanced');
+  try {
+    const coldStart = testFinding({ type: 'coldStart', stageId: null, impactBand: 'info', value: 12 });
+    render(<Scorecard {...scorecardProps(makeAppModel(), [coldStart])} />);
+    expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('12s cold start');
+  } finally {
+    store.getState().setWidgetDensity('basic');
+  }
 });

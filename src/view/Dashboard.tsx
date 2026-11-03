@@ -222,7 +222,7 @@ function FilteredBoard({
           steps={layout.steps}
           renderEvidence={renderVerdictEvidence}
         /> : null}
-      {interpretation ? <Scorecard interpretation={interpretation.data} catalog={catalog} /> : null}
+      {interpretation ? <Scorecard interpretation={interpretation.data} /> : null}
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
           hides the control that explains and clears it. */}

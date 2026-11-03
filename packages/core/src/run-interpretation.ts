@@ -18,14 +18,15 @@ import {
 import { isEligible, rankedRollup, type RankedRollupGroup } from './recommendation-rollup.ts';
 import { quotesReasonOf } from './run-outcome.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
+import { findingsOfType } from './findings-of-type.ts';
 import { gradeIdlePct, idleGrading } from './idle-grading.ts';
 import { runTiming, type RunTiming } from './run-timing.ts';
 import {
-  buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, quotedReasonText, rankBySavings, stepCopyText,
+  buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, quotedReasonText, rankBySavings, stepCopyText,
 } from './run-verdict.ts';
 import { recommendationText } from './finding-names.ts';
 import { getScorecardEstimates } from './scorecard-estimates.ts';
-import { singleStageId } from './finding-filter-predicate.ts';
+import { singleStageId, stagesOfFinding } from './finding-filter-predicate.ts';
 import { checkConcurrentJobGroups } from './job-groups.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { computeWastedCoreHours, type WastedCoreHoursResult } from './wasted-core-hours.ts';
@@ -104,6 +105,8 @@ export type ScorecardFlag = 'critical' | 'warning' | null;
 export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct'> {
   /** What the log's application start and end say about the run (`runTiming`). */
   timing: RunTiming;
+  /** The cold-start finding's seconds, read from the whole catalog so a board filter never changes it. */
+  coldStartSeconds: number | null;
   efficiencyFlag: ScorecardFlag;
   unusedCoreTimeFlag: ScorecardFlag;
   unusedCoreTimeUnavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
@@ -187,11 +190,12 @@ function efficiencyFlag(pct: number | null): ScorecardFlag {
   return pct < 75 ? 'critical' : pct < 90 ? 'warning' : null;
 }
 
-function interpretRunShape(appModel: AppModel, thresholds: ThresholdOverrides | undefined): RunShapeData {
+function interpretRunShape(appModel: AppModel, catalog: Finding[], thresholds: ThresholdOverrides | undefined): RunShapeData {
   const { wallClockMs, efficiencyPct, unusedCoreTimePct } = computeRunShape(appModel);
   const estimates = getScorecardEstimates(appModel);
   return {
     timing: runTiming(appModel.app, appModel.stages),
+    coldStartSeconds: findingsOfType(catalog, 'coldStart')[0]?.value ?? null,
     wallClockMs,
     efficiencyPct,
     unusedCoreTimePct,
@@ -223,18 +227,18 @@ function interpretCoverage(appModel: AppModel, allFindings: Finding[]): Coverage
   return { noFinishedStages, notRunReasons, gaps: verdictGaps(allFindings, noFinishedStages) };
 }
 
-// The stage dialog's grouping: the verdict's location rule (a sql-scope finding touching only
-// this stage counts), ordered by the stage's own verdict step, then by worst band.
+// The stage dialog's grouping: every finding about the stage (`stagesOfFinding`), ordered by the
+// stage's own verdict step, then by worst band.
 function interpretStages(
   catalog: Finding[], failedJobStageIds: ReadonlySet<number> | null,
 ): Record<string, StageFindingsData> {
   const byStage = new Map<number, Finding[]>();
   for (const finding of catalog) {
-    const { stageId } = locationKey(finding);
-    if (stageId == null) continue;
-    const list = byStage.get(stageId) ?? [];
-    list.push(finding);
-    byStage.set(stageId, list);
+    for (const stageId of stagesOfFinding(finding)) {
+      const list = byStage.get(stageId) ?? [];
+      list.push(finding);
+      byStage.set(stageId, list);
+    }
   }
   const stages: Record<string, StageFindingsData> = {};
   for (const [stageId, findings] of byStage) {
@@ -296,7 +300,7 @@ export function interpretRun(
       copyText: verdict.copyText,
     },
     coverage: interpretCoverage(appModel, allFindings),
-    runShape: interpretRunShape(appModel, thresholds),
+    runShape: interpretRunShape(appModel, catalog, thresholds),
     wallClock: computeWallClock(appModel.app, appModel.stages),
     wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates, appModel.executors.removed),
     efficiency: interpretEfficiency(appModel),

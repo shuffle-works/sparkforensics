@@ -19,12 +19,28 @@ export interface FindingFilterCriteria {
 }
 
 /** The one stage a finding is about: its own `stageId`, or the only entry of a sql-scope
- * finding's `stageIds`. Null for an app-level, config or multi-stage finding. The same rule the
- * run verdict groups steps by and the stage dialog lists a stage's findings by. */
+ * finding's `stageIds`. Null for an app-level, config or multi-stage finding. The run verdict
+ * groups its steps by it. */
 export function singleStageId(row: { stageId?: number | null; stageIds?: readonly number[] | null }): number | null {
   if (typeof row.stageId === 'number') return row.stageId;
   if (row.stageIds && row.stageIds.length === 1) return row.stageIds[0];
   return null;
+}
+
+type StageRow = { stageId?: number | null; stageIds?: readonly number[] | null };
+
+/** Every stage a finding is about: its own `stageId` and the entries of a sql-scope finding's
+ * `stageIds`. A stage's row, its dialog, the plan graph and the Topbar all list a finding on
+ * each of these. */
+export function stagesOfFinding(row: StageRow): number[] {
+  const stages = typeof row.stageId === 'number' ? [row.stageId] : [];
+  for (const stageId of row.stageIds ?? []) if (!stages.includes(stageId)) stages.push(stageId);
+  return stages;
+}
+
+/** The findings about `stageId` (`stagesOfFinding`). */
+export function findingsForStage<T extends StageRow>(findings: readonly T[], stageId: number): T[] {
+  return findings.filter((finding) => stagesOfFinding(finding).includes(stageId));
 }
 
 export function matchesFindingFilterCriteria(

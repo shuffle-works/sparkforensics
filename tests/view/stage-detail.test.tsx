@@ -467,16 +467,18 @@ describe('StageDetailDialog reads like a verdict step', () => {
     expect(steps[1]).toHaveTextContent('Rebalance partitioning.');
   });
 
-  it('lists a sql-scope finding that touches only this stage, as the verdict step groups it', async () => {
+  it('lists a sql-scope finding on every stage it is about, and none on other stages', async () => {
     const user = userEvent.setup();
     const smallFiles = { type: 'smallFiles', stageId: null, stageIds: [1], impactBand: 'warning', recommendation: 'Coalesce output files.' } as unknown as Finding;
-    const elsewhere = { type: 'smallFiles', stageId: null, stageIds: [1, 2], impactBand: 'warning', recommendation: 'Not this stage.' } as unknown as Finding;
-    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [skew, smallFiles, elsewhere]);
+    const shared = { type: 'smallFiles', stageId: null, stageIds: [1, 2], impactBand: 'warning', recommendation: 'Spans two stages.' } as unknown as Finding;
+    const elsewhere = { type: 'smallFiles', stageId: null, stageIds: [2], impactBand: 'warning', recommendation: 'Not this stage.' } as unknown as Finding;
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [skew, smallFiles, shared, elsewhere]);
     await user.click(screen.getByRole('button', { name: 'open stage 1' }));
     const dialog = await screen.findByRole('dialog');
 
     expect(dialog).toHaveTextContent('2 findings here.');
     expect(dialog).toHaveTextContent('Coalesce output files.');
+    expect(dialog).toHaveTextContent('Spans two stages.');
     expect(dialog).not.toHaveTextContent('Not this stage.');
   });
 

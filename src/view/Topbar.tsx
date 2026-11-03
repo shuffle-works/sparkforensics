@@ -22,7 +22,7 @@ import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
+import { stagesOfFinding } from '@sparkforensics/core/finding-filter-predicate.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
 import { cn } from '@/lib/utils';
 import type { RecentFileEntry } from '@/view/RecentList';
@@ -51,8 +51,7 @@ function chipShare(worst: ImpactBand | undefined, inBand: Finding[], app: AppMod
 }
 
 function findingMatchesExecutionStage(finding: Finding, stageIds: readonly StageId[]): boolean {
-  if (finding.stageId != null && stageIds.includes(finding.stageId)) return true;
-  return findingStageIds(finding)?.some((stageId) => stageIds.includes(stageId)) ?? false;
+  return stagesOfFinding(finding).some((stageId) => stageIds.includes(stageId));
 }
 
 /** Every SQL execution eligible for the Topbar's "open the graph view
