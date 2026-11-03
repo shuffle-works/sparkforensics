@@ -91,7 +91,7 @@ absolute budgets and the `run-complete` check apply to the candidate run; the MC
 
 ## MCP server
 
-`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 9 tools:
+`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers these tools:
 `list_runs` (candidate runs in a local directory or on a Spark History Server, to
 pick one before diagnosing it), `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`

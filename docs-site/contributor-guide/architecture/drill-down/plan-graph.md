@@ -117,9 +117,11 @@ graph model until the dialog is confirmed. Dismissing the dialog closes it but
 does not lift that block, and a dismissed fallback does not reopen the dialog,
 because the stage has no ungated segment view to show instead.
 
-The nine Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
-`nestedLoopJoin`, `joinKeyCast`, `mergeRewrite`, `unprunedScan`, `pythonUdf`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
-`packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
+The Plan Advisor finding types, from `packages/core/src/detectors.ts`:
+
+<DetectorTypeList family="plan" />
+
+These types set `Finding.planNodeIds`, an unambiguous
 pointer to the specific plan-tree node(s) each finding is about (every node of
 each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
 scan/write node for `smallFiles`, the join node and the exchange after it for `joinKeyCast`, the join node for `nestedLoopJoin`, the MERGE command node for `mergeRewrite`, the scan nodes of one table for `unprunedScan`, the `BatchEvalPython` nodes for `pythonUdf`, the shuffle `data size`

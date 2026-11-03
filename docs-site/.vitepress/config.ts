@@ -62,7 +62,26 @@ export default defineConfig({
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${DOCS_BASE}favicon.svg` }],
   ],
   markdown: {
-    config(md) { md.use(footnote); },
+    config(md) {
+      md.use(footnote);
+      // Emit each marker as its citation-chip label ("2", not "[2:1]") so the server-rendered
+      // line wrapping already matches the chip; citation-chips.ts then only wires behavior, and
+      // the router's deep-link jump is not undone by a reflow above the target heading.
+      md.renderer.rules.footnote_caption = (tokens, idx) => String(tokens[idx].meta.id + 1);
+    },
+  },
+  vite: {
+    resolve: {
+      // Copies of five default-theme components (theme/overrides/) that render the markup the
+      // product family's shared bar and the accessibility tree need: the page-controls marker on
+      // the appearance switch wrappers, its aria-label and the home page's main landmark.
+      alias: [
+        {
+          find: /^.*\/(VPSwitchAppearance|VPNavBarAppearance|VPNavScreenAppearance|VPNavBarExtra|VPHome)\.vue$/,
+          replacement: `${fileURLToPath(new URL('./theme/overrides', import.meta.url))}/$1.vue`,
+        },
+      ],
+    },
   },
   themeConfig: {
     // The app's pulse-line mark, in the docs ink color for each theme.
