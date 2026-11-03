@@ -13,6 +13,7 @@ import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { runState } from './_shared/run';
 
 // Both mocks call through to the real implementation; only the large-series
 // test below overrides buildLocalityChart's return value for one call. The widget
@@ -120,13 +121,16 @@ test('renders a fallback message and no chart region when no stage has core-time
 test('downsamples a large bucketed series before handing it to the chart', () => {
   const bigLength = 5000;
   const points = Array.from({ length: bigLength }, (_, i) => ({ t: i, PROCESS_LOCAL: 1, idle: 0 }));
-  const installed = installInterpretation([], buildAppModel());
-  store.getState().setInterpretation({
-    ...installed,
-    data: {
-      ...installed.data,
-      coreLocality: { ...installed.data.coreLocality, chart: { hasActivity: true, order: ['PROCESS_LOCAL', 'idle'], points, peakCores: 1 } },
+  const { run, runKey } = runState({ appModel: buildAppModel() });
+  store.setState({
+    run: {
+      ...run,
+      interpretation: {
+        ...run.interpretation,
+        coreLocality: { ...run.interpretation.coreLocality, chart: { hasActivity: true, order: ['PROCESS_LOCAL', 'idle'], points, peakCores: 1 } },
+      },
     },
+    runKey,
   });
   render(
     <DocsProvider>
@@ -191,10 +195,9 @@ test('does not rebuild or re-downsample the locality series on an unrelated re-r
   expect((buildLocalityChart as Mock).mock.calls.length).toBe(chartCallsBefore);
 });
 
-// applySnapshot mutates appModel's fields in place on a cached-file
-// switch; the live interpreter reinterprets it, and the widget must follow the
-// new interpretation rather than a stale memo.
-test('reflects a new interpretation after a cached-file switch', async () => {
+// A newly installed run carries its own interpretation, and the widget must follow it rather
+// than a stale memo.
+test('reflects a new interpretation after a different run is installed', async () => {
   const appModel = buildAppModel();
 
   installInterpretation([], appModel);
@@ -205,8 +208,8 @@ test('reflects a new interpretation after a cached-file switch', async () => {
   );
   expect(screen.getByText('2 cores')).toBeInTheDocument();
 
-  // Mimic applySnapshot: mutate the same appModel object's `stages` field in
-  // place with a different per-stage core-time profile.
+  // Mutate the same appModel object's `stages` field in place with a different per-stage
+  // core-time profile, then install a run built from it.
   appModel.stages = new Map([
     [
       2,

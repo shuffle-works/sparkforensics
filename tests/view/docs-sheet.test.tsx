@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { store } from '@/store/store';
@@ -9,6 +9,10 @@ import { DocsSheet } from '@/view/DocsSheet';
 import { TagBadge } from '@/view/ImpactBadge';
 import { docsUrl } from '@sparkforensics/core/docs-config.ts';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import { runState } from './_shared/run';
+
+// The badge reads the doc anchors of its finding type from the installed run's interpretation.
+beforeEach(() => store.setState(runState()));
 
 // The docs panel resizes via react-resizable-panels, which constructs a
 // ResizeObserver on mount; jsdom has none. A no-op stub is enough (the panel

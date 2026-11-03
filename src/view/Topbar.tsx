@@ -17,7 +17,7 @@ import { FileSwitcher } from '@/view/FileSwitcher';
 import { GraphViewPickerDialog, type GraphViewPickerEntry } from '@/view/GraphViewPickerDialog';
 import { KeyboardShortcutsDialog } from '@/view/KeyboardShortcutsDialog';
 import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensityControl';
-import { store, useStore } from '@/store/store';
+import { selectAppModel, selectCatalog, store, useStore } from '@/store/store';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
@@ -137,9 +137,9 @@ export function Topbar({
   sectionControls,
   leadingContent,
 }: TopbarProps) {
-  const app = useStore((s) => s.appModel.app);
-  const catalog = useStore((s) => s.catalog);
-  const skippedLines = useStore((s) => s.skippedLines);
+  const app = useStore((s) => s.run?.appModel.app ?? null);
+  const catalog = useStore(selectCatalog);
+  const skippedLines = useStore((s) => s.run?.appModel.skippedLines ?? 0);
   const exportMode = useStore((s) => s.exportMode);
   const { theme, toggle } = useTheme();
   const moreOptionsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -149,7 +149,7 @@ export function Topbar({
   // run to be snapshotted as the baseline.
   const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
-  const appModel = useStore((s) => s.appModel);
+  const appModel = useStore(selectAppModel);
   const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, filterFindings(catalog, emptySelection())), [appModel, catalog]);
   const [graphPickerOpen, setGraphPickerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);

@@ -6,6 +6,7 @@ import App from '@/App';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { testFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 vi.mock('@sparkforensics/core/recent-files.ts', () => ({
   isSupported: () => false,
@@ -35,8 +36,7 @@ function renderRun(url: string) {
   };
   store.setState({
     status: 'ready',
-    appModel,
-    catalog: [testFinding({ type: 'coldStart', value: 12, impactBand: 'info', recommendation: 'Warm the cluster.' })],
+    ...runState({ appModel, catalog: [testFinding({ type: 'coldStart', value: 12, impactBand: 'info', recommendation: 'Warm the cluster.' })] }, 'file-a'),
     activeFileId: 'file-a',
     widgetDensity: 'advanced',
   });

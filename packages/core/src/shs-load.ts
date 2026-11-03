@@ -3,7 +3,6 @@ import { fetchShsEventLog } from './proxy.js';
 import { decodeShsArchive } from './parser-worker.ts';
 import { collectViaDispatch } from './cli/collect-run.ts';
 import { nodeArchiveCodecs } from './cli/native-zstd.ts';
-import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { mcpError } from './mcp-error.ts';
 import type { AppModel } from './types.ts';
 
@@ -113,6 +112,5 @@ export async function resolveFromShs(
   if (!fetched.ok) throw mcpError(fetched.code, `SHS fetch failed: ${fetched.code}`);
   const zipBytes = await readArchiveBytes(fetched.upstream, maxArchiveBytes, idleTimeoutMs);
   const { appModel, skippedLines } = await collectShsAppModel(zipBytes);
-  appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
   return { appModel, skippedLines };
 }

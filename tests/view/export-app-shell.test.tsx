@@ -5,11 +5,11 @@ import { ExportApp } from '@/export/ExportApp';
 import { hydrateExportStore } from '@/export/hydrate-store';
 import { UnsupportedPayload } from '@/export/UnsupportedPayload';
 import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { store, emptyAppModel } from '@/store/store';
 import { DocsLink, DocsProvider } from '@/view/DocsContext';
 import { TagBadge } from '@/view/ImpactBadge';
+import { makeRun, runState } from './_shared/run';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS), so the shell renders
 // against the stand-ins an exported file ships. startLoad stays a spy for the drop test.
@@ -36,7 +36,7 @@ beforeEach(() => {
   store.setState({
     exportMode: true,
     status: 'ready',
-    appModel: { ...emptyAppModel(), app: { name: 'Test App' } },
+    ...runState({ appModel: { ...emptyAppModel(), app: { name: 'Test App' } }, taskData: { kind: 'none' } }),
   });
 });
 
@@ -106,7 +106,7 @@ test('renders the payload\'s own verdict and names what produced the file', asyn
     type: 'spill', stageId: 3, impactBand: 'warning', recommendation: 'Raise executor memory.',
     impactEstimate: { basis: 'serial', wallClock: { low: 4000, high: 4000 }, estimateMethod: 'measured' },
   }];
-  const interpretation = interpretRun(emptyAppModel(), catalog, []);
+  const { interpretation } = makeRun({ catalog });
   const data = {
     schemaVersion: EXPORT_DATA_SCHEMA_VERSION,
     provenance: { coreVersion: '0.1.0', buildId: '0123456789abcdef0123', producer: 'sparkforensics-analyze 9.9.9' },

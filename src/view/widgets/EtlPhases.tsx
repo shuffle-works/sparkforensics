@@ -1,8 +1,7 @@
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { useInterpretation } from '@/view/interpretation';
-import type { InterpretationState } from '@/store/store';
+import { useInterpretation, type InterpretationState } from '@/view/interpretation';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 
 /** Whether the run has attributable time in any phase; the grid mounts the tile only then. */

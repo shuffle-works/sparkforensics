@@ -14,7 +14,8 @@ function readyAppModel() {
   return {
     ...emptyAppModel(),
     app: { startTime: 0, endTime: 60_000 },
-    stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 1000 }], [2, { id: 2, submittedAt: 1000, completedAt: 2000 }]]),
+    // Stage 1 wrote shuffle bytes, which a Shuffle I/O row keeps beside the read its line states.
+    stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 1000, shuffleWriteBytes: 1024 }], [2, { id: 2, submittedAt: 1000, completedAt: 2000 }]]),
   };
 }
 

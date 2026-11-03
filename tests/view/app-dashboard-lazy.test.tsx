@@ -38,12 +38,12 @@ vi.mock('@sparkforensics/core/recent-files.ts', () => ({
 }));
 
 import App from '@/App';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
 
 beforeEach(() => {
   store.setState({
-    appModel: emptyAppModel(),
-    catalog: [],
+    run: null,
+    runKey: null,
     status: 'idle',
     shsParsing: false,
     errorMessage: null,

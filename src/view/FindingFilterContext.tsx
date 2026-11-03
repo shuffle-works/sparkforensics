@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -35,6 +34,11 @@ function toggled<T>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
+// Providers currently mounted. A provider that renders while another is still mounted replaces a
+// run (`DashboardRoute` is keyed by run), and the address bar still holds the old run's params until
+// that provider unmounts, so the new one starts with no filter instead of reading them.
+let mountedProviders = 0;
+
 /**
  * Owns the board-wide finding filter and keeps it in sync with the URL. Mirrors
  * StageDetailContext's lightweight createContext + useState idiom. Seeded only
@@ -44,18 +48,16 @@ function toggled<T>(set: Set<T>, value: T): Set<T> {
  */
 export function FindingFilterProvider({
   options,
-  fileId,
   children,
 }: {
   options: FilterOptions;
-  /** Identity of the loaded file. Switching files is a fresh investigation, so
-   * the previous file's filter is dropped rather than silently applied. */
-  fileId?: string | null;
   children: ReactNode;
 }) {
-  const [selection, setSelection] = useState<FilterSelection>(() =>
-    parseFilterSelection(typeof window === 'undefined' ? '' : window.location.search, options),
-  );
+  const [selection, setSelection] = useState<FilterSelection>(() => (
+    mountedProviders > 0
+      ? emptySelection()
+      : parseFilterSelection(typeof window === 'undefined' ? '' : window.location.search, options)
+  ));
 
   // Mirror the active selection into the URL. Runs on mount (idempotent
   // normalization) and every change; always replaceState so history never grows.
@@ -66,25 +68,14 @@ export function FindingFilterProvider({
     window.history.replaceState(window.history.state, '', url);
   }, [selection]);
 
-  // A different loaded file is a fresh investigation: clear the previous file's
-  // filter (the URL-sync effect above then strips its query params). Skips the
-  // initial mount so a deep-linked URL still seeds the first file. Keys on the
-  // stable file identity, not `catalog`, so a same-file catalog refresh keeps
-  // the active filter. Covers the cached-restore path, where the dashboard
-  // never unmounts across a file switch.
-  const fileIdRef = useRef(fileId);
-  useEffect(() => {
-    if (fileIdRef.current === fileId) return;
-    fileIdRef.current = fileId;
-    setSelection(emptySelection());
-  }, [fileId]);
-
   // On unmount (a fresh parse tears the dashboard down and remounts it for the
   // next file), strip our params so the remount seeds a clean slate instead of
   // re-applying the previous file's filter from a stale URL. A genuine page
   // reload re-reads the address bar, so deep-links still restore.
   useEffect(() => {
+    mountedProviders += 1;
     return () => {
+      mountedProviders -= 1;
       if (typeof window === 'undefined') return;
       const url = `${window.location.pathname}${window.location.hash}`;
       window.history.replaceState(window.history.state, '', url);

@@ -7,7 +7,7 @@ import {
   selectTriageTarget,
   selectTriageTargetForFinding,
 } from '../../src/view/triage-target';
-import type { InterpretationState } from '@/store/store';
+import type { InterpretationState } from '../../src/view/interpretation';
 import { installInterpretation } from './_shared/interpretation';
 
 // The ranking comes from the interpretation's savingsRank, so each catalog is interpreted the

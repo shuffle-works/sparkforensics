@@ -22,7 +22,7 @@ filter (`matchesFilter(f, emptySelection())`) and counted as "N info notes
 hidden", unless the `showInfo` prop is set (`Dashboard.tsx` sets it when Filter
 findings selects the info band). The grouping and order are computed once by `interpretRun`
 (`interpretStages` in `packages/core/src/run-interpretation.ts`, shipped as
-`stages[id].{findingIndexes,typeOrder}`); the dialog only renders them. Show evidence closes the dialog and calls the optional `onRoute` prop
+`stages[id].{findingIds,typeOrder}`); the dialog only renders them. Show evidence closes the dialog and calls the optional `onRoute` prop
 (`routeToVisible` from `Dashboard.tsx`, which clears any board filter that
 hides the target, as the verdict's own route does);
 `finalFocus` skips returning focus to the opener in that case, so the route's

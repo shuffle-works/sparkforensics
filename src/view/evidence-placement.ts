@@ -1,6 +1,6 @@
-import type { InterpretationState } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { findingAt, eligibleFindings } from '@/view/interpretation';
+import { eligibleFindings, findingById } from '@/view/interpretation';
 import { triageTargetFor } from '@/view/triage-target';
 
 export type EvidencePlacement =
@@ -20,7 +20,7 @@ export function evidencePlacement(
   const targetId = triageTargetFor(finding)?.widgetId ?? null;
   const widgetId = targetId && availableWidgetIds.has(targetId) ? targetId : null;
   const stepIndex = interpretation.data.verdict.steps.findIndex(
-    (step) => findingAt(interpretation, step.leadIndex) === finding,
+    (step) => findingById(interpretation, step.leadId) === finding,
   );
   if (stepIndex >= 0) return { kind: 'step', index: stepIndex, widgetId };
   if (eligibleFindings(interpretation).includes(finding)) return { kind: 'row', widgetId };

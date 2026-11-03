@@ -1,14 +1,33 @@
 // @vitest-environment jsdom
 import { test, expect, beforeEach } from 'vitest';
-import { store, emptyAppModel } from '../../src/store/store';
+import { store, selectAppModel, selectCatalog, selectConfigFindings, EMPTY_APP_MODEL } from '../../src/store/store';
+import { makeRun } from './_shared/run';
 
-beforeEach(() => store.setState({ ...store.getState(), catalog: [], appModel: emptyAppModel() }));
+beforeEach(() => store.setState({ ...store.getState(), run: null, runKey: null }));
 
-test('setCatalog updates only catalog slice', () => {
-  const before = store.getState().appModel;
-  store.getState().setCatalog([{ type: 'skew', stageId: 1, impactBand: 'critical' }]);
-  expect(store.getState().catalog).toHaveLength(1);
-  expect(store.getState().appModel).toBe(before); // identity unchanged
+test('installRun installs the run under its key and marks the store ready', () => {
+  const run = makeRun({ catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical' }] });
+  store.getState().installRun(run, 'run-1');
+  expect(store.getState().run).toBe(run);
+  expect(store.getState().runKey).toBe('run-1');
+  expect(store.getState().status).toBe('ready');
+  expect(selectCatalog(store.getState())).toHaveLength(1);
+  expect(selectAppModel(store.getState())).toBe(run.appModel); // identity unchanged
+});
+
+test('installRun seeds the task data cache from a snapshot run and empties it for any other', () => {
+  const stages = new Map([[7, { metrics: [1, 2], fieldNames: ['duration', 'gcTime'] }]]);
+  store.getState().installRun(makeRun({ taskData: { kind: 'snapshot', stages } }), 'run-1');
+  expect(store.getState().taskDataCache.get(7)?.fieldNames).toEqual(['duration', 'gcTime']);
+
+  store.getState().installRun(makeRun({ taskData: { kind: 'none' } }), 'run-2');
+  expect(store.getState().taskDataCache.size).toBe(0);
+});
+
+test('the selectors read an empty model and no findings until a run is installed', () => {
+  expect(selectAppModel(store.getState())).toBe(EMPTY_APP_MODEL);
+  expect(selectCatalog(store.getState())).toEqual([]);
+  expect(selectConfigFindings(store.getState())).toEqual([]);
 });
 
 test('setTaskData fills the lazy cache without replacing the map identity contract', () => {
@@ -32,24 +51,16 @@ test('setTaskDataBatch adds every entry in one state update', () => {
   expect(store.getState().taskDataCache).toBe(before);
 });
 
-test('resetModel clears model, catalog and caches', () => {
-  store.getState().setCatalog([{ type: 'gc', stageId: 2, impactBand: 'warning' }]);
+test('resetModel clears the run, its key and the caches', () => {
+  store.getState().installRun(makeRun({ catalog: [{ type: 'gc', stageId: 2, impactBand: 'warning' }] }), 'run-1');
+  store.getState().setTaskData(7, { metrics: [1], fieldNames: ['duration'] });
   store.getState().resetModel();
-  expect(store.getState().catalog).toEqual([]);
-  expect(store.getState().appModel.stages.size).toBe(0);
-});
-
-test('setConfigFindings updates only the configFindings slice', () => {
-  const before = store.getState().appModel;
-  store.getState().setConfigFindings([{ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', stageId: null }]);
-  expect(store.getState().configFindings).toHaveLength(1);
-  expect(store.getState().appModel).toBe(before); // identity unchanged
-});
-
-test('resetModel clears configFindings alongside catalog', () => {
-  store.getState().setConfigFindings([{ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', stageId: null }]);
-  store.getState().resetModel();
-  expect(store.getState().configFindings).toEqual([]);
+  expect(store.getState().run).toBeNull();
+  expect(store.getState().runKey).toBeNull();
+  expect(store.getState().taskDataCache.size).toBe(0);
+  expect(selectCatalog(store.getState())).toEqual([]);
+  expect(selectConfigFindings(store.getState())).toEqual([]);
+  expect(selectAppModel(store.getState()).stages.size).toBe(0);
 });
 
 test('openPlanGraph sets planGraph.active and stageId', () => {

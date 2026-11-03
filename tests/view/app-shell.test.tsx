@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
 import { store, emptyAppModel } from '@/store/store';
+import { runState } from './_shared/run';
 
 // Mirror the real useIngest contract for the SHS-parsing store flag: every
 // parse routes through begin() (which clears it) and only startLoadFromUrl
@@ -44,8 +45,8 @@ vi.mock('@sparkforensics/core/recent-files.ts', () => ({
 
 beforeEach(() => {
   store.setState({
-    appModel: emptyAppModel(),
-    catalog: [],
+    run: null,
+    runKey: null,
     status: 'idle',
     shsParsing: false,
     errorMessage: null,
@@ -142,7 +143,7 @@ test('switching to a local load during an SHS fetch clears the stale SHS progres
 });
 
 test('ready status shows the dashboard: topbar app name + empty main widget region', async () => {
-  store.setState({ status: 'ready', appModel: { ...emptyAppModel(), app: { name: 'Test App' } } });
+  store.setState({ status: 'ready', ...runState({ appModel: { ...emptyAppModel(), app: { name: 'Test App' } } }) });
   render(<App />);
   // Appears twice: the Topbar name/sub block and the FileSwitcher trigger.
   expect((await screen.findAllByText('Test App')).length).toBeGreaterThan(0);

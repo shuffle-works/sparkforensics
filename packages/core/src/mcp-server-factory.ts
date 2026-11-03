@@ -150,7 +150,7 @@ export function createMcpServer(
       ...formatSchema,
     },
   }, ({ source, runId, redact, include, format, impactBand, type, stageId, view, minBand, maxFindings, cursor }) => diagnoseToolResult(
-    resolveOrCreateRun({ source, runId }).then(({ runId: id }) => paginateDiagnose(
+    resolveOrCreateRun({ source, runId }, { thresholds }).then(({ runId: id }) => paginateDiagnose(
       diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds, generator, view: view ?? 'compact', minBand, maxFindings }),
       { cursor },
     )),
@@ -160,7 +160,7 @@ export function createMcpServer(
     description: 'App/stage/job/sql counts, duration, and how the run ended (failed/total jobs and Spark\'s first-line failure reason) for a run, no findings.',
     inputSchema: { ...runRefSchema, redact: z.boolean().optional() },
   }, ({ source, runId, redact }) => toolResult(
-    resolveOrCreateRun({ source, runId }).then(({ runId: id }) => getRunSummary(id, { redact, thresholds })),
+    resolveOrCreateRun({ source, runId }, { thresholds }).then(({ runId: id }) => getRunSummary(id, { redact, thresholds })),
   ));
 
   server.registerTool('compare_runs', {

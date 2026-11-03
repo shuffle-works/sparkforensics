@@ -2,11 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectRun } from '../src/cli/collect-run.js';
-import { analyze, auditConfig } from '../src/analyzer.js';
-import { deriveEvidenceAvailability } from '../src/evidence-availability.js';
+import { analyzeRun } from '../src/analyzed-run.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { buildExportRunData, CORE_VERSION } from '../src/export-data.js';
-import { interpretRun } from '../src/run-interpretation.js';
 import { resolveOrCreateRun, diagnoseRun } from '../src/mcp-tools.js';
 import { buildComparison } from '../src/run-comparison.js';
 import { computeRunMetrics } from '../src/run-metrics.js';
@@ -31,23 +29,13 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
     let withCoreTime = 0;
     for (const file of LOGS) {
       const path = join(EXTERNAL_DIR, file);
-      const { appModel, skippedLines } = await collectRun(path);
-      appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-
-      // Dashboard: what useIngest stores from analyze()/auditConfig().
-      const catalog = analyze(
-        appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-        appModel.jobs, appModel.sql, appModel.runAggregates,
-      );
-      const config = auditConfig(appModel.app, appModel.stages);
+      // Dashboard: the run useIngest installs, which analyzeRun builds.
+      const run = analyzeRun((await collectRun(path)).appModel);
+      const { appModel, catalog, configFindings: config, interpretation } = run;
       const dashboard = new Map([...catalog, ...config].map((f) => [f.id, shared(f)]));
 
       // HTML export: the findings it ships for the dashboard bundle to render.
-      const interpretation = interpretRun(appModel, catalog, config);
-      const exported = buildExportRunData(
-        appModel, catalog, config, skippedLines, interpretation,
-        { coreVersion: CORE_VERSION, buildId: 'parity', producer: 'parity-test' },
-      );
+      const exported = buildExportRunData(run, { coreVersion: CORE_VERSION, buildId: 'parity', producer: 'parity-test' });
       const exportedFindings = new Map([...exported.catalog, ...exported.configFindings].map((f) => [f.id, shared(f)]));
 
       // CLI json and markdown path, and MCP diagnose_run.
@@ -67,8 +55,8 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
       // board shows are the ones the CLI and MCP rows carry.
       const cliById = new Map(json.findings.map((r) => [r.id, r]));
       const mcpById = new Map(mcp.map((r) => [r.id, r]));
-      [...catalog, ...config].forEach((f, i) => {
-        const { board, meaning } = interpretation.savings[i];
+      [...catalog, ...config].forEach((f) => {
+        const { board, meaning } = interpretation.savings[f.id];
         if (board == null || f.impactEstimate?.wallClock) return;
         for (const [surface, row] of [['cli', cliById.get(f.id)], ['mcp', mcpById.get(f.id)]]) {
           expect({ impact: row.impact, impactMeaning: row.impactMeaning }, `${file} ${surface} ${f.type} ${f.id}`)
@@ -99,11 +87,7 @@ const METRIC_LOGS = [
 // share. The comparison of a run with itself exposes its totals as baseline values.
 describe.each(METRIC_LOGS)('surface parity: %s', (path) => {
   it.skipIf(!path)('reads one figure per name across metrics, report and comparison', async () => {
-    const { appModel } = await collectRun(path);
-    const catalog = analyze(
-      appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-      appModel.jobs, appModel.sql, appModel.runAggregates,
-    );
+    const { appModel, catalog } = analyzeRun((await collectRun(path)).appModel);
     const metrics = computeRunMetrics(appModel);
     const { json: report } = buildEvidenceReport(appModel);
     const side = { label: 'run', appModel, catalog };

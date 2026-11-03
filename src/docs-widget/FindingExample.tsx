@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from 'react';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { Table, TableBody } from '@/components/ui/table';
-import { useStore, useWidgetDensity } from '@/store/store';
+import { selectAppModel, selectCatalog, selectConfigFindings, useStore, useWidgetDensity } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { EvidenceInitiallyOpenContext } from '@/view/InlineEvidenceContext';
 import { StepCodesShownContext } from '@/view/StepCode';
@@ -19,9 +19,9 @@ const NOTHING_STATED: readonly Finding[] = [];
 /** One finding of the loaded run, drawn the way the dashboard draws it: as a verdict step when the
  * run's verdict leads with it, else as a Findings row, with its evidence panel open. */
 export function FindingExample({ findingId }: { findingId: string }) {
-  const appModel = useStore((s) => s.appModel);
-  const catalog = useStore((s) => s.catalog);
-  const configFindings = useStore((s) => s.configFindings);
+  const appModel = useStore(selectAppModel);
+  const catalog = useStore(selectCatalog);
+  const configFindings = useStore(selectConfigFindings);
   const activeFileId = useStore((s) => s.activeFileId);
   const interpretation = useInterpretation();
   const density = useWidgetDensity();
