@@ -99,10 +99,16 @@ Example call:
 }
 ```
 
+The response names the runs it covers: `candidateRunId` is the run the budgets were evaluated on,
+and `baselineRunId` is present with two runs. `runId` is the id of the first run, the baseline with
+two runs. It is deprecated and removed in 0.13.0.
+
 Example response:
 
 ```json
 {
+  "baselineRunId": "aaaa1111-...",
+  "candidateRunId": "bbbb2222-...",
   "runId": "aaaa1111-...",
   "results": [
     {

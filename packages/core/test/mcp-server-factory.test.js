@@ -187,11 +187,11 @@ describe('createMcpServer', () => {
     }
   });
 
-  it('says in the tool descriptions that runId differs per tool by design', async () => {
+  it('says in the tool descriptions that a run id differs per server process', async () => {
     const client = await connectedClient(createMcpServer());
     const { tools } = await client.listTools();
     for (const name of ['diagnose_run', 'compare_runs', 'evaluate_budgets']) {
-      expect(tools.find((t) => t.name === name).description).toMatch(/differs per tool by design/);
+      expect(tools.find((t) => t.name === name).description).toMatch(/differs per server process/);
     }
   });
 

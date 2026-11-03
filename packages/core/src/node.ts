@@ -29,3 +29,4 @@ export { runOutputBlocks } from './run-output.ts';
 export { buildEffectiveConf } from './effective-conf.ts';
 
 export const loadMcpServerFactory = () => import('./mcp-server-factory.ts');
+export { DEPRECATIONS, deprecationNote, type Deprecation } from './deprecations.ts';

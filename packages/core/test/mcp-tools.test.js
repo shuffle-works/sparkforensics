@@ -845,10 +845,10 @@ describe('compareRuns', () => {
     const b = tmpEventLogWithDuration('app-b', 1000);
     try {
       const result = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } });
-      expect(typeof result.runIdA).toBe('string');
-      expect(typeof result.runIdB).toBe('string');
-      expect(result.findingsDelta).toEqual({ introduced: [], resolved: [], changed: [] });
-      const wallClock = result.metricDeltas.find((m) => m.key === 'wallClock');
+      expect(typeof result.baselineRunId).toBe('string');
+      expect(typeof result.candidateRunId).toBe('string');
+      expect(result.findings).toEqual({ introduced: [], resolved: [], changed: [] });
+      const wallClock = result.metrics.find((m) => m.key === 'wallClock');
       expect(wallClock.baseline).toBe(2000);
       expect(wallClock.candidate).toBe(1000);
       expect(wallClock.direction).toBe('improvement');
@@ -888,7 +888,7 @@ describe('compareRuns', () => {
     try {
       const { runId: runIdB } = await resolveOrCreateRun({ source: { path: b.path } });
       const result = await compareRuns({ source: { path: a.path } }, { runId: runIdB });
-      expect(result.runIdB).toBe(runIdB);
+      expect(result.candidateRunId).toBe(runIdB);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
       rmSync(b.dir, { recursive: true, force: true });
@@ -929,11 +929,11 @@ describe('compareRuns', () => {
     const candidate = tmpEventLogWithStage('app-b', 'collect at ip-10-1-2-3.ec2.internal.scala:42', 2000);
     try {
       const plain = await compareRuns({ source: { path: baseline.path } }, { source: { path: candidate.path } });
-      const introduced = plain.findingsDelta.introduced.find((f) => f.stages.length > 0);
+      const introduced = plain.findings.introduced.find((f) => f.stages.length > 0);
       expect(introduced.stages[0]).toContain('ip-10-1-2-3.ec2.internal');
 
       const redacted = await compareRuns({ source: { path: baseline.path } }, { source: { path: candidate.path } }, { redact: true });
-      const redactedIntroduced = redacted.findingsDelta.introduced.find((f) => f.rule === introduced.rule);
+      const redactedIntroduced = redacted.findings.introduced.find((f) => f.rule === introduced.rule);
       expect(redactedIntroduced.stages[0]).not.toContain('ip-10-1-2-3.ec2.internal');
       expect(redactedIntroduced.stages[0]).toMatch(/host-\d+/);
     } finally {
@@ -1037,6 +1037,8 @@ describe('evaluateBudgetsForRun', () => {
       const { runId: candidateId } = await resolveOrCreateRun({ source: { path: candidate.path } });
       const result = await evaluateBudgetsForRun({ runId: baselineId }, { maxRuntimeMs: 1500 }, { runId: candidateId });
       expect(result).toEqual({
+        baselineRunId: baselineId,
+        candidateRunId: candidateId,
         runId: baselineId,
         results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }],
         violated: true,
@@ -1150,14 +1152,14 @@ describe('diagnoseRun run blocks', () => {
 });
 
 describe('compareRuns CLI-named fields', () => {
-  it('reports metrics and findings, and repeats them as the deprecated metricDeltas and findingsDelta', async () => {
+  it('reports metrics and findings, without the removed metricDeltas and findingsDelta', async () => {
     const a = tmpEventLogWithDuration('app-a', 2000);
     const b = tmpEventLogWithDuration('app-b', 1000);
     try {
       const result = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } });
       expect(result.metrics.find((m) => m.key === 'wallClock')).toMatchObject({ baseline: 2000, candidate: 1000 });
-      expect(result.metricDeltas).toEqual(result.metrics);
-      expect(result.findingsDelta).toEqual(result.findings);
+      expect(result).not.toHaveProperty('metricDeltas');
+      expect(result).not.toHaveProperty('findingsDelta');
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
       rmSync(b.dir, { recursive: true, force: true });

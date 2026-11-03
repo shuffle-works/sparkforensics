@@ -189,9 +189,7 @@ JSON and the MCP tools call the same core functions:
   metric rows, and `comparisonOutput()` projects it, so the CLI, MCP and the
   dashboard report the same block.
   That projection is the CLI's
-  `comparison` object and the shared part of `compare_runs`. `compare_runs` also
-  returns `metricDeltas` and `findingsDelta`, which repeat `metrics` and
-  `findings` under other key names.
+  `comparison` object and the shared part of `compare_runs`.
 - `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
   `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
   the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
@@ -214,7 +212,7 @@ by code, while the CLI maps failures to exit codes and owns stdout. Adding a fie
 to the projection adds it to both. `packages/cli/test/parity.test.js` runs the CLI's
 `main()` and the MCP tools through an in-memory client on public corpus logs,
 flattens both outputs and diffs their key sets and values. The differences that
-stay (the MCP run handles, the `metricDeltas` and `findingsDelta` repeats, the CLI's `schemaVersion`)
+stay (the MCP run handles, the CLI's `schemaVersion`)
 are in a commented allowlist in that file, and an entry that explains no
 difference fails the test.
 

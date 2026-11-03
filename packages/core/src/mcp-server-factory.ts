@@ -14,6 +14,7 @@ import { IMPACT_BANDS } from './impact-band-order.ts';
 import { COMPARISON_METRIC_KEYS } from './run-comparison.ts';
 import { FINDING_TYPES } from './cli/flag-values.ts';
 import { listDetectors } from './detector-listing.ts';
+import { deprecationNote } from './deprecations.ts';
 
 // z.enum wants a non-empty tuple; these lists are never empty.
 const nonEmpty = <T extends string>(values: readonly T[]) => values as [T, ...T[]];
@@ -113,7 +114,7 @@ function toolResult<T extends object>(promise: Promise<T>, onError = toolErrorRe
 const UNKNOWN_VERSION = '0.0.0';
 
 // Shared by every tool that returns a run handle.
-const RUN_ID_NOTE = 'runId is a handle for the run this server process has cached. It differs per tool by design (compare_runs returns runIdA and runIdB, evaluate_budgets the runId of its first run) and per server process, so match runs by app.id and app.attemptId, not by runId.';
+const RUN_ID_NOTE = 'A run id is a handle for the run this server process has cached. It differs per server process, so match runs by app.id and app.attemptId, not by run id.';
 
 /** The tools the server registers, by name. `createMcpServer` throws when what it registers differs
  * from this list, so a tool cannot be added or dropped without it. */
@@ -176,10 +177,13 @@ export function createMcpServer(
   ));
 
   registerTool('compare_runs', {
-    description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings), the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage), and comparability: the configuration differences, plan equality, data volume, executor capacity and the factors that bridge the wall-clock difference. confidence is ok, low or insufficient. metricDeltas and findingsDelta repeat metrics and findings under their earlier names and will be removed. The result names both Spark applications (baselineApp, candidateApp) and the build that wrote it (generator). Each findings row lists its stage names in stages and the same names without call-site directories in stageLabels. ' + RUN_ID_NOTE,
+    description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings), the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage), and comparability: the configuration differences, plan equality, data volume, executor capacity and the factors that bridge the wall-clock difference. confidence is ok, low or insufficient. The result names both Spark applications (baselineApp, candidateApp) and the build that wrote it (generator). Each findings row lists its stage names in stages and the same names without call-site directories in stageLabels. ' + RUN_ID_NOTE,
     inputSchema: {
-      runIdA: z.string().optional(), sourceA: sourceSchema.optional(),
-      ...secondRunRefSchema,
+      baselineRunId: z.string().optional().describe('The baseline run, by the run id of an earlier call.'),
+      candidateRunId: z.string().optional().describe('The candidate run, by the run id of an earlier call.'),
+      runIdA: z.string().optional().describe(`Same as baselineRunId. ${deprecationNote('compare_runs input', 'runIdA')}`),
+      runIdB: z.string().optional().describe(`Same as candidateRunId. ${deprecationNote('compare_runs input', 'runIdB')}`),
+      sourceA: sourceSchema.optional(), sourceB: sourceSchema.optional(),
       redact: z.boolean().optional(),
       include: z.array(z.enum(['stagePairs'])).optional()
         .describe('Extra blocks to return. stagePairs: one row per paired stage with its deltas, which can be large.'),
@@ -197,8 +201,8 @@ export function createMcpServer(
         .describe('Relative task-count change above which the verdict calls out the task count change (default 0.25). Sets comparability.caveats.taskCount.'),
       ...formatSchema,
     },
-  }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, executorRatio, unmatchedShare, taskCountChange, format }) => toolResultWithMarkdown(
-    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange }, include, generator }),
+  }, ({ baselineRunId, candidateRunId, runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, executorRatio, unmatchedShare, taskCountChange, format }) => toolResultWithMarkdown(
+    compareRuns({ runId: baselineRunId ?? runIdA, source: sourceA }, { runId: candidateRunId ?? runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange }, include, generator }),
   ));
 
   registerTool('evaluate_budgets', {

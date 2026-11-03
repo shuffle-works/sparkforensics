@@ -53,13 +53,14 @@ export interface RunSummary extends RunOutcomeSummary {
 }
 // compareRuns returns the shared comparison projection (comparison-output.ts, the CLI's `comparison`
 // object), not the full raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
-// `verdict` is the dashboard comparison page's headline (baseline = runIdA, candidate = runIdB).
+// `verdict` is the dashboard comparison page's headline.
 export interface McpCompareRunsResult extends ComparisonOutput {
+  baselineRunId: string;
+  candidateRunId: string;
+  /** @deprecated Same as `baselineRunId`; see `DEPRECATIONS`. */
   runIdA: string;
+  /** @deprecated Same as `candidateRunId`; see `DEPRECATIONS`. */
   runIdB: string;
-  /** @deprecated Aliases of `findings` and `metrics`, kept for compatibility. */
-  findingsDelta: ComparisonOutput['findings'];
-  metricDeltas: ComparisonOutput['metrics'];
 }
 
 function envInt(name: string, fallback: number): number {
@@ -80,7 +81,7 @@ const byCacheKey = new Map<string, string>(); // cacheKey -> runId
 // its runs' TTL and eviction (deleteRunEntry), and the map is capped on its own: a comparison holds
 // a row per paired stage, and 8 runs allow 56 ordered pairs.
 const COMPARISON_CACHE_CAP = 16;
-interface ComparisonCacheEntry { runIdA: string; runIdB: string; built: ReturnType<typeof buildComparisonOutput> }
+interface ComparisonCacheEntry { baselineRunId: string; candidateRunId: string; built: ReturnType<typeof buildComparisonOutput> }
 const comparisonCache = new Map<string, ComparisonCacheEntry>();
 // Threshold overrides are one fixed object per server process (or DEFAULT for none): identity keys them.
 const thresholdsIds = new WeakMap<object, number>();
@@ -157,7 +158,7 @@ function deleteRunEntry(id: string, entry: CacheEntry): void {
   byRunId.delete(id);
   // A comparison outlives neither of its runs: its entry goes with the first one evicted.
   for (const [key, cached] of comparisonCache) {
-    if (cached.runIdA === id || cached.runIdB === id) comparisonCache.delete(key);
+    if (cached.baselineRunId === id || cached.candidateRunId === id) comparisonCache.delete(key);
   }
   if (byCacheKey.get(entry.cacheKey) === id) byCacheKey.delete(entry.cacheKey);
 }
@@ -510,30 +511,30 @@ export async function compareRuns(
     throw mcpError('invalid-argument', `ignoreConf: ${(e as Error).message}`);
   }
   const [
-    { runId: runIdA, run: runA },
-    { runId: runIdB, run: runB },
+    { runId: baselineRunId, run: runA },
+    { runId: candidateRunId, run: runB },
   ] = await Promise.all([resolveAndAnalyze(a, opts?.thresholds), resolveAndAnalyze(b, opts?.thresholds)]);
 
   // Comparison reads findings and metrics from `catalog` and appModel.stages/sql, both fully populated,
   // and no per-task data, so it produces the same output as the dashboard.
   const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
-  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
+  const cacheKey = JSON.stringify([baselineRunId, candidateRunId, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
   let built = comparisonCache.get(cacheKey)?.built;
   if (built) {
     // Re-insert so the oldest entry is the least recently used.
     comparisonCache.delete(cacheKey);
-    comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+    comparisonCache.set(cacheKey, { baselineRunId, candidateRunId, built });
   } else {
     built = buildComparisonOutput(
-      { label: runIdA, ...runA },
-      { label: runIdB, ...runB },
+      { label: baselineRunId, ...runA },
+      { label: candidateRunId, ...runB },
       { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, caveatThresholds: opts?.caveatThresholds, view, generator: opts?.generator },
     );
     // Either run can be evicted while the other one is still being read or parsed (the awaits
     // above): an entry for a run that is gone would outlive its eviction, so it is only kept
     // while both are cached.
-    if (byRunId.has(runIdA) && byRunId.has(runIdB)) {
-      comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+    if (byRunId.has(baselineRunId) && byRunId.has(candidateRunId)) {
+      comparisonCache.set(cacheKey, { baselineRunId, candidateRunId, built });
       while (comparisonCache.size > COMPARISON_CACHE_CAP) comparisonCache.delete(comparisonCache.keys().next().value!);
     }
   }
@@ -542,11 +543,11 @@ export async function compareRuns(
   const output = structuredClone(built.output);
 
   return {
-    runIdA,
-    runIdB,
+    baselineRunId,
+    candidateRunId,
+    runIdA: baselineRunId,
+    runIdB: candidateRunId,
     ...output,
-    findingsDelta: output.findings,
-    metricDeltas: output.metrics,
     ...tunedField(opts?.thresholds),
     ...(opts?.markdown ? { markdown: renderComparisonMarkdown(comparison, output.verdict, tunedDetectors(opts?.thresholds)) } : {}),
   };
@@ -564,7 +565,13 @@ export async function evaluateBudgetsForRun(
   secondary?: RunRef,
   opts?: { thresholds?: ThresholdOverrides },
 ): Promise<{
-  runId: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean;
+  /** Present with two runs: the regression baseline. */
+  baselineRunId?: string;
+  /** The run the budgets were evaluated on. */
+  candidateRunId: string;
+  /** @deprecated The first run's id, the baseline with two runs; see `DEPRECATIONS`. */
+  runId: string;
+  results: BudgetResult[]; violated: boolean; inconclusive: boolean;
   tunedThresholds?: Record<string, TunedThresholds>;
 }> {
   const pairingError = regressionPairingError(budgets);
@@ -607,5 +614,11 @@ export async function evaluateBudgetsForRun(
     appModel: candidate.run.appModel, catalog: comparedFindings(candidate.run), budgets, comparison, thresholds: opts?.thresholds,
   });
 
-  return { runId: first.runId, results, violated, inconclusive, ...tunedField(opts?.thresholds) };
+  return {
+    ...(baseline ? { baselineRunId: baseline.runId } : {}),
+    candidateRunId: candidate.runId,
+    runId: first.runId,
+    results, violated, inconclusive,
+    ...tunedField(opts?.thresholds),
+  };
 }

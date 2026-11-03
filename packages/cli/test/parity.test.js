@@ -45,11 +45,11 @@ const RUN_REPORT_ALLOWED = [
 // CLI `comparison` against MCP compare_runs.
 const COMPARISON_ALLOWED = [
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
-  { path: 'runIdA', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
-  { path: 'runIdB', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
+  { path: 'baselineRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
+  { path: 'candidateRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
+  { path: 'runIdA', only: 'mcp', reason: 'Deprecated alias of `baselineRunId`; checked equal below.' },
+  { path: 'runIdB', only: 'mcp', reason: 'Deprecated alias of `candidateRunId`; checked equal below.' },
   { path: 'stagePairs', only: 'cli', reason: 'One row per paired stage can be large, so compare_runs returns it only with include: [\'stagePairs\']; the CLI always does. Checked equal with that include below.' },
-  { path: 'metricDeltas', only: 'mcp', reason: 'Deprecated alias of `metrics`, kept for one release; checked equal to `metrics` below.' },
-  { path: 'findingsDelta', only: 'mcp', reason: 'Deprecated alias of `findings`, kept for one release; checked equal to `findings` below.' },
 ];
 
 // CLI NDJSON `budgets` against MCP evaluate_budgets `results`: nothing differs.
@@ -221,9 +221,11 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
       // The two CLI outputs are the same pair of blocks.
       expect(single).toEqual({ candidate: line.candidate, comparison: line.comparison });
-      // The deprecated MCP names carry the same values as the CLI names.
-      expect(viaMcp.metricDeltas).toEqual(viaMcp.metrics);
-      expect(viaMcp.findingsDelta).toEqual(viaMcp.findings);
+      // The deprecated run ids carry the same values as the new ones, and the removed repeats are gone.
+      expect(viaMcp.runIdA).toBe(viaMcp.baselineRunId);
+      expect(viaMcp.runIdB).toBe(viaMcp.candidateRunId);
+      expect(viaMcp).not.toHaveProperty('metricDeltas');
+      expect(viaMcp).not.toHaveProperty('findingsDelta');
     });
 
     // Every field of the comparison block, on both surfaces and in the dashboard's compareRuns.
