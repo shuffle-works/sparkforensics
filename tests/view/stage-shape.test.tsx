@@ -27,13 +27,15 @@ function makeAppModel(stageIds: number[]): AppModel {
   };
 }
 
+const RULE_METRIC = { lowParallelism: 'pRatio', dataExplosion: 'oiRatio', taskStageSkew: 'taskStageSkew' } as const;
+
 function stageShapeFinding(
   stageId: number,
   rule: FindingOf<'stageShape'>['rule'],
   value: number,
   impactBand: Finding['impactBand'] = 'info',
 ): Finding {
-  return testFinding({ type: 'stageShape', stageId, impactBand, rule, metric: rule, value, recommendation: 'r' });
+  return testFinding({ type: 'stageShape', stageId, impactBand, rule, metric: RULE_METRIC[rule], value, recommendation: 'r' });
 }
 
 function slowHostFinding(stageId: number, host: string, ratio: number, hostTaskShare: number): Finding {
@@ -88,7 +90,7 @@ describe('StageShape', () => {
 
   it('renders nothing when the catalog has no stageShape findings', () => {
     const appModel = makeAppModel([1]);
-    const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning', metric: 'ratio', value: 8 }];
+    const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning', metric: 'P95/median', value: 8 }];
     const { container } = render(<StageShape appModel={appModel} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
     expect(container).toBeEmptyDOMElement();
   });

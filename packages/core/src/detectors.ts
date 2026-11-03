@@ -37,6 +37,7 @@ import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import { adviseFailureGroup, adviseStageFailure } from './failure-advice.ts';
+import type { MetricName } from './finding-presentation.ts';
 import type {
   ExecutorAddedEvent, ExecutorRemovedEvent, Finding, FixEffort, ImpactEstimate, Job, PlanNode, RawWasteFigure, RddInfo,
   RunAggregates, SparkAppInfo, SqlExecution, TailAttribution,
@@ -2444,7 +2445,7 @@ export const DETECTORS = [
       const own = stragglerGate(stage, ctx, thresholds);
       if (own === null && !fromSkewGate) return null;
       // Through skew's gate alone the tail can be a share too small to state, so skew's ratio describes it.
-      const reported = own !== null
+      const reported: { metric: MetricName; value: number; unit: 'count' | 'pct' | 'ratio'; detail: string } = own !== null
         ? { metric: own.useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare', value: own.value, unit: own.useSpeculativeMetric ? 'count' as const : 'pct' as const, detail: own.detail }
         : { metric: skewTail!.metric, value: Math.round(skewTail!.ratio * 10) / 10, unit: 'ratio' as const,
           detail: `Task duration ratio (${skewTail!.metric}) is ${Math.round(skewTail!.ratio * 10) / 10}×` };

@@ -201,7 +201,7 @@ describe('Skew', () => {
 
   it('renders nothing when the catalog has no skew findings', () => {
     const appModel = makeAppModel([1]);
-    const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', metric: 'bytes', value: 1 }];
+    const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', metric: 'shuffleReadBytes', value: 1 }];
     const getTaskData = vi.fn(async () => TASK_DATA);
 
     const { container } = render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);

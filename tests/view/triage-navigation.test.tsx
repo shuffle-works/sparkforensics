@@ -88,7 +88,7 @@ function skewFinding(stageId: number, impactBand: Finding['impactBand']): Findin
     type: 'skew',
     stageId,
     impactBand,
-    metric: 'p95Median',
+    metric: 'P95/median',
     value: 5,
     recommendation: `Rebalance Stage ${stageId}.`,
   };

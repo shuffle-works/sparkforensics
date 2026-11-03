@@ -1,4 +1,4 @@
-import { FINDING_PRESENTATION } from './finding-presentation.ts';
+import { FINDING_PRESENTATION, metricUnit, type MetricName } from './finding-presentation.ts';
 import type { Finding, FindingType, ImpactBand, RawWasteFigure } from './types.ts';
 import type { ExchangeWidth } from './finding-types.ts';
 
@@ -173,23 +173,9 @@ export function formatMetricValue(unit: 'pct' | 'pctFraction' | 'ratio' | 'ms' |
   }
 }
 
-// Finding.metric -> display unit, for the compact plan-graph finding chip. Keyed by the exact
-// `metric` string each per-stage/plan-advisor detector writes (see detectors.ts); a metric this map
-// doesn't cover, or a non-numeric `value` (stageFailed's failure reason, configAudit's config text),
-// yields no magnitude. 'bytes' handles the sub-KB tier formatBytes deliberately lacks; 'minutes'
-// converts to ms so it shares formatDuration's phrasing.
-const FINDING_METRIC_UNIT: Record<string, 'bytes' | 'ms' | 'minutes' | 'ratio' | 'pct' | 'pctFraction' | 'count'> = {
-  shuffleReadBytes: 'bytes', memoryBytesSpilled: 'bytes', shuffleReadMax: 'bytes',
-  avgFileSizeBytes: 'bytes', smallerSideBytes: 'bytes', broadcastBytes: 'bytes',
-  speculationWasteMs: 'ms', retryWasteMs: 'ms', taskDurationP50: 'ms',
-  stageDurationMinutes: 'minutes',
-  'P95/median': 'ratio', 'max/median': 'ratio', pRatio: 'ratio', oiRatio: 'ratio',
-  hostMeanRatio: 'ratio', execMaxMedianRatio: 'ratio',
-  gcPct: 'pct', failureRate: 'pct', stragglerShare: 'pct',
-  hostDurationShare: 'pctFraction', taskStageSkew: 'pctFraction',
-  taskCount: 'count', speculativeTasks: 'count', subtreeOccurrences: 'count',
-};
-
+// The compact plan-graph finding chip shows a metric's value in its unit (metrics.ts). 'bytes'
+// handles the sub-KB tier formatBytes deliberately lacks; 'minutes' and 'seconds' convert to ms so
+// they share formatDuration's phrasing.
 // formatBytes floors at KB (its guarded contract, see partition-sizing.test.tsx); the plan-graph
 // chip is the one place a sub-KB magnitude is meaningful (a smallFiles avgFileSizeBytes can be a
 // few hundred bytes), so render that tier here rather than widening the shared formatter.
@@ -200,13 +186,17 @@ function formatChipBytes(bytes: number): string {
 
 /** Compact magnitude for a finding's plan-graph chip (e.g. "4.2 GB", "3.2×", "45%"), taken from the
  * finding's own `value` rendered in its `metric`'s unit. Returns null when there is no `value` (a
- * text-valued finding carries `valueText` instead) or the metric isn't in FINDING_METRIC_UNIT. */
-export function formatFindingMagnitude(finding: { metric?: string; value?: number }): string | null {
-  const unit = finding.metric ? FINDING_METRIC_UNIT[finding.metric] : undefined;
-  if (!unit || finding.value == null) return null;
+ * text-valued finding carries `valueText` instead) or the metric has no magnitude. */
+export function formatFindingMagnitude(finding: { metric?: MetricName; value?: number }): string | null {
+  if (!finding.metric || finding.value == null) return null;
+  const unit = metricUnit(finding.metric);
   switch (unit) {
     case 'bytes': return formatChipBytes(finding.value);
     case 'minutes': return formatDuration(finding.value * 60000);
+    case 'seconds': return formatDuration(finding.value * 1000);
+    case 'mbSeconds': return formatRawWaste({ value: finding.value, unit: 'mbSeconds' });
+    case 'text':
+    case 'none': return null;
     case 'ms': return formatMetricValue('ms', finding.value);
     case 'ratio': return formatMetricValue('ratio', finding.value);
     case 'pct': return formatMetricValue('pct', finding.value);
@@ -219,7 +209,7 @@ export function formatFindingMagnitude(finding: { metric?: string; value?: numbe
  * recovery is claimed, "~<time>" (the optimistic `high` bound, matching formatImpactEstimateCompact),
  * joined by " · " (e.g. "4.2 GB · ~38.0s"). null when neither part is available. */
 export function formatFindingChipDetail(
-  finding: { metric?: string; value?: number; impactEstimate?: { wallClock?: { low: number; high: number } | null } },
+  finding: { metric?: MetricName; value?: number; impactEstimate?: { wallClock?: { low: number; high: number } | null } },
 ): string | null {
   const magnitude = formatFindingMagnitude(finding);
   const wallClock = finding.impactEstimate?.wallClock;

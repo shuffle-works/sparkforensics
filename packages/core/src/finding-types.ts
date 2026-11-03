@@ -7,6 +7,7 @@
 // them), and anything declared only on `<Type>Finding` is internal, read by another core module (the
 // impact estimator, mostly) and never published. Renaming or removing an evidence field is a
 // breaking change to the report and needs an EVIDENCE_SCHEMA_VERSION bump.
+import type { MetricName } from './finding-presentation.ts';
 import type { ImpactBand, ImpactEstimate, StageId } from './types.ts';
 import type { TaskFailureGroup } from './task-failure.ts';
 
@@ -41,7 +42,7 @@ interface FindingCore<T extends string> {
   // config-scope findings, but sql-scope findings reach consumers with the key absent.
   stageId?: StageId | null;
   impactBand: ImpactBand;
-  metric?: string;
+  metric?: MetricName;
   recommendation?: string;
   // Structured form of the property changes `recommendation` names; absent when it names none.
   remediation?: Remediation[];

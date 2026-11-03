@@ -634,3 +634,46 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
 export function presentationOf(type: string): FindingPresentation<FindingType> | undefined {
   return (FINDING_PRESENTATION as Readonly<Record<string, FindingPresentation<FindingType>>>)[type];
 }
+
+// The metrics findings report, declared once with the unit of each one's `value`. A detector can
+// only name a metric from this table, and the formatter reads the unit by that typed key, so a
+// metric without a unit does not compile.
+//
+// 'text' metrics carry `valueText` instead of `value`; 'none' metrics carry neither (the finding
+// says its data is unavailable). Neither has a magnitude to show.
+export type MetricUnit =
+  | 'bytes' | 'ms' | 'seconds' | 'minutes' | 'mbSeconds' | 'ratio' | 'pct' | 'pctFraction' | 'count' | 'text' | 'none';
+
+export const METRICS = {
+  // bytes
+  shuffleReadBytes: 'bytes', memoryBytesSpilled: 'bytes', shuffleReadMax: 'bytes',
+  avgFileSizeBytes: 'bytes', smallerSideBytes: 'bytes', broadcastBytes: 'bytes',
+  dataSentBytes: 'bytes', bytesRead: 'bytes', shuffleBytes: 'bytes',
+  // durations
+  speculationWasteMs: 'ms', retryWasteMs: 'ms', taskDurationP50: 'ms',
+  startupGapSeconds: 'seconds',
+  stageDurationMinutes: 'minutes',
+  wastedMBSeconds: 'mbSeconds',
+  // multiples of a median
+  'P95/median': 'ratio', 'max/median': 'ratio', pRatio: 'ratio', oiRatio: 'ratio',
+  hostMeanRatio: 'ratio', execMaxMedianRatio: 'ratio',
+  // percentages on a 0-100 scale
+  gcPct: 'pct', failureRate: 'pct', stragglerShare: 'pct', jobFailureRate: 'pct',
+  cachedRatio: 'pct', diskRatio: 'pct', avgUtilization: 'pct', idleCoreRate: 'pct',
+  heapUsedRatio: 'pct', nonLocalRatio: 'pct', shortLivedExecutorPct: 'pct',
+  // fractions on a 0-1 scale
+  hostDurationShare: 'pctFraction', taskStageSkew: 'pctFraction',
+  // counts
+  taskCount: 'count', speculativeTasks: 'count', subtreeOccurrences: 'count',
+  persistedRdds: 'count', rightSizedCores: 'count', executionReuse: 'count',
+  outputRows: 'count', rewrittenRows: 'count', filesKept: 'count',
+  // no magnitude
+  stageFailureReason: 'text', applicationEnd: 'text', config: 'text',
+  memoryBand: 'none',
+} as const satisfies Record<string, MetricUnit>;
+
+export type MetricName = keyof typeof METRICS;
+
+export function metricUnit(metric: MetricName): MetricUnit {
+  return METRICS[metric];
+}

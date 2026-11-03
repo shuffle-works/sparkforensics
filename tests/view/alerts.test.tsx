@@ -11,7 +11,7 @@ import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { testFinding } from './_shared/finding';
 
 function skewFinding(stageId: number, impactBand: ImpactBand): Finding {
-  return testFinding({ type: 'skew', stageId, impactBand, metric: 'p95Median', value: 5, recommendation: `Rebalance Stage ${stageId}.` });
+  return testFinding({ type: 'skew', stageId, impactBand, metric: 'P95/median', value: 5, recommendation: `Rebalance Stage ${stageId}.` });
 }
 
 function gcFinding(stageId: number, impactBand: ImpactBand): Finding {

@@ -52,9 +52,9 @@ test('formatFindingMagnitude renders ratio/pct/count/duration units', () => {
   expect(formatFindingMagnitude({ metric: 'speculativeTasks', value: 3 })).toBe('3');
   expect(formatFindingMagnitude({ metric: 'retryWasteMs', value: 38000 })).toBe('38.0s');
 });
-test('formatFindingMagnitude returns null for non-numeric or unmapped metrics', () => {
+test('formatFindingMagnitude returns null for metrics with no magnitude', () => {
   expect(formatFindingMagnitude({ metric: 'stageFailureReason', valueText: 'ExecutorLostFailure' })).toBeNull();
-  expect(formatFindingMagnitude({ metric: 'somethingUnmapped', value: 12 })).toBeNull();
+  expect(formatFindingMagnitude({ metric: 'memoryBand', value: 12 })).toBeNull();
   expect(formatFindingMagnitude({ value: 12 })).toBeNull();
 });
 
@@ -65,7 +65,7 @@ test('formatFindingChipDetail joins magnitude and recoverable wall-clock time', 
 });
 test('formatFindingChipDetail shows only the recoverable time when no magnitude is available', () => {
   expect(
-    formatFindingChipDetail({ metric: 'somethingUnmapped', value: 'x', impactEstimate: { wallClock: { low: 1000, high: 2000 } } }),
+    formatFindingChipDetail({ metric: 'stageFailureReason', value: undefined, impactEstimate: { wallClock: { low: 1000, high: 2000 } } }),
   ).toBe('~2.0s');
 });
 test('formatFindingChipDetail shows only the magnitude when there is no wall-clock claim', () => {
