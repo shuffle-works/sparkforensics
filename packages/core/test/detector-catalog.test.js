@@ -55,13 +55,13 @@ describe('detector catalog special cases', () => {
     expect(byType('skew').tagSharedWith).toEqual([]);
   });
 
-  it('names the budget flag and operator parameter of exactly the gated types', () => {
+  it('names the budget flag of exactly the gated types', () => {
     const gated = Object.fromEntries(catalog.filter((r) => r.gate).map((r) => [r.type, r.gate]));
     expect(gated).toEqual({
-      skew: { cliFlag: '--max-skew', airflowParam: 'max_skew_ratio' },
-      spill: { cliFlag: '--max-spill', airflowParam: 'max_spill_gb' },
-      utilization: { cliFlag: '--min-efficiency', airflowParam: 'min_efficiency_pct' },
-      failures: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
+      skew: { cliFlag: '--max-skew' },
+      spill: { cliFlag: '--max-spill' },
+      utilization: { cliFlag: '--min-efficiency' },
+      failures: { cliFlag: '--max-failed-task-rate' },
     });
   });
 
