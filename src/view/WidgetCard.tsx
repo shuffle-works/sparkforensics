@@ -13,7 +13,7 @@ import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-g
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';
-import { cardLandingKey } from '@/view/board-layout';
+import { cardLandingKey } from '@/view/route-keys';
 import { useLanding } from '@/view/route-landing';
 import { useCardDisclosure, useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 

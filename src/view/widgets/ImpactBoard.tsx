@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { Table, TableBody } from '@/components/ui/table';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { BandLayout, BoardLayout } from '@/view/board-layout';
-import { bandLandmark, BOARD_LANDMARK, landmarkRowKey } from '@/view/board-layout';
+import { bandLandmark, BOARD_LANDMARK, landmarkRowKey } from '@/view/route-keys';
 import { useInterpretation } from '@/view/interpretation';
 import { useLanding } from '@/view/route-landing';
 import type { TriageTarget } from '@/view/triage-target';

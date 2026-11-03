@@ -3,17 +3,8 @@ import { beforeEach, describe, expect, test } from 'vitest';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
-import {
-  bandLandmark,
-  BOARD_LANDMARK,
-  buildBoardLayout,
-  EVIDENCE_CARD_KEY,
-  evidenceRowKey,
-  resolveRoute,
-  VERDICT_LANDMARK,
-  walkableLines,
-  type BoardLayout,
-} from '@/view/board-layout';
+import { buildBoardLayout, resolveRoute, walkableLines, type BoardLayout } from '@/view/board-layout';
+import { bandLandmark, BOARD_LANDMARK, EVIDENCE_CARD_KEY, evidenceRowKey, VERDICT_LANDMARK } from '@/view/route-keys';
 import { emptySelection, IMPACT_BANDS } from '@/view/finding-filter';
 import { interpretationOf } from '@/view/interpretation';
 import { triageTargetFor } from '@/view/triage-target';

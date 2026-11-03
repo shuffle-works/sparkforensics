@@ -1,7 +1,7 @@
 import type { EvidenceAvailability as EvidenceAvailabilityLedger, EvidenceAvailabilityEntry, EvidenceReasonCode, EvidenceState } from '@sparkforensics/core/types.ts';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { evidenceRowKey } from '@/view/board-layout';
+import { evidenceRowKey } from '@/view/route-keys';
 import { evidenceLabel } from '@/view/evidence-labels';
 import { useLanding } from '@/view/route-landing';
 import { ImpactDot, type ImpactDotProps } from '@/view/ImpactBadge';

@@ -59,13 +59,12 @@ interpretation, the finding filter and the widget density. It returns:
   routes to its widget's card.
 - `bands`: per impact band, the board's rows (single findings and type groups,
   each with its evidence panel or none) and the evidence cards no step or row
-  shows in place. A card a step or row already shows is in the layout too, marked
-  `route-only`: it appears in its band only once a route has revealed it, which
-  is how a route to a finding no step or row holds (a log note, an evidence
-  caveat) still lands.
+  shows in place. A card a step or row already shows is in the band too, listed in
+  its `routeOnlyCardKeys`: it appears only once a route has revealed it, which is
+  how a route to a finding no step or row holds (a log note, an evidence caveat)
+  still lands.
 - `reference`: the Full app report's tiles the data has content for.
-- `cards`: every card by key, with its tab, whether it is a `panel`, a `grid`
-  card or `route-only`, and the keys of the rows it lists.
+- `cards`: every card by key, with its tab and the keys of the rows it lists.
 - `lines`: the controls the triage shortcuts step through, in reading order.
 - `holders`: for each finding key, the step or row line that holds it and the
   widget card that lists it.

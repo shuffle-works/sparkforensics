@@ -2,7 +2,7 @@ import type { EvidenceKey } from '@sparkforensics/core/types.ts';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
 import { useBoardLayout } from '@/view/BoardLayoutContext';
 import { evidenceLabel } from '@/view/evidence-labels';
-import { routeTo } from '@/view/route-landing';
+import { routeTo } from '@/view/board-route';
 
 export interface RowStatusClusterProps {
   confidence?: string;

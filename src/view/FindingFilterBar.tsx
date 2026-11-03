@@ -17,7 +17,7 @@ import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import { ImpactDot } from './ImpactBadge';
 import { isEmptySelection, type FilterOptions } from './finding-filter';
 import { useFindingFilter } from './FindingFilterContext';
-import { FILTERS_LANDMARK, landmarkRowKey } from './board-layout';
+import { FILTERS_LANDMARK, landmarkRowKey } from './route-keys';
 import { useLanding } from './route-landing';
 
 // Selected pills tint to their impact color; the dot carries the color when

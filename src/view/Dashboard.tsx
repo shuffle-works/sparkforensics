@@ -6,10 +6,7 @@ import { isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry'
 import { findingName } from '@sparkforensics/core/finding-names.ts';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import {
-  BOARD_LANDMARK,
-  bandLandmark,
   buildBoardLayout,
-  VERDICT_LANDMARK,
   type BoardLayout,
   type StepEvidence,
 } from '@/view/board-layout';
@@ -18,7 +15,8 @@ import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { InlineEvidence } from '@/view/InlineEvidence';
-import { routeTo } from '@/view/route-landing';
+import { routeTo } from '@/view/board-route';
+import { BOARD_LANDMARK, bandLandmark, VERDICT_LANDMARK } from '@/view/route-keys';
 import {
   deriveOptions,
   emptySelection,

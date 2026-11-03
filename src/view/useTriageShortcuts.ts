@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 
 import { store } from '@/store/store';
-import { FILTERS_LANDMARK, walkableLines, type BoardLayout } from '@/view/board-layout';
-import { routeTo } from '@/view/route-landing';
+import { walkableLines, type BoardLayout } from '@/view/board-layout';
+import { routeTo } from '@/view/board-route';
+import { FILTERS_LANDMARK } from '@/view/route-keys';
 
 /** True while the key belongs to something else: typing in a field, a modifier chord, or a focused
  * dialog, menu or listbox that owns its own keyboard model (they trap focus, so their keys start

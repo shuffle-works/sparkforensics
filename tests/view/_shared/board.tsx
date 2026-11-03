@@ -21,7 +21,7 @@ import { RunVerdict } from '@/view/widgets/RunVerdict';
 export function layoutWithCards(keys: readonly string[]): BoardLayout {
   const layout = buildBoardLayout({ interpretation: null, appModel: emptyAppModel(), catalog: [], configFindings: [], selection: emptySelection(), density: 'basic' });
   const cards = new Map(layout.cards);
-  for (const key of keys) cards.set(key, { key, tab: 'findings', placement: 'grid', widgetId: null, rowKeys: [] } satisfies LayoutCard);
+  for (const key of keys) cards.set(key, { key, tab: 'findings', rowKeys: [] } satisfies LayoutCard);
   return { ...layout, cards };
 }
 
