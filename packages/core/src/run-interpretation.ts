@@ -11,7 +11,7 @@ import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import { computeEfficiencyModel } from './efficiency-model.ts';
 import { attributeEtlPhases } from './etl-phases.ts';
-import { IMPACT_BAND_ORDER, worstImpactBand } from './format-utils.ts';
+import { bandRank, worstImpactBand } from './format-utils.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';
@@ -244,7 +244,7 @@ function interpretStages(
   for (const [stageId, findings] of byStage) {
     const [step] = buildNextSteps(findings, failedJobStageIds ? { failedJobStageIds } : {});
     const stepTypes = step ? [step.lead.type, ...step.related.map((f) => f.type)] : [];
-    const worstBand = (type: string) => IMPACT_BAND_ORDER[worstImpactBand(findings.filter((f) => f.type === type))!];
+    const worstBand = (type: string) => bandRank(worstImpactBand(findings.filter((f) => f.type === type)));
     const otherTypes = [...new Set(findings.map((f) => f.type))]
       .filter((type) => !stepTypes.includes(type))
       .sort((a, b) => worstBand(a) - worstBand(b));

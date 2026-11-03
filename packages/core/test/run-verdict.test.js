@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings,
+  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, compareFindingRank, FINDING_DISPLAY_ORDER, isRankable, locationKey, rankBySavings,
 } from '../src/run-verdict.ts';
+import { compareImpactBand, IMPACT_BANDS } from '../src/format-utils.ts';
+import { trimmedRecommendation } from '../src/finding-names.ts';
 import { isActionable } from '../src/recommendation-rollup.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
@@ -219,5 +221,28 @@ describe('buildRunIdleLine', () => {
   it('is null without an allocation or with none idle', () => {
     expect(buildRunIdleLine(appModel())).toBeNull();
     expect(buildRunIdleLine(model(3_600_000 * 4))).toBeNull();
+  });
+});
+
+describe('the shared ranking vocabulary', () => {
+  it('orders bands most severe first and an unknown band last', () => {
+    expect(IMPACT_BANDS).toEqual(['critical', 'warning', 'info']);
+    expect(['info', 'unknown', 'critical', null, 'warning'].sort(compareImpactBand)).toEqual(['critical', 'warning', 'info', 'unknown', null]);
+  });
+
+  it('ties break by band, then widget display order', () => {
+    const skewInfo = { type: 'skew', impactBand: 'info' };
+    const spillWarning = { type: 'spill', impactBand: 'warning' };
+    const gcWarning = { type: 'gc', impactBand: 'warning' };
+    const ordered = [skewInfo, gcWarning, spillWarning].sort(compareFindingRank).map((f) => f.type);
+    expect(ordered[2]).toBe('skew');
+    expect(ordered.slice(0, 2)).toEqual(['spill', 'gc'].sort((a, b) => FINDING_DISPLAY_ORDER.indexOf(a) - FINDING_DISPLAY_ORDER.indexOf(b)));
+  });
+
+  it('reads a recommendation of only whitespace as none', () => {
+    expect(trimmedRecommendation({ type: 'skew', recommendation: '  fix it  ' })).toBe('fix it');
+    expect(trimmedRecommendation({ type: 'skew', recommendation: '   ' })).toBe('');
+    expect(trimmedRecommendation({ type: 'skew' })).toBe('');
+    expect(isRankable({ type: 'skew', impactBand: 'warning', recommendation: '   ' })).toBe(false);
   });
 });

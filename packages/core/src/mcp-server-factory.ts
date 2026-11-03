@@ -16,7 +16,7 @@ import { FINDING_TYPES } from './cli/flag-values.ts';
 import { listDetectors } from './detector-catalog.ts';
 
 // z.enum wants a non-empty tuple; these lists are never empty.
-const nonEmpty = (values: readonly string[]) => values as [string, ...string[]];
+const nonEmpty = <T extends string>(values: readonly T[]) => values as [T, ...T[]];
 const impactBandSchema = z.enum(nonEmpty(IMPACT_BANDS));
 const findingTypeSchema = z.enum(nonEmpty(FINDING_TYPES));
 const comparisonMetricSchema = z.enum(nonEmpty(COMPARISON_METRIC_KEYS));
@@ -141,7 +141,7 @@ export function createMcpServer(
         .describe('compact (default): one short row per finding. full: the CLI report\'s rows, clean checks and not-checked checks.'),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
       impactBand: z.array(impactBandSchema).optional(), type: z.array(findingTypeSchema).optional(), stageId: z.number().int().nonnegative().optional(),
-      minBand: z.enum(['critical', 'warning', 'info']).optional()
+      minBand: impactBandSchema.optional()
         .describe('List only findings at this band or a more severe one. Without minBand or impactBand, info findings are left out and notesHidden counts them; "info" lists all.'),
       maxFindings: z.number().int().nonnegative().optional()
         .describe('List at most this many findings, most severe first. findingsOmitted counts the ones left out; each verdict step still carries its lead finding.'),

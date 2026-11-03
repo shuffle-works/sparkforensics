@@ -5,7 +5,8 @@ import { emptyAppModel, store, useWidgetDensity } from '@/store/store';
 import type { InterpretationState } from '@/view/interpretation';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import { buildBoardLayout, type BoardLayout, type FindingRowLayout, type LayoutCard } from '@/view/board-layout';
-import { emptySelection, IMPACT_BANDS, type FilterSelection } from '@/view/finding-filter';
+import { emptySelection, type FilterSelection } from '@/view/finding-filter';
+import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
 
 /** A selection that lists every band, as a board handed its findings directly does. */
 const ALL_BANDS: FilterSelection = { ...emptySelection(), impactBands: new Set(IMPACT_BANDS) };

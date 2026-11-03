@@ -22,7 +22,6 @@ import {
   emptySelection,
   excludingDimensions,
   filterFindings,
-  IMPACT_BANDS,
   isEmptySelection,
   matchesFilter,
   type FilterDimension,
@@ -30,6 +29,7 @@ import {
   type FilterSelection,
 } from '@/view/finding-filter';
 import { countHiddenNotes } from '@sparkforensics/core/finding-filter-predicate.ts';
+import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { EtlPhases } from '@/view/widgets/EtlPhases';

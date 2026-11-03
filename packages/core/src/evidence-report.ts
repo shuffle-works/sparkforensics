@@ -8,9 +8,9 @@ import {
 } from './threshold-overrides.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import {
-  typeTag, formatBytes, formatCores, formatDuration, formatWallClockRange, IMPACT_BAND_ORDER,
+  typeTag, formatBytes, formatCores, formatDuration, formatWallClockRange, bandRank, compareImpactBand,
 } from './format-utils.ts';
-import { findingName, titleCase } from './finding-names.ts';
+import { findingName, LANE_LABELS, titleCase } from './finding-names.ts';
 import { mdInline } from './markdown-inline.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
@@ -308,7 +308,7 @@ function findingRow(f: Finding, key: string): FindingRow {
 // always serializes byte-for-byte identically.
 function sortFindings(rows: FindingRow[]): FindingRow[] {
   return [...rows].sort((a, b) => {
-    const s = (IMPACT_BAND_ORDER[a.impactBand] ?? 9) - (IMPACT_BAND_ORDER[b.impactBand] ?? 9);
+    const s = compareImpactBand(a.impactBand, b.impactBand);
     if (s !== 0) return s;
     if (a.type !== b.type) return a.type < b.type ? -1 : 1;
     const sa = a.stageId ?? -1;
@@ -628,7 +628,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
   if (verdict.summary.length > 0) lines.push('', mdInline(verdict.summary.join(' ')));
   if (verdict.idle) lines.push('', mdInline(verdict.idle.text));
   if (verdict.steps.length > 0) {
-    lines.push('', 'By cluster time (task-hours):', '');
+    lines.push('', `${LANE_LABELS.time}:`, '');
     verdict.steps.forEach((step, i) => {
       lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.text)}`);
       if (step.relatedTypes.length > 0) {
@@ -642,7 +642,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
     }
   }
   if (verdict.costSteps.length > 0) {
-    lines.push('', 'By core time (busy core time a fix removes):', '');
+    lines.push('', `${LANE_LABELS.cost} (busy core time a fix removes):`, '');
     verdict.costSteps.forEach((step, i) => {
       const where = step.stageId != null ? ` in Stage ${step.stageId}` : '';
       lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.actionLabel)}${where}: ${step.coreTime} of core time.`);
@@ -827,7 +827,7 @@ function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean
   // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column: it matches
   // the one stage it touches, as the dashboard's Stage details lists it.
   const stageIds = 'stageIds' in row.evidence ? row.evidence.stageIds : null;
-  if (filter.minBand && (IMPACT_BAND_ORDER[row.impactBand] ?? 9) > IMPACT_BAND_ORDER[filter.minBand]) return false;
+  if (filter.minBand && bandRank(row.impactBand) > bandRank(filter.minBand)) return false;
   return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 

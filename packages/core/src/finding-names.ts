@@ -19,12 +19,19 @@ export function titleCase(label: string): string {
   return label.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** A finding's recommendation with its surrounding whitespace removed, or '' when it has none: the
+ * one rule for whether a finding has something to say. */
+export function trimmedRecommendation(finding: Finding): string {
+  return typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
+}
+
 /** The finding's own recommendation, or its type's name when it has none. */
 export function recommendationText(finding: Finding): string {
-  const text = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
-  if (text) return text;
-  return findingName(finding.type);
+  return trimmedRecommendation(finding) || findingName(finding.type);
 }
+
+/** The names of the verdict's two ranked lists, in the dashboard and the report. */
+export const LANE_LABELS = { time: 'By cluster time (task-hours)', cost: 'By core time' } as const;
 
 /** A recommendation's two halves: detectors write "<measurement>: <fix>", split at the last ": "
  * since a measurement can quote an error with colons. Text with no split has no `measured`. */

@@ -21,7 +21,7 @@ import { selectAppModel, selectCatalog, store, useStore } from '@/store/store';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
-import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
+import { worstImpactBand, formatDuration, compareImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { stagesOfFinding } from '@sparkforensics/core/finding-filter-predicate.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
 import { cn } from '@/lib/utils';
@@ -92,10 +92,7 @@ function eligibleGraphExecutions(appModel: AppModel, catalog: Finding[]): GraphV
   // first, so a long list doesn't bury a critical finding below unflagged
   // ones. Unflagged entries (impact band null) always sort last.
   out.sort((a, b) => {
-    const rankA = a.impactBand ? IMPACT_BAND_ORDER[a.impactBand] : Infinity;
-    const rankB = b.impactBand ? IMPACT_BAND_ORDER[b.impactBand] : Infinity;
-    if (rankA !== rankB) return rankA - rankB;
-    return a.executionId - b.executionId;
+    return compareImpactBand(a.impactBand, b.impactBand) || a.executionId - b.executionId;
   });
   return out;
 }

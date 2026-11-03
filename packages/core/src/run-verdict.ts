@@ -7,9 +7,9 @@ import { idleGrading } from './idle-grading.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
-import { recommendationText } from './finding-names.ts';
+import { recommendationText, trimmedRecommendation } from './finding-names.ts';
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
-import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
+import { compareImpactBand, formatDuration, formatRawWaste, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isActionable, isEligible, rankCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
@@ -52,8 +52,13 @@ function potentialSavingsMs(finding: Finding): number | null {
 
 /** True for a finding the verdict can route to: a known display type with a recommendation. */
 export function isRankable(finding: Finding): boolean {
-  const recommendation = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
-  return DISPLAY_INDEX.has(finding.type) && recommendation.length > 0;
+  return DISPLAY_INDEX.has(finding.type) && trimmedRecommendation(finding).length > 0;
+}
+
+/** The tie-break every ranking ends with: impact band, then widget display order. */
+export function compareFindingRank(left: Finding, right: Finding): number {
+  return compareImpactBand(left.impactBand, right.impactBand)
+    || (DISPLAY_INDEX.get(left.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.type) ?? Number.MAX_SAFE_INTEGER);
 }
 
 /** Every rankable finding, best first. By cluster time (`rankCostMs`: the task time of the finding's stage, or the
@@ -71,11 +76,7 @@ export function rankBySavings(findings: Finding[]): Finding[] {
     const rightSavings = potentialSavingsMs(right.finding);
     if (leftSavings !== null && rightSavings !== null && leftSavings !== rightSavings) return rightSavings - leftSavings;
     if ((leftSavings !== null) !== (rightSavings !== null)) return leftSavings !== null ? -1 : 1;
-    return (
-      (IMPACT_BAND_ORDER[left.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.finding.impactBand] ?? 9)
-      || (DISPLAY_INDEX.get(left.finding.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.finding.type) ?? Number.MAX_SAFE_INTEGER)
-      || left.index - right.index
-    );
+    return compareFindingRank(left.finding, right.finding) || left.index - right.index;
   });
   return candidates.map(({ finding }) => finding);
 }
@@ -99,10 +100,7 @@ export function buildCostLane(findings: Finding[]): CostLaneEntry[] {
     .filter((entry): entry is { finding: Finding; index: number; coreTimeMs: number } =>
       isRankable(entry.finding) && typeof entry.coreTimeMs === 'number' && Number.isFinite(entry.coreTimeMs) && entry.coreTimeMs > 0);
   entries.sort((left, right) => (
-    right.coreTimeMs - left.coreTimeMs
-    || (IMPACT_BAND_ORDER[left.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.finding.impactBand] ?? 9)
-    || (DISPLAY_INDEX.get(left.finding.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.finding.type) ?? Number.MAX_SAFE_INTEGER)
-    || left.index - right.index
+    right.coreTimeMs - left.coreTimeMs || compareFindingRank(left.finding, right.finding) || left.index - right.index
   ));
   return entries
     .map(({ finding, coreTimeMs }) => ({ finding, coreTimeMs, figure: formatRawWaste({ value: coreTimeMs, unit: 'coreMs' }) }))

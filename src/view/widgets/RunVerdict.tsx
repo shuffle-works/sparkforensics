@@ -10,7 +10,7 @@ import type { StepEvidence, StepLayout } from '@/view/board-layout';
 import { landmarkRowKey, VERDICT_LANDMARK } from '@/view/route-keys';
 import { useStore, useWidgetDensity } from '@/store/store';
 import type { InterpretationState } from '@/view/interpretation';
-import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
+import { findingName, LANE_LABELS, recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -205,7 +205,7 @@ function CostLane({ interpretation, onRoute }: { interpretation: InterpretationS
   if (rows.length === 0) return null;
   return (
     <div className="mt-4" data-testid="cost-lane">
-      <p className="trace-eyebrow">By core time</p>
+      <p className="trace-eyebrow">{LANE_LABELS.cost}</p>
       <ol aria-label="Findings by core time" className="mt-1.5 space-y-1.5">
         {rows.map(({ entry, finding }) => (
           <li key={finding.id ?? entry.leadId} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.8125rem]">
@@ -347,7 +347,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
       </div>
       <VerdictStrip interpretation={interpretation} />
       {density === 'advanced' ? null : <div className="mt-4"><NewcomerPrimer /></div>}
-      {steps.length > 0 ? <p className="trace-eyebrow mt-4">By cluster time (task-hours)</p> : null}
+      {steps.length > 0 ? <p className="trace-eyebrow mt-4">{LANE_LABELS.time}</p> : null}
       {steps.length > 0 ? (
         <ol aria-label="Next steps" className="verdict-steps">
           {steps.map((layout) => (

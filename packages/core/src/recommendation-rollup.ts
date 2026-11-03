@@ -1,7 +1,7 @@
 // Explicit .ts extensions: plain Node's ESM resolver (the runtime CLI/MCP path
 // runs under) requires the exact specifier, unlike a bundler.
 import { mergeIntervals } from './intervals.ts';
-import { asCoreTime, formatRawWaste, formatWallClockRange, readsAsZero, worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { asCoreTime, formatRawWaste, formatWallClockRange, readsAsZero, worstImpactBand, compareImpactBand } from './format-utils.ts';
 import type { Finding, RawWasteUnit, ImpactBand } from './types.ts';
 
 interface StageInterval {
@@ -130,9 +130,7 @@ export function buildRecommendationRollup(
     if (a.kind === 'time' && b.kind === 'time') return b.recoverableMsHigh - a.recoverableMsHigh;
     // resource/count groups carry no shared magnitude to rank by (comparing
     // incompatible units is forbidden); break ties by worst impact band instead.
-    const aImpactBand = IMPACT_BAND_ORDER[worstImpactBand(a.findings) ?? 'info'] ?? 9;
-    const bImpactBand = IMPACT_BAND_ORDER[worstImpactBand(b.findings) ?? 'info'] ?? 9;
-    return aImpactBand - bImpactBand;
+    return compareImpactBand(worstImpactBand(a.findings), worstImpactBand(b.findings));
   });
 }
 
@@ -232,7 +230,7 @@ export function rankFindings(findings: Finding[]): Finding[] {
       // investigate" target all agree on the same figure.
       return b.impactEstimate!.wallClock!.high - a.impactEstimate!.wallClock!.high;
     }
-    return (IMPACT_BAND_ORDER[a.impactBand] ?? 9) - (IMPACT_BAND_ORDER[b.impactBand] ?? 9);
+    return compareImpactBand(a.impactBand, b.impactBand);
   });
 }
 
