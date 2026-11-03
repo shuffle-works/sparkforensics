@@ -219,16 +219,16 @@ are in a commented allowlist in that file, and an entry that explains no
 difference fails the test.
 
 Every tool failure comes back as `{isError: true, content: [...],
-structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
-of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
-plus `run-not-found`, `finding-not-found`, `invalid-cursor`, `invalid-event-log` (also
-covers a nonexistent `path` source, and any file-system error such as `EACCES` or
-`EISDIR` on an event log that `toolErrorResult` maps to it), `archive-too-large` (SHS archive over
-the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers
-the whole archive in memory, unlike the streaming `/shs-proxy` route),
-`invalid-type`, `invalid-anchor` (documentation tools), `directory-not-found`,
-`invalid-date-filter`, and `invalid-shs-base-url` (`list_runs`). An error without a
-code reports `access-or-upstream-failure`, as does a file-system error in a documentation tool. A stalled SHS archive body fails as
+structuredContent: {code}}`, never an HTTP-status-shaped error. `code` is one of
+`MCP_ERROR_CODES` (`packages/core/src/mcp-error.ts`), and `mcpError` accepts only
+those, so a new code is one edit there and a row in the user guide's list. A caller
+mistake is `invalid-argument`, which a retry cannot fix. A worker or proxy code
+outside the list reports `access-or-upstream-failure`, as does an error without a code
+and a file-system error in a documentation tool. A file-system error on an event log
+(`EACCES`, `EISDIR`) reports `invalid-event-log`, mapped by `toolErrorResult`. An
+SHS archive over the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap (default 1 GiB) is
+`archive-too-large`, because the MCP path buffers the whole archive in memory,
+unlike the streaming `/shs-proxy` route. A stalled SHS archive body fails as
 `upstream-unreachable` after `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30 s) without
 data.
 

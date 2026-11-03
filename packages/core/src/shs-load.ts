@@ -3,7 +3,7 @@ import { fetchShsEventLog } from './proxy.js';
 import { decodeShsArchive } from './parser-worker.ts';
 import { collectViaDispatch } from './cli/collect-run.ts';
 import { nodeArchiveCodecs } from './cli/native-zstd.ts';
-import { mcpError } from './mcp-error.ts';
+import { mcpError, toMcpErrorCode } from './mcp-error.ts';
 import type { AppModel } from './types.ts';
 
 function envInt(name: string, fallback: number): number {
@@ -21,7 +21,7 @@ function collectShsAppModel(zipBytes: Uint8Array): Promise<{ appModel: AppModel;
     (state, emit, reject) => { decodeShsArchive(zipBytes, state, emit, nodeArchiveCodecs).catch(reject); },
     (msg) => {
       const m = msg as { code?: string; message?: string };
-      return mcpError(m?.code ?? 'invalid-event-log', m?.message ?? 'Failed to decode SHS archive.');
+      return mcpError(toMcpErrorCode(m?.code, 'invalid-event-log'), m?.message ?? 'Failed to decode SHS archive.');
     },
   );
 }
@@ -107,9 +107,9 @@ export async function resolveFromShs(
 ): Promise<{ appModel: AppModel; skippedLines: number }> {
   const { fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS } = opts;
   const validated = validateShsRequest({ baseUrl: shsBaseUrl, appId, attemptId: attemptId ?? '' });
-  if (!validated.request) throw mcpError('access-or-upstream-failure', 'Invalid SHS request parameters.');
+  if (!validated.request) throw mcpError('invalid-argument', 'Invalid SHS request parameters.');
   const fetched = await fetchShsEventLog(validated.request, { fetchImpl }) as ShsFetchOutcome;
-  if (!fetched.ok) throw mcpError(fetched.code, `SHS fetch failed: ${fetched.code}`);
+  if (!fetched.ok) throw mcpError(toMcpErrorCode(fetched.code, 'access-or-upstream-failure'), `SHS fetch failed: ${fetched.code}`);
   const zipBytes = await readArchiveBytes(fetched.upstream, maxArchiveBytes, idleTimeoutMs);
   const { appModel, skippedLines } = await collectShsAppModel(zipBytes);
   return { appModel, skippedLines };

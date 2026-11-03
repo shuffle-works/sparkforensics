@@ -203,7 +203,7 @@ export async function resolveOrCreateRun(
   if (runId) {
     return { runId, appModel: getCachedAppModel(runId) };
   }
-  if (!source) throw mcpError('access-or-upstream-failure', 'Provide either source or runId.');
+  if (!source) throw mcpError('invalid-argument', 'Provide either source or runId.');
 
   // `'path' in source`, not `source.path`: RunSource's two variants share no common property, so a
   // plain `.path` access doesn't type-check on the union. Equivalent at runtime for every real caller.
@@ -439,12 +439,12 @@ export function getFindingEvidence(
 export async function resolveFindingEvidence(
   { runId, source, appId }: RunRef & { appId?: string }, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
 ): Promise<{ runId: string; finding: FindingRow }> {
-  if (appId !== undefined && !source) throw mcpError('access-or-upstream-failure', 'appId needs the source of the run to analyse.');
+  if (appId !== undefined && !source) throw mcpError('invalid-argument', 'appId needs the source of the run to analyse.');
   if (runId) {
     evictStale();
     if (byRunId.has(runId) || !source) return getFindingEvidence(runId, findingId, opts);
   }
-  if (!source) throw mcpError('access-or-upstream-failure', 'Provide runId, or source (with appId).');
+  if (!source) throw mcpError('invalid-argument', 'Provide runId, or source (with appId).');
   const resolved = await resolveOrCreateRun({ source }, { thresholds: opts?.thresholds });
   const actualAppId = opts?.redact
     ? buildEvidenceReport(resolved.appModel, { redact: true, markdown: false, thresholds: opts.thresholds }).json.summary.app.id ?? null
@@ -502,12 +502,12 @@ export async function compareRuns(
   try {
     compileNormalizePatterns(opts?.normalizePath);
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', `normalizePath: ${(e as Error).message}`);
+    throw mcpError('invalid-argument', `normalizePath: ${(e as Error).message}`);
   }
   try {
     compileConfIgnorePatterns(opts?.ignoreConf);
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', `ignoreConf: ${(e as Error).message}`);
+    throw mcpError('invalid-argument', `ignoreConf: ${(e as Error).message}`);
   }
   const [
     { runId: runIdA, run: runA },
@@ -568,7 +568,7 @@ export async function evaluateBudgetsForRun(
   tunedThresholds?: Record<string, TunedThresholds>;
 }> {
   const pairingError = regressionPairingError(budgets);
-  if (pairingError) throw mcpError('access-or-upstream-failure', pairingError);
+  if (pairingError) throw mcpError('invalid-argument', pairingError);
   // The CLI's rule: a metric is budgeted once across the single pair and the list.
   try {
     const pair = budgets.maxRegressionPct === undefined ? [] : [{ metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct }];
@@ -577,16 +577,16 @@ export async function evaluateBudgetsForRun(
       ...(budgets.regressionBudgets ?? []).map((budget) => ({ origin: 'regressionBudgets', budget })),
     ]);
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', (e as Error).message);
+    throw mcpError('invalid-argument', (e as Error).message);
   }
   if (budgets.stageQualities !== undefined && budgets.stageRegressionBudgets === undefined) {
-    throw mcpError('access-or-upstream-failure', 'stageQualities requires stageRegressionBudgets.');
+    throw mcpError('invalid-argument', 'stageQualities requires stageRegressionBudgets.');
   }
   try {
     for (const { metric } of budgets.stageRegressionBudgets ?? []) assertStageBudgetMetric(metric, 'stageRegressionBudgets');
     combineRegressionBudgets((budgets.stageRegressionBudgets ?? []).map((budget) => ({ origin: 'stageRegressionBudgets', budget })));
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', (e as Error).message);
+    throw mcpError('invalid-argument', (e as Error).message);
   }
   const [first, second] = await Promise.all([
     resolveAndAnalyze(primary, opts?.thresholds),

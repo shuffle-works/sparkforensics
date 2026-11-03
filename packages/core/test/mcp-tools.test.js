@@ -1117,7 +1117,7 @@ describe('evaluateBudgetsForRun', () => {
     const { dir, path } = tmpEventLogWithDuration('app-a', 1000);
     try {
       await expect(evaluateBudgetsForRun({ source: { path } }, { regressionMetric: 'shuffleSpill' }))
-        .rejects.toMatchObject({ code: 'access-or-upstream-failure', message: 'regressionMetric requires maxRegressionPct.' });
+        .rejects.toMatchObject({ code: 'invalid-argument', message: 'regressionMetric requires maxRegressionPct.' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1281,5 +1281,14 @@ describe('skipped lines in MCP output', () => {
       rmSync(baseline.dir, { recursive: true, force: true });
       rmSync(candidate.dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('caller mistakes', () => {
+  it('report invalid-argument, not an upstream failure, so the caller corrects the call', async () => {
+    await expect(resolveOrCreateRun({})).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(compareRuns({ runId: 'a' }, { runId: 'b' }, { normalizePath: ['('] })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(compareRuns({ runId: 'a' }, { runId: 'b' }, { ignoreConf: ['('] })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(evaluateBudgetsForRun({ runId: 'a' }, { stageQualities: ['regression'] })).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 });
