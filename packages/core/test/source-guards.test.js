@@ -95,3 +95,13 @@ describe('detector modules', () => {
     expect(oversized, `split these by family or helper (limit ${MAX_DETECTOR_MODULE_LINES} lines):\n${oversized.join('\n')}`).toEqual([]);
   });
 });
+
+describe('core model types', () => {
+  // types.ts holds the plain model the analysis and every surface share. A callback-typed field
+  // belongs to a view's own node or props type.
+  it('declares no function-typed fields in types.ts', () => {
+    const source = readFileSync(path.join(srcDir, 'types.ts'), 'utf8');
+    const callbackFields = source.split('\n').filter((line) => /^\s*\w+\??:\s*\(.*\)\s*=>/.test(line));
+    expect(callbackFields).toEqual([]);
+  });
+});

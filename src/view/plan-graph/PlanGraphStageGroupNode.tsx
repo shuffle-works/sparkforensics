@@ -3,7 +3,7 @@ import { Chip } from '@/view/ImpactBadge';
 import { cn } from '@/lib/utils';
 import { PlanGraphFindingChip } from './PlanGraphFindingChip';
 import { StageEntryButton, useStageSelection } from './stage-selection';
-import type { PlanGraphStageGroupNodeData, PlanGraphUnmatchedStageNodeData } from '@sparkforensics/core/types';
+import type { PlanGraphStageGroupNodeData, PlanGraphUnmatchedStageNodeData } from './group-node-data';
 
 export type PlanGraphStageGroupNodeProps = NodeProps & { data: PlanGraphStageGroupNodeData };
 export type PlanGraphUnmatchedStageNodeProps = NodeProps & { data: PlanGraphUnmatchedStageNodeData };
