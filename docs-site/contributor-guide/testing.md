@@ -226,9 +226,11 @@ Record before and after numbers from these in the commit that changes a
 detector, threshold, estimate or the vendored fzstd.
 
 - `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...`
-  snapshots every finding (band, estimate) plus parse and analyze timings,
+  snapshots every finding and config finding (band, estimate), the verdict's
+  step order and the published evidence keys, plus parse and analyze timings,
   one child process per log. `--diff a.json b.json [--verbose]` shows the
-  findings added, removed or re-banded between two snapshots.
+  findings added, removed or re-banded between two snapshots, and any change
+  to the step order or evidence keys.
 - `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] [--verbose] <file|dir>...`
   scores skew and straggler against a task-level replay (precision, recall,
   estimate error). `--verbose` lists each miss, false positive and estimate
