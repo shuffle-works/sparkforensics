@@ -8,7 +8,7 @@ import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } fr
 import { mcpError } from './mcp-error.ts';
 import {
   buildEvidenceReport, toFindingsFilter,
-  type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type VerdictJson, type VerdictStepRow,
+  type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type RunOutcomeSummary, type VerdictJson, type VerdictStepRow,
 } from './evidence-report.ts';
 import { runTiming } from './run-timing.ts';
 import { renderComparisonMarkdown, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
@@ -34,7 +34,7 @@ export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; 
 // destructuring, both mcp-server-factory.ts sites, and the tests all pass a nested `source`,
 // never flattened path/shsBaseUrl).
 export type RunRef = { runId?: string; source?: RunSource };
-export interface RunSummary {
+export interface RunSummary extends RunOutcomeSummary {
   runId: string;
   // string | null (not undefined): getRunSummary always sets these via `?? null`, never omits them.
   app: { id: string | null; name: string | null; sparkVersion: string | null };
@@ -47,11 +47,7 @@ export interface RunSummary {
   // checking only durationMs:null couldn't tell an incomplete capture from a zero-length run; this
   // is the explicit signal (mirrors the incompleteRun finding).
   runComplete: boolean;
-  // How the run ended, the evidence report's summary.outcome (see RunOutcomeSummary).
-  failedJobs: number;
-  totalJobs: number;
-  failureReason: string | null;
-  failureReasonStageId: number | null;
+  // How the run ended: the evidence report's summary.outcome, flattened into this object.
   // Efficiency, unused core time, ETL phases and peak busy cores, as the dashboard shows them.
   runShape: RunShape;
 }
