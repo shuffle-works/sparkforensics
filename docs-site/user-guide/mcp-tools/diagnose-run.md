@@ -21,9 +21,9 @@ application's `id` and `attemptId`, `null` when the log has none) and `generator
 (the `sparkforensics-mcp` package `name` and `version`, and the `buildId` of its
 analysis core). Two diagnoses of one job are comparable when `generator.buildId`
 matches. `runId` is a handle for the run this server process has cached. It differs
-per tool by design (`compare_runs` returns `runIdA` and `runIdB`, `evaluate_budgets`
-the `runId` of its first run) and per server process, so match runs by `app.id` and
-`app.attemptId`.
+per tool by design (`compare_runs` returns `baselineRunId` and `candidateRunId`,
+`evaluate_budgets` returns `candidateRunId`, plus `baselineRunId` for two runs) and per
+server process, so match runs by `app.id` and `app.attemptId`.
 
 The answer has two views. `compact` (the default) is an index: the verdict,
 `recommendations`, `metrics`, `writeTargets`, `effectiveConf` and one short row
