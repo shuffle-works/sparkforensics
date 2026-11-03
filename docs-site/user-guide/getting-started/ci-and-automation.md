@@ -13,6 +13,35 @@ npx -p sparkforensics-cli sparkforensics-analyze <file|dir> [--max-runtime ms] [
 ```
 
 Output is JSON by default; `--format md` writes the Markdown report instead.
+
+## JSON output
+
+`--format json` writes one object whatever the flags:
+`{ schemaVersion, run, comparison, budgets }`.
+
+- `schemaVersion` is `1`; it changes only when these four keys change. The run
+  report inside `run` has its own `schemaVersion`.
+- `run` is the report of the analyzed run: the evidence report (`summary`,
+  `verdict`, `findings`, `recommendations`, `cleanChecks`, ...) with
+  `notesHidden`, `generator`, `app`, `metrics` and `effectiveConf`.
+- `comparison` is present only with a baseline.
+- `budgets` lists every budget result, passes included, each with `name`,
+  `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric`
+  on `max-regression` and `max-stage-regression`. It is empty without budgets.
+  The `[violation]` and `[inconclusive]` lines on stderr and the exit code
+  stay as described below.
+
+The envelope is described by a JSON Schema (draft 2020-12) shipped with the CLI
+package at `schema/cli-envelope.schema.json`. Its root validates the single-run
+output and `$defs/ndjsonLine` validates one line of the
+[NDJSON output](#several-candidates) (`$defs` also holds `run`, `comparison` and
+`budgetResult`). The schema fixes the envelope's own keys and names the required
+top-level keys of `run` and `comparison`; it does not list every field inside them.
+
+`--legacy-json` writes the earlier shapes: the run's report alone for a single
+run, `{ candidate, comparison }` with `--baseline`, and `candidate` in place of
+`run` on each NDJSON line (with no `schemaVersion`), and no budget results in a
+single-run output. It is deprecated and removed in 0.13.0.
 Budget violations and inconclusive budgets print to stderr as
 `[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one
@@ -497,8 +526,8 @@ as `./detectors`. Exit codes: `0` ok, `2` usage error.
 
 The CLI's JSON output carries a `generator` block naming the build that wrote
 it: `name` and `version` of the CLI package, and `buildId`, the build id of the
-analysis core the CLI loaded. Equal build ids mean equal analysis code. With
-`--baseline` the block is inside `candidate` and also leads `comparison`. The MCP
+analysis core the CLI loaded. Equal build ids mean equal analysis code. The
+block is inside `run` and, with `--baseline`, also leads `comparison`. The MCP
 `diagnose_run` and `compare_runs` tools return the same block with the
 `sparkforensics-mcp` package name and version. The block holds no run
 identifiers, so `--redact` leaves it as is.
@@ -516,8 +545,8 @@ log line count in `baselineSkippedLines`.
 ## Metrics block
 
 The CLI's JSON output carries a `metrics` block next to the report, for
-scripts that act on a run without reading the report. With `--baseline` it is
-inside `candidate`. The MCP `diagnose_run` tool returns the same block. It has its own `schemaVersion`, separate from the
+scripts that act on a run without reading the report. It is
+inside `run`. The MCP `diagnose_run` tool returns the same block. It has its own `schemaVersion`, separate from the
 report's. A figure the log cannot provide is `null`, never `0`: a log from a
 Spark version that records no CPU time has `executorCpuTimeMs: null`, and a
 log cut off before any executor joined has null allocation. The time, data
@@ -652,8 +681,8 @@ null, as `time.executorCpuTimeMs` is, when the log recorded no CPU time.
 The JSON output also carries `effectiveConf` (with its own `schemaVersion`),
 the Spark properties the run
 started with, so a script can check that a `--conf` overlay took effect. It is
-null when the log records no Spark properties. With `--baseline` it is inside
-`candidate`. The MCP `diagnose_run` tool returns the same block.
+null when the log records no Spark properties. It is inside
+`run`. The MCP `diagnose_run` tool returns the same block.
 
 - `values`: property to value, for every property that is not withheld.
 - `maskedKeys`: properties present in the log whose value is withheld.
@@ -917,7 +946,8 @@ Each line is one JSON object:
 | `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression` and `max-stage-regression`. Empty for an `error` line. |
-| `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
+| `schemaVersion` | The envelope's version, `1`, the same as in the single-run JSON output. |
+| `run` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `run`. `null` for an `error` line. |
 | `comparison` | `verdict`, `baselineSkippedLines`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 
 A line's `status` follows the single-candidate rules: `violation` if any
@@ -928,7 +958,7 @@ else `pass`.
 
 A candidate that can't be read or parsed doesn't stop the others. Its line
 has `status: "error"`, `exitCode: 4`, the message in `error`, and `null` for
-`candidate` and `comparison`, as a single-candidate run exits `4` for a
+`run` and `comparison`, as a single-candidate run exits `4` for a
 candidate it can't parse. The process exit code is the worst line, in the
 order `6`, `5`, `4`, `1`, `3`, `0`, so an unreadable candidate outranks a
 violation and a violation outranks an inconclusive result.

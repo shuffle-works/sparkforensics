@@ -29,7 +29,8 @@ const {
   buildHtmlExportData, encodeRunPayload, runPayloadScript, loadThresholdOverrides,
   parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
   parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced,
-  tunedDetectors, runOutputBlocks, buildEffectiveConf, runDetectorsCommand,
+  tunedDetectors, runOutputBlocks, buildEffectiveConf, CLI_SUBCOMMANDS, subcommandUsageLines,
+  CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport, legacyCliJson, legacyCliLine, deprecationNote,
 } = /** @type {typeof import('../../core/src/node.ts')} */ (core);
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
@@ -37,12 +38,15 @@ const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [o
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id>[:<attempt>] --app-id <id>[:<attempt>]...
                               (--baseline <path> | --baseline-shs-base-url <url> --baseline-app-id <id>) [options]
-       sparkforensics-analyze detectors [options]   List what the detectors find; see "detectors --help".
+${subcommandUsageLines()}
 
 Options:
   --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
                                     logs). ndjson requires --baseline, see "Several candidates".
   --out <path>                    Write output to a file instead of stdout.
+  --legacy-json                    Write the earlier JSON: the run's report alone, or { candidate,
+                                    comparison } with --baseline, with no budget results in it.
+                                    ${deprecationNote('usage', '--legacy-json')}
   --export-html <dir>              Write a self-contained HTML dashboard for this run into <dir>
                                     (must not exist or be empty). Open <dir>/index.html directly, no
                                     server required. Can be combined with --format/--out, which write
@@ -187,6 +191,7 @@ function parseCliArgs(argv) {
     allowPositionals: true,
     options: {
       out: { type: 'string' },
+      'legacy-json': { type: 'boolean' },
       format: { type: 'string' },
       'max-runtime': { type: 'string' },
       'max-spill': { type: 'string' },
@@ -319,7 +324,7 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
 // loadBaseline() and each candidate's load() resolve to { appModel }, the parsed log from a local file or a History Server.
 async function runMultiLog({
-  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds,
+  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds, legacyJson,
 }) {
   let baselineRun;
   try {
@@ -355,20 +360,23 @@ async function runMultiLog({
         if (r.status !== 'pass') process.stderr.write(`${log}: [${r.status === 'violation' ? 'violation' : 'inconclusive'}] ${r.name}: ${r.detail}\n`);
       }
       const exitCode = violated ? EXIT.VIOLATION : inconclusive ? EXIT.INCONCLUSIVE : EXIT.PASS;
+      const run = cliRunReport({ json, notesHidden }, runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }));
+      const envelope = cliEnvelope({ run, comparison: output, budgets: results });
       line = {
         log,
         status: violated ? 'violation' : inconclusive ? 'inconclusive' : 'pass',
         exitCode,
         error: null,
-        budgets: results,
-        candidate: { ...json, notesHidden, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }) },
-        comparison: output,
+        ...(legacyJson ? legacyCliLine(envelope) : envelope),
       };
     } catch (e) {
       const exitCode = e.exitCode ?? EXIT.INTERNAL;
       const error = redact ? redactedFailure(`Candidate ${index + 1}`, exitCode) : e.message;
       process.stderr.write(`${log}: [error] ${error}\n`);
-      line = { log, status: 'error', exitCode, error, budgets: [], candidate: null, comparison: null };
+      line = {
+        log, status: 'error', exitCode, error,
+        ...(legacyJson ? { budgets: [], candidate: null, comparison: null } : { schemaVersion: CLI_ENVELOPE_SCHEMA_VERSION, run: null, comparison: null, budgets: [] }),
+      };
     }
     emit(line);
     if (EXIT_SEVERITY[line.exitCode] > EXIT_SEVERITY[worstExit]) worstExit = line.exitCode;
@@ -403,16 +411,15 @@ function outPathProblem(outPath) {
   return undefined;
 }
 
-// `detectors` is a command only as the first argument; a log with that name is passed as ./detectors.
-function runDetectors(args) {
-  const { exitCode, stdout, stderr } = runDetectorsCommand(args);
-  process.exitCode = exitCode;
-  if (stderr) process.stderr.write(stderr);
-  process.stdout.write(stdout);
-}
-
 async function runCli(argv, { fetchImpl } = {}) {
-  if (argv[0] === 'detectors') return runDetectors(argv.slice(1));
+  const subcommand = CLI_SUBCOMMANDS.find(({ name }) => name === argv[0]);
+  if (subcommand) {
+    const { exitCode, stdout, stderr } = subcommand.run(argv.slice(1));
+    process.exitCode = exitCode;
+    if (stderr) process.stderr.write(stderr);
+    process.stdout.write(stdout);
+    return;
+  }
   let parsed;
   try {
     parsed = parseCliArgs(argv);
@@ -696,6 +703,7 @@ async function runCli(argv, { fetchImpl } = {}) {
       candidates, loadBaseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
       confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath, ignoreConf, noiseBand, caveatThresholds,
+      legacyJson: values['legacy-json'],
     });
   }
 
@@ -779,6 +787,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   const { markdown, json, notesHidden } = buildEvidenceReport(appModel, {
     redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
   });
+  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(run), budgets, comparison, thresholds });
   let output;
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonJson.verdict)}\n` : `${markdown}\n`;
@@ -787,15 +796,12 @@ async function runCli(argv, { fetchImpl } = {}) {
       redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
       generator: generatorInfo(),
     });
-    const payload = comparison
-      ? { candidate: { ...json, notesHidden, ...machineReadable }, comparison: comparisonJson }
-      : { ...json, notesHidden, ...machineReadable };
-    output = `${JSON.stringify(payload, null, 2)}\n`;
+    const envelope = cliEnvelope({ run: cliRunReport({ json, notesHidden }, machineReadable), comparison: comparisonJson, budgets: results });
+    output = `${JSON.stringify(values['legacy-json'] ? legacyCliJson(envelope) : envelope, null, 2)}\n`;
   }
   if (values.out) writeFileSync(values.out, output);
   else process.stdout.write(output);
 
-  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(run), budgets, comparison, thresholds });
   for (const r of results) {
     if (r.status === 'inconclusive') process.stderr.write(`[inconclusive] ${r.name}: ${r.detail}\n`);
     else if (r.status === 'violation') process.stderr.write(`[violation] ${r.name}: ${r.detail}\n`);

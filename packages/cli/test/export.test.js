@@ -22,6 +22,7 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
 // tests/helpers/ stays at the repo root: shared with analyze.test.js/mcp-tools.test.js.
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
+import { parseRun } from './envelope-helpers.js';
 
 // data.js now holds `window.__SPARKFORENSICS_RUN_GZ__ = "<base64>";` (see
 // writeHtmlExport): base64-decode + gunzip + JSON.parse to get the run data
@@ -323,7 +324,7 @@ describe('--export-html (published bin)', () => {
       const { status, stdout, stderr } = runCli([logPath, '--thresholds', thresholdsPath, '--export-html', destDir]);
       expect(status).toBe(0);
       expect(stderr).toContain('the exported dashboard uses the default detector thresholds');
-      expect(JSON.parse(stdout).findings.some((f) => f.type === 'skew')).toBe(false);
+      expect(parseRun(stdout).findings.some((f) => f.type === 'skew')).toBe(false);
       const payload = parseRunPayload(readFileSync(join(destDir, 'data.js'), 'utf8'));
       const skew = payload.catalog.filter((f) => f.type === 'skew');
       expect(skew).toHaveLength(1);
@@ -344,7 +345,7 @@ describe('--export-html (published bin)', () => {
       const { status, stdout, stderr } = runCli([logPath, '--export-html', destDir]);
       expect(status).toBe(0);
       expect(stderr).toBe('');
-      const report = JSON.parse(stdout);
+      const report = parseRun(stdout);
       const payload = parseRunPayload(readFileSync(join(destDir, 'data.js'), 'utf8'));
 
       expect(payload.schemaVersion).toBe(EXPORT_DATA_SCHEMA_VERSION);

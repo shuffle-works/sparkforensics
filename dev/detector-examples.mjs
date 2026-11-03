@@ -66,7 +66,7 @@ function analyze(path) {
   ], { encoding: 'utf8', maxBuffer: 1 << 30 });
   // Exit 3 is an inconclusive run (no ApplicationEnd): the report is still complete.
   if (r.status !== 0 && r.status !== 3) return null;
-  return JSON.parse(r.stdout);
+  return JSON.parse(r.stdout).run;
 }
 
 function better(a, b) {

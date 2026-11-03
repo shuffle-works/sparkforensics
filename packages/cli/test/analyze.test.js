@@ -12,6 +12,8 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 // shares this same fixture helper.
 import { shsZipFetch, historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
+import { deprecationNote } from '../../core/src/deprecations.ts';
+import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js';
 
 // Regression coverage for the published `sparkforensics-analyze` bin, not just
 // in-process `main()`: packs the real packages/cli tarball (running prepack ->
@@ -89,7 +91,7 @@ describe('sparkforensics-analyze CLI', () => {
   it('reports Delta MERGE, UPDATE and DELETE targets of a log whose command nodes are bare', () => {
     const log = join(process.cwd(), '..', 'core', 'test', 'fixtures', 'delta-write-events.ndjson');
     const { stdout } = runCli([log]);
-    const { writes } = JSON.parse(stdout).writeTargets;
+    const { writes } = parseRun(stdout).writeTargets;
     expect(writes.map(({ sqlExecutionId, command, kind, target }) => [sqlExecutionId, command, kind, target])).toEqual([
       [3, 'MergeIntoCommand', 'table', 'db.t_sql_merge'],
       [10, 'DeltaMerge', 'path', 'hdfs://nn/sandbox/db.db/t_api_one'],
@@ -122,7 +124,7 @@ describe('sparkforensics-analyze CLI', () => {
       const { stdout, status } = runCli([path]);
       // Skipped lines make the run's evidence inconclusive (exit 3), not a pass.
       expect(status).toBe(3);
-      const { writeTargets } = JSON.parse(stdout);
+      const { writeTargets } = parseRun(stdout);
       expect(writeTargets.writes).toEqual([]);
       expect(writeTargets.executionsWithoutPlan).toEqual([
         { sqlExecutionId: 1, reason: 'unreadableStart' },
@@ -156,7 +158,7 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const { stdout, status } = runCli([path]);
       expect(status).toBe(0);
-      const { writeTargets } = JSON.parse(stdout);
+      const { writeTargets } = parseRun(stdout);
       expect(writeTargets.executionsWithoutPlan).toEqual([{ sqlExecutionId: 4, reason: 'noPlan' }]);
       expect(writeTargets.skippedLines).toBe(0);
       expect(writeTargets.writes.map((w) => [w.sqlExecutionId, w.command, w.kind, w.target, w.outputRows])).toEqual([
@@ -176,7 +178,7 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const { stdout, status } = runCli([path]);
       expect(status).toBe(0);
-      const cliJson = JSON.parse(stdout);
+      const cliJson = parseRun(stdout);
 
       const { appModel, skippedLines } = await collectRun(path);
       appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
@@ -215,7 +217,7 @@ describe('sparkforensics-analyze CLI', () => {
         const { stdout, stderr, status } = runCli([path]);
         expect(stderr).toBe('');
         expect(status).toBe(0);
-        expect(JSON.parse(stdout)).toEqual(JSON.parse(plain.stdout));
+        expect(parseEnvelope(stdout)).toEqual(parseEnvelope(plain.stdout));
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -315,7 +317,7 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const { stdout, status } = runCli([path]);
       expect(status).toBe(0);
-      expect(() => JSON.parse(stdout)).not.toThrow();
+      expect(() => parseEnvelope(stdout)).not.toThrow();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -368,7 +370,7 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const { stdout, status } = runCli([path]);
       expect(status).toBe(0);
-      const parsed = JSON.parse(stdout);
+      const parsed = parseRun(stdout);
       const findingWithEstimate = parsed.findings.find((f) => f.impactEstimate != null);
       expect(findingWithEstimate).toBeDefined();
       expect(findingWithEstimate.impactEstimate).toHaveProperty('basis');
@@ -387,12 +389,12 @@ describe('sparkforensics-analyze CLI', () => {
     const strict = join(dir, 'strict.json');
     writeFileSync(strict, JSON.stringify({ skew: { ratioWarn: 100 } }));
     try {
-      const tuned = JSON.parse(runCli([path, '--thresholds', loose]).stdout);
+      const tuned = parseRun(runCli([path, '--thresholds', loose]).stdout);
       const skew = tuned.findings.find((f) => f.type === 'skew');
       expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
       expect(tuned.summary.tunedThresholds).toEqual({ skew: { ratioWarn: { value: 2, default: 3 } } });
 
-      const silenced = JSON.parse(runCli([path, '--thresholds', strict]).stdout);
+      const silenced = parseRun(runCli([path, '--thresholds', strict]).stdout);
       expect(silenced.findings.some((f) => f.type === 'skew')).toBe(false);
       expect(silenced.cleanChecks.find((c) => c.type === 'skew').tunedThresholds).toEqual({ ratioWarn: { value: 100, default: 3 } });
 
@@ -400,7 +402,7 @@ describe('sparkforensics-analyze CLI', () => {
       expect(stdout).toContain('- Tuned thresholds: skew ratioWarn 2 (default 3).');
       expect(stdout).toContain('- tuned thresholds: ratioWarn 2 (default 3)');
 
-      const untuned = JSON.parse(runCli([path]).stdout);
+      const untuned = parseRun(runCli([path]).stdout);
       expect(JSON.stringify(untuned)).not.toContain('tunedThresholds');
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -441,7 +443,7 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const { stdout, status } = runCli([path]);
       expect(status).toBe(0);
-      const parsed = JSON.parse(stdout);
+      const parsed = parseRun(stdout);
       expect(Array.isArray(parsed.recommendations)).toBe(true);
       expect(Array.isArray(parsed.cleanChecks)).toBe(true);
       expect(Array.isArray(parsed.notRunChecks)).toBe(true);
@@ -611,13 +613,15 @@ describe('sparkforensics-analyze CLI', () => {
       }
     }
 
-    it('wraps JSON output in a { candidate, comparison } shape', () => {
+    it('puts the run and its comparison in the envelope, validated against the schema', () => {
       withBaselineAndCandidate(({ baselinePath, candidatePath }) => {
         const { stdout, status } = runCli([candidatePath, '--baseline', baselinePath]);
         expect(status).toBe(0);
-        const parsed = JSON.parse(stdout);
-        expect(parsed.candidate).toBeDefined();
-        expect(Array.isArray(parsed.candidate.findings)).toBe(true);
+        const parsed = parseEnvelope(stdout);
+        expect(Object.keys(parsed)).toEqual(['schemaVersion', 'run', 'comparison', 'budgets']);
+        expect(parsed.schemaVersion).toBe(1);
+        expect(parsed.budgets).toEqual([]);
+        expect(Array.isArray(parsed.run.findings)).toBe(true);
         expect(parsed.comparison).toMatchObject({ confidence: expect.any(String) });
         expect(parsed.comparison.verdict).toMatchObject({ title: expect.any(String), tone: expect.any(String) });
         expect(Array.isArray(parsed.comparison.verdict.sentences)).toBe(true);
@@ -642,14 +646,16 @@ describe('sparkforensics-analyze CLI', () => {
       });
     });
 
-    it('leaves output unchanged (no candidate/comparison wrapper) when --baseline is omitted', () => {
+    it('omits the comparison from the envelope when --baseline is omitted', () => {
       withBaselineAndCandidate(({ candidatePath }) => {
         const { stdout, status } = runCli([candidatePath]);
         expect(status).toBe(0);
-        const parsed = JSON.parse(stdout);
-        expect(parsed.candidate).toBeUndefined();
+        const parsed = parseEnvelope(stdout);
+        expect(Object.keys(parsed)).toEqual(['schemaVersion', 'run', 'budgets']);
+        expect(parsed.schemaVersion).toBe(1);
         expect(parsed.comparison).toBeUndefined();
-        expect(Array.isArray(parsed.findings)).toBe(true);
+        expect(parsed.budgets).toEqual([]);
+        expect(Array.isArray(parsed.run.findings)).toBe(true);
       });
     });
 
@@ -795,11 +801,11 @@ describe('sparkforensics-analyze CLI', () => {
       const path = join(dir, 'eventlog');
       writeFileSync(path, ndjsonWithHostName('app-redact-test'));
       try {
-        const plain = JSON.parse(runCli([path]).stdout);
+        const plain = parseRun(runCli([path]).stdout);
         expect(plain.summary.app.id).toBe('app-redact-test');
         expect(plain.summary.app.name).toBe('ip-10-20-30-40');
 
-        const redacted = JSON.parse(runCli([path, '--redact']).stdout);
+        const redacted = parseRun(runCli([path, '--redact']).stdout);
         expect(redacted.summary.app.id).toBe('app-1');
         // The app name takes the app id's pseudonym, as list_runs does.
         expect(redacted.summary.app.name).toBe('app-1');
@@ -817,9 +823,9 @@ describe('sparkforensics-analyze CLI', () => {
       try {
         const { stdout, status } = runCli([candidatePath, '--baseline', baselinePath, '--redact']);
         expect(status).toBe(0);
-        const parsed = JSON.parse(stdout);
-        expect(parsed.candidate.summary.app.id).toBe('app-1');
-        expect(parsed.candidate.summary.app.name).toBe('app-1');
+        const { run } = parseEnvelope(stdout);
+        expect(run.summary.app.id).toBe('app-1');
+        expect(run.summary.app.name).toBe('app-1');
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -835,10 +841,10 @@ describe('sparkforensics-analyze CLI', () => {
       const path = join(dir, 'eventlog');
       writeFileSync(path, ndjsonWithSkew());
       try {
-        const full = JSON.parse(runCli([path]).stdout);
+        const full = parseRun(runCli([path]).stdout);
         const { stdout, status } = runCli([path, '--type', 'straggler']);
         expect(status).toBe(0);
-        const filtered = JSON.parse(stdout);
+        const filtered = parseRun(stdout);
         expect(filtered.findings).toHaveLength(1);
         expect(filtered.findings[0].type).toBe('straggler');
         expect(filtered.recommendations).toEqual(full.recommendations);
@@ -856,7 +862,7 @@ describe('sparkforensics-analyze CLI', () => {
       try {
         const { stdout, status } = runCli([path, '--stage', '1', '--impact', 'critical,warning,info']);
         expect(status).toBe(0);
-        const { findings } = JSON.parse(stdout);
+        const { findings } = parseRun(stdout);
         // The one 2000ms task gates the whole 2000ms stage, so stageShape's taskStageSkew fires too.
         // The tail has no measured cause, so it is straggler's alone.
         expect(findings.map((f) => f.type).sort()).toEqual(['stageShape', 'straggler']);
@@ -871,8 +877,8 @@ describe('sparkforensics-analyze CLI', () => {
       const path = join(dir, 'eventlog');
       writeFileSync(path, ndjsonWithSkew());
       try {
-        const byDefault = JSON.parse(runCli([path]).stdout);
-        const all = JSON.parse(runCli([path, '--impact', 'critical,warning,info']).stdout);
+        const byDefault = parseRun(runCli([path]).stdout);
+        const all = parseRun(runCli([path, '--impact', 'critical,warning,info']).stdout);
         const infoCount = all.findings.filter((f) => f.impactBand === 'info').length;
         expect(infoCount).toBeGreaterThan(0);
         expect(byDefault.findings.some((f) => f.impactBand === 'info')).toBe(false);
@@ -893,7 +899,7 @@ describe('sparkforensics-analyze CLI', () => {
       try {
         const { stdout, status } = runCli([path, '--impact', 'warning']);
         expect(status).toBe(0);
-        const { findings } = JSON.parse(stdout);
+        const { findings } = parseRun(stdout);
         expect(findings).toEqual([]);
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -907,7 +913,7 @@ describe('sparkforensics-analyze CLI', () => {
       try {
         const { stdout, status } = runCli([path, '--impact', 'info,critical', '--type', 'straggler', '--stage', '1']);
         expect(status).toBe(0);
-        const { findings } = JSON.parse(stdout);
+        const { findings } = parseRun(stdout);
         expect(findings).toHaveLength(1);
         expect(findings[0].type).toBe('straggler');
       } finally {
@@ -935,14 +941,14 @@ describe('sparkforensics-analyze CLI', () => {
       writeFileSync(baselinePath, ndjsonWithSkew());
       writeFileSync(candidatePath, ndjsonWithSkew());
       try {
-        const full = JSON.parse(runCli([candidatePath, '--baseline', baselinePath]).stdout);
+        const full = parseEnvelope(runCli([candidatePath, '--baseline', baselinePath]).stdout);
         const { stdout, status } = runCli([candidatePath, '--baseline', baselinePath, '--type', 'straggler']);
         expect(status).toBe(0);
-        const parsed = JSON.parse(stdout);
-        expect(parsed.candidate.findings.every((f) => f.type === 'straggler')).toBe(true);
-        expect(parsed.candidate.findings.length).toBeGreaterThan(0);
-        expect(parsed.candidate.recommendations).toEqual(full.candidate.recommendations);
-        expect(parsed.candidate.cleanChecks).toEqual(full.candidate.cleanChecks);
+        const { run } = parseEnvelope(stdout);
+        expect(run.findings.every((f) => f.type === 'straggler')).toBe(true);
+        expect(run.findings.length).toBeGreaterThan(0);
+        expect(run.recommendations).toEqual(full.run.recommendations);
+        expect(run.cleanChecks).toEqual(full.run.cleanChecks);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -957,7 +963,7 @@ describe('sparkforensics-analyze CLI', () => {
       { fetchImpl: shsZipFetch(ndjson) },
     );
     expect(status).toBe(0);
-    const cliJson = JSON.parse(stdout);
+    const cliJson = parseRun(stdout);
 
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-shs-parity-'));
     const path = join(dir, 'eventlog');
@@ -1020,7 +1026,7 @@ describe('sparkforensics-analyze --out', () => {
     const target = join(dir, 'report.json');
     const { status } = await runMainInProcess([logPath, '--out', target]);
     expect(status).toBe(0);
-    expect(JSON.parse(readFileSync(target, 'utf8'))).toHaveProperty('generator');
+    expect(JSON.parse(readFileSync(target, 'utf8')).run).toHaveProperty('generator');
   });
 
   it('prints only the message, with no stack trace, when the write itself fails with ENOENT', async () => {
@@ -1061,7 +1067,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
 
   it('adds a versioned metrics block beside the unchanged evidence report', () => {
     withLog(ndjsonWithConf(), (path) => {
-      const out = JSON.parse(runCli([path]).stdout);
+      const out = parseRun(runCli([path]).stdout);
       expect(out.metrics.schemaVersion).toBe(1);
       expect(out.metrics.runComplete).toBe(true);
       expect(out.metrics.shape).toMatchObject({ taskCount: 10, stageCount: 1 });
@@ -1078,17 +1084,17 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
   it('stamps the report with the CLI package name, version and core build id', () => {
     withLog(ndjsonWithConf(), (path) => {
       const { name, version } = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'));
-      const { generator } = JSON.parse(runCli([path]).stdout);
+      const { generator } = parseRun(runCli([path]).stdout);
       expect(generator).toEqual({ name, version, buildId: expect.any(String) });
       expect(generator.buildId).not.toBe('');
       // The stamp holds no run identifiers, so redaction leaves it as is.
-      expect(JSON.parse(runCli([path, '--redact']).stdout).generator).toEqual(generator);
+      expect(parseRun(runCli([path, '--redact']).stdout).generator).toEqual(generator);
     });
   });
 
   it('names the application beside the generator', () => {
     withLog(ndjsonWithConf(), (path) => {
-      const { app } = JSON.parse(runCli([path]).stdout);
+      const { app } = parseRun(runCli([path]).stdout);
       expect(Object.keys(app)).toEqual(['id', 'attemptId']);
       expect(app.attemptId).toBeNull();
     });
@@ -1096,7 +1102,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
 
   it('reports null for what a log without CPU time cannot provide', () => {
     withLog(ndjsonWithSkew(), (path) => {
-      const { metrics } = JSON.parse(runCli([path]).stdout);
+      const { metrics } = parseRun(runCli([path]).stdout);
       expect(metrics.time.executorCpuTimeMs).toBeNull();
       expect(metrics.allocation).toEqual({
         coreHours: null, memoryGbHours: null, dynamicAllocation: null,
@@ -1108,7 +1114,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
   it('lists the effective conf, withholding secret values and URL credentials', () => {
     withLog(ndjsonWithConf(), (path) => {
       const { stdout } = runCli([path]);
-      const { effectiveConf } = JSON.parse(stdout);
+      const { effectiveConf } = parseRun(stdout);
       expect(effectiveConf.values['spark.sql.shuffle.partitions']).toBe('64');
       // The default secret pattern matches the JDBC URL's value ("password"), as in Spark.
       expect(effectiveConf.maskedKeys).toEqual(['spark.hadoop.fs.s3a.secret.key', 'spark.jdbc.url']);
@@ -1119,10 +1125,10 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
 
   it('narrows the conf with --conf-keys and adds a --conf-redact-regex pattern', () => {
     withLog(ndjsonWithConf(), (path) => {
-      const narrowed = JSON.parse(runCli([path, '--conf-keys', 'spark.executor.memory,spark.nope']).stdout).effectiveConf;
+      const narrowed = parseRun(runCli([path, '--conf-keys', 'spark.executor.memory,spark.nope']).stdout).effectiveConf;
       expect(narrowed.values).toEqual({ 'spark.executor.memory': '4g' });
       expect(narrowed.absentKeys).toEqual(['spark.nope']);
-      const extra = JSON.parse(runCli([path, '--conf-redact-regex', 'shuffle']).stdout).effectiveConf;
+      const extra = parseRun(runCli([path, '--conf-redact-regex', 'shuffle']).stdout).effectiveConf;
       expect(extra.maskedKeys).toContain('spark.sql.shuffle.partitions');
     });
   });
@@ -1139,13 +1145,13 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     expect(emptyKeys.stdout).toBe('');
   });
 
-  it('puts both blocks under candidate in --baseline mode and accepts the new regression metrics', () => {
+  it('puts both blocks under run in --baseline mode and accepts the new regression metrics', () => {
     withLog(ndjsonWithConf(), (path) => {
       const { stdout, status } = runCli([path, '--baseline', path, '--max-regression-pct', '10', '--regression-metric', 'allocatedCoreHours']);
       expect(status).toBe(0);
-      const parsed = JSON.parse(stdout);
-      expect(parsed.candidate.metrics.schemaVersion).toBe(1);
-      expect(parsed.candidate.effectiveConf.schemaVersion).toBe(1);
+      const parsed = parseEnvelope(stdout);
+      expect(parsed.run.metrics.schemaVersion).toBe(1);
+      expect(parsed.run.effectiveConf.schemaVersion).toBe(1);
       const keys = parsed.comparison.metrics.map((m) => m.key);
       expect(keys).toContain('executorCpuTime');
       expect(keys).toContain('allocatedCoreHours');
@@ -1163,7 +1169,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
       const { stdout } = runCli([path, '--redact']);
       expect(stdout).not.toContain('node-7.internal');
       expect(stdout).not.toContain('customer-job');
-      const { values } = JSON.parse(stdout).effectiveConf;
+      const { values } = parseRun(stdout).effectiveConf;
       expect(values['spark.driver.host']).toMatch(/^host-\d+$/);
       expect(values['spark.driver.appUIAddress']).toBe(`http://${values['spark.driver.host']}:4040`);
       expect(values['spark.a']).toBe('1');
@@ -1185,7 +1191,7 @@ describe('skipped log lines', () => {
   it('shows the count in the JSON report and gates inconclusive (exit 3) for a damaged log', () => {
     withDamagedLog(true, (path) => {
       const { stdout, stderr, status } = runCli([path]);
-      expect(JSON.parse(stdout).summary.skippedLines).toBe(6);
+      expect(parseRun(stdout).summary.skippedLines).toBe(6);
       expect(stderr).toMatch(/\[inconclusive\] parse-incomplete/);
       expect(status).toBe(3);
     });
@@ -1200,7 +1206,7 @@ describe('skipped log lines', () => {
   it('reports zero skipped lines and does not change the exit code for a clean log', () => {
     withDamagedLog(false, (path) => {
       const { stdout, stderr, status } = runCli([path]);
-      expect(JSON.parse(stdout).summary.skippedLines).toBe(0);
+      expect(parseRun(stdout).summary.skippedLines).toBe(0);
       expect(stderr).not.toMatch(/parse-incomplete/);
       expect(status).toBe(0);
     });
@@ -1209,8 +1215,8 @@ describe('skipped log lines', () => {
   it('shows a damaged baseline\'s count in the comparison and gates inconclusive', () => {
     withDamagedLog(false, (clean) => withDamagedLog(true, (damagedBaseline) => {
       const { stdout, stderr, status } = runCli([clean, '--baseline', damagedBaseline]);
-      const payload = JSON.parse(stdout);
-      expect(payload.candidate.summary.skippedLines).toBe(0);
+      const payload = parseEnvelope(stdout);
+      expect(payload.run.summary.skippedLines).toBe(0);
       expect(payload.comparison.baselineSkippedLines).toBe(6);
       expect(stderr).toMatch(/\[inconclusive\] parse-incomplete: .*baseline 6 lines/);
       expect(status).toBe(3);
@@ -1221,8 +1227,137 @@ describe('skipped log lines', () => {
   it('reports zero baseline skipped lines for a clean baseline', () => {
     withDamagedLog(false, (clean) => {
       const { stdout, status } = runCli([clean, '--baseline', clean]);
-      expect(JSON.parse(stdout).comparison.baselineSkippedLines).toBe(0);
+      expect(parseEnvelope(stdout).comparison.baselineSkippedLines).toBe(0);
       expect(status).toBe(0);
+    });
+  });
+});
+
+describe('sparkforensics-analyze JSON envelope', () => {
+  const LEGACY_NOTICE = deprecationNote('usage', '--legacy-json');
+
+  // A baseline, a candidate and a file that is not an event log, to cover pass and error lines.
+  function withLogs(fn) {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-envelope-'));
+    const paths = { baseline: join(dir, 'baseline'), candidate: join(dir, 'candidate'), other: join(dir, 'other'), garbage: join(dir, 'garbage') };
+    writeFileSync(paths.baseline, ndjsonWithSkew());
+    writeFileSync(paths.candidate, ndjsonWithSkew());
+    writeFileSync(paths.other, ndjsonWithSkew({ dataTail: true }));
+    writeFileSync(paths.garbage, 'this is not an event log\n');
+    try {
+      return fn(paths);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('writes schemaVersion, run and budgets for a single run, and nothing else', () => {
+    withLogs(({ candidate }) => {
+      const { stdout, status } = runCli([candidate]);
+      expect(status).toBe(0);
+      const envelope = parseEnvelope(stdout);
+      expect(Object.keys(envelope)).toEqual(['schemaVersion', 'run', 'budgets']);
+      expect(envelope.schemaVersion).toBe(1);
+      expect(envelope.budgets).toEqual([]);
+      expect(envelope.run.schemaVersion).toEqual(expect.any(Number));
+    });
+  });
+
+  it('writes the same envelope keys with --baseline, with the comparison beside the run', () => {
+    withLogs(({ candidate, baseline }) => {
+      const { stdout, status } = runCli([candidate, '--baseline', baseline]);
+      expect(status).toBe(0);
+      expect(Object.keys(parseEnvelope(stdout))).toEqual(['schemaVersion', 'run', 'comparison', 'budgets']);
+    });
+  });
+
+  it.each([[[]], [['--redact']]])('matches the schema in a single run, with --baseline and in NDJSON (%j)', (extra) => {
+    withLogs(({ candidate, baseline, other }) => {
+      parseEnvelope(runCli([candidate, ...extra]).stdout);
+      parseEnvelope(runCli([candidate, '--baseline', baseline, ...extra]).stdout);
+      const lines = parseNdjsonLines(runCli([candidate, other, '--baseline', baseline, ...extra]).stdout);
+      expect(lines).toHaveLength(2);
+    });
+  });
+
+  it('writes an error line with null run and comparison among the lines for several candidates', () => {
+    withLogs(({ candidate, garbage, other, baseline }) => {
+      const { stdout, status } = runCli([candidate, garbage, other, '--baseline', baseline]);
+      const lines = parseNdjsonLines(stdout);
+      expect(lines.map((l) => l.status)).toEqual(['pass', 'error', 'pass']);
+      expect(lines.every((l) => l.schemaVersion === 1)).toBe(true);
+      expect(lines[1]).toMatchObject({ exitCode: 4, run: null, comparison: null, budgets: [] });
+      expect(lines[0].run.findings).toBeDefined();
+      expect(status).toBe(4);
+    });
+  });
+
+  it('lists every budget result, passes included, in the JSON and keeps the summary on stderr', () => {
+    withLogs(({ candidate }) => {
+      const { stdout, stderr, status } = runCli([candidate, '--max-runtime', '100000', '--max-skew', '1.5']);
+      expect(status).toBe(1);
+      const { budgets } = parseEnvelope(stdout);
+      expect(budgets.map((b) => [b.name, b.status])).toEqual([['max-runtime', 'pass'], ['max-skew', 'violation']]);
+      // The human summary on stderr names the violation only; the JSON lists every result.
+      expect(stderr).toMatch(/\[violation\] max-skew/);
+      expect(stderr).not.toMatch(/max-runtime/);
+    });
+  });
+
+  it('exits 1 for a failing budget and carries the failing result in budgets', () => {
+    withLogs(({ candidate }) => {
+      const { stdout, stderr, status } = runCli([candidate, '--max-skew', '1.5']);
+      expect(status).toBe(1);
+      expect(stderr).toMatch(/\[violation\] max-skew/);
+      const { budgets } = parseEnvelope(stdout);
+      expect(budgets).toContainEqual(expect.objectContaining({ name: 'max-skew', status: 'violation', detail: expect.any(String) }));
+    });
+  });
+
+  describe('--legacy-json', () => {
+    it('writes the run report alone for a single run', () => {
+      withLogs(({ candidate }) => {
+        const { stdout, status } = runCli([candidate, '--legacy-json']);
+        expect(status).toBe(0);
+        const legacy = JSON.parse(stdout);
+        expect(legacy).toEqual(parseEnvelope(runCli([candidate]).stdout).run);
+        expect(legacy).not.toHaveProperty('run');
+        expect(legacy).not.toHaveProperty('budgets');
+      });
+    });
+
+    it('writes { candidate, comparison } with --baseline', () => {
+      withLogs(({ candidate, baseline }) => {
+        const { stdout, status } = runCli([candidate, '--baseline', baseline, '--legacy-json']);
+        expect(status).toBe(0);
+        const legacy = JSON.parse(stdout);
+        const { run, comparison } = parseEnvelope(runCli([candidate, '--baseline', baseline]).stdout);
+        expect(Object.keys(legacy)).toEqual(['candidate', 'comparison']);
+        expect(legacy).toEqual({ candidate: run, comparison });
+      });
+    });
+
+    it('writes { log, status, exitCode, error, budgets, candidate, comparison } per NDJSON line', () => {
+      withLogs(({ candidate, garbage, baseline }) => {
+        const { stdout, status } = runCli([candidate, garbage, '--baseline', baseline, '--max-runtime', '100000', '--legacy-json']);
+        const lines = stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+        const envelopeLines = parseNdjsonLines(runCli([candidate, garbage, '--baseline', baseline, '--max-runtime', '100000']).stdout);
+        expect(lines.map((l) => Object.keys(l))).toEqual([
+          ['log', 'status', 'exitCode', 'error', 'budgets', 'candidate', 'comparison'],
+          ['log', 'status', 'exitCode', 'error', 'budgets', 'candidate', 'comparison'],
+        ]);
+        expect(lines[0].candidate).toEqual(envelopeLines[0].run);
+        expect(lines[0].comparison).toEqual(envelopeLines[0].comparison);
+        expect(lines[0].budgets).toEqual(envelopeLines[0].budgets);
+        expect(lines[1]).toMatchObject({ status: 'error', exitCode: 4, candidate: null, comparison: null });
+        expect(status).toBe(4);
+      });
+    });
+
+    it('is described as deprecated in --help', () => {
+      const { stderr } = runCli(['--help']);
+      expect(stderr).toContain('--legacy-json');
+      expect(stderr).toContain(LEGACY_NOTICE);
     });
   });
 });

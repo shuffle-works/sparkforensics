@@ -2,6 +2,8 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { DEPRECATIONS, deprecationNote } from '../src/deprecations.ts';
@@ -11,6 +13,8 @@ const PACKAGE_JSON = {
   cli: '../../cli/package.json',
   mcp: '../../mcp/package.json',
 };
+
+const CLI_BIN = fileURLToPath(new URL('../../cli/bin/sparkforensics-analyze.mjs', import.meta.url));
 
 const versionOf = (surface) => JSON.parse(readFileSync(new URL(PACKAGE_JSON[surface], import.meta.url), 'utf8')).version;
 
@@ -42,6 +46,11 @@ async function connect() {
 
 // One probe per table entry: does the live surface still carry the item?
 const PROBES = {
+  async usage(client, item) {
+    // --help writes the usage text to stderr.
+    const { stdout, stderr } = spawnSync(process.execPath, [CLI_BIN, '--help'], { encoding: 'utf8' });
+    return (stdout + stderr).includes(item);
+  },
   async 'compare_runs input'(client, item) {
     const { tools } = await client.listTools();
     return item in tools.find((t) => t.name === 'compare_runs').inputSchema.properties;
@@ -63,14 +72,14 @@ const PROBES = {
 
 describe('deprecated public fields', () => {
   it('has a probe for every table entry, so a new entry cannot skip the removal check', () => {
-    for (const { surface, where } of DEPRECATIONS) {
-      if (surface === 'mcp') expect(PROBES, where).toHaveProperty([where]);
+    for (const { where } of DEPRECATIONS) {
+      expect(PROBES, where).toHaveProperty([where]);
     }
   });
 
   it('are gone from the surface at and after their removal version', async () => {
     const client = await connect();
-    for (const { surface, where, item, removeIn } of DEPRECATIONS.filter((d) => d.surface === 'mcp')) {
+    for (const { surface, where, item, removeIn } of DEPRECATIONS) {
       const due = compareVersions(versionOf(surface), removeIn) >= 0;
       const present = await PROBES[where](client, item);
       expect(due && present, `${where}: ${item} is still present in ${surface} ${versionOf(surface)}, removeIn ${removeIn}`).toBe(false);

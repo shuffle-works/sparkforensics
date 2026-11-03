@@ -37,6 +37,13 @@ The baseline has the same three flags (`--baseline-shs-base-url`, `--baseline-ap
 with `--baseline <path>`, and resolved with `resolveFromShs` too; a failed baseline fetch exits `5`.
 A History Server run and a local log load concurrently (CPU-bound local pairs use `collectRunPair`).
 
+The CLI's JSON is one envelope, `{ schemaVersion, run, comparison?, budgets }`, built by
+`cliEnvelope()` in `packages/core/src/cli-envelope.ts` for a single run, a run against a
+baseline and each NDJSON line. `packages/cli/schema/cli-envelope.schema.json` describes it
+and the CLI tests validate every JSON mode against it, so a change to the envelope's keys
+bumps `CLI_ENVELOPE_SCHEMA_VERSION` and the schema together. `--legacy-json` (removed in
+0.13.0) writes the earlier shapes through `legacyCliJson()` and `legacyCliLine()`.
+
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
 `packages/core/src/cli/regression-budgets.ts` and passed to `evaluateBudgets()`
@@ -48,7 +55,7 @@ themselves; `parseStageRegressionBudgetFlag` refuses the neutral `inputBytes` an
 `outputBytes`. With two or more positional candidates (or
 `--format ndjson`), the CLI's `runMultiLog` parses and analyzes the baseline once,
 then evaluates each candidate in turn and writes one NDJSON line per candidate
-(`log`, `status`, `exitCode`, `error`, `budgets`, `candidate`, `comparison`). A
+(`log`, `status`, `exitCode`, `error`, `schemaVersion`, `run`, `comparison`, `budgets`). A
 candidate that can't be read or parsed gets a `status: "error"` line with
 `exitCode` `4` (`6` for an internal failure on that candidate); the exit code is
 the worst line (`6` > `5` > `4` > `1` > `3` > `0`, `EXIT_SEVERITY`). A baseline

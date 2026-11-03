@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
+import { parseEnvelope, parseNdjsonLines } from './envelope-helpers.js';
 
 // The bin loads core from vendor-core/ when a fresh copy exists, else from core/src/: fail the
 // comparison of one sentinel app in either, to reach the per-candidate internal-error path.
@@ -83,7 +84,7 @@ async function run(argv, options) {
       stdout,
       stderr: err.mock.calls.map(([c]) => c).join(''),
       // Only the NDJSON mode writes one JSON document per line.
-      get lines() { return stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l)); },
+      get lines() { return parseNdjsonLines(stdout); },
     };
   } finally {
     out.mockRestore();
@@ -103,21 +104,21 @@ describe('several candidate logs', () => {
         'generator', 'verdict', 'baselineApp', 'candidateApp', 'baselineSkippedLines', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
         'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment', 'comparability',
       ]);
-      expect(l.candidate.summary).toBeDefined();
+      expect(l.run.summary).toBeDefined();
     }
     const wall = (l) => l.comparison.metrics.find((m) => m.key === 'wallClock');
     expect(wall(lines[0]).delta).toBe(0);
     expect(wall(lines[1]).delta).toBe(2000);
   });
 
-  it.each([[[]], [['--redact']]])('carries the single-candidate candidate object, metrics and effectiveConf included (%j)', async (extra) => {
+  it.each([[[]], [['--redact']]])('carries the single-candidate run object, metrics and effectiveConf included (%j)', async (extra) => {
     const flags = ['--baseline', p('baseline'), '--conf-keys', 'spark.executor.memory,spark.custom.hidden,spark.missing',
       '--conf-redact-regex', 'hidden', ...extra];
-    const single = JSON.parse((await run([p('with-conf'), ...flags, '--format', 'json'])).stdout).candidate;
+    const single = parseEnvelope((await run([p('with-conf'), ...flags, '--format', 'json'])).stdout).run;
     const [line] = (await run([p('with-conf'), ...flags, '--format', 'ndjson'])).lines;
-    expect(line.candidate).toEqual(single);
-    expect(line.candidate.metrics.schemaVersion).toBeDefined();
-    expect(line.candidate.effectiveConf).toMatchObject({
+    expect(line.run).toEqual(single);
+    expect(line.run.metrics.schemaVersion).toBeDefined();
+    expect(line.run.effectiveConf).toMatchObject({
       values: { 'spark.executor.memory': '2g' },
       maskedKeys: ['spark.custom.hidden'],
       absentKeys: ['spark.missing'],
@@ -152,7 +153,7 @@ describe('several candidate logs', () => {
     const { status, lines } = await run([p('garbage'), p('same'), p('nope'), '--baseline', p('baseline')]);
     expect(lines.map((l) => l.status)).toEqual(['error', 'pass', 'error']);
     for (const [i, name] of [[0, 'garbage'], [2, 'nope']]) {
-      expect(lines[i]).toMatchObject({ log: p(name), exitCode: 4, candidate: null, comparison: null, budgets: [] });
+      expect(lines[i]).toMatchObject({ log: p(name), exitCode: 4, run: null, comparison: null, budgets: [] });
       expect(lines[i].error).toEqual(expect.any(String));
     }
     expect(status).toBe(4);
@@ -176,7 +177,7 @@ describe('several candidate logs', () => {
   it('turns an internal failure on one candidate into an exit-6 error line, and keeps going', async () => {
     const { status, lines } = await run([p('fails-analysis'), p('same'), '--baseline', p('baseline')]);
     expect(lines.map((l) => [l.status, l.exitCode])).toEqual([['error', 6], ['pass', 0]]);
-    expect(lines[0]).toMatchObject({ log: p('fails-analysis'), candidate: null, comparison: null, budgets: [] });
+    expect(lines[0]).toMatchObject({ log: p('fails-analysis'), run: null, comparison: null, budgets: [] });
     expect(status).toBe(6);
   });
 
@@ -199,7 +200,7 @@ describe('several candidate logs', () => {
       p('slower'), p('nope'), '--baseline', p('baseline'), '--regression-budget', 'wallClock:10', '--redact', '--out', out,
     ]);
     const written = readFileSync(out, 'utf8');
-    const lines = written.trim().split('\n').map((l) => JSON.parse(l));
+    const lines = parseNdjsonLines(written);
     expect(lines.map((l) => [l.log, l.status])).toEqual([['candidate-1', 'violation'], ['candidate-2', 'error']]);
     expect(lines[1].error).toBe('Candidate 2 could not be read or parsed.');
     expect(stderr).toContain('candidate-1: [violation] max-regression');
@@ -409,7 +410,7 @@ describe('skipped log lines across several candidates', () => {
     const damaged = log({ slowMs: 2000 }).replace('{"Event":"SparkListenerTaskEnd"', '{corrupt').split('\n');
     writeFileSync(p('damaged'), damaged.join('\n'));
     const { status, lines } = await run([p('same'), p('damaged'), '--baseline', p('baseline')]);
-    expect(lines.map((l) => l.candidate.summary.skippedLines)).toEqual([0, 1]);
+    expect(lines.map((l) => l.run.summary.skippedLines)).toEqual([0, 1]);
     expect(lines.map((l) => l.status)).toEqual(['pass', 'inconclusive']);
     expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive' })]);
     expect(status).toBe(3);
@@ -420,7 +421,7 @@ describe('skipped log lines across several candidates', () => {
     writeFileSync(p('damaged-baseline'), damaged);
     const { status, lines } = await run([p('same'), p('baseline'), '--baseline', p('damaged-baseline')]);
     expect(lines.map((l) => l.comparison.baselineSkippedLines)).toEqual([1, 1]);
-    expect(lines.map((l) => l.candidate.summary.skippedLines)).toEqual([0, 0]);
+    expect(lines.map((l) => l.run.summary.skippedLines)).toEqual([0, 0]);
     expect(lines.map((l) => l.status)).toEqual(['inconclusive', 'inconclusive']);
     expect(lines[0].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', detail: expect.stringContaining('baseline 1 line') })]);
     expect(status).toBe(3);

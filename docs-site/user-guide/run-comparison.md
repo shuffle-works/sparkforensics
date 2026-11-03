@@ -145,8 +145,10 @@ candidate dashboard**. **← Back to comparison** takes you back.
 The same comparison runs headlessly, and opens with the same verdict: the
 positional run is the candidate, the `--baseline` run the baseline. The CLI's
 `--baseline <local file or rolling-log dir>` flag (or `--baseline-shs-base-url`/`--baseline-app-id` for a History Server run) adds the comparison. In JSON
-the run's report moves under `candidate` and the comparison sits beside it
-under `comparison` (`comparison.verdict` is the headline); in Markdown the
+the run's report is under `run` and the comparison sits beside it
+under `comparison` (`comparison.verdict` is the headline), in the same
+`{ schemaVersion, run, comparison, budgets }` object a run without a baseline
+writes minus `comparison`; in Markdown the
 comparison section follows the report, with durations, sizes and core-hours in
 readable units and the percent change on each metric line (JSON keeps the raw
 values). `--baseline` can also gate a build on
