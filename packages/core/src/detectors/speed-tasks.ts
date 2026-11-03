@@ -1,4 +1,4 @@
-import { IMPACT_BAND_ORDER } from '../format-utils.ts';
+import { IMPACT_BAND_ORDER } from '../impact-band-order.ts';
 import { medianOfSorted } from '../median.ts';
 import { shareLabel, type MetricName } from '../finding-presentation.ts';
 import { STRAGGLER_FACTOR } from '../stage-quantiles.ts';

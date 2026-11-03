@@ -677,3 +677,28 @@ export type MetricName = keyof typeof METRICS;
 export function metricUnit(metric: MetricName): MetricUnit {
   return METRICS[metric];
 }
+
+// Finding type -> ALL-CAPS board tag, derived from FINDING_PRESENTATION. Every widget that renders
+// a catalog entry's tag outside its own card (e.g. Bottleneck Alerts) reads it through typeTag.
+// Exported so doc-sync checks can enumerate every tag. Read by free-form type string.
+export const TYPE_TAG_MAP: Readonly<Record<string, string>> = Object.fromEntries(
+  (Object.keys(FINDING_PRESENTATION) as FindingType[]).map((type) => [type, FINDING_PRESENTATION[type].tag]),
+);
+
+export function typeTag(type: string): string {
+  return TYPE_TAG_MAP[type] ?? type.toUpperCase();
+}
+
+// Human-readable tooltips for the terse spill-classification badges (skew | vol | ?), surfaced via
+// title=. Kept domain-agnostic (Spark-internal terms only).
+export const SPILL_CLASS_TITLE = {
+  skew: 'Skew spill: a few heavy tasks spill while most do not; rebalance partitioning',
+  volume: 'Volume spill: most tasks spill because data exceeds memory; add partitions',
+  unclassified: 'Spill cause could not be classified',
+};
+
+// Short badge text, kept distinct from the long-form SPILL_CLASS_TITLE tooltip. Shared by
+// Spill.tsx's per-row badge and StageTable.tsx's spill-column cell.
+export const SPILL_CLASS_SHORT: Record<keyof typeof SPILL_CLASS_TITLE, string> = {
+  skew: 'skew', volume: 'vol', unclassified: '?',
+};

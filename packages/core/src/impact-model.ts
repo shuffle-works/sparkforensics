@@ -3,7 +3,7 @@
 // finding type's own composition of these lives on its DETECTORS entry, next to its detect().
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, SqlExecution, Stage } from './types.ts';
 import { isPythonStage } from './python-stage.ts';
-import { nsToMs } from './format-utils.ts';
+import { nsToMs } from './units.ts';
 import {
   estimateSingleStage, estimateMultiStage,
   type SingleStageEstimateOptions, type StageOccupancyInfo,

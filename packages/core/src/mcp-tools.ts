@@ -24,7 +24,7 @@ import { DETECTORS } from './detector-catalog.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
-import { typeTag } from './format-utils.ts';
+import { typeTag } from './finding-presentation.ts';
 import type { AppModel, Finding, ImpactBand, SparkAppInfo, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 

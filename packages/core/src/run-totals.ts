@@ -1,7 +1,7 @@
 // The run-level sums every surface reads: the CLI metrics block and the run comparison (so the
 // dashboard's comparison view and the MCP compare_runs tool) share these, so one name never means
 // two figures.
-import { nsToMs } from './format-utils.ts';
+import { nsToMs } from './units.ts';
 import type { Stage, StageAttemptTotals } from './types.ts';
 
 /** Each stage followed by the work its own figures leave out, shaped like a stage: the attempts a

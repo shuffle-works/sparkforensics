@@ -2,7 +2,7 @@
 // Unparseable fragments are silently skipped, never surfaced as an error.
 
 import type { PlanNode } from './types.ts';
-import { pathBasename } from './format-utils.ts';
+import { pathBasename } from './text-format.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { isExchangeNode } from './plan-node-detail.ts';
 

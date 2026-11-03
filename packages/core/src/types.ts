@@ -409,7 +409,7 @@ export interface PlanGraphSegmentGroupNodeData {
   /** The nearest strictly paired segment's stage, named in the box's header;
    * null when the plan pairs no segment with any stage. */
   nearestStageId: number | null;
-  /** Pre-formatted via `formatDuration` (format-utils.ts) by the caller;
+  /** Pre-formatted via `formatDuration` (units.ts) by the caller;
    * null (never 0) when this segment has no attributed duration, which is
    * the usual case for an unpaired segment. */
   durationLabel: string | null;

@@ -1,4 +1,5 @@
-import { clipAtWord, formatBytes } from '../format-utils.ts';
+import { clipAtWord } from '../text-format.ts';
+import { formatBytes } from '../units.ts';
 import { executorHeapPeaks } from '../executor-peaks.ts';
 import {
   IDEAL_BYTES_PER_PARTITION_TASK, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, SPILL_TASK_TIME_SHARE_MAX,

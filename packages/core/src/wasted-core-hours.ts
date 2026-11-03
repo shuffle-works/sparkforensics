@@ -4,7 +4,7 @@
 
 import { allocatedCoreMs } from './allocation.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
-import { MS_PER_CORE_HOUR } from './format-utils.ts';
+import { MS_PER_CORE_HOUR } from './units.ts';
 
 const TOP_N = 5;
 

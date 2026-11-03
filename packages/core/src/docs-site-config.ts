@@ -1,4 +1,4 @@
-import { typeTag } from './format-utils.ts';
+import { typeTag } from './finding-presentation.ts';
 
 // Single source for docs-site (VitePress) links, kept separate from docs-config.ts's vendor
 // docs-panel surface so the two doc systems don't blur.

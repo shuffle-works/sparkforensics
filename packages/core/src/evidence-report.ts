@@ -7,9 +7,9 @@ import {
   describeTunedThresholds, tunedDetectorCatalog, tunedDetectors, tunedRunNote, tunedThresholdsForType,
 } from './threshold-overrides.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
-import {
-  typeTag, formatBytes, formatCores, formatDuration, formatWallClockRange, IMPACT_BAND_ORDER,
-} from './format-utils.ts';
+import { typeTag } from './finding-presentation.ts';
+import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { formatBytes, formatCores, formatDuration, formatWallClockRange } from './units.ts';
 import { findingName, titleCase } from './finding-names.ts';
 import { mdInline } from './markdown-inline.ts';
 import { redactReport, redactRunModel } from './redact.ts';

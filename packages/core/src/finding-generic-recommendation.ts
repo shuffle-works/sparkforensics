@@ -1,5 +1,5 @@
 import { presentationOf } from './finding-presentation.ts';
-import { pathBasename } from './format-utils.ts';
+import { pathBasename } from './text-format.ts';
 import type { SlowHostMultiDimEvidence } from './finding-types.ts';
 import type { Finding } from './types.ts';
 

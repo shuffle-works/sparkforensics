@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { TYPE_TAG_MAP } from '../src/format-utils.js';
+import { TYPE_TAG_MAP } from '../src/finding-presentation.js';
 
 // Guards TYPE_TAG_MAP tags from drifting out of sync with AGENTS.md's
 // "Problem flagging" vocabulary (CLAUDE.md is just an `@AGENTS.md` pointer).

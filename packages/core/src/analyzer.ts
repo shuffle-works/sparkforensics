@@ -7,7 +7,8 @@ import { assertNever } from './assert-never.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy } from './occupancy.ts';
 import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
-import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
+import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { MS_PER_CORE_HOUR } from './units.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import type {

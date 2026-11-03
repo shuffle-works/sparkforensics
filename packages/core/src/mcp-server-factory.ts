@@ -10,7 +10,7 @@ import { listRuns } from './list-runs.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import type { ReportGenerator } from './run-output.ts';
 import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
-import { IMPACT_BANDS } from './format-utils.ts';
+import { IMPACT_BANDS } from './impact-band-order.ts';
 import { COMPARISON_METRIC_KEYS } from './run-comparison.ts';
 import { FINDING_TYPES } from './cli/flag-values.ts';
 import { listDetectors } from './detector-listing.ts';

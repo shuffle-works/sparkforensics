@@ -5,7 +5,7 @@ import { computeSkewRatio } from '../detectors/tail.ts';
 import type { ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { withEarlierAttempts } from '../run-totals.ts';
-import { IMPACT_BANDS } from '../format-utils.ts';
+import { IMPACT_BANDS } from '../impact-band-order.ts';
 import { isEscalation, type CompareRunsResult } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS, type PairDeltaMetric, type StagePair } from '../stage-alignment.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';

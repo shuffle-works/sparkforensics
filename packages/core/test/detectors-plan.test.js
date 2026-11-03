@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { analyze } from '../src/analyzer.js';
 import { computePlanShapes, normalizeDetail, findCompositeCandidates, planOperatorKind, findDuplicateSubtrees } from '../src/detectors/plan-shape.js';
 import { createState, dispatchLine } from '../src/parser-worker.js';
-import { formatBytes, pathBasename } from '../src/format-utils.js';
+import { pathBasename } from '../src/text-format.js';
+import { formatBytes } from '../src/units.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 // Values never feed the fingerprint, so a placeholder value of 1 is fine.

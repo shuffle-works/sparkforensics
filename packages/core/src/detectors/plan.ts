@@ -1,4 +1,5 @@
-import { pathBasename, formatBytes, formatDuration } from '../format-utils.ts';
+import { pathBasename } from '../text-format.ts';
+import { formatBytes, formatDuration } from '../units.ts';
 import { parseScanFilters } from '../plan-summary.ts';
 import { walkPlanTree } from '../plan-tree-walk.ts';
 import { isBatchEvalPythonNode } from '../python-stage.ts';

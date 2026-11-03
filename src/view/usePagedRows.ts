@@ -1,6 +1,6 @@
 import { useLayoutEffect, type Dispatch, type SetStateAction } from 'react';
 
-import { VISIBLE_LIMIT } from '@sparkforensics/core/view-model';
+import { VISIBLE_LIMIT } from './visible-limit';
 
 export interface UsePagedRowsResult<T> {
   totalPages: number;

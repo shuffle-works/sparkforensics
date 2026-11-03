@@ -1,4 +1,4 @@
-import { formatBytes, formatDuration, MS_PER_CORE_HOUR } from '../format-utils.ts';
+import { formatBytes, formatDuration, MS_PER_CORE_HOUR } from '../units.ts';
 import { shareLabel } from '../finding-presentation.ts';
 import { allocatedCoreMs, computeAllocation } from '../allocation.ts';
 import { executorHeapPeaks } from '../executor-peaks.ts';

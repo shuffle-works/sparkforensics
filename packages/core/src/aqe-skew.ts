@@ -9,7 +9,7 @@
 // user-guide/understanding-findings.md.
 import type { PlanNode } from './types.ts';
 import type { AqeSkewCase, Remediation } from './finding-types.ts';
-import { formatBytes } from './format-utils.ts';
+import { formatBytes } from './units.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { codeFix, decreaseConf, setConf } from './remediation.ts';
 import { parseSparkBytes, sparkConfDefault } from './spark-conf.ts';

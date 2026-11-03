@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { createIngestClient, createModelCallbacks, analyze, auditConfig, isShsErrorCode } from '@sparkforensics/core/analysis';
-import { deriveEvidenceAvailability, runLabel } from '@sparkforensics/core/view-model';
+import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
+import { runLabel } from './run-label';
 import { captureSnapshot, applySnapshot } from '@sparkforensics/core/export';
 import * as recentFiles from '@sparkforensics/core/browser';
 import { store } from './store';

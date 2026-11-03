@@ -5,11 +5,11 @@ import {
   findingStageIds,
   coreFindingGenericRecommendation,
   sharedDocAnchor,
-  formatStageIdsLabel,
   pathBasename,
   findingActionLabel,
   recommendationText,
 } from '@sparkforensics/core/view-model';
+import { formatStageIdsLabel } from '../row-labels';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { TagBadge } from '@/view/ImpactBadge';

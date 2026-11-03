@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { useStageDetail } from '@/view/StageDetailContext';
 import { cn } from '@/lib/utils';
-import { VISIBLE_LIMIT } from '@sparkforensics/core/view-model';
+import { VISIBLE_LIMIT } from './visible-limit';
 
 const pillClassName =
   'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-sm border border-border bg-background px-2 font-mono text-xs font-medium whitespace-nowrap outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';

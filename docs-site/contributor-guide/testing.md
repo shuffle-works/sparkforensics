@@ -75,7 +75,7 @@ shapes of the real workarounds; add the shape of a new workaround there.
 ## Testing layout
 
 Vitest throughout. Core logic tests (`packages/core/test/*.test.js`,
-covering parser, analyzer, detectors, format-utils, etc.) run under Node via
+covering parser, analyzer, detectors, units, etc.) run under Node via
 `npm run test:core`. The root `npm test` runs two environments in one run:
 root-level tooling tests (`tests/*.test.js`, `tests/*.test.ts`) and pure
 view-logic tests (`tests/view/*.test.ts`) under Node, and component tests

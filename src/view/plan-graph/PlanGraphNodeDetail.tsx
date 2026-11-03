@@ -2,7 +2,8 @@ import { ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PlanGraphInspector } from '@/view/plan-graph/PlanGraphInspector';
 import { TagBadge } from '@/view/ImpactBadge';
-import { formatBytes, formatRowWidth, findingActionLabel } from '@sparkforensics/core/view-model';
+import { formatBytes, findingActionLabel } from '@sparkforensics/core/view-model';
+import { formatRowWidth } from '../row-labels';
 import { CATEGORY_ICON } from '@/view/plan-graph/PlanGraphNode';
 import type { PlanGraphNodeData } from '@sparkforensics/core/types';
 

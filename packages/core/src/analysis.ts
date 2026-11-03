@@ -35,4 +35,5 @@ export * from './run-interpretation.ts';
 export * from './run-verdict.ts';
 export * from './shs-request.js';
 export * from './stage-alignment.ts';
+export * from './stage-widget-frequency.ts';
 export * from './threshold-overrides.ts';
