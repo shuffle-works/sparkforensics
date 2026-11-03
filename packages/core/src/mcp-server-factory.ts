@@ -20,9 +20,13 @@ export function createMcpServer(
 ): McpServer {
   const server = new McpServer({ name: 'sparkforensics', version: generator?.version ?? UNKNOWN_VERSION });
   for (const entry of mcpToolEntries({ thresholds, generator, defaultShsBaseUrl })) {
-    // Loose, so a key a schema does not list is allowed in structuredContent.
+    // Loose, so a key a schema does not list is allowed in structuredContent. An error result carries
+    // only `{ code }`, and an MCP client checks it against this schema too (the SDK needs an object
+    // schema, so no union): every success field is optional and `code` is declared.
     server.registerTool(entry.name, {
-      description: entry.description, inputSchema: entry.inputSchema, outputSchema: z.looseObject(entry.outputSchema),
+      description: entry.description,
+      inputSchema: entry.inputSchema,
+      outputSchema: z.looseObject({ ...z.object(entry.outputSchema).partial().shape, code: z.string().optional() }),
     }, entry.handler as never);
   }
   return server;

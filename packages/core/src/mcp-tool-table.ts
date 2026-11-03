@@ -119,7 +119,7 @@ type ToolInput = z.ZodRawShape | z.ZodType;
 type ToolArgs<I extends ToolInput> = I extends z.ZodType ? z.infer<I> : I extends z.ZodRawShape ? z.infer<z.ZodObject<I>> : never;
 
 /** One MCP tool: what `createMcpServer` registers, and the CLI twin that is the parity decision for it.
- * `outputSchema` describes the `structuredContent` of a successful call; error results are not checked against it. */
+ * `outputSchema` describes the `structuredContent` of a successful call. The server registers it with every field optional and `code` added, so an error result `{ code }` passes a client's check. */
 export interface McpToolEntry {
   name: string;
   description: string;
