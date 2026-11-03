@@ -98,7 +98,18 @@ absolute budgets and the `run-complete` check apply to the candidate run; the MC
 
 ## MCP server
 
-`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers these tools:
+The tools come from one typed table, `mcpToolEntries()` in `packages/core/src/mcp-tool-table.ts`.
+Each entry has a `name`, a `description`, an `inputSchema`, an `outputSchema` (the zod shape of
+a successful call's `structuredContent`, registered as a loose object so an extra key is allowed),
+a `handler`, and `cli`: either `{ twin }` naming the CLI command or flag mode that gives the same
+data, or `{ none }` giving the reason there is no twin. `createMcpServer()` in
+`packages/core/src/mcp-server-factory.ts` registers every entry, and `assertToolsMatchTable()`
+throws when the registered names and the table's differ. To add a tool, add an entry with a CLI
+twin or a stated reason and an `outputSchema`, and list the tool in `docs-site/user-guide/mcp-tools.md`;
+`packages/core/test/mcp-tool-table.test.js` fails an entry with no `cli` decision, and calls every
+tool, which checks the `structuredContent` against its `outputSchema`.
+
+`createMcpServer()` registers these tools:
 `list_runs` (candidate runs in a local directory or on a Spark History Server, to
 pick one before diagnosing it), `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`

@@ -15,6 +15,22 @@ an AI agent) can diagnose a run without opening the dashboard.
 | [`get_finding_documentation`](./mcp-tools/get-finding-documentation.md) | Returns the detection and tuning notes for one finding type. |
 | [`get_reference_doc`](./mcp-tools/get-reference-doc.md) | Returns one tuning-reference chapter by anchor. |
 
+Every tool declares an output schema for the `structuredContent` of a successful
+call, and a client can read it from `tools/list`. The schemas name the top-level keys
+and leave nested payloads open. The CLI gives the same data as most tools:
+
+| Tool | CLI twin |
+|------|----------|
+| `list_runs` | None: the CLI takes a log path or directory as its input and has no listing mode. |
+| `list_detectors` | `sparkforensics-analyze detectors` |
+| `diagnose_run` | `sparkforensics-analyze <log>` |
+| `get_run_summary` | `sparkforensics-analyze <log>` |
+| `compare_runs` | `sparkforensics-analyze <log> --baseline <log>` |
+| `evaluate_budgets` | `sparkforensics-analyze <log>` with the budget flags, and `--baseline <log>` for regression budgets |
+| `get_finding_evidence` | `sparkforensics-analyze <log>` |
+| `get_finding_documentation` | None: the CLI lists a type's documentation paths in `detectors` but does not print the text. |
+| `get_reference_doc` | None: the tuning reference is bundled documentation, not analysis of a log. |
+
 ## Common parameters {#common-parameters}
 
 The tools that load a run (`diagnose_run`, `get_run_summary`, `compare_runs`

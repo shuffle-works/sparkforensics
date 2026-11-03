@@ -3,3 +3,4 @@
 export * from './mcp-error.ts';
 export * from './mcp-server-factory.ts';
 export * from './mcp-tools.ts';
+export * from './mcp-tool-table.ts';

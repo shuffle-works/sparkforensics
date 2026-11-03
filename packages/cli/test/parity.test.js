@@ -8,7 +8,8 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 import { collectRun } from '@sparkforensics/core/cli';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
 import { analyze, auditConfig, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
-import { createMcpServer } from '@sparkforensics/core/mcp';
+import { createMcpServer, mcpToolEntries } from '@sparkforensics/core/mcp';
+import { CLI_SUBCOMMANDS } from '@sparkforensics/core/node';
 import { corpusLog } from '../../core/test/corpus-log.js';
 import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js';
 
@@ -100,6 +101,29 @@ function diffSurfaces(cli, mcp, allowed) {
   return problems;
 }
 
+// The MCP tool table decides which tools have a CLI twin; this file compares each twin's values.
+describe('MCP tools and their CLI twins', () => {
+  const COMPARED_HERE = new Set(['diagnose_run', 'get_run_summary', 'compare_runs', 'evaluate_budgets', 'get_finding_evidence', 'list_detectors']);
+
+  it.each(mcpToolEntries().map((entry) => [entry.name, entry.cli]))('%s has a CLI twin this file compares, or says why it has none', (name, cli) => {
+    if ('twin' in cli) {
+      expect(cli.twin).toMatch(/^sparkforensics-analyze/);
+      expect(COMPARED_HERE.has(name), `${name} names a CLI twin but no test here compares its values`).toBe(true);
+    } else {
+      expect(cli.none.trim(), `${name} has neither a CLI twin nor a reason`).not.toBe('');
+      expect(COMPARED_HERE.has(name), `${name} has no CLI twin yet a test here compares it`).toBe(false);
+    }
+  });
+
+  it('names an existing CLI subcommand where a twin is a subcommand', () => {
+    const subcommands = new Set(CLI_SUBCOMMANDS.map((c) => c.name));
+    for (const { cli } of mcpToolEntries()) {
+      const [, word] = ('twin' in cli ? cli.twin : '').split(' ');
+      if (word && !word.startsWith('<') && !word.startsWith('-')) expect(subcommands.has(word), cli.twin).toBe(true);
+    }
+  });
+});
+
 describe('diffSurfaces', () => {
   it('reports a key missing on either side and a value that differs', () => {
     expect(diffSurfaces({ a: 1, b: 2, c: [1] }, { a: 1, b: 3, d: 4 }, [])).toEqual([
@@ -187,6 +211,21 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       // Sanity: the blocks the MCP default view gained are really compared.
       expect(Object.keys(cli)).toEqual(expect.arrayContaining(['writeTargets', 'metrics', 'effectiveConf']));
       expect(diffSurfaces(cli, viaMcp, RUN_REPORT_ALLOWED)).toEqual([]);
+    });
+
+    it('reports the run summary figures the CLI report states', async () => {
+      const cli = await cliRun([candidate, '--format', 'json']);
+      const summary = await mcpCall('get_run_summary', { source: { path: candidate } });
+      const { outcome, runShape, stageCount, jobCount, sqlExecutionCount, skippedLines } = cli.summary;
+      expect(summary).toMatchObject({ ...outcome, runShape, stageCount, jobCount, sqlExecutionCount, skippedLines });
+    });
+
+    it('returns the finding row the CLI report lists, evidence included', async () => {
+      const cli = await cliRun([candidate, '--format', 'json']);
+      const [row] = cli.findings;
+      expect(row, 'the corpus log has a finding to drill into').toBeDefined();
+      const viaMcp = await mcpCall('get_finding_evidence', { source: { path: candidate }, findingId: row.id });
+      expect(viaMcp.finding).toEqual(row);
     });
 
     it('returns writeTargets, metrics and effectiveConf in diagnose_run\'s default view', async () => {
