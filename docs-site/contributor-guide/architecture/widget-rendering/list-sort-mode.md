@@ -3,8 +3,9 @@
 How a finding widget's list sorts, and when the sort toggle shows.
 
 `src/view/impact-sort.ts` (`canToggleSort`,
-`orderByImpact`, `stageIdOf`, `byStageAsc`), `src/view/useSortMode.ts` and
-`src/view/SortModeToggle.tsx` hold the sort. The finding widget shell
+`orderByImpact`, `byStageAsc`), `src/view/useSortMode.ts` and
+`src/view/SortModeToggle.tsx` hold the sort. `stageIdOf`, the stage key of a
+finding, lives in core (`packages/core/src/findings-of-type.ts`). The finding widget shell
 (`defineFindingWidget`, see [Finding widget shell](./finding-widget-shell.md))
 is the only caller, so every finding widget lists its rows the same way and a
 widget file writes no sort code. A widget's model gives the shell one thing:
