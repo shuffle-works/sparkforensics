@@ -74,25 +74,6 @@ describe('docs anchor offset', () => {
     expect(document.querySelectorAll('[data-sf-anchor-offset]')).toHaveLength(1);
   });
 
-  it('re-places the hash heading when chrome grows under a reader parked on it', () => {
-    history.replaceState(null, '', '#tuning');
-    const localNav = chrome('<div class="VPLocalNav"></div>', { style: 'display: none', height: 0 });
-    const heading = document.createElement('h2');
-    heading.id = 'tuning';
-    heading.getBoundingClientRect = () => ({ top: 24, bottom: 60 });
-    document.body.appendChild(heading);
-    const scrollIntoView = vi.fn();
-    heading.scrollIntoView = scrollIntoView;
-    runScript();
-
-    localNav.style.cssText = 'position: sticky; top: 0px';
-    Object.defineProperty(localNav, 'offsetHeight', { get: () => 48 });
-    window.dispatchEvent(new Event('resize'));
-
-    expect(offset()).toBe('72px');
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
-  });
-
   it('picks up chrome that mounts after start', async () => {
     chrome('<header class="VPNav"></header>', { style: 'position: fixed', height: 64, bottom: 64 });
     runScript();

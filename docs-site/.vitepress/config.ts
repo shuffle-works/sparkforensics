@@ -64,6 +64,19 @@ export default defineConfig({
   markdown: {
     config(md) { md.use(footnote); },
   },
+  vite: {
+    resolve: {
+      // Copies of five default-theme components (theme/overrides/) that render the markup the
+      // product family's shared bar and the accessibility tree need: the page-controls marker on
+      // the appearance switch wrappers, its aria-label and the home page's main landmark.
+      alias: [
+        {
+          find: /^.*\/(VPSwitchAppearance|VPNavBarAppearance|VPNavScreenAppearance|VPNavBarExtra|VPHome)\.vue$/,
+          replacement: `${fileURLToPath(new URL('./theme/overrides', import.meta.url))}/$1.vue`,
+        },
+      ],
+    },
+  },
   themeConfig: {
     // The app's pulse-line mark, in the docs ink color for each theme.
     logo: { light: '/logo-light.svg', dark: '/logo-dark.svg' },

@@ -32,32 +32,13 @@
     return 0;
   };
 
-  const hashTarget = () => {
-    try {
-      return location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
-    } catch {
-      return null; // malformed percent-encoding in the fragment
-    }
-  };
-
   let offset = null;
   const sync = () => {
     const bottoms = Array.from(document.querySelectorAll(PINNED_CHROME), pinnedBottom);
     const next = Math.ceil(Math.max(0, ...bottoms)) + GAP_PX;
     if (next === offset) return;
-    const previous = offset;
     offset = next;
     root.style.setProperty('--sf-anchor-offset', `${offset}px`);
-
-    // Chrome can grow after a jump already placed the heading, for example
-    // VitePress's local nav, which appears only once hydration finds an
-    // outline. If the reader is still parked where the old offset put the
-    // hash's heading (the router lands it higher by its padding-top), place
-    // it again so it doesn't end up underneath.
-    const target = previous === null ? null : hashTarget();
-    if (!target) return;
-    const slack = (parseFloat(getComputedStyle(target).paddingTop) || 0) + 2;
-    if (Math.abs(target.getBoundingClientRect().top - previous) <= slack) target.scrollIntoView();
   };
 
   const start = () => {
