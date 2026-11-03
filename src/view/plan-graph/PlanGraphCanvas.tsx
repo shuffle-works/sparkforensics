@@ -132,15 +132,21 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   return null;
 }
 
-/** Reports whether part of the graph is off screen at the current viewport. */
-function OverflowReporter({ bounds, onChange }: { bounds: Rect | null; onChange: (overflows: boolean) => void }) {
+/** Decides whether the mini-map is open, where the viewport is measured: while available it follows
+ * whether part of the graph is off screen, until the rail toggle forces it. */
+function MiniMapGate({ bounds, available, children }: {
+  bounds: Rect | null;
+  available: boolean;
+  children: (miniMap: { open: boolean; toggle: () => void }) => ReactNode;
+}) {
   const overflows = useStore((s) => {
     if (!bounds || !s.width || !s.height) return true;
     const [x, y, zoom] = s.transform;
     return !viewportShowsAll(bounds, { x, y, zoom }, { width: s.width, height: s.height });
   });
-  useEffect(() => onChange(overflows), [overflows, onChange]);
-  return null;
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const open = available && (choice ?? overflows);
+  return <>{children({ open, toggle: () => setChoice(!open) })}</>;
 }
 
 // Past this many plan nodes a phone-width plan overflows the canvas either way,
@@ -454,12 +460,6 @@ export function PlanGraphCanvas({
 
   // Collapsed by default: the key is about 450x190 px and would cover a corner.
   const [legendOpen, setLegendOpen] = useState(false);
-  // `showMiniMap` gates availability; within it the minimap follows overflow until
-  // the rail toggle forces it (`miniMapChoice`, null until then).
-  const [graphOverflows, setGraphOverflows] = useState(true);
-  const [miniMapChoice, setMiniMapChoice] = useState<boolean | null>(null);
-  const miniMapOpen = showMiniMap && (miniMapChoice ?? graphOverflows);
-
   const selectedNode = selectedNodeId
     ? flowNodes.find((n) => n.id === selectedNodeId && n.type === 'planNode')
     : undefined;
@@ -502,6 +502,8 @@ export function PlanGraphCanvas({
       {/* The resize observer sits on this outer row, not the canvas wrapper, so
           opening the docked inspector (which shrinks only the wrapper) does not
           re-fit and reset the user's pan/zoom. */}
+      <MiniMapGate bounds={graphBounds} available={showMiniMap}>
+      {(miniMap) => (
       <div ref={containerRef} className="flex min-h-0 flex-1 flex-col sm:flex-row">
         {/* Rail and canvas share a row so that on a phone the node detail can
             sit below them as a bottom sheet instead of beside them. */}
@@ -520,8 +522,8 @@ export function PlanGraphCanvas({
           infoNoteCount={infoNoteCount}
           legendOpen={legendOpen}
           onToggleLegend={() => setLegendOpen((o) => !o)}
-          miniMapOpen={miniMapOpen}
-          onToggleMiniMap={() => setMiniMapChoice(!miniMapOpen)}
+          miniMapOpen={miniMap.open}
+          onToggleMiniMap={miniMap.toggle}
         />
         <div className="relative min-w-0 flex-1" onKeyDown={onCanvasKeyDown}>
           <ReactFlow
@@ -550,8 +552,7 @@ export function PlanGraphCanvas({
                 <PlanGraphLegend />
               </Panel>
             ) : null}
-            <OverflowReporter bounds={graphBounds} onChange={setGraphOverflows} />
-            {miniMapOpen && !sheetOpen ? (
+            {miniMap.open && !sheetOpen ? (
               <MiniMap
                 nodeColor={planGraphMiniMapNodeColor}
                 pannable
@@ -566,6 +567,8 @@ export function PlanGraphCanvas({
           <PlanGraphNodeDetail node={flowData(selectedNode)} sheet={narrow} onClose={() => onSelectNode?.(null)} onJumpToPaired={onJumpToPaired} />
         ) : stagePanel}
       </div>
+      )}
+      </MiniMapGate>
       </TooltipProvider>
     </ReactFlowProvider>
   );
