@@ -163,6 +163,7 @@ function RowList<R extends AnyRow>({
     if (last.appModel === appModel && last.sortMode === sortMode) return;
     resetKeyRef.current = { appModel, sortMode };
     setPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on a sort change only; a new run remounts the list.
   }, [sortMode]);
 
   const List = LIST_ELEMENT[rowElement];

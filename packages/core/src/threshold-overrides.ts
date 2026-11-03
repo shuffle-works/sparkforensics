@@ -5,7 +5,7 @@
 import { DETECTORS, ENTRY_BY_TYPE, detectorCatalog, type DetectorCatalogEntry } from './detector-catalog.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import type { Detector, DetectorThresholds } from './detectors/types.ts';
-import type { TunedThreshold, TunedThresholds } from './types.ts';
+import type { FindingType, TunedThreshold, TunedThresholds } from './types.ts';
 
 const entries: readonly Detector[] = DETECTORS;
 
@@ -90,14 +90,15 @@ export function tunedThresholdsOf(entry: Detector, overrides: ThresholdOverrides
 
 // straggler judges a tail with skew's resolved thresholds (DetectorCtx.skewThresholds), so tuning skew
 // changes which tails it reports without any `suppressedBy` link.
-const THRESHOLD_DEPENDENCY: Readonly<Record<string, string>> = { straggler: 'skew' };
+const THRESHOLD_DEPENDENCY: Readonly<Partial<Record<FindingType, FindingType>>> = { straggler: 'skew' };
 
 /** The tuned thresholds an entry's findings carry: its own, plus its `suppressedBy` entry's or the
  * entry it reads thresholds from (named `<entry>.<threshold>`), since tuning either changes which
  * of them survive. */
 export function findingTunedThresholds(entry: Detector, overrides: ThresholdOverrides | undefined): TunedThresholds | null {
   const own = tunedThresholdsOf(entry, overrides);
-  const suppressorType = entry.suppressedBy ?? THRESHOLD_DEPENDENCY[entry.type];
+  // `entry.type` is the detector's own name (a plain string), so the lookup reads the table by string.
+  const suppressorType = entry.suppressedBy ?? (THRESHOLD_DEPENDENCY as Readonly<Record<string, FindingType | undefined>>)[entry.type];
   const suppressor = suppressorType ? entries.find((d) => d.type === suppressorType) : undefined;
   const bySuppressor = suppressor ? tunedThresholdsOf(suppressor, overrides) : null;
   if (!suppressor || !bySuppressor) return own;

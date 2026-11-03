@@ -7,8 +7,11 @@ import { coreFindingGenericRecommendation } from '../src/finding-generic-recomme
 // directly, proving every generic sentence is free of instance data (no numbers, stage ids,
 // host names, file counts) so it's safe to show once for a whole multi-finding group instead
 // of one member's own specific `recommendation`.
-function finding(overrides: Partial<Finding> & Pick<Finding, 'type'>): Finding {
-  return { impactBand: 'warning', ...overrides };
+type FindingFixture = Partial<Finding> & Pick<Finding, 'type'>;
+
+function finding(overrides: FindingFixture): Finding {
+  // A fixture carries only the fields under test, so it is asserted, not built to each member's full shape.
+  return { impactBand: 'warning', ...overrides } as Finding;
 }
 
 const NO_DIGITS = /\d/;
@@ -67,7 +70,7 @@ test('returns a stable, instance-free sentence for every simple single-branch ty
     'duplicatePlanSubtree', 'underBroadcast', 'overBroadcast',
   ];
   for (const type of simpleTypes) {
-    const text = coreFindingGenericRecommendation(finding({ type }));
+    const text = coreFindingGenericRecommendation(finding({ type } as FindingFixture));
     expect(text, `expected a sentence for type ${type}`).toBeTruthy();
     expect(text, `expected no digits for type ${type}`).not.toMatch(NO_DIGITS);
   }
@@ -132,10 +135,12 @@ test('returns undefined (not a fallback string) for an unrecognized configAudit 
 });
 
 test('returns undefined (not a fallback string) for an unrecognized stageShape rule', () => {
-  expect(coreFindingGenericRecommendation(finding({ type: 'stageShape', rule: 'notARealRule' }))).toBeUndefined();
+  // Intentionally invalid value, to exercise the fallback.
+  expect(coreFindingGenericRecommendation(finding({ type: 'stageShape', rule: 'notARealRule' } as unknown as FindingFixture))).toBeUndefined();
 });
 
 test('returns undefined for a type with no case in the switch at all', () => {
   expect(coreFindingGenericRecommendation(finding({ type: 'incompleteRun' }))).toBeUndefined();
-  expect(coreFindingGenericRecommendation(finding({ type: 'notARealDetector' }))).toBeUndefined();
+  // Intentionally invalid value, to exercise the fallback.
+  expect(coreFindingGenericRecommendation(finding({ type: 'notARealDetector' } as unknown as FindingFixture))).toBeUndefined();
 });

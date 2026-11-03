@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve, sep, extname } from 'node:path';
 
+/** @type {Record<string, string>} */
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -13,6 +14,7 @@ const CONTENT_TYPES = {
   '.map': 'application/json; charset=utf-8',
 };
 
+/** @param {string} dir */
 export function resolveStaticRoot(dir) {
   const bundled = join(dir, 'public');
   // Monorepo dev fallback (no public/ yet): dir is packages/server, and the
@@ -20,13 +22,18 @@ export function resolveStaticRoot(dir) {
   return existsSync(bundled) ? bundled : join(dir, '..', '..', 'dist');
 }
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {string} root
+ */
 export async function serveStatic(req, res, root) {
   // Deliberately not via `new URL()`: its dot-segment resolution collapses
   // `/../../etc/passwd` before we see it, sailing a traversal past the guard
   // below as a 404 instead of a 403.
   let pathname;
   try {
-    pathname = decodeURIComponent(req.url.split('?')[0]);
+    pathname = decodeURIComponent(/** @type {string} */ (req.url).split('?')[0]);
   } catch {
     // A malformed percent-escape is a bad request, not a server fault.
     res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });

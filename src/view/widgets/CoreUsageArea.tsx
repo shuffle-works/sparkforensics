@@ -46,9 +46,12 @@ type ActiveLocalityChart = { hasActivity: true; order: string[]; points: AreaPoi
 type LocalityChartModel = { hasActivity: false } | ActiveLocalityChart;
 type AreaPoint = LocalityChartPoint;
 
+// One shared object, so the memo below keeps its identity while the run has no locality chart.
+const NO_ACTIVITY = { hasActivity: false as const };
+
 /** The locality chart's model, from the store's interpretation. */
 export function useLocalityChartModel(): LocalityChartModel {
-  const chart = useInterpretation()?.data.coreLocality?.chart ?? { hasActivity: false as const };
+  const chart = useInterpretation()?.data.coreLocality?.chart ?? NO_ACTIVITY;
   return useMemo(() => (chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart), [chart]);
 }
 

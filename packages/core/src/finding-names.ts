@@ -2,11 +2,11 @@ import { FINDING_PRESENTATION, presentationOf } from './finding-presentation.ts'
 import type { Finding, FindingType } from './types.ts';
 
 // Finding `type` -> human-readable label, derived from FINDING_PRESENTATION. The web uses it
-// lowercase; evidence-report.ts Title Cases it for CLI/MCP names. Declared string-indexed for
-// lookups by a type read from report JSON or a filter.
-export const FINDING_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
+// lowercase; evidence-report.ts Title Cases it for CLI/MCP names. A type read from report JSON or a
+// filter goes through `findingName`.
+export const FINDING_NAMES = Object.fromEntries(
   (Object.keys(FINDING_PRESENTATION) as FindingType[]).map((type) => [type, FINDING_PRESENTATION[type].name]),
-);
+) as Readonly<Record<FindingType, string>>;
 
 /** A finding type's name, or the raw type string for a type with no presentation row. */
 export function findingName(type: string): string {

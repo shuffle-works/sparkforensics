@@ -1,7 +1,7 @@
 import { lazy, type ComponentType } from 'react';
 
 import { warmLazy } from '@/lib/warm-lazy';
-import { evidencePanel, type AnyEvidencePanel, type PanelInput, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
+import { evidencePanel, type AnyEvidencePanel, type PanelInput } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 import { autoscalingChurnModel } from '@/view/widgets/AutoscalingChurn.rows';
 import { cacheUtilizationModel } from '@/view/widgets/CacheUtilization.rows';
@@ -140,12 +140,13 @@ export type RegistryEntryOf<T extends FindingType> = {
   model: FindingWidgetModel<T, any>;
 };
 
-/** An entry as `REGISTRY` is read by finding type name, where the type is not known to the compiler. */
-export type RegistryEntry = Omit<RegistryEntryOf<FindingType>, 'model'> & {
-  model: FindingWidgetModel<FindingType, WidgetRow>;
+/** One `REGISTRY` entry: the type's widget and row model, plus its board region. */
+export type RegistryEntry<T extends FindingType = FindingType> = RegistryEntryOf<T> & {
   /** The board region, from the type's `FINDING_PRESENTATION` row. */
   region: WidgetRegion;
 };
+
+type Registry = { readonly [T in FindingType]: RegistryEntry<T> };
 
 /**
  * `finding.type` -> component and row model, one entry per emitted finding type.
@@ -210,10 +211,14 @@ const ENTRIES = {
   overBroadcast: { component: OverBroadcast, widgetId: 'over-broadcast', routeable: true, model: overBroadcastModel },
 } satisfies { [T in FindingType]: RegistryEntryOf<T> };
 
-// Read by a type name the compiler cannot know, each model's rows take the input of its own type.
 export const REGISTRY = Object.fromEntries(
   Object.entries(ENTRIES).map(([type, entry]) => [type, { ...entry, region: FINDING_PRESENTATION[type as FindingType].region ?? 'action' }]),
-) as unknown as Readonly<Record<string, RegistryEntry>>;
+) as Registry;
+
+/** Whether `type`, read from run data, is a finding type with a widget. */
+function isRegistryType(type: string): type is FindingType {
+  return Object.hasOwn(REGISTRY, type);
+}
 
 const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
 
@@ -228,10 +233,9 @@ const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
  */
 export function orderedWidgets(
   detectors: Record<string, DetectorInfo>,
-): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId'> & { type: string }> {
+): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId'> & { type: FindingType }> {
   return Object.entries(detectors)
-    .filter(([type]) => REGISTRY[type] !== undefined)
-    .map(([type, { order }]) => ({ entry: REGISTRY[type], type, order }))
+    .flatMap(([type, { order }]) => (isRegistryType(type) ? [{ entry: REGISTRY[type], type, order }] : []))
     .sort((a, b) => REGION_ORDER[a.entry.region] - REGION_ORDER[b.entry.region] || a.order - b.order)
     .map(({ entry, type }) => ({
       component: entry.component,
@@ -244,22 +248,22 @@ export function orderedWidgets(
 /** The evidence panel `type`'s widget shows for `input`, or null when it has nothing to show beyond
  * what the line above states. The only way a host gets a panel, for the evidence control, the
  * panel itself and its route target alike. */
-export function evidencePanelFor(type: string, input: PanelInput<FindingType>): AnyEvidencePanel | null {
-  const entry = REGISTRY[type];
-  if (!entry) return null;
-  return evidencePanel(type as FindingType, entry.model.rows as RowsOf<FindingType, WidgetRow>, { ...input, inPanel: true }) as AnyEvidencePanel | null;
+export function evidencePanelFor<T extends FindingType>(type: T, input: PanelInput<T>): Extract<AnyEvidencePanel, { type: T }> | null {
+  // `EvidencePanel<FindingType>` is invariant: a union of types reads as the union of the per-type panels.
+  return evidencePanel(type, REGISTRY[type].model.rows, { ...input, inPanel: true }) as Extract<AnyEvidencePanel, { type: T }> | null;
 }
 
-export function registryTypes(): string[] {
-  return Object.keys(REGISTRY);
+export function registryTypes(): FindingType[] {
+  return Object.keys(REGISTRY) as FindingType[];
 }
+
 
 // The widget that always mounts from `appModel`, independent of finding state, in the Full app
 // report tab (Core Usage by Locality; see docs-site's widget-rendering/reference-section.md): the
 // widget's model says so with `alwaysMounted`. The other reference-region widgets collapse to a
 // `CleanCheckRow` on a clean run like an ordinary action-region type.
 export function isAlwaysMountedType(type: string): boolean {
-  return REGISTRY[type]?.model.alwaysMounted === true;
+  return isRegistryType(type) && REGISTRY[type].model.alwaysMounted === true;
 }
 
 export interface AlwaysMountedWidget {

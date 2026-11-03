@@ -4,7 +4,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 
 import { ExportApp } from '@/export/ExportApp';
 import { store } from '@/store/store';
-import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
+import { REGISTRY, registryTypes, type WidgetProps } from '@/view/detector-registry';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { exampleRuns, loadExampleRun } from './_shared/detector-examples';
 
@@ -20,7 +20,7 @@ window.ResizeObserver = class {
   disconnect() {}
 } as unknown as typeof ResizeObserver;
 
-const originalComponents = Object.entries(REGISTRY).map(([type, entry]) => [type, entry.component] as const);
+const originalComponents = registryTypes().map((type) => [type, REGISTRY[type].component] as const);
 // The types whose widget rendered inside an evidence panel.
 let panelRenders: string[] = [];
 

@@ -6,8 +6,11 @@ import { findingActionLabel } from '../src/finding-action-label';
 // The one action-label function the dashboard, the run verdict and the
 // evidence report share: each type's FINDING_PRESENTATION row, then the type's
 // name for a combination the row doesn't recognize.
-function finding(overrides: Partial<Finding> & Pick<Finding, 'type'>): Finding {
-  return { impactBand: 'warning', ...overrides };
+type FindingFixture = Partial<Finding> & Pick<Finding, 'type'>;
+
+function finding(overrides: FindingFixture): Finding {
+  // A fixture carries only the fields under test, so it is asserted, not built to each member's full shape.
+  return { impactBand: 'warning', ...overrides } as Finding;
 }
 
 test('returns a plain per-type label for a detector with no sub-variants', () => {
@@ -37,7 +40,8 @@ test('branches on the variant (and rule/dataUnavailable) fields for memoryUtiliz
   expect(findingActionLabel(finding({ type: 'memoryUtilization', variant: 'wasteModel' }))).toBe(
     'Right-size executor memory',
   );
-  expect(findingActionLabel(finding({ type: 'memoryUtilization', variant: 'notARealVariant' }))).toBe('memory utilization');
+  // Intentionally invalid value, to exercise the fallback.
+  expect(findingActionLabel(finding({ type: 'memoryUtilization', variant: 'notARealVariant' } as unknown as FindingFixture))).toBe('memory utilization');
   expect(
     findingActionLabel(finding({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true })),
   ).toBe('Executor heap peaks unavailable');
@@ -50,7 +54,8 @@ test('branches on the rule field for partitionSizing', () => {
   expect(findingActionLabel(finding({ type: 'partitionSizing', rule: 'shufflePartitionSkew' }))).toBe('Fix skewed partition');
   expect(findingActionLabel(finding({ type: 'partitionSizing', rule: 'lowShuffleParallelism' }))).toBe('Add shuffle partitions');
   expect(findingActionLabel(finding({ type: 'partitionSizing', rule: 'maxPartitionTooBig' }))).toBe('Repartition oversized data');
-  expect(findingActionLabel(finding({ type: 'partitionSizing', rule: 'notARealRule' }))).toBe('partition sizing');
+  // Intentionally invalid value, to exercise the fallback.
+  expect(findingActionLabel(finding({ type: 'partitionSizing', rule: 'notARealRule' } as unknown as FindingFixture))).toBe('partition sizing');
 });
 
 test('branches on the variant field for slowHost, falling back to a generic label for any other variant', () => {
@@ -61,7 +66,8 @@ test('branches on the variant field for slowHost, falling back to a generic labe
 
 test('branches on the variant field for cachingOpportunity', () => {
   expect(findingActionLabel(finding({ type: 'cachingOpportunity', variant: 'composite' }))).toBe('Cache repeated result');
-  expect(findingActionLabel(finding({ type: 'cachingOpportunity', variant: 'single' }))).toBe('Cache shared table');
+  // Intentionally invalid value, to exercise the fallback.
+  expect(findingActionLabel(finding({ type: 'cachingOpportunity', variant: 'single' } as unknown as FindingFixture))).toBe('Cache shared table');
 });
 
 test('branches on the direction field for smallFiles', () => {
@@ -102,10 +108,12 @@ test('falls back to the type name for an unrecognized configAudit property', () 
 });
 
 test('falls back to the type name for an unrecognized stageShape rule', () => {
-  expect(findingActionLabel(finding({ type: 'stageShape', rule: 'notARealRule' }))).toBe('stage shape');
+  // Intentionally invalid value, to exercise the fallback.
+  expect(findingActionLabel(finding({ type: 'stageShape', rule: 'notARealRule' } as unknown as FindingFixture))).toBe('stage shape');
 });
 
 test('falls back to the name for a type with no action label, and to the raw type for an unknown type', () => {
   expect(findingActionLabel(finding({ type: 'incompleteRun' }))).toBe('incomplete run');
-  expect(findingActionLabel(finding({ type: 'notARealDetector' }))).toBe('notARealDetector');
+  // Intentionally invalid value, to exercise the fallback.
+  expect(findingActionLabel(finding({ type: 'notARealDetector' } as unknown as FindingFixture))).toBe('notARealDetector');
 });

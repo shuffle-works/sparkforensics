@@ -36,11 +36,11 @@ export function usePagedRows<T>(
   const effectivePage = routeIndex == null || routeIndex === -1 ? clamped : Math.floor(routeIndex / VISIBLE_LIMIT);
   const visible = items.slice(effectivePage * VISIBLE_LIMIT, (effectivePage + 1) * VISIBLE_LIMIT);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `items` is a fresh reference every render; see the comment above.
   useLayoutEffect(() => {
     if (routeIndex == null || routeIndex === -1) return;
     const targetPage = Math.floor(routeIndex / VISIBLE_LIMIT);
     setPage((current) => (current === targetPage ? current : targetPage));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- jumps on a route change only; `setPage` is not a dependency.
   }, [routeIndex]);
 
   return { totalPages, effectivePage, visible };

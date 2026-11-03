@@ -147,7 +147,7 @@ function parseOptionMap(text: string): Map<string, string> | null {
   const m = /^Map\(([\s\S]*)\)$/.exec(text);
   if (!m) return null;
   const body = m[1];
-  const keys = [...body.matchAll(/(?:^|, )([A-Za-z0-9_.\-]+) -> /g)];
+  const keys = [...body.matchAll(/(?:^|, )([A-Za-z0-9_.-]+) -> /g)];
   const options = new Map<string, string>();
   keys.forEach((key, i) => {
     const valueStart = key.index! + key[0].length;

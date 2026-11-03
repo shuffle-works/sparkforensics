@@ -24,7 +24,7 @@ was checked; if uncertain, say so.
   `npm run test:cli`, `npm run test:mcp`, `npm run test:server`. Each package
   suite is separate; none is part of `npm test`. Single file:
   `npm test -- tests/finding-filter.test.js`.
-- Typecheck `npx tsc --noEmit`; lint `npm run lint`; dev server `npm run dev`;
+- Typecheck `npx tsc --noEmit` and `npx tsc --noEmit -p tsconfig.check.json`; lint `npm run lint`; dev server `npm run dev`;
   build `npm run build` (docs site, app, export template).
 - Corpus gate: `node dev/bench-analyze.mjs --check dev/corpus-snapshot.json`.
   After an intended finding change, `--update` it and commit the snapshot

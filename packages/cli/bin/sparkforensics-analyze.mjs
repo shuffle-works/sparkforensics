@@ -33,6 +33,25 @@ const {
   CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport,
 } = /** @type {typeof import('../../core/src/node.ts')} */ (core);
 
+/** @typedef {import('../../core/src/analyzed-run.ts').AnalyzedRun} AnalyzedRun */
+/** @typedef {import('../../core/src/types.ts').AppModel} AppModel */
+/** @typedef {import('../../core/src/cli/budgets.ts').BudgetsConfig} BudgetsConfig */
+/** @typedef {import('../../core/src/comparability.ts').CaveatThresholds} CaveatThresholds */
+/** @typedef {import('../../core/src/detectors.ts').ThresholdOverrides} ThresholdOverrides */
+/** @typedef {import('../../core/src/evidence-report.ts').FindingsFilter} FindingsFilter */
+/** @typedef {Awaited<ReturnType<typeof collectRun>>} CollectedRun */
+/** @typedef {{ name: string, load: () => Promise<CollectedRun> }} Candidate */
+/** @typedef {Error & { code?: string, exitCode?: number }} CaughtError */
+/** @typedef {ReturnType<typeof parseCliArgs>['values']} CliValues */
+/** @typedef {keyof CliValues} CliFlag */
+/** @typedef {'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency' | 'max-regression-pct'} NumericBudgetFlag */
+/** @typedef {'maxRuntimeMs' | 'maxSpillGb' | 'maxSkewRatio' | 'maxFailedTaskRatePct' | 'minEfficiencyPct' | 'maxRegressionPct'} NumericBudgetField */
+/** @typedef {'executor-ratio' | 'unmatched-stages-pct' | 'task-count-change-pct'} CaveatFlag */
+
+// Caught values are `unknown`; the CLI only reads these optional fields off them.
+/** @param {unknown} e */
+const asCaught = (e) => /** @type {CaughtError} */ (e);
+
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
@@ -182,6 +201,7 @@ the candidate, or candidate N with several candidates) instead of the error text
 its path.
 `;
 
+/** @param {string[]} argv */
 function parseCliArgs(argv) {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -228,11 +248,13 @@ function parseCliArgs(argv) {
   return { values, positionals };
 }
 
+/** @param {string} message @param {number} code */
 function bail(message, code) {
   process.stderr.write(message);
   process.exitCode = code;
 }
 
+/** @param {string | undefined} value */
 function splitCsv(value) {
   if (value === undefined) return undefined;
   return value.split(',').map((s) => s.trim()).filter(Boolean);
@@ -251,6 +273,7 @@ function exportProducer() {
   return `${name} ${version}`;
 }
 
+/** @param {string} destDir @param {AnalyzedRun} run @param {{ redact: boolean }} options */
 async function writeHtmlExport(destDir, run, { redact }) {
   const exportData = buildHtmlExportData(run, {
     redact, buildId: coreBuildId, producer: exportProducer(),
@@ -281,7 +304,7 @@ async function writeHtmlExport(destDir, run, { redact }) {
     rmSync(destDir, { recursive: true, force: true });
     renameSync(tempDir, destDir);
   } catch (e) {
-    throw new Error(`${e.message} (export left at ${tempDir}; remove it manually)`, { cause: e });
+    throw new Error(`${asCaught(e).message} (export left at ${tempDir}; remove it manually)`, { cause: e });
   }
 }
 
@@ -289,12 +312,14 @@ const SHS_FLAG_BY_FIELD = { baseUrl: '--shs-base-url', appId: '--app-id', attemp
 const BASELINE_SHS_FLAG_BY_FIELD = { baseUrl: '--baseline-shs-base-url', appId: '--baseline-app-id', attemptId: '--baseline-attempt-id' };
 
 // "<id>" or "<id>:<attempt>". The attempt ID charset has no ':', so the first one always splits.
+/** @param {string} spec */
 function parseAppSpec(spec) {
   const at = spec.indexOf(':');
   return at === -1 ? { appId: spec, attemptId: undefined } : { appId: spec.slice(0, at), attemptId: spec.slice(at + 1) };
 }
 
 // Names the invalid fields of an SHS request in the flags the user typed, or returns null.
+/** @param {{ baseUrl?: unknown, appId?: unknown, attemptId?: unknown }} request @param {Record<string, string>} flagByField */
 function shsRequestError(request, flagByField) {
   const { errors } = validateShsRequest(request);
   const invalid = Object.entries(errors).filter(([, message]) => message);
@@ -309,9 +334,11 @@ const EXIT = { PASS: 0, VIOLATION: 1, USAGE: 2, INCONCLUSIVE: 3, CANDIDATE_UNREA
 const EXIT_SEVERITY = Object.fromEntries([0, 3, 1, 4, 5, 6].map((code, rank) => [code, rank]));
 
 // Marks a read/parse failure with the exit code of the log it came from.
-const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = exitCode; throw e; });
+/** @template T @param {Promise<T>} promise @param {number} exitCode @returns {Promise<T>} */
+const unreadable = (promise, exitCode) => promise.catch((/** @type {CaughtError} */ e) => { e.exitCode = exitCode; throw e; });
 
 // The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
+/** @param {string} role @param {number} exitCode */
 const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode === EXIT.INTERNAL ? 'analyzed' : 'read or parsed'}.`;
 
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
@@ -319,6 +346,15 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
 // a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
 // loadBaseline() and each candidate's load() resolve to { appModel }, the parsed log from a local file or a History Server.
+/**
+ * @param {{
+ *   candidates: Candidate[], loadBaseline: () => Promise<CollectedRun>, budgets: BudgetsConfig,
+ *   thresholds: ThresholdOverrides | undefined, findingsFilter: FindingsFilter, redact: boolean | undefined,
+ *   outPath: string | undefined, confKeys: string[] | undefined, confRedactRegex: string | undefined,
+ *   normalizePath: string[] | undefined, ignoreConf: string[] | undefined, noiseBand: number | undefined,
+ *   caveatThresholds: Partial<CaveatThresholds>,
+ * }} options
+ */
 async function runMultiLog({
   candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds,
 }) {
@@ -326,11 +362,12 @@ async function runMultiLog({
   try {
     baselineRun = analyzeRun((await loadBaseline()).appModel, { thresholds });
   } catch (e) {
-    process.stderr.write(`${redact ? redactedFailure('The baseline', EXIT.BASELINE_UNREADABLE) : e.message}\n`);
+    process.stderr.write(`${redact ? redactedFailure('The baseline', EXIT.BASELINE_UNREADABLE) : asCaught(e).message}\n`);
     process.exitCode = EXIT.BASELINE_UNREADABLE;
     return;
   }
   if (outPath) writeFileSync(outPath, '');
+  /** @param {object} line */
   const emit = (line) => {
     const text = `${JSON.stringify(line)}\n`;
     if (outPath) appendFileSync(outPath, text);
@@ -366,8 +403,8 @@ async function runMultiLog({
         ...envelope,
       };
     } catch (e) {
-      const exitCode = e.exitCode ?? EXIT.INTERNAL;
-      const error = redact ? redactedFailure(`Candidate ${index + 1}`, exitCode) : e.message;
+      const exitCode = asCaught(e).exitCode ?? EXIT.INTERNAL;
+      const error = redact ? redactedFailure(`Candidate ${index + 1}`, exitCode) : asCaught(e).message;
       process.stderr.write(`${log}: [error] ${error}\n`);
       line = {
         log, status: 'error', exitCode, error,
@@ -382,31 +419,34 @@ async function runMultiLog({
 
 // Any failure not handled below (a bug, a write that fails after the checks) exits 6 instead of crashing with
 // Node's own exit code, which would read as a violation.
+/** @param {string[]} argv @param {{ fetchImpl?: typeof fetch }} [options] */
 export async function main(argv, options) {
   try {
     await runCli(argv, options);
   } catch (e) {
     // A missing or non-file path is the user's to fix: the message alone, without a stack trace.
-    const pathProblem = e?.code === 'ENOENT' || e?.code === 'EISDIR';
-    process.stderr.write(pathProblem ? `${e.message}\n` : `Internal error: ${e?.stack ?? e}\n`);
+    const pathProblem = asCaught(e)?.code === 'ENOENT' || asCaught(e)?.code === 'EISDIR';
+    process.stderr.write(pathProblem ? `${asCaught(e).message}\n` : `Internal error: ${asCaught(e)?.stack ?? e}\n`);
     process.exitCode = EXIT.INTERNAL;
   }
 }
 
 // Why --out cannot be written, or undefined when it can: its parent folder must exist and the
 // target must not be a folder. Checked before the log is parsed, like --export-html's target.
+/** @param {string} outPath */
 function outPathProblem(outPath) {
   const target = resolve(outPath);
   const parent = dirname(target);
   try {
     if (!statSync(parent).isDirectory()) return `${parent} is not a directory`;
   } catch (e) {
-    return e.code === 'ENOENT' ? `${parent} does not exist (ENOENT)` : `${parent} cannot be read (${e.code})`;
+    return asCaught(e).code === 'ENOENT' ? `${parent} does not exist (ENOENT)` : `${parent} cannot be read (${asCaught(e).code})`;
   }
   if (existsSync(target) && statSync(target).isDirectory()) return `${target} is a directory`;
   return undefined;
 }
 
+/** @param {string[]} argv @param {{ fetchImpl?: typeof fetch }} [options] */
 async function runCli(argv, { fetchImpl } = {}) {
   const subcommand = CLI_SUBCOMMANDS.find(({ name }) => name === argv[0]);
   if (subcommand) {
@@ -422,8 +462,8 @@ async function runCli(argv, { fetchImpl } = {}) {
   } catch (e) {
     // node:util parseArgs throws a TypeError with an ERR_PARSE_ARGS_* code for
     // unknown flags and flags missing their value: a usage error, not exit 1.
-    if (!e?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
-    return bail(`${e.message}\n${USAGE}`, 2);
+    if (!asCaught(e)?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
+    return bail(`${asCaught(e).message}\n${USAGE}`, 2);
   }
   const { values, positionals } = parsed;
   if (values.help) {
@@ -522,7 +562,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     try {
       existingContents = existsSync(exportHtmlDir) ? readdirSync(exportHtmlDir) : [];
     } catch (e) {
-      return bail(`--export-html: ${exportHtmlDir} exists but is not a directory (${e.message}).\n${USAGE}`, 2);
+      return bail(`--export-html: ${exportHtmlDir} exists but is not a directory (${asCaught(e).message}).\n${USAGE}`, 2);
     }
     if (existingContents.length > 0) {
       return bail(`--export-html: ${exportHtmlDir} already exists and is not empty.\n${USAGE}`, 2);
@@ -531,12 +571,14 @@ async function runCli(argv, { fetchImpl } = {}) {
 
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
+  /** @type {CliFlag[]} */
   const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'ignore-conf', 'noise-band-pct', 'executor-ratio', 'unmatched-stages-pct', 'task-count-change-pct', 'stage-regression-budget', 'stage-quality'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
     return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--ignore-conf/--noise-band-pct/--executor-ratio/--unmatched-stages-pct/--task-count-change-pct/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
   }
   const pairingError = regressionPairingError(
-    { regressionMetric: values['regression-metric'], maxRegressionPct: values['max-regression-pct'] },
+    // regressionPairingError only tests presence; the value is parsed below with the other budget flags.
+    { regressionMetric: values['regression-metric'], maxRegressionPct: values['max-regression-pct'] === undefined ? undefined : Number(values['max-regression-pct']) },
     { metric: '--regression-metric', pct: '--max-regression-pct' },
   );
   if (pairingError) return bail(`${pairingError}\n${USAGE}`, 2);
@@ -544,18 +586,20 @@ async function runCli(argv, { fetchImpl } = {}) {
     return bail(`Unknown --regression-metric "${values['regression-metric']}" (expected one of: ${COMPARISON_METRIC_KEYS.join(', ')}).\n${USAGE}`, 2);
   }
 
+  /** @type {BudgetsConfig} */
   const budgets = {};
+  /** @type {Record<NumericBudgetFlag, NumericBudgetField>} */
   const NUMERIC_BUDGET_FLAGS = {
     'max-runtime': 'maxRuntimeMs', 'max-spill': 'maxSpillGb', 'max-skew': 'maxSkewRatio',
     'max-failed-task-rate': 'maxFailedTaskRatePct', 'min-efficiency': 'minEfficiencyPct',
     'max-regression-pct': 'maxRegressionPct',
   };
   try {
-    for (const [flag, field] of Object.entries(NUMERIC_BUDGET_FLAGS)) {
+    for (const [flag, field] of /** @type {[NumericBudgetFlag, NumericBudgetField][]} */ (Object.entries(NUMERIC_BUDGET_FLAGS))) {
       if (values[flag] != null) budgets[field] = parseNonNegativeNumber(values[flag], `--${flag}`);
     }
   } catch (e) {
-    return bail(`${e.message}\n${USAGE}`, 2);
+    return bail(`${asCaught(e).message}\n${USAGE}`, 2);
   }
   // Only set when the user passed --regression-metric: evaluateBudgets() treats
   // "regressionMetric is set" as "caller asked for a regression check", so
@@ -566,7 +610,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     try {
       budgets.failOnIntroduced = parseFailOnIntroduced(values['fail-on-introduced'], '--fail-on-introduced');
     } catch (e) {
-      return bail(`${e.message}\n${USAGE}`, 2);
+      return bail(`${asCaught(e).message}\n${USAGE}`, 2);
     }
   }
 
@@ -585,7 +629,7 @@ async function runCli(argv, { fetchImpl } = {}) {
       combineRegressionBudgets([...legacy, ...extra]);
       budgets.regressionBudgets = extra.map((e) => e.budget);
     } catch (e) {
-      return bail(`${e.message}\n${USAGE}`, 2);
+      return bail(`${asCaught(e).message}\n${USAGE}`, 2);
     }
   }
 
@@ -599,7 +643,7 @@ async function runCli(argv, { fetchImpl } = {}) {
       budgets.stageRegressionBudgets = stageBudgets;
       if (values['stage-quality'] !== undefined) budgets.stageQualities = parseStageQualities(values['stage-quality'], '--stage-quality');
     } catch (e) {
-      return bail(`${e.message}\n${USAGE}`, 2);
+      return bail(`${asCaught(e).message}\n${USAGE}`, 2);
     }
   }
 
@@ -611,7 +655,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     if (values.type !== undefined) type = parseFindingTypes(values.type, '--type');
     if (values.stage !== undefined) stageId = parseStageId(values.stage, '--stage');
   } catch (e) {
-    return bail(`${e.message}\n${USAGE}`, 2);
+    return bail(`${asCaught(e).message}\n${USAGE}`, 2);
   }
   const findingsFilter = toFindingsFilter(impactBand, type, stageId);
 
@@ -621,7 +665,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     try {
       thresholds = loadThresholdOverrides(values.thresholds);
     } catch (e) {
-      return bail(`--thresholds: ${e.message}\n`, 2);
+      return bail(`--thresholds: ${asCaught(e).message}\n`, 2);
     }
   }
 
@@ -631,7 +675,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     try {
       compileNormalizePatterns(normalizePath);
     } catch (e) {
-      return bail(`--normalize-path: ${e.message}\n`, 2);
+      return bail(`--normalize-path: ${asCaught(e).message}\n`, 2);
     }
   }
 
@@ -640,7 +684,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     try {
       compileConfIgnorePatterns(ignoreConf);
     } catch (e) {
-      return bail(`--ignore-conf: ${e.message}\n`, 2);
+      return bail(`--ignore-conf: ${asCaught(e).message}\n`, 2);
     }
   }
   let noiseBand;
@@ -651,19 +695,20 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
     noiseBand = pct / 100;
   }
+  /** @type {Partial<CaveatThresholds>} */
   const caveatThresholds = {};
   // [flag, option, divisor to the option's unit, lowest, highest], in the flag's unit.
-  for (const [flag, option, divisor, min, max] of [
+  for (const [flag, option, divisor, min, max] of /** @type {[CaveatFlag, keyof CaveatThresholds, number, number, number][]} */ ([
     ['executor-ratio', 'executorRatio', 1, 1, Infinity],
     ['unmatched-stages-pct', 'unmatchedShare', 100, 0, 100],
     ['task-count-change-pct', 'taskCountChange', 100, 0, Infinity],
-  ]) {
+  ])) {
     if (values[flag] === undefined) continue;
     let value;
     try {
       value = parseNonNegativeNumber(values[flag], `--${flag}`);
     } catch (e) {
-      return bail(`${e.message}\n${USAGE}`, 2);
+      return bail(`${asCaught(e).message}\n${USAGE}`, 2);
     }
     if (value < min || value > max) {
       return bail(`--${flag} needs a number ${max === Infinity ? `of ${min} or more` : `from ${min} to ${max}`}.\n${USAGE}`, 2);
@@ -680,19 +725,19 @@ async function runCli(argv, { fetchImpl } = {}) {
     try {
       buildEffectiveConf({ config: {} }, { userPattern: values['conf-redact-regex'] });
     } catch (e) {
-      return bail(`--conf-redact-regex: ${e.message}\n`, 2);
+      return bail(`--conf-redact-regex: ${asCaught(e).message}\n`, 2);
     }
   }
 
   const shsOpts = fetchImpl !== undefined ? { fetchImpl } : {};
   const loadBaseline = () => (usingBaselineShs
-    ? resolveFromShs(values['baseline-shs-base-url'], values['baseline-app-id'], values['baseline-attempt-id'], shsOpts)
-    : collectRun(values.baseline));
+    ? resolveFromShs(/** @type {string} */ (values['baseline-shs-base-url']), /** @type {string} */ (values['baseline-app-id']), values['baseline-attempt-id'], shsOpts)
+    : collectRun(/** @type {string} */ (values.baseline)));
 
   if (multiLog) {
     const candidates = usingShs
       ? shsCandidates.map(({ appId, attemptId, name }) => ({
-        name, load: () => resolveFromShs(values['shs-base-url'], appId, attemptId, shsOpts),
+        name, load: () => resolveFromShs(/** @type {string} */ (values['shs-base-url']), appId, attemptId, shsOpts),
       }))
       : positionals.map((path) => ({ name: path, load: () => collectRun(path) }));
     return runMultiLog({
@@ -709,7 +754,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     if (usingShs || usingBaselineShs) {
       const [{ appId, attemptId }] = usingShs ? shsCandidates : [{}];
       const candidatePromise = unreadable(usingShs
-        ? resolveFromShs(values['shs-base-url'], appId, attemptId, shsOpts)
+        ? resolveFromShs(/** @type {string} */ (values['shs-base-url']), /** @type {string} */ (appId), attemptId, shsOpts)
         : collectRun(positionals[0]), EXIT.CANDIDATE_UNREADABLE);
       // An SHS fetch (network) and a local parse (disk) are independent, so run them concurrently.
       // Local+local below is CPU work on both sides, so collectRunPair uses a worker thread for it.
@@ -729,21 +774,22 @@ async function runCli(argv, { fetchImpl } = {}) {
       if (usingBaseline) {
         // Two big logs parse in parallel (the smaller on a worker thread). The baseline is settled
         // first, so a batch with both logs unreadable reports the worse exit code (5).
-        const { baseline, candidate } = await collectRunPair(values.baseline, positionals[0]);
+        const { baseline, candidate } = await collectRunPair(/** @type {string} */ (values.baseline), positionals[0]);
+        /** @param {PromiseSettledResult<CollectedRun>} result @param {number} exitCode */
         const settled = (result, exitCode) => unreadable(
           result.status === 'fulfilled' ? Promise.resolve(result.value) : Promise.reject(result.reason),
           exitCode,
         );
         parsedBaselineModel = (await settled(baseline, EXIT.BASELINE_UNREADABLE)).appModel;
-        parsedModel = (await settled(candidate, EXIT.CANDIDATE_UNREADABLE)).appModel;
+        parsedModel = (await settled(/** @type {PromiseSettledResult<CollectedRun>} */ (candidate), EXIT.CANDIDATE_UNREADABLE)).appModel;
       } else {
         parsedModel = (await unreadable(collectRun(positionals[0]), EXIT.CANDIDATE_UNREADABLE)).appModel;
       }
     }
   } catch (e) {
-    const exitCode = e.exitCode ?? EXIT.INTERNAL;
+    const exitCode = asCaught(e).exitCode ?? EXIT.INTERNAL;
     const role = exitCode === EXIT.BASELINE_UNREADABLE ? 'The baseline' : 'The candidate';
-    process.stderr.write(`${values.redact ? redactedFailure(role, exitCode) : e.message}\n`);
+    process.stderr.write(`${values.redact ? redactedFailure(role, exitCode) : asCaught(e).message}\n`);
     process.exitCode = exitCode;
     return;
   }
@@ -758,9 +804,9 @@ async function runCli(argv, { fetchImpl } = {}) {
       process.stderr.write('--export-html: the exported dashboard uses the default detector thresholds; --thresholds applies to the report only.\n');
     }
     try {
-      await writeHtmlExport(exportHtmlDir, tuned ? analyzeRun(parsedModel) : run, { redact: values.redact });
+      await writeHtmlExport(exportHtmlDir, tuned ? analyzeRun(parsedModel) : run, { redact: values.redact ?? false });
     } catch (e) {
-      process.stderr.write(`--export-html failed: ${e.message}\n`);
+      process.stderr.write(`--export-html failed: ${asCaught(e).message}\n`);
       process.exitCode = EXIT.INTERNAL;
       return;
     }
@@ -769,7 +815,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   let comparison;
   let comparisonJson;
   if (usingBaseline) {
-    const baselineRun = analyzeRun(parsedBaselineModel, { thresholds });
+    const baselineRun = analyzeRun(/** @type {AppModel} */ (parsedBaselineModel), { thresholds });
     // The builder applies --redact: stage names in the comparison carry raw Spark stage text,
     // which --redact promises to pseudonymize.
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
@@ -785,7 +831,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(run), budgets, comparison, thresholds });
   let output;
   if (values.format === 'md') {
-    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonJson.verdict)}\n` : `${markdown}\n`;
+    output = comparison && comparisonJson ? `${markdown}${renderComparisonMarkdown(comparison, comparisonJson.verdict)}\n` : `${markdown}\n`;
   } else {
     const machineReadable = runOutputBlocks(appModel, {
       redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],

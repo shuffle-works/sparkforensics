@@ -4,6 +4,11 @@ import {
   validateShsRequest,
 } from './shs-request.js';
 
+/**
+ * @param {import('node:http').ServerResponse} res
+ * @param {number} status
+ * @param {string} code
+ */
 function sendSafeError(res, status, code) {
   const body = JSON.stringify({ code });
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -12,10 +17,13 @@ function sendSafeError(res, status, code) {
 
 // Also read by list-runs.ts, so a History Server listing that can't be reached reports the
 // same upstream-unreachable code as a run fetch.
-export function isConnectionFailure(error) {
+/** @param {unknown} thrown */
+export function isConnectionFailure(thrown) {
+  // Caught values are untyped; only these optional fields are probed.
+  const error = /** @type {{ name?: string, code?: string, message?: string, cause?: { code?: string } } | null | undefined} */ (thrown);
   if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return true;
   const code = error?.code ?? error?.cause?.code;
-  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'ETIMEDOUT'].includes(code)) return true;
+  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'ETIMEDOUT'].includes(/** @type {string} */ (code))) return true;
   return /\b(?:ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|ETIMEDOUT)\b/.test(error?.message ?? '');
 }
 
@@ -30,6 +38,7 @@ function upstreamTimeoutMs() {
 // private-network allowance is unrelated and deliberate). No Origin header
 // means a same-origin navigation or a non-browser client, so it's allowed;
 // an Origin present must match Host. Anything unparseable fails closed.
+/** @param {Pick<import('node:http').IncomingMessage, 'headers'>} req */
 export function isSameOriginRequest(req) {
   const origin = req.headers?.origin;
   if (origin == null) return true;
@@ -46,6 +55,17 @@ export function isSameOriginRequest(req) {
   return originHost.toLowerCase() === host.toLowerCase();
 }
 
+/**
+ * @typedef {import('./shs-request.js').ShsRequest} ShsRequest
+ * @typedef {{ ok: false, code: string }
+ *   | { ok: true, upstream: Response & { body: ReadableStream<Uint8Array> } }} ShsFetchResult
+ */
+
+/**
+ * @param {ShsRequest} request
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
+ * @returns {Promise<ShsFetchResult>}
+ */
 export async function fetchShsEventLog(request, { fetchImpl = fetch, timeoutMs = upstreamTimeoutMs() } = {}) {
   const upstreamUrl = buildNormalizedUpstreamUrl(request);
   // Header-phase timeout only: the timer is cleared once headers arrive, so a
@@ -67,16 +87,21 @@ export async function fetchShsEventLog(request, { fetchImpl = fetch, timeoutMs =
   if (!upstream.body) {
     return { ok: false, code: 'access-or-upstream-failure' };
   }
-  return { ok: true, upstream };
+  return { ok: true, upstream: /** @type {Response & { body: ReadableStream<Uint8Array> }} */ (upstream) };
 }
 
+/**
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
+ */
 export async function handleShsProxy(req, res, { fetchImpl = fetch, timeoutMs = upstreamTimeoutMs() } = {}) {
   if (!isSameOriginRequest(req)) {
     sendSafeError(res, 403, 'access-or-upstream-failure');
     return;
   }
 
-  const query = new URL(req.url, 'http://localhost').searchParams;
+  const query = new URL(/** @type {string} */ (req.url), 'http://localhost').searchParams;
   const result = validateShsRequest({
     baseUrl: query.get('baseUrl') ?? '',
     appId: query.get('appId') ?? '',
@@ -109,10 +134,11 @@ export async function handleShsProxy(req, res, { fetchImpl = fetch, timeoutMs = 
   headers['content-type'] = 'application/zip';
   res.writeHead(200, headers);
 
-  await new Promise((resolve) => {
+  await new Promise(/** @param {(value?: void) => void} resolve */ (resolve) => {
     // Idle watchdog: a stalled upstream would otherwise leave this promise
     // pending forever with the 200 already sent. Resets on every chunk, so
     // slow-but-progressing downloads of any size are unaffected.
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
     let watchdog;
     let settled = false;
     const resetWatchdog = () => {
@@ -127,7 +153,7 @@ export async function handleShsProxy(req, res, { fetchImpl = fetch, timeoutMs = 
     };
     resetWatchdog();
     nodeStream.on('data', resetWatchdog);
-    nodeStream.on('error', (err) => {
+    nodeStream.on('error', (/** @type {Error} */ err) => {
       if (settled) return;
       console.warn(`[shs-proxy] upstream stream failed mid-body: ${err.message}`);
       // destroy(err), not destroy(): the 200 header is already out, so an
@@ -142,7 +168,7 @@ export async function handleShsProxy(req, res, { fetchImpl = fetch, timeoutMs = 
     // or it dangles until the idle watchdog eventually fires. `res` 'close'
     // also fires after a normal 'finish', so the `settled` guard keeps that
     // happy-path case a no-op.
-    res.on('error', (err) => {
+    res.on('error', (/** @type {Error} */ err) => {
       if (settled) return;
       console.warn(`[shs-proxy] client connection failed mid-body: ${err.message}`);
       nodeStream.destroy(err);
