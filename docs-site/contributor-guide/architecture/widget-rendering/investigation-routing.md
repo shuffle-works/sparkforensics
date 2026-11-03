@@ -96,7 +96,7 @@ does not list). For a finding:
 above the tabs. The Core Locality card lives in Full app report, so a route to it
 shows that tab; every other card is in Findings.
 
-`routeTo(layout, target)` (`src/view/route-landing.ts`) resolves a target and
+`routeTo(layout, target)` (`src/view/board-route.ts`) resolves a target and
 starts the route in the store. A jump from an unfiltered surface (the verdict, the
 stage dialog, the top bar's count chip) first clears only the filter dimensions
 that hide the target, builds the layout for that selection, and resolves against

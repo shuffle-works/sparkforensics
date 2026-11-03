@@ -36,13 +36,11 @@ The Evidence availability card is the persistent, non-impact-band ledger
 not an alert or detector widget. An `Evidence: …`
 control appears only where a conclusion or unavailable report lens declares
 a relevant ledger dependency. The control starts a route to the ledger row
-(`routeTo` with `{ kind: 'evidence', key }`, `src/view/route-landing.ts`):
+(`routeTo` with `{ kind: 'evidence', key }`, `src/view/board-route.ts`):
 `resolveRoute` returns the Full app report tab, the Evidence availability card
 to open and the row to focus, and the row focuses itself when it mounts. Each
 click is a new route, so it switches tabs again after the reader returns
-to Findings. The layout effect makes the tab visible before the provider's
-queued focus runs, since a row inside the hidden, still-mounted panel can't
-take focus. Mouse and keyboard activation switches to the Full app report
+to Findings. Mouse and keyboard activation switches to the Full app report
 tab, opens the ledger card, then focuses the referenced stable entry id
 (`evidence-availability-<key>`). The control
 explains evidence availability; it does not promise an unavailable signal
