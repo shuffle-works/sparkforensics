@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useLayoutEffect, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -17,7 +17,7 @@ import { RowPagination } from '@/view/RowPagination';
 import { store, useStore } from '@/store/store';
 import type { FindingRowLayout, GroupRowLayout, RowEvidence } from '@/view/board-layout';
 import { InlineEvidence, useCardOpen } from '@/view/InlineEvidence';
-import { useLine } from '@/view/route-landing';
+import { useLine, useRouteRowKey } from '@/view/route-landing';
 import { useWidgetState } from '@/view/useWidgetState';
 import type { WidgetProps } from '@/view/detector-registry';
 import { Button } from '@/components/ui/button';
@@ -316,10 +316,16 @@ export function TypeGroupRow({
   const toggleLine = useLine(row.lineKey);
   const panelId = `group-evidence-${group.key}`;
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+  const routeRowKey = useRouteRowKey();
+  const routeIndex = routeRowKey == null ? -1 : row.memberLineKeys.indexOf(routeRowKey);
+  const routePage = routeIndex === -1 ? null : Math.floor(routeIndex / PAGE_SIZE);
+  useLayoutEffect(() => {
+    if (routePage != null) setPage(routePage);
+  }, [routePage, setPage]);
   // Clamp the page used for slicing (not the stored state) so a stale index
   // can't strand the view on an empty page when a finding filter shrinks the
   // group count without remounting.
-  const safePage = Math.min(page, Math.max(0, totalPages - 1));
+  const safePage = routePage ?? Math.min(page, Math.max(0, totalPages - 1));
   const pageItems = sorted.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
   // `aria-controls` target: a stable id from the group's (kind, type, unit)
   // discriminator. A `<tr>` list has no single wrapping element, so it lands on

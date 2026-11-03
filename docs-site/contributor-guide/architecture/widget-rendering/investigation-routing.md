@@ -127,9 +127,13 @@ place lands again. `useAnchoredRow` (`finding-anchor.ts`) gives every row a
 finding widget renders its landing, its `tabIndex={-1}` and its flash.
 
 A flash is the `route-flash` CSS animation, which ends by itself; the next route
-or a tab change ends the mark. A paginated list shows the page that holds the
-routed row: `RowList` (`finding-widget.tsx`) finds the row's index in its ordered
-rows during render and passes it to `usePagedRows`.
+or a tab change ends the mark. Only a row that mounts while the route is pending
+flashes, so a row that mounts again after the landing does not flash again. While
+a route is pending, a paginated list shows the page that holds the routed row:
+`RowList` (`finding-widget.tsx`) finds the row's index in its ordered rows during
+render and passes it to `usePagedRows`, and a group's member list
+(`TypeGroupRow`) does the same with its member lines. The list stores that page,
+so after the landing the reader pages from it freely.
 
 ## Triage shortcuts
 

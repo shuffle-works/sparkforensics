@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
@@ -339,6 +339,33 @@ describe('TypeGroupRow pagination', () => {
 
     expect(screen.getAllByTestId('fix-these-first-row')).toHaveLength(1);
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+  });
+});
+
+describe('TypeGroupRow routes to a member', () => {
+  it('shows the page holding a routed member past the first page, focuses it, then pages freely', async () => {
+    const user = userEvent.setup();
+    const findings = Array.from({ length: 11 }, (_, i) => findingWithMagnitude('spill', i + 1, 1000 + i * 100, 'warning'));
+    const row = groupRow(groupOf(findings), true);
+
+    render(
+      <StageDetailProvider>
+        <Table>
+          <TableBody>
+            <TypeGroupRow row={row} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
+          </TableBody>
+        </Table>
+      </StageDetailProvider>,
+    );
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+
+    act(() => store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: row.memberLineKeys[10] }, { flash: false, block: 'nearest' }));
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+    const [member] = screen.getAllByTestId('fix-these-first-row');
+    expect(member.contains(document.activeElement)).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
   });
 });
 

@@ -127,6 +127,23 @@ describe('the finding widget shell', () => {
     expect(shownRows()).toContain('row s8');
   });
 
+  it('pages freely once the route has landed, and does not flash the routed row again when it mounts again', async () => {
+    const user = userEvent.setup();
+    const findings = Array.from({ length: 8 }, (_, i) => spill(i + 1, 1000 - i));
+    renderWidget(findings, findings[7]);
+    const routedRow = () => screen.getByText('row s8').closest('li');
+    expect(routedRow()).toHaveFocus();
+    expect(routedRow()).toHaveAttribute('data-flashed', 'true');
+
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    expect(shownRows()).toHaveLength(6);
+    expect(shownRows()).not.toContain('row s8');
+
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(shownRows()).toEqual(['row s7', 'row s8']);
+    expect(routedRow()).toHaveAttribute('data-flashed', 'false');
+  });
+
   it('makes every row a route landing: a route to a row\'s finding focuses the row', () => {
     const findings = [spill(1, 100), spill(2, 200)];
     renderWidget(findings);

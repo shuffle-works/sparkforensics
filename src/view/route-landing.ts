@@ -1,9 +1,15 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
+import type { ActiveRoute, BoardState } from '@/store/board';
 import { store, useStore } from '@/store/store';
 
 function reducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+}
+
+/** The active route while it has not landed yet. */
+function pendingRoute(board: BoardState): ActiveRoute | null {
+  return board.route != null && board.route.token > board.landedToken ? board.route : null;
 }
 
 /** The token of the active route when it lands on one of `keys`, else 0. */
@@ -31,17 +37,23 @@ export function useLanding(keys: readonly string[]): (element: HTMLElement | nul
 }
 
 /** Whether the active route flashes a row with one of `keys`. The flash is a CSS animation that
- * ends by itself; the next route ends the mark. */
+ * ends by itself; the next route ends the mark. Only a row mounted while the route is pending
+ * flashes, so a row that mounts again after the route landed does not flash again. */
 export function useRouteFlash(keys: readonly string[]): boolean {
-  return useStore((s) => {
+  const token = useStore((s) => {
     const { route } = s.board;
-    return route?.flash === true && route.rowKey != null && keys.includes(route.rowKey);
+    return route?.flash === true && route.rowKey != null && keys.includes(route.rowKey) ? route.token : 0;
   });
+  const pending = useStore((s) => token !== 0 && pendingRoute(s.board)?.token === token);
+  const [flashedToken, setFlashedToken] = useState(0);
+  if (pending && flashedToken !== token) setFlashedToken(token);
+  return token !== 0 && (pending || flashedToken === token);
 }
 
-/** The key of the active route's row, for a list that shows the page holding it. */
+/** The key of the pending route's row, for a list that shows the page holding it. Once the route
+ * lands the list keeps the page it moved to and pages freely. */
 export function useRouteRowKey(): string | null {
-  return useStore((s) => s.board.route?.rowKey ?? null);
+  return useStore((s) => pendingRoute(s.board)?.rowKey ?? null);
 }
 
 /** A line the triage shortcuts step through: lands on a route to `lineKey` and tells the board it
