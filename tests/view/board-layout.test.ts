@@ -109,6 +109,8 @@ describe('filter and walk order', () => {
     if (!group) return;
     const expanded = walkableLines(layout, group.lineKey);
     expect(expanded.length).toBe(collapsed.length + group.memberLineKeys.length);
-    expect(expanded.indexOf(group.memberLineKeys[0])).toBe(expanded.indexOf(group.lineKey) + 1);
+    const evidenceLines = group.evidence.panel ? 1 : 0;
+    if (evidenceLines) expect(expanded.indexOf(`${group.lineKey}:evidence`)).toBe(expanded.indexOf(group.lineKey) + 1);
+    expect(expanded.indexOf(group.memberLineKeys[0])).toBe(expanded.indexOf(group.lineKey) + 1 + evidenceLines);
   });
 });

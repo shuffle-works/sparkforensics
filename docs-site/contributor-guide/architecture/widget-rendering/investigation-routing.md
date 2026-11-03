@@ -139,6 +139,7 @@ so after the landing the reader pages from it freely.
 
 In Advanced view `useTriageShortcuts` binds j/k to step through `lines` from the
 line that holds focus, `f` to land on the filter bar and 1/2 to switch tabs. A
+group's evidence control is its own line, right after the group's toggle. A
 group's member lines are walked only while the group is expanded
 (`walkableLines`). A line reports focus to the store (`useLine`), and the
 shortcut starts a route to the next line without a flash.

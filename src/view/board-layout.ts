@@ -288,6 +288,7 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
     bands.push({ band, rows, cards: bandWidgetCards, routeOnlyCardKeys, listed: rows.length > 0 || routeOnlyCardKeys.size < bandWidgetCards.length });
     for (const row of rows) {
       if (row.kind === 'group' || row.evidence.widget) lines.push({ key: row.lineKey, parent: null });
+      if (row.kind === 'group' && row.evidence.panel) lines.push({ key: `${row.lineKey}:evidence`, parent: null });
       if (row.kind === 'group') for (const memberKey of row.memberLineKeys) lines.push({ key: memberKey, parent: row.lineKey });
     }
   }
