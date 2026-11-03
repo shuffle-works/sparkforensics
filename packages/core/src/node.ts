@@ -6,8 +6,9 @@
 // install, and only the MCP bin builds a server.
 export { collectRun } from './cli/collect-run.ts';
 export { collectRunPair } from './cli/collect-run-pair.ts';
-export { evaluateBudgets } from './cli/budgets.ts';
+export { evaluateBudgets, regressionPairingError } from './cli/budgets.ts';
 export { runDetectorsCommand } from './cli/detectors-command.ts';
+export { CLI_SUBCOMMANDS, subcommandUsageLines, type CliSubcommand } from './cli/subcommands.ts';
 export { parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced } from './cli/flag-values.ts';
 export {
   parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
@@ -19,6 +20,7 @@ export { analyzeRun } from './analyzed-run.ts';
 export { buildEvidenceReport, toFindingsFilter } from './evidence-report.ts';
 export { renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND } from './run-comparison.ts';
 export { buildComparisonOutput } from './comparison-output.ts';
+export { comparedFindings } from './compared-run.ts';
 export { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
 export { compileConfIgnorePatterns } from './comparability.ts';
 export { buildHtmlExportData, encodeRunPayload } from './html-export.ts';
@@ -28,3 +30,4 @@ export { runOutputBlocks } from './run-output.ts';
 export { buildEffectiveConf } from './effective-conf.ts';
 
 export const loadMcpServerFactory = () => import('./mcp-server-factory.ts');
+export { CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport, type CliEnvelope, type CliRunReport } from './cli-envelope.ts';

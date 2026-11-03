@@ -4,7 +4,9 @@
 // handed to the renderer as data. `analyzeRun` calls `interpretRun` for every surface, and `redactRun`
 // calls it again over the redacted findings; the exported bundle only renders what it carries, so an
 // exported file shows the conclusions of the core that wrote it, not of the core that opens it.
-import { checkCoverage, hasFinishedStage, verdictGaps } from './check-coverage.ts';
+import {
+  hasFinishedStage, partitionChecks, verdictGaps, type CheckEntry, type NotRunCheck,
+} from './check-coverage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { buildLocalityChart, type LocalityChart } from './core-usage-locality.ts';
 import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
@@ -15,15 +17,15 @@ import { bandRank, worstImpactBand } from './impact-band-order.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';
-import { isEligible, rankedRollup, type RankedRollupGroup } from './recommendation-rollup.ts';
+import { isEligible } from './recommendation-rollup.ts';
 import { quotesReasonOf } from './run-outcome.ts';
-import { computeRunShape, type RunShape } from './run-shape.ts';
+import { computeRunShape, type RunShape, type ScorecardFlag } from './run-shape.ts';
 import { findingsOfType } from './findings-of-type.ts';
-import { gradeIdlePct, idleGrading } from './idle-grading.ts';
 import { runTiming, type RunTiming } from './run-timing.ts';
 import {
   buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, quotedReasonText, rankBySavings, stepCopyText,
 } from './run-verdict.ts';
+import { extractWriteTargets, notRunWriteFigures } from './write-targets.ts';
 import { recommendationText } from './finding-names.ts';
 import { getScorecardEstimates } from './scorecard-estimates.ts';
 import { singleStageId, stagesOfFinding } from './finding-filter-predicate.ts';
@@ -92,23 +94,24 @@ export interface RunVerdictData {
 
 export interface CoverageData {
   noFinishedStages: boolean;
-  /** Why each check type could not run, keyed by finding type. A type absent here ran. */
-  notRunReasons: Record<string, string>;
+  /** The checks that ran and found nothing, in detector order (`partitionChecks`, the split the
+   * CLI/MCP report lists too). */
+  clean: CheckEntry[];
+  /** The checks the log lacked the data to run, each with why. */
+  notRun: NotRunCheck[];
   /** The log-wide reasons checks could not run, each naming what to turn on next time. */
   gaps: string[];
 }
 
-export type ScorecardFlag = 'critical' | 'warning' | null;
+export type { ScorecardFlag };
 
 /** The Scorecard's three headline figures (the ones the report's runShape also states) and how
  * each is graded. `wallClockMs` is null without a complete application timing interval. */
-export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct'> {
+export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct' | 'efficiencyFlag' | 'unusedCoreTimeFlag'> {
   /** What the log's application start and end say about the run (`runTiming`). */
   timing: RunTiming;
   /** The cold-start finding's seconds, read from the whole catalog so a board filter never changes it. */
   coldStartSeconds: number | null;
-  efficiencyFlag: ScorecardFlag;
-  unusedCoreTimeFlag: ScorecardFlag;
   unusedCoreTimeUnavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
 }
 
@@ -132,18 +135,10 @@ export interface StageFindingsData {
   typeOrder: string[];
 }
 
-/** One row group of the Findings board: a finding type (split by impact kind, and by unit for
- * resource figures), its members representative first, the band it sits under, and its trailing
- * figure. */
-export interface RollupGroupData extends Omit<RankedRollupGroup, 'members'> {
-  /** Members, representative first. */
-  memberIds: string[];
-}
-
-/** The unfiltered Findings board: which findings it lists and its groups in fix-first order. */
+/** The unfiltered Findings board: which findings it lists. The board ranks them into groups with
+ * `rankedRollup`. */
 export interface RollupData {
   eligibleIds: string[];
-  groups: RollupGroupData[];
 }
 
 /** Findings are referred to by their `id`, which is unique across a run's catalog and config
@@ -184,14 +179,8 @@ export function findingSavings(finding: Finding): FindingSavings {
   };
 }
 
-// The Scorecard's severity rule: a tile is flagged only when the figure is bad enough to act on.
-function efficiencyFlag(pct: number | null): ScorecardFlag {
-  if (pct == null) return null;
-  return pct < 75 ? 'critical' : pct < 90 ? 'warning' : null;
-}
-
 function interpretRunShape(appModel: AppModel, catalog: Finding[], thresholds: ThresholdOverrides | undefined): RunShapeData {
-  const { wallClockMs, efficiencyPct, unusedCoreTimePct } = computeRunShape(appModel);
+  const { wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag } = computeRunShape(appModel, thresholds);
   const estimates = getScorecardEstimates(appModel);
   return {
     timing: runTiming(appModel.app, appModel.stages),
@@ -199,8 +188,8 @@ function interpretRunShape(appModel: AppModel, catalog: Finding[], thresholds: T
     wallClockMs,
     efficiencyPct,
     unusedCoreTimePct,
-    efficiencyFlag: efficiencyFlag(efficiencyPct),
-    unusedCoreTimeFlag: gradeIdlePct(unusedCoreTimePct, idleGrading(thresholds)),
+    efficiencyFlag,
+    unusedCoreTimeFlag,
     unusedCoreTimeUnavailableReason: estimates.wastage.unavailableReason,
   };
 }
@@ -218,13 +207,12 @@ function interpretEfficiency(appModel: AppModel): EfficiencyData | null {
 
 function interpretCoverage(appModel: AppModel, allFindings: Finding[]): CoverageData {
   const noFinishedStages = !hasFinishedStage(appModel.stages);
-  const { notRunReason } = checkCoverage(appModel.stages, allFindings);
-  const notRunReasons: Record<string, string> = {};
-  for (const type of FINDING_DISPLAY_ORDER) {
-    const reason = notRunReason(type);
-    if (reason != null) notRunReasons[type] = reason;
-  }
-  return { noFinishedStages, notRunReasons, gaps: verdictGaps(allFindings, noFinishedStages) };
+  const writeTargets = extractWriteTargets(appModel.sql ?? new Map(), {
+    stages: appModel.stages, skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
+  });
+  const unfiguredWrites = notRunWriteFigures(writeTargets);
+  const { clean, notRun } = partitionChecks(appModel.stages, allFindings, unfiguredWrites ? [unfiguredWrites] : []);
+  return { noFinishedStages, clean, notRun, gaps: verdictGaps(allFindings, noFinishedStages) };
 }
 
 // The stage dialog's grouping: every finding about the stage (`stagesOfFinding`), ordered by the
@@ -313,10 +301,6 @@ export function interpretRun(
     detectors: detectorInfoByType(),
     savingsRank: rankBySavings(allFindings).map(idOf),
     stages: interpretStages(catalog, failed ? outcome.failedJobStageIds : null),
-    rollup: {
-      eligibleIds: eligible.map(idOf),
-      groups: rankedRollup(eligible, appModel.stages)
-        .map(({ members, ...group }) => ({ ...group, memberIds: members.map(idOf) })),
-    },
+    rollup: { eligibleIds: eligible.map(idOf) },
   };
 }

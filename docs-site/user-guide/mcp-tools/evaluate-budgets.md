@@ -82,8 +82,8 @@ Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-stage-regression`, `fail-on-introduced`, `run-complete` and
 `parse-incomplete`. A
 `max-regression` or `max-stage-regression` result also carries `metric`, the
-key it checked. The returned `runId` is the first
-run's (the baseline, when two runs are given).
+key it checked. `candidateRunId` is the run the
+budgets were evaluated on, and `baselineRunId` is present with two runs.
 
 Example call:
 
@@ -99,11 +99,15 @@ Example call:
 }
 ```
 
+The response names the runs it covers: `candidateRunId` is the run the budgets were evaluated on,
+and `baselineRunId` is present with two runs.
+
 Example response:
 
 ```json
 {
-  "runId": "aaaa1111-...",
+  "baselineRunId": "aaaa1111-...",
+  "candidateRunId": "bbbb2222-...",
   "results": [
     {
       "name": "max-regression",

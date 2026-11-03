@@ -13,15 +13,14 @@ carries the same `generator` (the `sparkforensics-mcp` build that wrote the resu
 `unmatched`, `replanned`, `bookkeepingStageIds`, `executionAlignment` and `comparability` as the
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
 when `include` asks for it (the CLI always carries it), plus
-`runIdA` and `runIdB`, which are handles for the runs this server process has
-cached and differ per tool by design: match runs by `baselineApp` and `candidateApp`.
+`baselineRunId` and `candidateRunId`, which are handles for the runs this server process has
+cached: match runs by `baselineApp` and `candidateApp`.
 Each row of `findings` lists its stage names in `stages` and the same names with the
 directories of their call-site paths removed in `stageLabels`; each `stagePairs` row has
 the same kind of label in `stageLabel`. The raw names in `stages` still carry those paths,
 and `redact` does not remove them, so show `stageLabels` and `stageLabel`.
-`metricDeltas` and `findingsDelta` repeat `metrics` and
-`findings` under other key names. `verdict` is the headline the dashboard's comparison page
-opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`): a
+`verdict` is the headline the dashboard's comparison page
+opens with (the baseline is `baselineRunId`/`sourceA`, the candidate `candidateRunId`/`sourceB`): a
 `title` such as "The candidate finished 9.9s faster than the baseline (37%)", or a failed-job
 headline when either run had jobs fail, a `tone` (`better`, `worse`, `same`, `unknown`, `equivalent` or `mixed`), and `sentences` naming which cost metrics and finding categories
 moved each way. When either log has no `ApplicationEnd` event, the title
@@ -30,9 +29,9 @@ time than the baseline's") and the tone is `unknown`.
 
 Parameters:
 
-- `runIdA` / `sourceA`: identify the baseline (`source` has the shape in
+- `baselineRunId` / `sourceA`: identify the baseline (`source` has the shape in
   [Common parameters](../mcp-tools.md#common-parameters); [Run roles](../mcp-tools.md#run-roles) compares the baseline and candidate across surfaces)
-- `runIdB` / `sourceB`: identify the candidate
+- `candidateRunId` / `sourceB`: identify the candidate
 - `redact`: `boolean` (default `false`), pseudonymizes any app id, host name
   or user name embedded in free text (stage names and similar) in the
   response: see [the MCP tools reference](../mcp-tools.md) and [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
@@ -128,12 +127,12 @@ Example call (add `"include": ["stagePairs"]` to the arguments for the pair rows
 }
 ```
 
-Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` trimmed to their first row of 13, and each pair's `deltas` to three of its eight metrics):
+Example response with `include: ["stagePairs"]` (`metrics` trimmed to its first row of 13, and each pair's `deltas` to three of its eight metrics):
 
 ```json
 {
-  "runIdA": "aaaa1111-...",
-  "runIdB": "bbbb2222-...",
+  "baselineRunId": "aaaa1111-...",
+  "candidateRunId": "bbbb2222-...",
   "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" },
   "baselineApp": { "id": "application_0000000000000_0001", "attemptId": null },
   "candidateApp": { "id": "application_0000000000000_0002", "attemptId": null },
@@ -173,19 +172,7 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
   "unmatched": { "baseStageIds": [], "candStageIds": [] },
   "replanned": [],
   "bookkeepingStageIds": { "baseStageIds": [], "candStageIds": [] },
-  "executionAlignment": { "baseExecutions": 1, "candExecutions": 1, "pairedExecutions": 1, "bounded": false, "agreement": 1, "accepted": true },
-  "metricDeltas": [
-    {
-      "key": "wallClock",
-      "label": "Wall-clock duration",
-      "baseline": 2000,
-      "candidate": 1000,
-      "delta": -1000,
-      "direction": "improvement",
-      "withinNoise": false
-    }
-  ],
-  "findingsDelta": { "introduced": [], "resolved": [], "changed": [] }
+  "executionAlignment": { "baseExecutions": 1, "candExecutions": 1, "pairedExecutions": 1, "bounded": false, "agreement": 1, "accepted": true }
 }
 ```
 

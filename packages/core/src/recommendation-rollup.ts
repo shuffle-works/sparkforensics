@@ -247,8 +247,7 @@ export interface RankedRollupGroup {
   statTitle: string;
 }
 
-/** The Findings board's groups over `eligible`, in fix-first order. The run's interpretation
- * carries this for every eligible finding; the board recomputes it only over a filtered subset. */
+/** The Findings board's groups over `eligible`, in fix-first order. */
 export function rankedRollup(
   eligible: Finding[],
   stages: Map<number, { submittedAt?: number; completedAt?: number }>,

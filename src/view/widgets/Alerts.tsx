@@ -4,7 +4,7 @@ import { useWidgetState } from '@/view/useWidgetState';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
-import { IMPACT_BAND_ORDER, worstImpactBand, findingName } from '@sparkforensics/core/view-model';
+import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/view-model';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { DetectorInfo, CoverageData } from '@sparkforensics/core/analysis';
@@ -97,19 +97,15 @@ export function CleanChecks({
   // Remembered for the run, so hiding the Findings tab does not fold it again.
   const [openItems, setOpenItems] = useWidgetState<string[]>('clean-checks:open', NO_OPEN_ITEMS);
 
-  // A check the log could not run is not a pass: the same rule the verdict
-  // and the CLI/MCP report use to withhold "clean" (an evidence caveat, a
-  // per-stage check on a log where no stage finished, or a run-span check on
-  // a log with no ApplicationEnd). The run's interpretation decided it, for
-  // the whole run rather than the current filter.
-  const isNotRun = (type: string) => type in coverage.notRunReasons;
-
-  const zeroFindingTypes = Object.keys(REGISTRY)
-    .filter((type) => !isAlwaysMountedType(type))
-    .filter((type) => !activeTypes.has(type))
-    .map((type) => ({ type, findingLabel: findingName(type) }));
-  const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
-  const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));
+  // A check the log could not run is not a pass. The run's interpretation split the checks once
+  // (the same partition the CLI/MCP report lists), for the whole run rather than the current
+  // filter; a type whose widget is on the board is left off both lists.
+  const cleanWidgets = coverage.clean
+    .filter(({ type }) => !activeTypes.has(type))
+    .map(({ type, tag, label, thresholdSummary }) => ({ type, tag, findingLabel: label, thresholdSummary }));
+  const notRunWidgets = coverage.notRun
+    .filter(({ type }) => !activeTypes.has(type))
+    .map(({ type, tag, label, thresholdSummary }) => ({ type, tag, findingLabel: label, thresholdSummary }));
   // Why each check could not run, each line naming what to turn on next time.
   const notRunReasons = notRunWidgets.length > 0 ? coverage.gaps : [];
 
@@ -145,8 +141,8 @@ export function CleanChecks({
               ) : null}
               <Table>
                 <TableBody>
-                  {notRunWidgets.map(({ type, findingLabel }) => (
-                    <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={detectors[type]?.thresholdSummary ?? ''} status="notRun" />
+                  {notRunWidgets.map(({ type, tag, findingLabel, thresholdSummary }) => (
+                    <CleanCheckRow key={type} type={type} tag={tag} label={findingLabel} thresholdSummary={thresholdSummary} status="notRun" />
                   ))}
                 </TableBody>
               </Table>
@@ -164,8 +160,8 @@ export function CleanChecks({
                 <p className="pb-1 text-xs font-medium text-muted-foreground">{SCOPE_LABEL[scope]}</p>
                 <Table>
                   <TableBody>
-                    {widgets.map(({ type, findingLabel }) => (
-                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={detectors[type]?.thresholdSummary ?? ''} />
+                    {widgets.map(({ type, tag, findingLabel, thresholdSummary }) => (
+                      <CleanCheckRow key={type} type={type} tag={tag} label={findingLabel} thresholdSummary={thresholdSummary} />
                     ))}
                   </TableBody>
                 </Table>

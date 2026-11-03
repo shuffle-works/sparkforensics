@@ -7,9 +7,11 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { collectRun } from '@sparkforensics/core/cli';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
-import { analyze, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
-import { createMcpServer } from '@sparkforensics/core/mcp';
+import { analyze, auditConfig, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
+import { createMcpServer, mcpToolEntries } from '@sparkforensics/core/mcp';
+import { CLI_SUBCOMMANDS } from '@sparkforensics/core/node';
 import { corpusLog } from '../../core/test/corpus-log.js';
+import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js';
 
 // Contract test: the CLI's JSON and the MCP tools must report the same run, comparison and budget
 // results for the same logs, and the dashboard (which diffs two parsed runs with core's
@@ -31,7 +33,7 @@ const CANDIDATES = [
 // ---- Allowlists of intentional differences. `path` is a key path ("a.b", "list[0].x") and covers
 // everything under it. An entry that matches no difference fails the test, so the list cannot rot.
 
-// CLI single-run JSON (`candidate`) against MCP diagnose_run with every `include`.
+// CLI single-run JSON (`run`) against MCP diagnose_run with every `include`.
 const RUN_REPORT_ALLOWED = [
   { path: 'schemaVersion', only: 'cli', reason: 'The CLI stamps its report with the evidence schema version; MCP tool results are not versioned.' },
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
@@ -45,11 +47,9 @@ const RUN_REPORT_ALLOWED = [
 // CLI `comparison` against MCP compare_runs.
 const COMPARISON_ALLOWED = [
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
-  { path: 'runIdA', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
-  { path: 'runIdB', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
+  { path: 'baselineRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
+  { path: 'candidateRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
   { path: 'stagePairs', only: 'cli', reason: 'One row per paired stage can be large, so compare_runs returns it only with include: [\'stagePairs\']; the CLI always does. Checked equal with that include below.' },
-  { path: 'metricDeltas', only: 'mcp', reason: 'Deprecated alias of `metrics`, kept for one release; checked equal to `metrics` below.' },
-  { path: 'findingsDelta', only: 'mcp', reason: 'Deprecated alias of `findings`, kept for one release; checked equal to `findings` below.' },
 ];
 
 // CLI NDJSON `budgets` against MCP evaluate_budgets `results`: nothing differs.
@@ -99,6 +99,29 @@ function diffSurfaces(cli, mcp, allowed) {
   return problems;
 }
 
+// The MCP tool table decides which tools have a CLI twin; this file compares each twin's values.
+describe('MCP tools and their CLI twins', () => {
+  const COMPARED_HERE = new Set(['diagnose_run', 'get_run_summary', 'compare_runs', 'evaluate_budgets', 'get_finding_evidence', 'list_detectors']);
+
+  it.each(mcpToolEntries().map((entry) => [entry.name, entry.cli]))('%s has a CLI twin this file compares, or says why it has none', (name, cli) => {
+    if ('twin' in cli) {
+      expect(cli.twin).toMatch(/^sparkforensics-analyze/);
+      expect(COMPARED_HERE.has(name), `${name} names a CLI twin but no test here compares its values`).toBe(true);
+    } else {
+      expect(cli.none.trim(), `${name} has neither a CLI twin nor a reason`).not.toBe('');
+      expect(COMPARED_HERE.has(name), `${name} has no CLI twin yet a test here compares it`).toBe(false);
+    }
+  });
+
+  it('names an existing CLI subcommand where a twin is a subcommand', () => {
+    const subcommands = new Set(CLI_SUBCOMMANDS.map((c) => c.name));
+    for (const { cli } of mcpToolEntries()) {
+      const [, word] = ('twin' in cli ? cli.twin : '').split(' ');
+      if (word && !word.startsWith('<') && !word.startsWith('-')) expect(subcommands.has(word), cli.twin).toBe(true);
+    }
+  });
+});
+
 describe('diffSurfaces', () => {
   it('reports a key missing on either side and a value that differs', () => {
     expect(diffSurfaces({ a: 1, b: 2, c: [1] }, { a: 1, b: 3, d: 4 }, [])).toEqual([
@@ -129,7 +152,9 @@ async function cliOutput(argv) {
 }
 
 const cliJson = async (argv) => JSON.parse((await cliOutput(argv)).stdout);
-const cliLines = async (argv) => (await cliOutput(argv)).stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const cliRun = async (argv) => parseRun((await cliOutput(argv)).stdout);
+const cliEnvelope = async (argv) => parseEnvelope((await cliOutput(argv)).stdout);
+const cliLines = async (argv) => parseNdjsonLines((await cliOutput(argv)).stdout);
 
 // The block the MCP server reports; the CLI reads its own package.json.
 const MCP_GENERATOR = { name: 'sparkforensics-mcp', version: '0.0.0-test', buildId: 'test' };
@@ -159,7 +184,7 @@ async function dashboardComparison(baselinePath, candidatePath) {
       appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
       appModel.jobs, appModel.sql, appModel.runAggregates,
     );
-    return { appModel, catalog };
+    return { appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) };
   };
   const [base, cand] = await Promise.all([prepare(baselinePath), prepare(candidatePath)]);
   return buildComparison({ label: 'baseline', ...base }, { label: 'candidate', ...cand });
@@ -178,12 +203,27 @@ const MCP_DEFAULT_FIELDS = COMPARISON_BLOCK_FIELDS.filter((f) => f !== 'stagePai
 describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs', () => {
   describe.each(CANDIDATES)('%s', (candidate) => {
     it.each([[false], [true]])('reports the same run (redact: %s) through the CLI and diagnose_run', async (redact) => {
-      const cli = await cliJson([candidate, '--format', 'json', ...(redact ? ['--redact'] : [])]);
+      const cli = await cliRun([candidate, '--format', 'json', ...(redact ? ['--redact'] : [])]);
       const viaMcp = await mcpCall('diagnose_run', { source: { path: candidate }, include: INCLUDE_ALL, redact, view: 'full' });
 
       // Sanity: the blocks the MCP default view gained are really compared.
       expect(Object.keys(cli)).toEqual(expect.arrayContaining(['writeTargets', 'metrics', 'effectiveConf']));
       expect(diffSurfaces(cli, viaMcp, RUN_REPORT_ALLOWED)).toEqual([]);
+    });
+
+    it('reports the run summary figures the CLI report states', async () => {
+      const cli = await cliRun([candidate, '--format', 'json']);
+      const summary = await mcpCall('get_run_summary', { source: { path: candidate } });
+      const { outcome, runShape, stageCount, jobCount, sqlExecutionCount, skippedLines } = cli.summary;
+      expect(summary).toMatchObject({ ...outcome, runShape, stageCount, jobCount, sqlExecutionCount, skippedLines });
+    });
+
+    it('returns the finding row the CLI report lists, evidence included', async () => {
+      const cli = await cliRun([candidate, '--format', 'json']);
+      const [row] = cli.findings;
+      expect(row, 'the corpus log has a finding to drill into').toBeDefined();
+      const viaMcp = await mcpCall('get_finding_evidence', { source: { path: candidate }, findingId: row.id });
+      expect(viaMcp.finding).toEqual(row);
     });
 
     it('returns writeTargets, metrics and effectiveConf in diagnose_run\'s default view', async () => {
@@ -207,23 +247,24 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
         expect(row.key).toEqual(expect.any(String));
       });
       // One finding is one key in the CLI report too.
-      const cliKeys = (await cliJson([candidate, '--format', 'json'])).findings.map((f) => f.key);
+      const cliKeys = (await cliRun([candidate, '--format', 'json'])).findings.map((f) => f.key);
       expect(compact.findings.map((f) => f.key)).toEqual(cliKeys);
     });
 
     it.each([[false], [true]])('reports the same comparison (redact: %s) through the CLI and compare_runs', async (redact) => {
       const flags = redact ? ['--redact'] : [];
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson', ...flags]);
-      const single = await cliJson([candidate, '--baseline', BASELINE, '--format', 'json', ...flags]);
+      const single = await cliEnvelope([candidate, '--baseline', BASELINE, '--format', 'json', ...flags]);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, redact });
 
       expect(line.comparison.metrics.find((m) => m.key === 'wallClock')).toMatchObject({ baseline: expect.any(Number), candidate: expect.any(Number) });
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
-      // The two CLI outputs are the same pair of blocks.
-      expect(single).toEqual({ candidate: line.candidate, comparison: line.comparison });
-      // The deprecated MCP names carry the same values as the CLI names.
-      expect(viaMcp.metricDeltas).toEqual(viaMcp.metrics);
-      expect(viaMcp.findingsDelta).toEqual(viaMcp.findings);
+      // The two CLI outputs carry the same run, comparison and budgets.
+      expect(single).toEqual({ schemaVersion: line.schemaVersion, run: line.run, comparison: line.comparison, budgets: line.budgets });
+      expect(viaMcp).not.toHaveProperty('runIdA');
+      expect(viaMcp).not.toHaveProperty('runIdB');
+      expect(viaMcp).not.toHaveProperty('metricDeltas');
+      expect(viaMcp).not.toHaveProperty('findingsDelta');
     });
 
     // Every field of the comparison block, on both surfaces and in the dashboard's compareRuns.
@@ -305,9 +346,9 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       expect(dashboard).toEqual(line.comparison);
     });
 
-    it('reports the candidate block of a comparison as the same run report', async () => {
+    it('reports the run of a comparison as the same run report', async () => {
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
-      expect(line.candidate).toEqual(await cliJson([candidate, '--format', 'json']));
+      expect(line.run).toEqual(await cliRun([candidate, '--format', 'json']));
     });
 
     // Budgets carry no stage text, so redaction cannot move them: the CLI budgets the redacted

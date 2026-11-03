@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sparkforensics.dev/schema/cli-envelope.schema.json",
+  "title": "sparkforensics-analyze JSON envelope",
+  "description": "The output of `sparkforensics-analyze --format json`: one object per invocation. The root validates that object; $defs/ndjsonLine validates one line of `--format ndjson`. The envelope's own keys are fixed; `run` and `comparison` are described by their required top-level keys.",
+  "type": "object",
+  "required": ["schemaVersion", "run", "budgets"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "run": { "$ref": "#/$defs/run" },
+    "comparison": { "$ref": "#/$defs/comparison" },
+    "budgets": { "$ref": "#/$defs/budgets" }
+  },
+  "$defs": {
+    "run": {
+      "description": "The evidence report of the analyzed run with notesHidden, generator, app, metrics and effectiveConf.",
+      "type": "object",
+      "required": [
+        "schemaVersion", "summary", "verdict", "evidenceAvailability", "detectors", "findings",
+        "writeTargets", "recommendations", "cleanChecks", "notRunChecks", "notesHidden",
+        "app", "metrics", "effectiveConf"
+      ],
+      "properties": {
+        "schemaVersion": { "type": "integer" },
+        "summary": { "type": "object" },
+        "verdict": { "type": "object" },
+        "evidenceAvailability": { "type": ["object", "null"] },
+        "detectors": {},
+        "findings": { "type": "array", "items": { "type": "object" } },
+        "writeTargets": { "type": "object" },
+        "recommendations": { "type": "array" },
+        "cleanChecks": { "type": "array" },
+        "notRunChecks": { "type": "array" },
+        "notesHidden": { "type": "integer", "minimum": 0 },
+        "generator": {
+          "type": "object",
+          "required": ["name", "version", "buildId"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "buildId": { "type": "string" }
+          }
+        },
+        "app": {
+          "type": "object",
+          "required": ["id", "attemptId"],
+          "properties": {
+            "id": { "type": ["string", "null"] },
+            "attemptId": { "type": ["string", "null"] }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "required": ["schemaVersion", "runComplete", "time", "data"],
+          "properties": {
+            "schemaVersion": { "type": "integer" },
+            "runComplete": { "type": "boolean" },
+            "time": { "type": "object" },
+            "data": { "type": "object" }
+          }
+        },
+        "effectiveConf": { "type": ["object", "null"] }
+      }
+    },
+    "comparison": {
+      "description": "The candidate run compared with the baseline.",
+      "type": "object",
+      "required": [
+        "verdict", "baselineApp", "candidateApp", "baselineSkippedLines", "confidence", "reason",
+        "matchedCoverage", "runtimeCoverage", "metrics", "findings", "comparisonSchemaVersion",
+        "unmatched", "replanned", "bookkeepingStageIds", "executionAlignment", "comparability"
+      ],
+      "properties": {
+        "generator": { "type": "object" },
+        "verdict": {
+          "type": "object",
+          "required": ["title", "tone", "sentences"],
+          "properties": {
+            "title": { "type": "string" },
+            "tone": { "type": "string" },
+            "sentences": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "baselineApp": { "type": "object" },
+        "candidateApp": { "type": "object" },
+        "baselineSkippedLines": { "type": "integer", "minimum": 0 },
+        "confidence": { "type": "string" },
+        "reason": { "type": ["string", "null"] },
+        "matchedCoverage": { "type": ["number", "null"] },
+        "runtimeCoverage": { "type": ["number", "null"] },
+        "metrics": { "type": "array" },
+        "findings": {
+          "type": "object",
+          "required": ["introduced", "resolved"]
+        },
+        "comparisonSchemaVersion": { "type": "integer" },
+        "stagePairs": { "type": "array" },
+        "unmatched": { "type": "object" },
+        "replanned": { "type": "array" },
+        "bookkeepingStageIds": { "type": "object" },
+        "executionAlignment": { "type": "object" },
+        "comparability": { "type": "object" }
+      }
+    },
+    "budgetResult": {
+      "description": "One budget's outcome. Passing budgets are listed too.",
+      "type": "object",
+      "required": ["name", "status", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "max-runtime", "max-spill", "max-skew", "max-failed-task-rate", "min-efficiency",
+            "max-regression", "max-stage-regression", "fail-on-introduced", "run-complete", "parse-incomplete"
+          ]
+        },
+        "status": { "enum": ["pass", "violation", "inconclusive"] },
+        "detail": { "type": "string" },
+        "metric": { "type": "string" }
+      }
+    },
+    "budgets": {
+      "description": "Every budget result, passes included; empty without budgets.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/budgetResult" }
+    },
+    "ndjsonLine": {
+      "description": "One `--format ndjson` line: one candidate. run and comparison are null on an error line.",
+      "type": "object",
+      "required": ["log", "status", "exitCode", "error", "schemaVersion", "run", "comparison", "budgets"],
+      "additionalProperties": false,
+      "properties": {
+        "log": { "type": "string" },
+        "status": { "type": "string" },
+        "exitCode": { "type": "integer" },
+        "error": { "type": ["string", "null"] },
+        "schemaVersion": { "const": 1 },
+        "run": { "oneOf": [{ "$ref": "#/$defs/run" }, { "type": "null" }] },
+        "comparison": { "oneOf": [{ "$ref": "#/$defs/comparison" }, { "type": "null" }] },
+        "budgets": { "$ref": "#/$defs/budgets" }
+      }
+    }
+  }
+}

@@ -63,6 +63,12 @@ describe('buildComparisonOutput', () => {
     expect(output).toEqual(comparisonOutput(comparison));
   });
 
+  it('compares the config audit findings with the detector findings', () => {
+    const config = { id: 'configAudit-1', type: 'configAudit', stageId: null, impactBand: 'warning', recommendation: 'Set it.' };
+    const { comparison } = buildComparisonOutput(run('baseline', 'App', 'app-1'), { ...run('candidate', 'App', 'app-2'), configFindings: [config] });
+    expect(comparison.findings.introduced.map((f) => f.type)).toEqual(['configAudit']);
+  });
+
   it('applies redaction to both the comparison and its projection', () => {
     const base = run('baseline', 'App', 'app-1');
     const cand = run('candidate', 'App', 'app-2');

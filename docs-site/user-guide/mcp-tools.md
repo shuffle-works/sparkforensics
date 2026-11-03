@@ -15,6 +15,22 @@ an AI agent) can diagnose a run without opening the dashboard.
 | [`get_finding_documentation`](./mcp-tools/get-finding-documentation.md) | Returns the detection and tuning notes for one finding type. |
 | [`get_reference_doc`](./mcp-tools/get-reference-doc.md) | Returns one tuning-reference chapter by anchor. |
 
+Every tool declares an output schema for the `structuredContent` of a successful
+call, and a client can read it from `tools/list`. The schemas name the top-level keys
+and leave nested payloads open. The CLI gives the same data as most tools:
+
+| Tool | CLI twin |
+|------|----------|
+| `list_runs` | None: the CLI takes a log path or directory as its input and has no listing mode. |
+| `list_detectors` | `sparkforensics-analyze detectors` |
+| `diagnose_run` | `sparkforensics-analyze <log>` |
+| `get_run_summary` | `sparkforensics-analyze <log>` |
+| `compare_runs` | `sparkforensics-analyze <log> --baseline <log>` |
+| `evaluate_budgets` | `sparkforensics-analyze <log>` with the budget flags, and `--baseline <log>` for regression budgets |
+| `get_finding_evidence` | `sparkforensics-analyze <log>` |
+| `get_finding_documentation` | None: the CLI lists a type's documentation paths in `detectors` but does not print the text. |
+| `get_reference_doc` | None: the tuning reference is bundled documentation, not analysis of a log. |
+
 ## Common parameters {#common-parameters}
 
 The tools that load a run (`diagnose_run`, `get_run_summary`, `compare_runs`
@@ -34,8 +50,8 @@ other parameters.
   `get_run_summary`, `compare_runs` and `get_finding_evidence` accept it. See
   [Redaction](#redaction).
 
-`compare_runs` takes two runs, so it names them `runIdA`/`sourceA` and
-`runIdB`/`sourceB`. `evaluate_budgets` takes `runId`/`source` and an optional
+`compare_runs` takes two runs, so it names them `baselineRunId`/`sourceA` and
+`candidateRunId`/`sourceB`. `evaluate_budgets` takes `runId`/`source` and an optional
 second run as `runIdB`/`sourceB`. `get_finding_evidence` takes a
 `runId`, or a `source` with an optional `appId` to load the run again.
 `list_runs` returns one `source` per run, in this shape, so a row can be passed
@@ -48,13 +64,14 @@ The CLI and the two MCP tools that take two runs give the runs different roles:
 | Surface | Baseline | Candidate |
 |---------|----------|-----------|
 | CLI | The `--baseline` run | The positional run |
-| `compare_runs` | `runIdA` / `sourceA` | `runIdB` / `sourceB` |
+| `compare_runs` | `baselineRunId` / `sourceA` | `candidateRunId` / `sourceB` |
 | `evaluate_budgets` with one run | None | `runId` / `source` |
 | `evaluate_budgets` with two runs | `runId` / `source` | `runIdB` / `sourceB` |
 
 Absolute budgets and the `run-complete` check apply to the candidate. With
-two runs, `evaluate_budgets` returns the `runId` of the first run, the
-baseline.
+two runs, `evaluate_budgets` returns `baselineRunId` and `candidateRunId`, so a result is never
+read as the wrong run's. With one run it returns `candidateRunId` alone: the run the budgets
+were evaluated on.
 
 ## Redaction {#redaction}
 
@@ -69,7 +86,7 @@ the id, so every tool replaces it with the app id's pseudonym. It also
 pseudonymizes the value of any field named `host`, and drops the message and
 stack text of failed-task errors and the failure reason of a failed stage or job,
 which can carry file paths and data values that no pattern recognizes. On
-`compare_runs`, `runIdA`/`runIdB` are caller-supplied identifiers, not Spark application ids, so
+`compare_runs`, `baselineRunId`/`candidateRunId` are caller-supplied identifiers, not Spark application ids, so
 there's no single app-id field to redact beyond `baselineApp` and `candidateApp`; `redact` instead scans stage names
 and other free text for embedded app ids and host/IP tokens and
 pseudonymizes those. `list_runs` pseudonymizes every run's app id and name
@@ -199,8 +216,11 @@ The codes:
   directory, or isn't readable.
 - `invalid-shs-base-url`: `list_runs`'s `shsBaseUrl` isn't an absolute
   HTTP(S) URL without credentials, query, or fragment.
-- `access-or-upstream-failure`: the fallback code. Bad parameters, a failed
-  History Server fetch, or any error that carries no more specific code.
-  Common causes: neither `source` nor `runId` given, neither `dir` nor
-  `shsBaseUrl` given with no default History Server, `regressionMetric` without `maxRegressionPct`, and a
-  `source` whose `shsBaseUrl` or `appId` isn't valid.
+- `invalid-argument`: the call itself is wrong, so correct it before retrying. Neither `source`
+  nor `runId` given, `appId` without a `source`, neither `dir` nor `shsBaseUrl` given with no
+  default History Server, a `normalizePath` or `ignoreConf` pattern that doesn't compile,
+  `regressionMetric` without `maxRegressionPct`, `stageQualities` without
+  `stageRegressionBudgets`, a metric budgeted twice, or a `source` whose `shsBaseUrl` or
+  `appId` isn't valid.
+- `access-or-upstream-failure`: the fallback code for a failed History Server fetch or any error
+  that carries no more specific code. A retry or a report is worth it.

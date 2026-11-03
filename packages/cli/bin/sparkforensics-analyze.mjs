@@ -23,13 +23,14 @@ const { core, buildId: coreBuildId } = await loadNodeCore(pkgDir);
 
 const {
   collectRun, collectRunPair, resolveFromShs, validateShsRequest, analyzeRun,
-  buildEvidenceReport, toFindingsFilter, evaluateBudgets,
-  renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput,
+  buildEvidenceReport, toFindingsFilter, evaluateBudgets, regressionPairingError,
+  renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput, comparedFindings,
   compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS, compileConfIgnorePatterns,
   buildHtmlExportData, encodeRunPayload, runPayloadScript, loadThresholdOverrides,
   parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
   parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced,
-  tunedDetectors, runOutputBlocks, buildEffectiveConf, runDetectorsCommand,
+  tunedDetectors, runOutputBlocks, buildEffectiveConf, CLI_SUBCOMMANDS, subcommandUsageLines,
+  CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport,
 } = /** @type {typeof import('../../core/src/node.ts')} */ (core);
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
@@ -37,7 +38,7 @@ const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [o
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id>[:<attempt>] --app-id <id>[:<attempt>]...
                               (--baseline <path> | --baseline-shs-base-url <url> --baseline-app-id <id>) [options]
-       sparkforensics-analyze detectors [options]   List what the detectors find; see "detectors --help".
+${subcommandUsageLines()}
 
 Options:
   --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
@@ -342,32 +343,36 @@ async function runMultiLog({
     let line;
     try {
       const { appModel: parsed } = await unreadable(load(), EXIT.CANDIDATE_UNREADABLE);
-      const { appModel, catalog } = analyzeRun(parsed, { thresholds });
+      const candidateRun = analyzeRun(parsed, { thresholds });
+      const { appModel } = candidateRun;
       const { comparison, output } = buildComparisonOutput(
-        { label: 'baseline', appModel: baselineRun.appModel, catalog: baselineRun.catalog },
-        { label: 'candidate', appModel, catalog },
+        { label: 'baseline', ...baselineRun },
+        { label: 'candidate', ...candidateRun },
         { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, caveatThresholds, generator: generatorInfo() },
       );
       const { json, notesHidden } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
-      const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
+      const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(candidateRun), budgets, comparison, thresholds });
       for (const r of results) {
         if (r.status !== 'pass') process.stderr.write(`${log}: [${r.status === 'violation' ? 'violation' : 'inconclusive'}] ${r.name}: ${r.detail}\n`);
       }
       const exitCode = violated ? EXIT.VIOLATION : inconclusive ? EXIT.INCONCLUSIVE : EXIT.PASS;
+      const run = cliRunReport({ json, notesHidden }, runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }));
+      const envelope = cliEnvelope({ run, comparison: output, budgets: results });
       line = {
         log,
         status: violated ? 'violation' : inconclusive ? 'inconclusive' : 'pass',
         exitCode,
         error: null,
-        budgets: results,
-        candidate: { ...json, notesHidden, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }) },
-        comparison: output,
+        ...envelope,
       };
     } catch (e) {
       const exitCode = e.exitCode ?? EXIT.INTERNAL;
       const error = redact ? redactedFailure(`Candidate ${index + 1}`, exitCode) : e.message;
       process.stderr.write(`${log}: [error] ${error}\n`);
-      line = { log, status: 'error', exitCode, error, budgets: [], candidate: null, comparison: null };
+      line = {
+        log, status: 'error', exitCode, error,
+        schemaVersion: CLI_ENVELOPE_SCHEMA_VERSION, run: null, comparison: null, budgets: [],
+      };
     }
     emit(line);
     if (EXIT_SEVERITY[line.exitCode] > EXIT_SEVERITY[worstExit]) worstExit = line.exitCode;
@@ -402,16 +407,15 @@ function outPathProblem(outPath) {
   return undefined;
 }
 
-// `detectors` is a command only as the first argument; a log with that name is passed as ./detectors.
-function runDetectors(args) {
-  const { exitCode, stdout, stderr } = runDetectorsCommand(args);
-  process.exitCode = exitCode;
-  if (stderr) process.stderr.write(stderr);
-  process.stdout.write(stdout);
-}
-
 async function runCli(argv, { fetchImpl } = {}) {
-  if (argv[0] === 'detectors') return runDetectors(argv.slice(1));
+  const subcommand = CLI_SUBCOMMANDS.find(({ name }) => name === argv[0]);
+  if (subcommand) {
+    const { exitCode, stdout, stderr } = subcommand.run(argv.slice(1));
+    process.exitCode = exitCode;
+    if (stderr) process.stderr.write(stderr);
+    process.stdout.write(stdout);
+    return;
+  }
   let parsed;
   try {
     parsed = parseCliArgs(argv);
@@ -531,9 +535,11 @@ async function runCli(argv, { fetchImpl } = {}) {
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
     return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--ignore-conf/--noise-band-pct/--executor-ratio/--unmatched-stages-pct/--task-count-change-pct/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
   }
-  if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
-    return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
-  }
+  const pairingError = regressionPairingError(
+    { regressionMetric: values['regression-metric'], maxRegressionPct: values['max-regression-pct'] },
+    { metric: '--regression-metric', pct: '--max-regression-pct' },
+  );
+  if (pairingError) return bail(`${pairingError}\n${USAGE}`, 2);
   if (values['regression-metric'] !== undefined && !COMPARISON_METRIC_KEYS.includes(values['regression-metric'])) {
     return bail(`Unknown --regression-metric "${values['regression-metric']}" (expected one of: ${COMPARISON_METRIC_KEYS.join(', ')}).\n${USAGE}`, 2);
   }
@@ -743,7 +749,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   }
 
   const run = analyzeRun(parsedModel, { thresholds });
-  const { appModel, catalog } = run;
+  const { appModel } = run;
 
   if (exportHtmlDir !== undefined) {
     // The dashboard never tunes, so the export is the default-threshold analysis of the run.
@@ -767,8 +773,8 @@ async function runCli(argv, { fetchImpl } = {}) {
     // The builder applies --redact: stage names in the comparison carry raw Spark stage text,
     // which --redact promises to pseudonymize.
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
-      { label: 'baseline', appModel: baselineRun.appModel, catalog: baselineRun.catalog },
-      { label: 'candidate', appModel, catalog },
+      { label: 'baseline', ...baselineRun },
+      { label: 'candidate', ...run },
       { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand, caveatThresholds, generator: generatorInfo() },
     ));
   }
@@ -776,6 +782,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   const { markdown, json, notesHidden } = buildEvidenceReport(appModel, {
     redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
   });
+  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(run), budgets, comparison, thresholds });
   let output;
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonJson.verdict)}\n` : `${markdown}\n`;
@@ -784,15 +791,12 @@ async function runCli(argv, { fetchImpl } = {}) {
       redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
       generator: generatorInfo(),
     });
-    const payload = comparison
-      ? { candidate: { ...json, notesHidden, ...machineReadable }, comparison: comparisonJson }
-      : { ...json, notesHidden, ...machineReadable };
-    output = `${JSON.stringify(payload, null, 2)}\n`;
+    const envelope = cliEnvelope({ run: cliRunReport({ json, notesHidden }, machineReadable), comparison: comparisonJson, budgets: results });
+    output = `${JSON.stringify(envelope, null, 2)}\n`;
   }
   if (values.out) writeFileSync(values.out, output);
   else process.stdout.write(output);
 
-  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
   for (const r of results) {
     if (r.status === 'inconclusive') process.stderr.write(`[inconclusive] ${r.name}: ${r.detail}\n`);
     else if (r.status === 'violation') process.stderr.write(`[violation] ${r.name}: ${r.detail}\n`);

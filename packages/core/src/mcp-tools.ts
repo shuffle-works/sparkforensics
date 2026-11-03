@@ -8,15 +8,16 @@ import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } fr
 import { mcpError } from './mcp-error.ts';
 import {
   buildEvidenceReport, toFindingsFilter,
-  type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type VerdictJson, type VerdictStepRow,
+  type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type RunOutcomeSummary, type VerdictJson, type VerdictStepRow,
 } from './evidence-report.ts';
 import { runTiming } from './run-timing.ts';
 import { renderComparisonMarkdown, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
+import { comparedFindings, type ComparedRunInput } from './compared-run.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { compileConfIgnorePatterns } from './comparability.ts';
 import { runOutputBlocks, type ReportGenerator } from './run-output.ts';
-import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
+import { evaluateBudgets, regressionPairingError, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
@@ -25,7 +26,7 @@ import type { ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './finding-presentation.ts';
-import type { AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
+import type { AppModel, ImpactBand, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
@@ -33,7 +34,7 @@ export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; 
 // destructuring, both mcp-server-factory.ts sites, and the tests all pass a nested `source`,
 // never flattened path/shsBaseUrl).
 export type RunRef = { runId?: string; source?: RunSource };
-export interface RunSummary {
+export interface RunSummary extends RunOutcomeSummary {
   runId: string;
   // string | null (not undefined): getRunSummary always sets these via `?? null`, never omits them.
   app: { id: string | null; name: string | null; sparkVersion: string | null };
@@ -46,23 +47,16 @@ export interface RunSummary {
   // checking only durationMs:null couldn't tell an incomplete capture from a zero-length run; this
   // is the explicit signal (mirrors the incompleteRun finding).
   runComplete: boolean;
-  // How the run ended, the evidence report's summary.outcome (see RunOutcomeSummary).
-  failedJobs: number;
-  totalJobs: number;
-  failureReason: string | null;
-  failureReasonStageId: number | null;
+  // How the run ended: the evidence report's summary.outcome, flattened into this object.
   // Efficiency, unused core time, ETL phases and peak busy cores, as the dashboard shows them.
   runShape: RunShape;
 }
 // compareRuns returns the shared comparison projection (comparison-output.ts, the CLI's `comparison`
 // object), not the full raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
-// `verdict` is the dashboard comparison page's headline (baseline = runIdA, candidate = runIdB).
+// `verdict` is the dashboard comparison page's headline.
 export interface McpCompareRunsResult extends ComparisonOutput {
-  runIdA: string;
-  runIdB: string;
-  /** @deprecated Aliases of `findings` and `metrics`, kept for compatibility. */
-  findingsDelta: ComparisonOutput['findings'];
-  metricDeltas: ComparisonOutput['metrics'];
+  baselineRunId: string;
+  candidateRunId: string;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -83,7 +77,7 @@ const byCacheKey = new Map<string, string>(); // cacheKey -> runId
 // its runs' TTL and eviction (deleteRunEntry), and the map is capped on its own: a comparison holds
 // a row per paired stage, and 8 runs allow 56 ordered pairs.
 const COMPARISON_CACHE_CAP = 16;
-interface ComparisonCacheEntry { runIdA: string; runIdB: string; built: ReturnType<typeof buildComparisonOutput> }
+interface ComparisonCacheEntry { baselineRunId: string; candidateRunId: string; built: ReturnType<typeof buildComparisonOutput> }
 const comparisonCache = new Map<string, ComparisonCacheEntry>();
 // Threshold overrides are one fixed object per server process (or DEFAULT for none): identity keys them.
 const thresholdsIds = new WeakMap<object, number>();
@@ -160,7 +154,7 @@ function deleteRunEntry(id: string, entry: CacheEntry): void {
   byRunId.delete(id);
   // A comparison outlives neither of its runs: its entry goes with the first one evicted.
   for (const [key, cached] of comparisonCache) {
-    if (cached.runIdA === id || cached.runIdB === id) comparisonCache.delete(key);
+    if (cached.baselineRunId === id || cached.candidateRunId === id) comparisonCache.delete(key);
   }
   if (byCacheKey.get(entry.cacheKey) === id) byCacheKey.delete(entry.cacheKey);
 }
@@ -206,7 +200,7 @@ export async function resolveOrCreateRun(
   if (runId) {
     return { runId, appModel: getCachedAppModel(runId) };
   }
-  if (!source) throw mcpError('access-or-upstream-failure', 'Provide either source or runId.');
+  if (!source) throw mcpError('invalid-argument', 'Provide either source or runId.');
 
   // `'path' in source`, not `source.path`: RunSource's two variants share no common property, so a
   // plain `.path` access doesn't type-check on the union. Equivalent at runtime for every real caller.
@@ -442,12 +436,12 @@ export function getFindingEvidence(
 export async function resolveFindingEvidence(
   { runId, source, appId }: RunRef & { appId?: string }, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
 ): Promise<{ runId: string; finding: FindingRow }> {
-  if (appId !== undefined && !source) throw mcpError('access-or-upstream-failure', 'appId needs the source of the run to analyse.');
+  if (appId !== undefined && !source) throw mcpError('invalid-argument', 'appId needs the source of the run to analyse.');
   if (runId) {
     evictStale();
     if (byRunId.has(runId) || !source) return getFindingEvidence(runId, findingId, opts);
   }
-  if (!source) throw mcpError('access-or-upstream-failure', 'Provide runId, or source (with appId).');
+  if (!source) throw mcpError('invalid-argument', 'Provide runId, or source (with appId).');
   const resolved = await resolveOrCreateRun({ source }, { thresholds: opts?.thresholds });
   const actualAppId = opts?.redact
     ? buildEvidenceReport(resolved.appModel, { redact: true, markdown: false, thresholds: opts.thresholds }).json.summary.app.id ?? null
@@ -490,9 +484,10 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
 // (same analyze() call shape) first.
 async function resolveAndAnalyze(
   ref: RunRef, thresholds: ThresholdOverrides | undefined,
-): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
+): Promise<{ runId: string; run: ComparedRunInput }> {
   const { runId, appModel } = await resolveOrCreateRun(ref, { thresholds });
-  return { runId, appModel, catalog: runFindings(appModel, thresholds).catalog };
+  const { catalog, config } = runFindings(appModel, thresholds);
+  return { runId, run: { appModel, catalog, configFindings: config } };
 }
 
 export async function compareRuns(
@@ -504,38 +499,38 @@ export async function compareRuns(
   try {
     compileNormalizePatterns(opts?.normalizePath);
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', `normalizePath: ${(e as Error).message}`);
+    throw mcpError('invalid-argument', `normalizePath: ${(e as Error).message}`);
   }
   try {
     compileConfIgnorePatterns(opts?.ignoreConf);
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', `ignoreConf: ${(e as Error).message}`);
+    throw mcpError('invalid-argument', `ignoreConf: ${(e as Error).message}`);
   }
   const [
-    { runId: runIdA, appModel: appModelA, catalog: catalogA },
-    { runId: runIdB, appModel: appModelB, catalog: catalogB },
+    { runId: baselineRunId, run: runA },
+    { runId: candidateRunId, run: runB },
   ] = await Promise.all([resolveAndAnalyze(a, opts?.thresholds), resolveAndAnalyze(b, opts?.thresholds)]);
 
   // Comparison reads findings and metrics from `catalog` and appModel.stages/sql, both fully populated,
   // and no per-task data, so it produces the same output as the dashboard.
   const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
-  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
+  const cacheKey = JSON.stringify([baselineRunId, candidateRunId, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
   let built = comparisonCache.get(cacheKey)?.built;
   if (built) {
     // Re-insert so the oldest entry is the least recently used.
     comparisonCache.delete(cacheKey);
-    comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+    comparisonCache.set(cacheKey, { baselineRunId, candidateRunId, built });
   } else {
     built = buildComparisonOutput(
-      { label: runIdA, appModel: appModelA, catalog: catalogA },
-      { label: runIdB, appModel: appModelB, catalog: catalogB },
+      { label: baselineRunId, ...runA },
+      { label: candidateRunId, ...runB },
       { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, caveatThresholds: opts?.caveatThresholds, view, generator: opts?.generator },
     );
     // Either run can be evicted while the other one is still being read or parsed (the awaits
     // above): an entry for a run that is gone would outlive its eviction, so it is only kept
     // while both are cached.
-    if (byRunId.has(runIdA) && byRunId.has(runIdB)) {
-      comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+    if (byRunId.has(baselineRunId) && byRunId.has(candidateRunId)) {
+      comparisonCache.set(cacheKey, { baselineRunId, candidateRunId, built });
       while (comparisonCache.size > COMPARISON_CACHE_CAP) comparisonCache.delete(comparisonCache.keys().next().value!);
     }
   }
@@ -544,11 +539,9 @@ export async function compareRuns(
   const output = structuredClone(built.output);
 
   return {
-    runIdA,
-    runIdB,
+    baselineRunId,
+    candidateRunId,
     ...output,
-    findingsDelta: output.findings,
-    metricDeltas: output.metrics,
     ...tunedField(opts?.thresholds),
     ...(opts?.markdown ? { markdown: renderComparisonMarkdown(comparison, output.verdict, tunedDetectors(opts?.thresholds)) } : {}),
   };
@@ -566,15 +559,15 @@ export async function evaluateBudgetsForRun(
   secondary?: RunRef,
   opts?: { thresholds?: ThresholdOverrides },
 ): Promise<{
-  runId: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean;
+  /** Present with two runs: the regression baseline. */
+  baselineRunId?: string;
+  /** The run the budgets were evaluated on. */
+  candidateRunId: string;
+  results: BudgetResult[]; violated: boolean; inconclusive: boolean;
   tunedThresholds?: Record<string, TunedThresholds>;
 }> {
-  // Mirrors the CLI's --regression-metric/--max-regression-pct pairing guard: unlike the CLI, this
-  // tool never defaults regressionMetric, so seeing it set here means the caller asked for a
-  // regression check and forgot the threshold, evaluateBudgets() would otherwise skip it silently.
-  if (budgets.regressionMetric !== undefined && budgets.maxRegressionPct === undefined) {
-    throw mcpError('access-or-upstream-failure', 'regressionMetric requires maxRegressionPct.');
-  }
+  const pairingError = regressionPairingError(budgets);
+  if (pairingError) throw mcpError('invalid-argument', pairingError);
   // The CLI's rule: a metric is budgeted once across the single pair and the list.
   try {
     const pair = budgets.maxRegressionPct === undefined ? [] : [{ metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct }];
@@ -583,16 +576,16 @@ export async function evaluateBudgetsForRun(
       ...(budgets.regressionBudgets ?? []).map((budget) => ({ origin: 'regressionBudgets', budget })),
     ]);
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', (e as Error).message);
+    throw mcpError('invalid-argument', (e as Error).message);
   }
   if (budgets.stageQualities !== undefined && budgets.stageRegressionBudgets === undefined) {
-    throw mcpError('access-or-upstream-failure', 'stageQualities requires stageRegressionBudgets.');
+    throw mcpError('invalid-argument', 'stageQualities requires stageRegressionBudgets.');
   }
   try {
     for (const { metric } of budgets.stageRegressionBudgets ?? []) assertStageBudgetMetric(metric, 'stageRegressionBudgets');
     combineRegressionBudgets((budgets.stageRegressionBudgets ?? []).map((budget) => ({ origin: 'stageRegressionBudgets', budget })));
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', (e as Error).message);
+    throw mcpError('invalid-argument', (e as Error).message);
   }
   const [first, second] = await Promise.all([
     resolveAndAnalyze(primary, opts?.thresholds),
@@ -606,15 +599,17 @@ export async function evaluateBudgetsForRun(
   const baseline = second ? first : undefined;
   // Not redacted: no budget reads the stage text redaction rewrites (the parity suite checks it).
   const comparison: CompareRunsResult | undefined = baseline
-    ? buildComparisonOutput(
-      { label: baseline.runId, appModel: baseline.appModel, catalog: baseline.catalog },
-      { label: candidate.runId, appModel: candidate.appModel, catalog: candidate.catalog },
-    ).comparison
+    ? buildComparisonOutput({ label: baseline.runId, ...baseline.run }, { label: candidate.runId, ...candidate.run }).comparison
     : undefined;
 
   const { results, violated, inconclusive } = evaluateBudgets({
-    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison, thresholds: opts?.thresholds,
+    appModel: candidate.run.appModel, catalog: comparedFindings(candidate.run), budgets, comparison, thresholds: opts?.thresholds,
   });
 
-  return { runId: first.runId, results, violated, inconclusive, ...tunedField(opts?.thresholds) };
+  return {
+    ...(baseline ? { baselineRunId: baseline.runId } : {}),
+    candidateRunId: candidate.runId,
+    results, violated, inconclusive,
+    ...tunedField(opts?.thresholds),
+  };
 }

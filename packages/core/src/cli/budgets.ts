@@ -235,6 +235,16 @@ function pushComparisonBudget(
   });
 }
 
+/** The one pairing rule for the regression budget: a metric without its percentage would skip the
+ * check silently. Returns the refusal, or null when the pair is sound. `names` spell the two
+ * fields as the caller's surface does (the CLI's flags). */
+export function regressionPairingError(
+  { regressionMetric, maxRegressionPct }: Pick<BudgetsConfig, 'regressionMetric' | 'maxRegressionPct'>,
+  names = { metric: 'regressionMetric', pct: 'maxRegressionPct' },
+): string | null {
+  return regressionMetric !== undefined && maxRegressionPct === undefined ? `${names.metric} requires ${names.pct}.` : null;
+}
+
 /** `thresholds`: the overrides the catalog was analyzed with, so a budget that recomputes a
  * detector's figure (--max-skew) uses the same thresholds. */
 export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds }: {
@@ -247,10 +257,10 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
   if (Number.isFinite(budgets.maxSkewRatio)) results.push(checkSkew(appModel, budgets.maxSkewRatio!, skewMinTasksForP95(thresholds)));
   if (Number.isFinite(budgets.maxFailedTaskRatePct)) results.push(checkFailedTaskRate(appModel, budgets.maxFailedTaskRatePct!));
   if (Number.isFinite(budgets.minEfficiencyPct)) results.push(checkEfficiency(appModel, budgets.minEfficiencyPct!));
-  // Guarded here so any evaluateBudgets caller benefits: regressionMetric without
-  // maxRegressionPct would otherwise skip the `if` silently, reporting nothing.
-  if (budgets.regressionMetric !== undefined && budgets.maxRegressionPct === undefined) {
-    results.push({ name: 'max-regression', metric: budgets.regressionMetric, status: 'inconclusive', detail: `regressionMetric "${budgets.regressionMetric}" was set without maxRegressionPct; the regression budget was not evaluated.` });
+  // A caller that skipped the pairing check still gets a result, not a silent skip.
+  const pairingError = regressionPairingError(budgets);
+  if (pairingError) {
+    results.push({ name: 'max-regression', metric: budgets.regressionMetric, status: 'inconclusive', detail: `${pairingError} The regression budget was not evaluated.` });
   } else if (budgets.maxRegressionPct !== undefined) {
     // `!== undefined`, not Number.isFinite: a zero-baseline regression's pct is Infinity,
     // so an "unlimited" budget is a legitimate input (the CLI already rejects non-finite flags).

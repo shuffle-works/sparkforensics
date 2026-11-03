@@ -62,6 +62,8 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const transport = new StdioClientTransport({ command: binPath, args: [] });
     client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
+    // listTools makes the SDK client check every later result against the tool's outputSchema.
+    await client.listTools();
     const result = await client.callTool({ name: 'diagnose_run', arguments: { runId: 'nonexistent' } });
     expect(result.isError).toBe(true);
     expect(result.structuredContent.code).toBe('run-not-found');
@@ -91,7 +93,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const runSummary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path } } });
     expect(runSummary.structuredContent).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
     expect(runSummary.structuredContent.runShape).toEqual({
-      wallClockMs: null, efficiencyPct: null, unusedCoreTimePct: null, etlPhasesMs: null, peakBusyCores: null,
+      wallClockMs: null, efficiencyPct: null, unusedCoreTimePct: null, efficiencyFlag: null, unusedCoreTimeFlag: null, etlPhasesMs: null, peakBusyCores: null,
     });
   }, 30000);
 

@@ -275,6 +275,6 @@ export async function listRuns(
       opts,
     );
   }
-  throw mcpError('access-or-upstream-failure', 'Provide either dir or shsBaseUrl.');
+  throw mcpError('invalid-argument', 'Provide either dir or shsBaseUrl.');
 }
 

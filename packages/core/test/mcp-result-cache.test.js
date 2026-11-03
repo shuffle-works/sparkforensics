@@ -171,7 +171,7 @@ describe('compareRuns result cache', () => {
         const before = comparisonCacheSize();
         release();
         const result = await racing;
-        expect(result.runIdA).toBeTruthy();
+        expect(result.baselineRunId).toBeTruthy();
         expect(comparisonCacheSize()).toBe(before);
       } finally {
         vi.mocked(collectRun).mockImplementation(actual.collectRun);
@@ -183,7 +183,7 @@ describe('compareRuns result cache', () => {
     await withLogs(pair, async ([a, b]) => {
       const forward = await compareRuns(a, b);
       const backward = await compareRuns(b, a);
-      expect(backward.runIdA).toBe(forward.runIdB);
+      expect(backward.baselineRunId).toBe(forward.candidateRunId);
       expect(builds()).toBe(2);
       const wall = (r) => r.metrics.find((m) => m.key === 'wallClock');
       expect(wall(backward).baseline).toBe(wall(forward).candidate);
@@ -263,7 +263,7 @@ describe('compareRuns result cache', () => {
       });
       expect(builds()).toBe(1);
       const again = await compareRuns(a, b);
-      expect(again.runIdA).not.toBe(first.runIdA);
+      expect(again.baselineRunId).not.toBe(first.baselineRunId);
       expect(builds()).toBe(2);
       expect(again.metrics).toEqual(first.metrics);
     });

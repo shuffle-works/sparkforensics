@@ -101,16 +101,6 @@ describe('the board\'s groups', () => {
     expect(groups).toHaveLength(1);
   });
 
-  it('renders the unfiltered board exactly as the interpretation carries it', () => {
-    const catalog = [findingWithMagnitude('spill', 1, 3000), findingWithMagnitude('spill', 2, 2000)];
-    const state = installInterpretation(catalog, APP_MODEL);
-    // A figure no core computes: the board must show the carried one, not derive its own.
-    state.data.rollup.groups[0].stat = 'carried figure';
-    const { groups } = boardRollup(state, catalog, APP_MODEL.stages);
-    expect(groups[0].stat).toBe('carried figure');
-    expect(groups[0].findings).toEqual([catalog[0], catalog[1]]);
-  });
-
   it('recomputes the groups over the findings a filter keeps', () => {
     const catalog = [findingWithMagnitude('spill', 1, 3000), findingWithMagnitude('spill', 2, 2000)];
     const state = installInterpretation(catalog, APP_MODEL);

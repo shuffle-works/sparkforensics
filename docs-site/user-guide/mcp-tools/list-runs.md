@@ -13,7 +13,7 @@ Parameters:
 - `dir` (string, local mode) or `shsBaseUrl` (string, SHS mode): exactly
   one of the two. Passing both fails input validation; passing neither
   uses the server's default History Server, or returns
-  `access-or-upstream-failure` when it has none.
+  `invalid-argument` when it has none.
 - `namePattern` (string, optional): case-insensitive substring match against
   each run's name.
 - `minDate`/`maxDate` (string, optional): filter by start time. A value

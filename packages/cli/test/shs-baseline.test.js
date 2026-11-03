@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { zipSync, strToU8 } from '@sparkforensics/core/export';
+import { parseEnvelope, parseNdjsonLines } from './envelope-helpers.js';
 
 // Synthetic single-stage log: ten tasks, the last `slowMs` long, finishing at `slowMs`.
 function log({ slowMs, appId, appName = 't' }) {
@@ -72,7 +73,7 @@ async function run(argv, options) {
       status: process.exitCode,
       stdout,
       stderr: err.mock.calls.map(([c]) => c).join(''),
-      get lines() { return stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l)); },
+      get lines() { return parseNdjsonLines(stdout); },
     };
   } finally {
     out.mockRestore();
@@ -168,10 +169,10 @@ describe('a History Server baseline', () => {
     const viaPath = await run([p('slow'), '--baseline', p('baseline')]);
     expect(viaShs.status).toBe(0);
     expect(requested).toEqual([`http://${BASELINE_HOST}:18080/api/v1/applications/${BASE_ID}/logs`]);
-    const { comparison } = JSON.parse(viaShs.stdout);
+    const { comparison } = parseEnvelope(viaShs.stdout);
     expect(wallClock(comparison)).toMatchObject({ delta: 2000 });
     // Only the baseline's own app id differs between the two sources' outputs: none appears in the comparison.
-    expect(JSON.parse(viaShs.stdout)).toEqual(JSON.parse(viaPath.stdout));
+    expect(parseEnvelope(viaShs.stdout)).toEqual(parseEnvelope(viaPath.stdout));
   });
 
   it('requests the baseline attempt', async () => {
@@ -189,14 +190,14 @@ describe('a History Server baseline', () => {
       `http://${BASELINE_HOST}:18080/api/v1/applications/${BASE_ID}/logs`,
       `http://${CANDIDATE_HOST}:18080/api/v1/applications/${SLOW_ID}/logs`,
     ]);
-    expect(wallClock(JSON.parse(stdout).comparison)).toMatchObject({ delta: 2000 });
+    expect(wallClock(parseEnvelope(stdout).comparison)).toMatchObject({ delta: 2000 });
   });
 
   it('compares a History Server candidate against a local baseline as before', async () => {
     const { fetchImpl } = fakeShs();
     const { status, stdout } = await run([...candidateShs(SLOW_ID), '--baseline', p('baseline')], { fetchImpl });
     expect(status).toBe(0);
-    expect(wallClock(JSON.parse(stdout).comparison)).toMatchObject({ delta: 2000 });
+    expect(wallClock(parseEnvelope(stdout).comparison)).toMatchObject({ delta: 2000 });
   });
 
   it('renders the Markdown comparison section', async () => {
@@ -237,7 +238,7 @@ describe('a History Server baseline', () => {
     const viaPath = await run([p('slow'), '--baseline', p('baseline'), ...flags]);
     expect(viaShs.status).toBe(viaPath.status);
     expect(viaShs.stderr).toBe(viaPath.stderr);
-    expect(JSON.parse(viaShs.stdout)).toEqual(JSON.parse(viaPath.stdout));
+    expect(parseEnvelope(viaShs.stdout)).toEqual(parseEnvelope(viaPath.stdout));
   });
 
   it('exits 5 when the baseline fetch fails, even when the candidate fails too', async () => {
@@ -271,7 +272,7 @@ describe('--redact with a History Server baseline', () => {
     const { fetchImpl } = fakeShs();
     const viaShs = await run([p('slow'), ...baselineShs(), '--redact'], { fetchImpl });
     const viaPath = await run([p('slow'), '--baseline', p('baseline'), '--redact']);
-    expect(JSON.parse(viaShs.stdout)).toEqual(JSON.parse(viaPath.stdout));
+    expect(parseEnvelope(viaShs.stdout)).toEqual(parseEnvelope(viaPath.stdout));
   });
 
   it('writes no baseline app id or host when both runs come from a History Server', async () => {
@@ -311,8 +312,8 @@ describe('several History Server candidates', () => {
   it('gives each candidate the same line a single History Server candidate gets', async () => {
     const { fetchImpl } = fakeShs();
     const [line] = (await run([...candidateShs(SLOW_ID, SLOWER_ID), '--baseline', p('baseline')], { fetchImpl })).lines;
-    const single = JSON.parse((await run([...candidateShs(SLOW_ID), '--baseline', p('baseline')], { fetchImpl })).stdout);
-    expect(line.candidate).toEqual(single.candidate);
+    const single = parseEnvelope((await run([...candidateShs(SLOW_ID), '--baseline', p('baseline')], { fetchImpl })).stdout);
+    expect(line.run).toEqual(single.run);
     expect(line.comparison).toEqual(single.comparison);
   });
 

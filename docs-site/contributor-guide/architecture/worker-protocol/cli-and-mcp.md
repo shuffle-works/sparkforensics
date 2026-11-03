@@ -37,6 +37,12 @@ The baseline has the same three flags (`--baseline-shs-base-url`, `--baseline-ap
 with `--baseline <path>`, and resolved with `resolveFromShs` too; a failed baseline fetch exits `5`.
 A History Server run and a local log load concurrently (CPU-bound local pairs use `collectRunPair`).
 
+The CLI's JSON is one envelope, `{ schemaVersion, run, comparison?, budgets }`, built by
+`cliEnvelope()` in `packages/core/src/cli-envelope.ts` for a single run, a run against a
+baseline and each NDJSON line. `packages/cli/schema/cli-envelope.schema.json` describes it
+and the CLI tests validate every JSON mode against it, so a change to the envelope's keys
+bumps `CLI_ENVELOPE_SCHEMA_VERSION` and the schema together.
+
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
 `packages/core/src/cli/regression-budgets.ts` and passed to `evaluateBudgets()`
@@ -48,7 +54,7 @@ themselves; `parseStageRegressionBudgetFlag` refuses the neutral `inputBytes` an
 `outputBytes`. With two or more positional candidates (or
 `--format ndjson`), the CLI's `runMultiLog` parses and analyzes the baseline once,
 then evaluates each candidate in turn and writes one NDJSON line per candidate
-(`log`, `status`, `exitCode`, `error`, `budgets`, `candidate`, `comparison`). A
+(`log`, `status`, `exitCode`, `error`, `schemaVersion`, `run`, `comparison`, `budgets`). A
 candidate that can't be read or parsed gets a `status: "error"` line with
 `exitCode` `4` (`6` for an internal failure on that candidate); the exit code is
 the worst line (`6` > `5` > `4` > `1` > `3` > `0`, `EXIT_SEVERITY`). A baseline
@@ -91,7 +97,17 @@ absolute budgets and the `run-complete` check apply to the candidate run; the MC
 
 ## MCP server
 
-`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers these tools:
+The tools come from one typed table, `mcpToolEntries()` in `packages/core/src/mcp-tool-table.ts`.
+Each entry has a `name`, a `description`, an `inputSchema`, an `outputSchema` (the zod shape of
+a successful call's `structuredContent`, registered as a loose object so an extra key is allowed),
+a `handler`, and `cli`: either `{ twin }` naming the CLI command or flag mode that gives the same
+data, or `{ none }` giving the reason there is no twin. `createMcpServer()` in
+`packages/core/src/mcp-server-factory.ts` registers every entry, and no tool exists outside the table. To add a tool, add an entry with a CLI
+twin or a stated reason and an `outputSchema`, and list the tool in `docs-site/user-guide/mcp-tools.md`;
+`packages/core/test/mcp-tool-table.test.js` fails an entry with no `cli` decision, and calls every
+tool, which checks the `structuredContent` against its `outputSchema`.
+
+`createMcpServer()` registers these tools:
 `list_runs` (candidate runs in a local directory or on a Spark History Server, to
 pick one before diagnosing it), `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`
@@ -189,9 +205,7 @@ JSON and the MCP tools call the same core functions:
   metric rows, and `comparisonOutput()` projects it, so the CLI, MCP and the
   dashboard report the same block.
   That projection is the CLI's
-  `comparison` object and the shared part of `compare_runs`. `compare_runs` also
-  returns `metricDeltas` and `findingsDelta`, which repeat `metrics` and
-  `findings` under other key names.
+  `comparison` object and the shared part of `compare_runs`.
 - `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
   `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
   the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
@@ -214,21 +228,21 @@ by code, while the CLI maps failures to exit codes and owns stdout. Adding a fie
 to the projection adds it to both. `packages/cli/test/parity.test.js` runs the CLI's
 `main()` and the MCP tools through an in-memory client on public corpus logs,
 flattens both outputs and diffs their key sets and values. The differences that
-stay (the MCP run handles, the `metricDeltas` and `findingsDelta` repeats, the CLI's `schemaVersion`)
+stay (the MCP run handles, the CLI's `schemaVersion`)
 are in a commented allowlist in that file, and an entry that explains no
 difference fails the test.
 
 Every tool failure comes back as `{isError: true, content: [...],
-structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
-of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
-plus `run-not-found`, `finding-not-found`, `invalid-cursor`, `invalid-event-log` (also
-covers a nonexistent `path` source, and any file-system error such as `EACCES` or
-`EISDIR` on an event log that `toolErrorResult` maps to it), `archive-too-large` (SHS archive over
-the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers
-the whole archive in memory, unlike the streaming `/shs-proxy` route),
-`invalid-type`, `invalid-anchor` (documentation tools), `directory-not-found`,
-`invalid-date-filter`, and `invalid-shs-base-url` (`list_runs`). An error without a
-code reports `access-or-upstream-failure`, as does a file-system error in a documentation tool. A stalled SHS archive body fails as
+structuredContent: {code}}`, never an HTTP-status-shaped error. `code` is one of
+`MCP_ERROR_CODES` (`packages/core/src/mcp-error.ts`), and `mcpError` accepts only
+those, so a new code is one edit there and a row in the user guide's list. A caller
+mistake is `invalid-argument`, which a retry cannot fix. A worker or proxy code
+outside the list reports `access-or-upstream-failure`, as does an error without a code
+and a file-system error in a documentation tool. A file-system error on an event log
+(`EACCES`, `EISDIR`) reports `invalid-event-log`, mapped by `toolErrorResult`. An
+SHS archive over the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap (default 1 GiB) is
+`archive-too-large`, because the MCP path buffers the whole archive in memory,
+unlike the streaming `/shs-proxy` route. A stalled SHS archive body fails as
 `upstream-unreachable` after `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30 s) without
 data.
 

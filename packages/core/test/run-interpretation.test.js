@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.ts';
+import { analyzeRun } from '../src/analyzed-run.ts';
 import { checkCoverage } from '../src/check-coverage.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { impactEstimateCompact, impactEstimateFigure, impactFigure } from '../src/impact-format.ts';
+import { isCaveat, rankedRollup } from '../src/recommendation-rollup.ts';
 import { interpretRun } from '../src/run-interpretation.ts';
 import { computeRunShape } from '../src/run-shape.ts';
 import { buildRunVerdict, FINDING_DISPLAY_ORDER } from '../src/run-verdict.ts';
@@ -120,12 +122,35 @@ describe('interpretRun', () => {
     const { coverage } = interpretRun(model, [incomplete], []);
     const expected = checkCoverage(model.stages, [incomplete]);
 
+    const notRunByType = Object.fromEntries(coverage.notRun.map((check) => [check.type, check.reason]));
     for (const type of FINDING_DISPLAY_ORDER) {
-      expect(coverage.notRunReasons[type] ?? null).toBe(expected.notRunReason(type));
+      if (type === 'coreLocality') continue;
+      expect(notRunByType[type] ?? null).toBe(expected.notRunReason(type));
     }
-    expect(coverage.notRunReasons.skew).toMatch(/No stage in this log recorded an end/);
+    expect(notRunByType.skew).toMatch(/No stage in this log recorded an end/);
     expect(coverage.noFinishedStages).toBe(true);
     expect(coverage.gaps).toHaveLength(2);
+  });
+
+  it('lists the same clean and not-run checks as the CLI/MCP report, including an unreported write', () => {
+    const write = { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '/out/t, false, Parquet', metrics: [], children: [] };
+    const model = appModel({ sql: new Map([[4, { id: 4, planTree: write }]]) });
+    const run = analyzeRun(model);
+    const { interpretation } = run;
+    const { cleanChecks, notRunChecks } = buildEvidenceReport(model, { markdown: false }).json;
+    const typesOf = (checks) => checks.map((check) => check.type);
+
+    expect(typesOf(interpretation.coverage.clean)).toEqual(typesOf(cleanChecks));
+    expect(typesOf(interpretation.coverage.notRun)).toEqual(typesOf(notRunChecks));
+    expect(typesOf(notRunChecks)).toContain('writeOutputRows');
+    expect(interpretation.coverage.notRun.find((check) => check.type === 'writeOutputRows'))
+      .toMatchObject({ tag: 'INCMP', label: 'Write output rows' });
+    // A type with a real finding is neither, and a reference widget is not a check.
+    const fired = [...run.catalog, ...run.configFindings].filter((finding) => !isCaveat(finding)).map((finding) => finding.type);
+    expect(fired.length).toBeGreaterThan(0);
+    for (const type of [...fired, 'coreLocality']) {
+      expect(typesOf([...cleanChecks, ...notRunChecks])).not.toContain(type);
+    }
   });
 
   it('carries the run shape and the Scorecard flags', () => {
@@ -165,12 +190,13 @@ describe('interpretRun', () => {
     expect(interpretation.verdict.summary).toEqual(json.verdict.summary);
     expect(interpretation.verdict.copyText).toBe(json.verdict.copyText);
     expect(interpretation.verdict.clean).toBe(json.summary.clean);
-    const { wallClockMs, efficiencyPct, unusedCoreTimePct } = json.summary.runShape;
-    expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct });
+    const { wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag } = json.summary.runShape;
+    expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag });
     // The Findings board lists the report's "Fix these first" groups, members in the same order.
-    expect(interpretation.rollup.groups.map((group) => ({ type: group.type, ids: group.memberIds })))
+    const eligible = catalog.filter((f) => interpretation.rollup.eligibleIds.includes(f.id));
+    expect(rankedRollup(eligible, model.stages).map((group) => ({ type: group.type, ids: group.members.map((f) => f.id) })))
       .toEqual(json.recommendations.map((row) => ({ type: row.type, ids: row.findingIds })));
-    expect(interpretation.rollup.groups.length).toBeGreaterThan(0);
+    expect(json.recommendations.length).toBeGreaterThan(0);
   });
 
   it('gives the Unused core time tile the verdict\'s idle share on a run that replaced an executor', () => {
@@ -198,17 +224,20 @@ describe('interpretRun', () => {
     expect(interpretation.wastedCoreHours.totalCores).toBe(4);
   });
 
-  it('carries the Findings board: eligible findings, groups in fix-first order, bands and figures', () => {
+  it('carries the Findings board: the eligible finding ids, which rankedRollup groups in fix-first order', () => {
     const incomplete = { id: 'incompleteRun', type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
     const bigInfo = timed('skew', 7, 5_000, 'info');
     const smallCritical = timed('skew', 3, 1_000, 'critical');
     const spill = timed('spill', 3, 800);
     const catalog = [incomplete, bigInfo, smallCritical, spill];
-    const { rollup } = interpretRun(appModel(), catalog, []);
+    const model = appModel();
+    const { rollup } = interpretRun(model, catalog, []);
 
     expect(rollup.eligibleIds).toEqual([bigInfo.id, smallCritical.id, spill.id]);
-    expect(rollup.groups.map((group) => group.type)).toEqual(['skew', 'spill']);
+    const groups = rankedRollup(catalog.filter((f) => rollup.eligibleIds.includes(f.id)), model.stages);
+    expect(groups.map((group) => group.type)).toEqual(['skew', 'spill']);
     // Members representative first; the group sits under its worst member's band.
-    expect(rollup.groups[0]).toMatchObject({ kind: 'time', band: 'critical', memberIds: [bigInfo.id, smallCritical.id], stat: '×2 · 6.0s recoverable' });
+    expect(groups[0]).toMatchObject({ kind: 'time', band: 'critical', stat: '×2 · 6.0s recoverable' });
+    expect(groups[0].members.map((f) => f.id)).toEqual([bigInfo.id, smallCritical.id]);
   });
 });

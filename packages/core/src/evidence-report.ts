@@ -17,15 +17,14 @@ import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure
 import { findingActionLabel } from './finding-action-label.ts';
 import { findingKeyer } from './run-comparison.ts';
 import { countHiddenNotes, DEFAULT_MIN_BAND, matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isActionable, isCaveat, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
-import { checkCoverage, isCleanRun } from './check-coverage.ts';
+import { buildRecommendationRollup, isActionable, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
+import { isCleanRun, partitionChecks, type CheckEntry, type NotRunCheck } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
   estimateProvenance, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
-import { extractWriteTargets, isPlainWrite, type WriteTargetsReport } from './write-targets.ts';
-import { detectorInfoByType } from './detector-docs.ts';
+import { extractWriteTargets, notRunWriteFigures, type WriteTargetsReport } from './write-targets.ts';
 import type {
   AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
   TunedThresholds, Remediation,
@@ -378,49 +377,23 @@ function buildRecommendations(
 }
 
 // Finding types with no real finding, split into those that passed and those the log could not
-// run (the rule the dashboard's Clean checks uses, from check-coverage.ts). Differs from
-// Alerts.tsx in one way: the dashboard excludes coreLocality (the one always-mounted reference
-// widget, shown elsewhere); a flat report has no such separate surface, so this includes it too.
+// run: the partition the dashboard's Clean checks shows too (`partitionChecks`, check-coverage.ts),
+// plus any extra not-run entry (a write with no row count).
 function buildCheckLists(
   findings: Finding[], stages: AppModel['stages'], thresholds: ThresholdOverrides | undefined,
+  extraNotRun: NotRunCheck[],
 ): { cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[] } {
-  const firedTypes = new Set<string>(findings.filter((finding) => !isCaveat(finding)).map((finding) => finding.type));
-  const coverage = checkCoverage(stages, findings);
-  const cleanChecks: CleanCheckEntry[] = [];
-  const notRunChecks: NotRunCheckEntry[] = [];
-  // One line per emitted finding type (configAudit's four entries give one line;
-  // broadcastSizing gives overBroadcast and underBroadcast), the same set the dashboard lists.
-  for (const [type, { thresholdSummary }] of Object.entries(detectorInfoByType())) {
-    if (firedTypes.has(type)) continue;
-    // A tuned check was measured against the tuned criterion, so it says which one.
+  const { clean, notRun } = partitionChecks(stages, findings, extraNotRun);
+  // A tuned check was measured against the tuned criterion, so it says which one.
+  const toEntry = ({ type, tag, thresholdSummary }: CheckEntry): CleanCheckEntry => {
     const tuned = tunedThresholdsForType(type, thresholds);
-    const entry: CleanCheckEntry = tuned
-      ? { type, tag: typeTag(type), thresholdSummary: getThresholdSummary(type, thresholds), tunedThresholds: tuned }
-      : { type, tag: typeTag(type), thresholdSummary };
-    const reason = coverage.notRunReason(type);
-    if (reason) notRunChecks.push({ ...entry, reason });
-    else cleanChecks.push(entry);
-  }
-  return { cleanChecks, notRunChecks };
-}
-
-// A plain write with no output row count (no node metric, and its root execution's stages report no
-// rows written or the root holds another write) is not a check the log could run, so a consumer that
-// compares row counts sees it listed here instead of reading the null as a match.
-const WRITE_FIGURES_CHECK = 'writeOutputRows';
-const LISTED_WRITES = 5;
-
-function notRunWriteFigures(report: WriteTargetsReport): NotRunCheckEntry | null {
-  const missing = report.writes.filter((w) => isPlainWrite(w) && w.outputRows === null);
-  if (missing.length === 0) return null;
-  const named = missing.slice(0, LISTED_WRITES)
-    .map((w) => `execution ${w.sqlExecutionId} ${w.command}`).join(', ');
-  const more = missing.length > LISTED_WRITES ? ` and ${missing.length - LISTED_WRITES} more` : '';
+    return tuned
+      ? { type, tag, thresholdSummary: getThresholdSummary(type, thresholds), tunedThresholds: tuned }
+      : { type, tag, thresholdSummary };
+  };
   return {
-    type: WRITE_FIGURES_CHECK,
-    tag: 'INCMP',
-    thresholdSummary: 'an output row count for every plain write, from its node metric or from the stages of its root execution',
-    reason: `${missing.length} write${missing.length === 1 ? ' has' : 's have'} no output row count (${named}${more}): the write node has no row metric and the stages under its root execution report no rows written, or that root holds more than one write.`,
+    cleanChecks: clean.map(toEntry),
+    notRunChecks: notRun.map((check): NotRunCheckEntry => ({ ...toEntry(check), reason: check.reason })),
   };
 }
 
@@ -498,12 +471,13 @@ function buildJson(
   const keyOf = findingKeyer({ stages: stages ?? new Map(), sql: sql ?? new Map() });
   const rows = sortFindings(allFindings.map((f) => findingRow(f, keyOf(f))));
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
-  const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map(), thresholds);
   const writeTargets = extractWriteTargets(sql ?? new Map(), {
     stages, skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
   });
   const unfiguredWrites = notRunWriteFigures(writeTargets);
-  if (unfiguredWrites) notRunChecks.push(unfiguredWrites);
+  const { cleanChecks, notRunChecks } = buildCheckLists(
+    allFindings, stages ?? new Map(), thresholds, unfiguredWrites ? [unfiguredWrites] : [],
+  );
   const tuned = tunedDetectors(thresholds);
   // Notes (info) are context, not work: they stay out of the count a reader acts on.
   const actionable = allFindings.filter(isActionable);
@@ -536,7 +510,7 @@ function buildJson(
         failureReason: runOutcome.reason,
         failureReasonStageId: runOutcome.reason != null ? runOutcome.reasonStageId : null,
       },
-      runShape: computeRunShape(fullModel),
+      runShape: computeRunShape(fullModel, thresholds),
       ...(tuned ? { tunedThresholds: tuned } : {}),
     },
     verdict: verdictJson(runVerdict),

@@ -51,8 +51,15 @@ export function collectRunInWorker(path: string): Promise<CollectedRun> {
     };
     const parseHere = (): void => finish(() => { collectRun(path).then(resolve, reject); });
     worker.once('message', (msg: { run?: CollectedRun; failed?: { message: string; code?: string } }) => {
-      if (msg.run) finish(() => resolve(msg.run!));
-      else finish(() => reject(mcpError(msg.failed?.code ?? 'invalid-event-log', msg.failed?.message ?? 'The event log could not be parsed.')));
+      if (msg.run) {
+        finish(() => resolve(msg.run!));
+        return;
+      }
+      // The worker relays the code of the error it caught, which can be a Node errno (`ENOENT`)
+      // that the MCP error mapper turns into a message, so it is passed on as it came.
+      finish(() => reject(msg.failed?.code
+        ? Object.assign(new Error(msg.failed.message), { code: msg.failed.code })
+        : mcpError('invalid-event-log', msg.failed?.message ?? 'The event log could not be parsed.')));
     });
     worker.once('error', parseHere);
     worker.once('exit', parseHere);

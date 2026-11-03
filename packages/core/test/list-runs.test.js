@@ -360,7 +360,7 @@ describe('listRuns (dispatcher)', () => {
     expect(result.runs.map((r) => r.appId)).toEqual(['application_1_9']);
   });
 
-  it('throws access-or-upstream-failure when neither dir nor shsBaseUrl is given', async () => {
-    await expect(listRuns({})).rejects.toMatchObject({ code: 'access-or-upstream-failure' });
+  it('throws invalid-argument when neither dir nor shsBaseUrl is given', async () => {
+    await expect(listRuns({})).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 });

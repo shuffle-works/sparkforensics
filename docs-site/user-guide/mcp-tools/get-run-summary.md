@@ -13,7 +13,8 @@ job's exception).
 `runShape` carries the dashboard's run-shape figures: `wallClockMs`,
 `efficiencyPct` (the share of the run with a stage running, the Scorecard's
 Efficiency), `unusedCoreTimePct` (the share of executor core time that ran no task,
-against the run's allocation, cores times the time each executor was alive; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
+against the run's allocation, cores times the time each executor was alive; `minEfficiencyPct` checks 100 minus this),
+`efficiencyFlag` and `unusedCoreTimeFlag` (`critical`, `warning` or `null`: how the Scorecard grades each of those two figures), `etlPhasesMs`
 (`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
 and `peakBusyCores` (busy cores at the peak of the Core Locality chart,
 averaged over one chart bucket, so it can be fractional). Each is `null` where the
@@ -45,6 +46,6 @@ Example response:
   "totalJobs": 0,
   "failureReason": null,
   "failureReasonStageId": null,
-  "runShape": { "wallClockMs": 100, "efficiencyPct": null, "unusedCoreTimePct": null, "etlPhasesMs": null, "peakBusyCores": null }
+  "runShape": { "wallClockMs": 100, "efficiencyPct": null, "unusedCoreTimePct": null, "efficiencyFlag": null, "unusedCoreTimeFlag": null, "etlPhasesMs": null, "peakBusyCores": null }
 }
 ```
