@@ -1,7 +1,9 @@
 // The run verdict: where to start, a short summary, and the top places to look, ranked by
 // stage task time or idle core time, then potential savings (failures first on a failed run). Shared by the dashboard's
 // verdict card and the CLI/MCP evidence report, so both paths name the same first step in the same words.
-import { ENTRY_BY_TYPE } from './detectors.ts';
+import { ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
+import { computeEfficiencyModel } from './efficiency-model.ts';
+import { idleGrading } from './idle-grading.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
@@ -11,8 +13,7 @@ import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from '
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible, rankCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
-import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
-import { computeWallClock } from './wall-clock.ts';
+import { runTiming } from './run-timing.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import type { AppModel, Finding } from './types.ts';
 
@@ -195,29 +196,8 @@ function isIdleCapacityFinding(finding: Finding): boolean {
   return finding.type === 'utilization' || (finding.type === 'memoryUtilization' && finding.variant === 'idleCores');
 }
 
-/** Idle share at which the verdict notes, in its summary, that the cluster
- * may be larger than the job needs. It never reorders the steps. */
-export const IDLE_NOTABLE_PCT = 40;
-
 export function isIdleCapacityStep(step: NextStep): boolean {
   return isIdleCapacityFinding(step.lead);
-}
-
-/** The idle share an idle-capacity finding itself reports: idleCores carries
- * the idle rate, utilization the busy rate. Null for any other finding. */
-function reportedIdlePct(finding: Finding): number | null {
-  if (typeof finding.value !== 'number') return null;
-  if (finding.type === 'memoryUtilization' && finding.variant === 'idleCores') return finding.value;
-  if (finding.type === 'utilization') return 100 - finding.value;
-  return null;
-}
-
-/** The run's idle share as the verdict states it: the figure the top-ranked
- * idle-capacity step reports, so the verdict never disagrees with that step,
- * or `fallbackPct` (the Scorecard's Unused core time) when no step reports one. */
-export function verdictIdlePct(steps: NextStep[], fallbackPct: number | null): number | null {
-  const idleStep = steps.find(isIdleCapacityStep);
-  return (idleStep ? reportedIdlePct(idleStep.lead) : null) ?? fallbackPct;
 }
 
 function plural(count: number, noun: string): string {
@@ -228,8 +208,12 @@ function plural(count: number, noun: string): string {
 export interface RunFacts {
   /** Wall-clock of the whole run, or null with no complete timing interval. */
   runMs: number | null;
-  /** Allocated executor capacity that ran no task (`verdictIdlePct`). */
+  /** Allocated executor capacity that ran no task: the efficiency model's idle share, the figure
+   * the idle-capacity findings and the Scorecard state. */
   idlePct: number | null;
+  /** Idle percentage from which the verdict notes that the cluster may be larger than the job
+   * needs (`idleGrading`). It never reorders the steps. */
+  idleNotablePct: number;
   /** The log has no end-of-run record, so it covers only part of the run. */
   incomplete: boolean;
   /** No finding at all, ranked or not, no failed job, and nothing the log
@@ -318,7 +302,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
     sentences.push('The log has no end-of-run record, so these figures cover only the part of the run it captured.');
   }
   const leadIsIdle = steps.length > 0 && isIdleCapacityStep(steps[0]);
-  if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= IDLE_NOTABLE_PCT) {
+  if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= facts.idleNotablePct) {
     sentences.push(
       steps.some(isIdleCapacityStep)
         ? `${facts.idlePct}% of the executor capacity sat idle, so the cluster may be larger than this job needs.`
@@ -399,14 +383,21 @@ export interface RunVerdictModel {
   idle: RunIdleLine | null;
 }
 
-export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): RunVerdictModel {
+export function buildRunVerdict(appModel: AppModel, allFindings: Finding[], thresholds?: ThresholdOverrides): RunVerdictModel {
   const eligible = allFindings.filter((finding) => isEligible(finding) && DISPLAY_INDEX.has(finding.type));
   const outcome = summarizeRunOutcome(appModel.jobs, allFindings);
   const steps = buildNextSteps(eligible, outcome.failedJobs > 0 ? { failedJobStageIds: outcome.failedJobStageIds } : {});
+  const timing = runTiming(appModel.app, appModel.stages);
   const facts: RunFacts = {
-    runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
-    idlePct: verdictIdlePct(steps, getScorecardEstimates(appModel).wastage.value),
-    incomplete: allFindings.some((finding) => finding.type === 'incompleteRun'),
+    runMs: timing.durationMs,
+    idlePct: appModel.runAggregates
+      ? computeEfficiencyModel({
+        app: appModel.app, stages: appModel.stages, executorsAdded: appModel.executors.added,
+        executorsRemoved: appModel.executors.removed, runAggregates: appModel.runAggregates,
+      }).wastagePct
+      : null,
+    idleNotablePct: idleGrading(thresholds).notablePct,
+    incomplete: timing.incomplete,
     clean: isCleanRun(appModel, allFindings),
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),

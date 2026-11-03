@@ -83,5 +83,5 @@ export function analyzeRun(parsed: AppModel, { thresholds, taskData = NO_TASK_DA
     evidenceAvailability: deriveEvidenceAvailability(parsed, { skippedLines }),
   };
   const { catalog, config } = runFindings(appModel, thresholds);
-  return { appModel, catalog, configFindings: config, interpretation: interpretRun(appModel, catalog, config), taskData };
+  return { appModel, catalog, configFindings: config, interpretation: interpretRun(appModel, catalog, config, thresholds), taskData };
 }

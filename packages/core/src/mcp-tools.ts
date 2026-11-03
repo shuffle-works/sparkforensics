@@ -10,7 +10,7 @@ import {
   buildEvidenceReport, toFindingsFilter,
   type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type VerdictJson, type VerdictStepRow,
 } from './evidence-report.ts';
-import { computeWallClock } from './wall-clock.ts';
+import { runTiming } from './run-timing.ts';
 import { renderComparisonMarkdown, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { compileNormalizePatterns } from './stage-alignment.ts';
@@ -24,7 +24,7 @@ import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
-import type { AppModel, Finding, ImpactBand, SparkAppInfo, TunedThresholds } from './types.ts';
+import type { AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
@@ -321,7 +321,7 @@ export function diagnoseRun(runId: string, opts?: {
     // The CLI report's own blocks, so a run reads the same through either surface.
     writeTargets: json.writeTargets,
     ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds, generator: opts?.generator }),
-    runComplete: appModel.app?.endTime != null,
+    runComplete: !runTiming(appModel.app).incomplete,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),
     ...(include.includes('summary') ? { summary: json.summary } : {}),
@@ -457,14 +457,10 @@ export async function resolveFindingEvidence(
   return getFindingEvidence(resolved.runId, findingId, opts);
 }
 
-function hasCompleteInterval(app: SparkAppInfo | null): boolean {
-  return Number.isFinite(app?.startTime) && Number.isFinite(app?.endTime) && (app?.endTime ?? 0) > (app?.startTime ?? 0);
-}
-
 export function getRunSummary(runId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides }): RunSummary {
   const appModel = getCachedAppModel(runId);
   const { app, stages, jobs, sql, executors } = appModel;
-  const durationMs = hasCompleteInterval(app) ? computeWallClock(app, stages).total : null;
+  const timing = runTiming(app, stages);
   // The failure reason needs the stageFailed findings, so this reads the (cached) evidence report.
   // With redact, the app identity comes from that same redacted report, so a host token in the app
   // name and in Spark's failure reason get the same pseudonym.
@@ -481,9 +477,9 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
     jobCount: jobs.size,
     sqlExecutionCount: sql.size,
     executorCount: { added: executors.added.length, removed: executors.removed.length },
-    durationMs,
+    durationMs: timing.durationMs,
     skippedLines: summary.skippedLines,
-    runComplete: app?.endTime != null,
+    runComplete: !timing.incomplete,
     ...outcome,
     runShape: summary.runShape,
   };

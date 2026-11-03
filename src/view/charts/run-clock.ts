@@ -1,5 +1,6 @@
 // Pure helpers for the run clock: seconds from app start on a [0, runEndSec]
 // domain, used by the verdict's stage strip.
+import { runTiming } from '@sparkforensics/core/run-timing.ts';
 
 interface RunTimingSource {
   app?: { startTime?: number | null; endTime?: number | null } | null;
@@ -19,12 +20,8 @@ export function runStartMs(appModel: RunTimingSource): number | null {
  * falling back to the earliest stage submission for the start and the latest
  * stage completion for the end. Null when no positive span can be derived. */
 export function computeRunEndSec(appModel: RunTimingSource): number | null {
-  let latestCompletion = -Infinity;
-  for (const s of appModel.stages.values()) {
-    if (s.completedAt) latestCompletion = Math.max(latestCompletion, s.completedAt);
-  }
   const start = runStartMs(appModel);
-  const end = appModel.app?.endTime ?? (Number.isFinite(latestCompletion) ? latestCompletion : null);
+  const end = appModel.app?.endTime ?? runTiming(appModel.app, appModel.stages).fallbackEndMs;
   if (start == null || end == null || end <= start) return null;
   return (end - start) / 1000;
 }

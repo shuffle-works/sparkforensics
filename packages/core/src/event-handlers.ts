@@ -1698,6 +1698,8 @@ function deferAdaptiveUpdate(
   }
   if (i === ADAPTIVE_UPDATE_PREFIX.length || head.charCodeAt(i) !== 0x2c) return false; // no `N,`
   const exec = state.sqlExecutions.get(executionId);
+  // A SQL execution's own end, not the application's.
+  // ast-grep-ignore: no-app-timing-outside-run-timing
   if (!exec || exec.endTime != null) return false;
   const tail = joined && joined.tail.length >= 2 ? joined.tail : line;
   if (!tail.endsWith('}}')) {

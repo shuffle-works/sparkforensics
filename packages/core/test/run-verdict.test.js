@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings, verdictIdlePct,
+  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings,
 } from '../src/run-verdict.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
@@ -108,12 +108,16 @@ describe('idle capacity in the next steps', () => {
     expect(both[0].lead.type).toBe('skew');
   });
 
-  it('states the idle share the idle-capacity step itself reports, falling back to the Scorecard figure', () => {
-    expect(verdictIdlePct(steps(), 80)).toBe(80);
-    expect(verdictIdlePct(buildNextSteps([timedMs('skew', 0, 64), { ...idleCores, value: 55 }]), 80)).toBe(55);
-    const utilization = { type: 'utilization', stageId: null, impactBand: 'info', value: 30, recommendation: 'x' };
-    expect(verdictIdlePct(buildNextSteps([utilization]), 80)).toBe(70);
-    expect(verdictIdlePct(buildNextSteps([timedMs('skew', 0, 64)]), 80)).toBe(80);
+  it('states the efficiency model idle share and notes it from the utilization thresholds', () => {
+    const idleModel = appModel({
+      app: { id: 'a', name: 'n', startTime: 0, endTime: 10_000 },
+      executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+      runAggregates: { busyCoreMs: 8_000, perStage: {} },
+    });
+    const note = "80% of the run's core time went unused, so the cluster may be larger than this job needs.";
+    expect(buildRunVerdict(idleModel, [timedMs('skew', 1, 64)]).summary).toContain(note);
+    // minUtil 0.1 puts the notable idle share at 90%, above this run's 80%.
+    expect(buildRunVerdict(idleModel, [timedMs('skew', 1, 64)], { utilization: { minUtil: 0.1 } }).summary).not.toContain(note);
   });
 });
 

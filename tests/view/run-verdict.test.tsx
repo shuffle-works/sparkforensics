@@ -28,6 +28,15 @@ function appModel(): AppModel {
   } as AppModel;
 }
 
+// One executor core held for the whole 20s run: `busyCoreMs` of its 20 000 core-ms ran tasks.
+function idleModel(busyCoreMs: number): AppModel {
+  return {
+    ...appModel(),
+    executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 1, resourceProfileId: null }], removed: [] },
+    runAggregates: { busyCoreMs, perStage: { 7: { totalTaskDurationSum: busyCoreMs, taskCount: 1 } } },
+  } as unknown as AppModel;
+}
+
 // The verdict renders the run's interpretation, computed as the live app computes it.
 function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel(), moreFindingsCount?: number) {
   render(
@@ -128,12 +137,12 @@ describe('RunVerdict', () => {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 92,
       recommendation: '92% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     };
-    renderVerdict([timed('skew', 7, 64), idleCores]);
+    renderVerdict([timed('skew', 7, 64), idleCores], vi.fn(), idleModel(1_600));
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     expect(screen.getByTestId('run-verdict')).toHaveTextContent('92% of the executor capacity sat idle');
 
     cleanup();
-    renderVerdict([idleCores]);
+    renderVerdict([idleCores], vi.fn(), idleModel(1_600));
     expect(screen.getByRole('heading', { level: 2, name: 'Start with cluster size: 92% of executor capacity sat idle' }))
       .toBeInTheDocument();
     // The title gives the idle share and step 1 the fix, so the summary adds no idle sentence.
@@ -144,7 +153,7 @@ describe('RunVerdict', () => {
     renderVerdict([timed('skew', 7, 2_400), {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 50,
       recommendation: '50% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    }]);
+    }], vi.fn(), idleModel(10_000));
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).toHaveTextContent('50% of the executor capacity sat idle, so the cluster may be larger than this job needs.');
@@ -197,7 +206,8 @@ describe('RunVerdict', () => {
 
   it('flags an incomplete run alongside its next steps', () => {
     const incompleteRun: Finding = testFinding({ type: 'incompleteRun', stageId: null, impactBand: 'warning', valueText: 'missing', recommendation: 'No ApplicationEnd.' });
-    renderVerdict([timed('skew', 7, 2_400), incompleteRun]);
+    const cutShort = { ...appModel(), app: { startTime: 0 } } as AppModel;
+    renderVerdict([timed('skew', 7, 2_400), incompleteRun], vi.fn(), cutShort);
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     expect(screen.getByTestId('run-verdict')).toHaveTextContent('cover only the part of the run it captured');
   });

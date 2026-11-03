@@ -510,7 +510,7 @@ function buildJson(
   const fullModel: AppModel = {
     ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
   };
-  const runVerdict = buildRunVerdict(fullModel, allFindings);
+  const runVerdict = buildRunVerdict(fullModel, allFindings, thresholds);
   const runOutcome = runVerdict.outcome;
 
   const result: EvidenceReportJson = {

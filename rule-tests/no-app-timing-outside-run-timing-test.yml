@@ -1,0 +1,12 @@
+id: no-app-timing-outside-run-timing
+valid:
+  - "const { complete, durationMs } = runTiming(app, stages);"
+  - "const incomplete = runTiming(app).incomplete;"
+  - "const span = Math.max(1, endTime - startTime);"
+  - "const end = app?.endTime ?? timing.fallbackEndMs;"
+invalid:
+  - "const done = app.endTime != null;"
+  - "const open = app?.endTime == null;"
+  - "if (app.startTime == null || app.endTime == null) return null;"
+  - "const durationMs = app.endTime - app.startTime;"
+  - "const ms = m.app?.endTime - m.app?.startTime;"

@@ -1,5 +1,6 @@
 import type { Finding, SparkAppInfo, Stage } from './types.ts';
 import { stageTaskMs } from './impact-model.ts';
+import { runTiming } from './run-timing.ts';
 import { FAILURE_TYPES } from './run-outcome.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
 
@@ -21,9 +22,7 @@ const DEFAULT_FLOORS: ImpactBandFloors = { warnPct: IMPACT_FLOOR_PCT_WARN, critP
 /** The run's wall-clock duration, or null when unknown or non-positive: the denominator of both
  * this band and the detectors' runtime floors. */
 export function appDurationMs(app: { startTime?: number | null; endTime?: number | null } | null): number | null {
-  if (app?.startTime == null || app?.endTime == null) return null;
-  const durationMs = app.endTime - app.startTime;
-  return durationMs > 0 ? durationMs : null;
+  return runTiming(app).durationMs;
 }
 
 /**

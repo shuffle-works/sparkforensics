@@ -5,6 +5,7 @@ import { CHART_COLORS, CHART_TOOLTIP_BOX_STYLE, ChartFrame } from '@/view/charts
 import { downsample } from '@/view/charts/downsample';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { runTiming } from '@sparkforensics/core/run-timing.ts';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 
 const HEIGHT = 220;
@@ -40,18 +41,20 @@ function computeExecutorSeries(appModel: AppModel): ExecutorSeries {
   // "still running": substituting Date.now() would plot a fabricated,
   // ever-growing axis instead of self-hiding like every other whole-run chart
   // does on missing input (see CoreUsageArea's hasActivity guard).
-  if (app?.startTime == null || app?.endTime == null) return { times: [], counts: [] };
-  const duration = app.endTime - app.startTime;
+  const { durationMs: duration } = runTiming(app);
+  if (app == null || duration == null) return { times: [], counts: [] };
+  const start = app.startTime as number;
+  const end = start + duration;
   const step = Math.max(5000, Math.floor(duration / 100));
   const times: string[] = [];
   const counts: number[] = [];
   const removedAtMap = new Map(removed.map((r) => [r.executorId, r.timestamp]));
-  for (let t = app.startTime; t <= app.endTime; t += step) {
+  for (let t = start; t <= end; t += step) {
     const active = added.filter((e) => {
       const removedAt = removedAtMap.get(e.executorId) ?? Infinity;
       return e.timestamp <= t && t < removedAt;
     }).length;
-    times.push(((t - app.startTime) / 1000).toFixed(0) + 's');
+    times.push(((t - start) / 1000).toFixed(0) + 's');
     counts.push(active);
   }
   return { times, counts };

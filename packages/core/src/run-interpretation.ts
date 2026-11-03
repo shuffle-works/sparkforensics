@@ -8,6 +8,7 @@ import { checkCoverage, hasFinishedStage, verdictGaps } from './check-coverage.t
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { buildLocalityChart, type LocalityChart } from './core-usage-locality.ts';
 import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
+import type { ThresholdOverrides } from './detectors.ts';
 import { computeEfficiencyModel } from './efficiency-model.ts';
 import { attributeEtlPhases } from './etl-phases.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from './format-utils.ts';
@@ -17,6 +18,8 @@ import {
 import { isEligible, rankedRollup, type RankedRollupGroup } from './recommendation-rollup.ts';
 import { quotesReasonOf } from './run-outcome.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
+import { gradeIdlePct, idleGrading } from './idle-grading.ts';
+import { runTiming, type RunTiming } from './run-timing.ts';
 import {
   buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, quotedReasonText, rankBySavings, stepCopyText,
 } from './run-verdict.ts';
@@ -99,6 +102,8 @@ export type ScorecardFlag = 'critical' | 'warning' | null;
 /** The Scorecard's three headline figures (the ones the report's runShape also states) and how
  * each is graded. `wallClockMs` is null without a complete application timing interval. */
 export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct'> {
+  /** What the log's application start and end say about the run (`runTiming`). */
+  timing: RunTiming;
   efficiencyFlag: ScorecardFlag;
   unusedCoreTimeFlag: ScorecardFlag;
   unusedCoreTimeUnavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
@@ -182,20 +187,16 @@ function efficiencyFlag(pct: number | null): ScorecardFlag {
   return pct < 75 ? 'critical' : pct < 90 ? 'warning' : null;
 }
 
-function unusedCoreTimeFlag(pct: number | null): ScorecardFlag {
-  if (pct == null) return null;
-  return pct >= 70 ? 'critical' : pct >= 40 ? 'warning' : null;
-}
-
-function interpretRunShape(appModel: AppModel): RunShapeData {
+function interpretRunShape(appModel: AppModel, thresholds: ThresholdOverrides | undefined): RunShapeData {
   const { wallClockMs, efficiencyPct, unusedCoreTimePct } = computeRunShape(appModel);
   const estimates = getScorecardEstimates(appModel);
   return {
+    timing: runTiming(appModel.app, appModel.stages),
     wallClockMs,
     efficiencyPct,
     unusedCoreTimePct,
     efficiencyFlag: efficiencyFlag(efficiencyPct),
-    unusedCoreTimeFlag: unusedCoreTimeFlag(unusedCoreTimePct),
+    unusedCoreTimeFlag: gradeIdlePct(unusedCoreTimePct, idleGrading(thresholds)),
     unusedCoreTimeUnavailableReason: estimates.wastage.unavailableReason,
   };
 }
@@ -256,9 +257,11 @@ function idOf(finding: Finding): string {
 }
 
 /** Every conclusion the dashboard shows about a run whose detectors already ran. */
-export function interpretRun(appModel: AppModel, catalog: Finding[], configFindings: Finding[]): RunInterpretation {
+export function interpretRun(
+  appModel: AppModel, catalog: Finding[], configFindings: Finding[], thresholds?: ThresholdOverrides,
+): RunInterpretation {
   const allFindings = [...catalog, ...configFindings];
-  const verdict = buildRunVerdict(appModel, allFindings);
+  const verdict = buildRunVerdict(appModel, allFindings, thresholds);
   const { outcome } = verdict;
   const failed = outcome.failedJobs > 0;
   // A board row needs a widget to route to, and every display type has one.
@@ -293,7 +296,7 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
       copyText: verdict.copyText,
     },
     coverage: interpretCoverage(appModel, allFindings),
-    runShape: interpretRunShape(appModel),
+    runShape: interpretRunShape(appModel, thresholds),
     wallClock: computeWallClock(appModel.app, appModel.stages),
     wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates, appModel.executors.removed),
     efficiency: interpretEfficiency(appModel),

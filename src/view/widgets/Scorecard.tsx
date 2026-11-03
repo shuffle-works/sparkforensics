@@ -99,7 +99,7 @@ function formatRanLabel(activeMs: number): string {
 
 /** With no complete application timing interval, wall-clock, efficiency, and
  * wastage are all unavailable at once (each derives from
- * `hasCompleteApplicationInterval`), so one amber notice replaces the row
+ * `runTiming(...).complete`), so one amber notice replaces the row
  * instead of stacking the same reason across three tiles. */
 function TimingUnavailableNotice() {
   return (
