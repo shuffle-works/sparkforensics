@@ -198,8 +198,8 @@ export function getCachedAppModel(runId: string): AppModel {
 
 export async function resolveOrCreateRun(
   { source, runId }: RunRef = {},
-  { fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS }:
-    { fetchImpl?: typeof fetch; maxArchiveBytes?: number; idleTimeoutMs?: number } = {},
+  { fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS, thresholds }:
+    { fetchImpl?: typeof fetch; maxArchiveBytes?: number; idleTimeoutMs?: number; thresholds?: ThresholdOverrides } = {},
 ): Promise<{ runId: string; appModel: AppModel }> {
   evictStale();
   if (runId) {
@@ -229,7 +229,7 @@ export async function resolveOrCreateRun(
         : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs });
       // The attempt the caller asked the History Server for, when the log itself does not name one.
       if (!('path' in source) && source.attemptId && parsed.app && !parsed.app.attemptId) parsed.app.attemptId = source.attemptId;
-      const run = analyzeRun(parsed);
+      const run = analyzeRun(parsed, { thresholds });
 
       const newRunId = randomUUID();
       byRunId.set(newRunId, { run, cacheKey, lastAccess: Date.now() });
@@ -447,7 +447,7 @@ export async function resolveFindingEvidence(
     if (byRunId.has(runId) || !source) return getFindingEvidence(runId, findingId, opts);
   }
   if (!source) throw mcpError('access-or-upstream-failure', 'Provide runId, or source (with appId).');
-  const resolved = await resolveOrCreateRun({ source });
+  const resolved = await resolveOrCreateRun({ source }, { thresholds: opts?.thresholds });
   const actualAppId = opts?.redact
     ? buildEvidenceReport(resolved.appModel, { redact: true, markdown: false, thresholds: opts.thresholds }).json.summary.app.id ?? null
     : resolved.appModel.app?.id ?? null;
@@ -494,7 +494,7 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
 async function resolveAndAnalyze(
   ref: RunRef, thresholds: ThresholdOverrides | undefined,
 ): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
-  const { runId, appModel } = await resolveOrCreateRun(ref);
+  const { runId, appModel } = await resolveOrCreateRun(ref, { thresholds });
   return { runId, appModel, catalog: runFindings(appModel, thresholds).catalog };
 }
 
