@@ -190,6 +190,12 @@ export function isEligible(finding: Finding): boolean {
   return !isCaveat(finding);
 }
 
+/** Something to act on: eligible, and not an info note. Info notes are context, never counted as
+ * work by the verdict, the report summary or the CLI. */
+export function isActionable(finding: Finding): boolean {
+  return isEligible(finding) && finding.impactBand !== 'info';
+}
+
 /** Ranking tier for a single finding: time-based findings (a real `wallClock`
  * claim) are the only ones whose magnitudes share a unit, so they are the
  * only ones ranked numerically. `resourceOnly` findings carry `rawWaste` in

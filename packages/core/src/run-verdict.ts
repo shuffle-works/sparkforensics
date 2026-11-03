@@ -11,7 +11,7 @@ import { recommendationText } from './finding-names.ts';
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { isEligible, rankCostMs } from './recommendation-rollup.ts';
+import { isActionable, isEligible, rankCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { runTiming } from './run-timing.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
@@ -216,6 +216,8 @@ export interface RunFacts {
   idleNotablePct: number;
   /** The log has no end-of-run record, so it covers only part of the run. */
   incomplete: boolean;
+  /** Info findings: context the verdict never counts as something to act on. */
+  infoNotes: number;
   /** No finding at all, ranked or not, no failed job, and nothing the log
    * lacked to run a check: the only state the verdict calls clean. */
   clean: boolean;
@@ -284,7 +286,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
   }
   if (eligible.length === 0) {
     if (failedJobs > 0) return sentences;
-    if (facts.clean) sentences.push('Every check passed for this run.');
+    if (facts.clean && facts.infoNotes === 0) sentences.push('Every check passed for this run.');
   } else if (steps.length === 0) {
     sentences.push('They are listed by impact under Findings.');
   } else {
@@ -364,7 +366,8 @@ export function stepCopyRecommendation(step: NextStep, outcome: RunOutcome): str
 }
 
 /** Everything the verdict card shows, computed once for a run. `eligible` is what the verdict
- * counts and ranks: the rollup-eligible findings of a known display type. */
+ * counts and ranks: the rollup-eligible, non-info findings of a known display type. The cost lane
+ * also lists info-band findings that carry a measured core-time cost. */
 export interface RunVerdictModel {
   eligible: Finding[];
   outcome: RunOutcome;
@@ -384,7 +387,10 @@ export interface RunVerdictModel {
 }
 
 export function buildRunVerdict(appModel: AppModel, allFindings: Finding[], thresholds?: ThresholdOverrides): RunVerdictModel {
-  const eligible = allFindings.filter((finding) => isEligible(finding) && DISPLAY_INDEX.has(finding.type));
+  const rankable = allFindings.filter((finding) => isEligible(finding) && DISPLAY_INDEX.has(finding.type));
+  // Info notes are context, never something to act on: no step, count or lead comes from one.
+  const eligible = rankable.filter(isActionable);
+  const notes = allFindings.filter((finding) => isEligible(finding) && finding.impactBand === 'info');
   const outcome = summarizeRunOutcome(appModel.jobs, allFindings);
   const steps = buildNextSteps(eligible, outcome.failedJobs > 0 ? { failedJobStageIds: outcome.failedJobStageIds } : {});
   const timing = runTiming(appModel.app, appModel.stages);
@@ -398,10 +404,11 @@ export function buildRunVerdict(appModel: AppModel, allFindings: Finding[], thre
       : null,
     idleNotablePct: idleGrading(thresholds).notablePct,
     incomplete: timing.incomplete,
-    clean: isCleanRun(appModel, allFindings),
+    clean: isCleanRun(appModel, allFindings.filter((finding) => !notes.includes(finding))),
+    infoNotes: notes.length,
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),
-    uncounted: allFindings.length - eligible.length,
+    uncounted: allFindings.length - notes.length - eligible.length,
   };
   const title = verdictTitle(eligible, steps, facts);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
@@ -416,7 +423,7 @@ export function buildRunVerdict(appModel: AppModel, allFindings: Finding[], thre
     : null;
   return {
     eligible, outcome, steps, facts, title, summary: verdictSummary(eligible, steps, facts), shown, remaining, copyText,
-    costLane: buildCostLane(eligible).slice(0, COST_LANE_LIMIT),
+    costLane: buildCostLane(rankable).slice(0, COST_LANE_LIMIT),
     idle: buildRunIdleLine(appModel),
   };
 }

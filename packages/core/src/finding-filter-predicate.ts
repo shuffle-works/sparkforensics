@@ -1,7 +1,24 @@
 // Core-owned finding-filter predicate, shared by the CLI/MCP evidence report and the dashboard's
 // filter bar (its view counterpart wraps this instead of reimplementing). Each dimension is
 // unconstrained when empty; a stageId criterion only matches a row whose own stageId is present.
+import { IMPACT_BAND_ORDER, IMPACT_BANDS } from './format-utils.ts';
+import type { ImpactBand } from './types.ts';
+
 type Membership<T> = ReadonlySet<T> | readonly T[];
+
+/** The least severe band a listing shows when nothing names a band. Info findings are notes:
+ * they are listed once the listing asks for the info band. The dashboard, CLI and MCP all read it. */
+export const DEFAULT_MIN_BAND: ImpactBand = 'warning';
+
+/** The bands a listing that names none shows: `DEFAULT_MIN_BAND` and every more severe one. */
+export const DEFAULT_IMPACT_BANDS: readonly ImpactBand[] = IMPACT_BANDS
+  .filter((band) => IMPACT_BAND_ORDER[band] <= IMPACT_BAND_ORDER[DEFAULT_MIN_BAND]);
+
+/** The info notes a listing leaves out: info rows that `matches` rejects, though they would match
+ * at the default band, so every other filter kept them. */
+export function countHiddenNotes<T extends { impactBand: string }>(rows: readonly T[], matches: (row: T) => boolean): number {
+  return rows.filter((row) => row.impactBand === 'info' && !matches(row) && matches({ ...row, impactBand: DEFAULT_MIN_BAND })).length;
+}
 
 function isNonEmpty<T>(m: Membership<T> | undefined): m is Membership<T> {
   if (m == null) return false;

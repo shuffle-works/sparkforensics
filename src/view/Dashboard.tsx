@@ -29,6 +29,7 @@ import {
   type FilterOptions,
   type FilterSelection,
 } from '@/view/finding-filter';
+import { countHiddenNotes } from '@sparkforensics/core/finding-filter-predicate.ts';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { EtlPhases } from '@/view/widgets/EtlPhases';
@@ -192,9 +193,10 @@ function FilteredBoard({
   // matches, and must NOT show "No findings match".
   const totalFilteredCount = filteredCatalog.length + filteredConfig.length;
   // Info findings the impact filter leaves out, that every other filter keeps.
-  const hiddenNotes = useMemo(() => [...catalog, ...(configFindings ?? [])].filter((finding) => (
-    finding.impactBand === 'info' && !matchesFilter(finding, selection) && matchesFilter({ ...finding, impactBand: 'warning' } as Finding, selection)
-  )).length, [catalog, configFindings, selection]);
+  const hiddenNotes = useMemo(
+    () => countHiddenNotes([...catalog, ...(configFindings ?? [])], (finding) => matchesFilter(finding, selection)),
+    [catalog, configFindings, selection],
+  );
   const filteredToEmpty = (catalog.length + (configFindings ?? []).length) > 0 && totalFilteredCount === 0 && hiddenNotes === 0;
   const showFilterBar = density === 'advanced' || !isEmptySelection(selection);
   const { listedCount } = layout;

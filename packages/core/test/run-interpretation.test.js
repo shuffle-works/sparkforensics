@@ -69,7 +69,8 @@ describe('interpretRun', () => {
       provenance: expect.stringContaining('point estimate'),
     });
     expect(interpretation.savings['config-serializer'].figure).toBeNull();
-    expect(interpretation.verdict.steps.map((step) => byId.get(step.leadId))).toEqual([catalog[1], catalog[0], config[0]]);
+    // The info config note stays out of the steps: it is context, never something to act on.
+    expect(interpretation.verdict.steps.map((step) => byId.get(step.leadId))).toEqual([catalog[1], catalog[0]]);
     expect(interpretation.savingsRank.map((id) => byId.get(id))).toEqual([catalog[1], catalog[0], config[0]]);
   });
 

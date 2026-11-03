@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings,
 } from '../src/run-verdict.ts';
+import { isActionable } from '../src/recommendation-rollup.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
 function timed(type, stageId, highSeconds, extra = {}) {
@@ -183,11 +184,22 @@ describe('buildCostLane', () => {
     expect(buildCostLane([idle, bytes, nulled, cored('gc', 6, 0)])).toEqual([]);
   });
 
-  it('keeps the wall-clock steps in their own order', () => {
+  it('keeps an info finding with a measured cost in the lane, never as a step', () => {
     const findings = [timed('skew', 1, 60), cored('gc', 2, 3_600_000)];
     const verdict = buildRunVerdict(appModel(), findings);
-    expect(verdict.shown.map((step) => step.lead.type)).toEqual(['skew', 'gc']);
+    expect(verdict.shown.map((step) => step.lead.type)).toEqual(['skew']);
     expect(verdict.costLane.map((entry) => entry.finding.type)).toEqual(['gc']);
+  });
+
+  it('counts no info note as something to act on', () => {
+    const notes = [cored('gc', 2, 1_000), { type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    const verdict = buildRunVerdict(appModel(), notes);
+    expect(verdict.eligible).toEqual([]);
+    expect(verdict.steps).toEqual([]);
+    expect(verdict.title).toBe('No findings to fix right now.');
+    expect(verdict.summary.join(' ')).not.toMatch(/findings? in|Every check passed/);
+    // The report summary's "Findings to act on" counts the same set.
+    expect(notes.filter(isActionable)).toEqual([]);
   });
 });
 

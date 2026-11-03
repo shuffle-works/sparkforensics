@@ -21,7 +21,7 @@ const coldStart = testFinding({
 });
 // Its row is the model error only, shown in Advanced density.
 const rightSizing = testFinding({
-  type: 'rightSizing', id: 'size-1', impactBand: 'info', value: 8, observedCores: 16,
+  type: 'rightSizing', id: 'size-1', impactBand: 'warning', value: 8, observedCores: 16,
   observedActiveMs: 4_000, modeledActiveMs: 4_100, modelErrorPct: 2.5,
   recommendation: 'The run needs 8 cores.',
   impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 1_800_000, unit: 'coreMs' } },

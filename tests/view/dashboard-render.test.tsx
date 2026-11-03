@@ -241,7 +241,7 @@ test('shows real Config Audit findings as a row in All recommendations without a
     resources: { dynamicAllocationEnabled: true },
   };
   // configFindings is computed at ingest, not by Dashboard; seed it as runDone would.
-  store.setState({ status: 'ready', ...runState({ appModel: appModel as any, catalog: [], configFindings: auditConfig(appModel.app) }) });
+  store.setState({ status: 'ready', ...runState({ appModel: appModel as any, catalog: [], configFindings: auditConfig(appModel.app).map((finding) => ({ ...finding, impactBand: 'warning' as const })) }) });
 
   render(<App />);
   await waitForDashboard();
@@ -318,7 +318,7 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
   // app report's level-2 heading joins the outline only once selected. Neither
   // finding carries a recommendation, so the verdict has no step to lead with.
   expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent))
-    .toEqual(['2 findings to review', 'Findings', 'Warning', 'Info']);
+    .toEqual(['1 finding to review', 'Findings', 'Warning', 'Info']);
 
   // Widget titles nest one level below their impact band.
   expect(await screen.findByRole('heading', { name: 'Spill', level: 3 })).toBeInTheDocument();

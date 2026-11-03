@@ -16,8 +16,8 @@ import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { findingKeyer } from './run-comparison.ts';
-import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isCaveat, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
+import { countHiddenNotes, DEFAULT_MIN_BAND, matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
+import { buildRecommendationRollup, isActionable, isCaveat, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
@@ -506,7 +506,7 @@ function buildJson(
   if (unfiguredWrites) notRunChecks.push(unfiguredWrites);
   const tuned = tunedDetectors(thresholds);
   // Notes (info) are context, not work: they stay out of the count a reader acts on.
-  const actionable = allFindings.filter((f) => isEligible(f) && f.impactBand !== 'info');
+  const actionable = allFindings.filter(isActionable);
   const fullModel: AppModel = {
     ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
   };
@@ -836,7 +836,7 @@ function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean
 export function toFindingsFilter(
   impactBand?: string[], type?: string[], stageId?: number, minBand?: ImpactBand, maxFindings?: number,
 ): FindingsFilter {
-  return { impactBand, type, stageId, minBand: impactBand || minBand ? minBand : 'warning', maxFindings };
+  return { impactBand, type, stageId, minBand: impactBand || minBand ? minBand : DEFAULT_MIN_BAND, maxFindings };
 }
 
 /**
@@ -863,9 +863,7 @@ export function buildEvidenceReport(
   let notesHidden = 0;
   if (findingsFilter) {
     const kept = json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter));
-    notesHidden = json.findings.filter((row) => (
-      row.impactBand === 'info' && !matchesFindingsFilter(row, findingsFilter) && matchesFindingsFilter({ ...row, impactBand: 'warning' }, findingsFilter)
-    )).length;
+    notesHidden = countHiddenNotes(json.findings, (row) => matchesFindingsFilter(row, findingsFilter));
     findingsMatched = kept.length;
     json = { ...json, findings: findingsFilter.maxFindings !== undefined ? kept.slice(0, findingsFilter.maxFindings) : kept };
   }
