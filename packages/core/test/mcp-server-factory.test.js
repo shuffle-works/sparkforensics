@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMcpServer } from '../src/mcp-server-factory.js';
+import { createMcpServer, MCP_TOOL_NAMES } from '../src/mcp-server-factory.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -50,14 +50,11 @@ async function connectedClient(server) {
 }
 
 describe('createMcpServer', () => {
-  it('registers all 9 tools', async () => {
+  it('registers every tool in MCP_TOOL_NAMES', async () => {
     const server = createMcpServer();
     const client = await connectedClient(server);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation',
-      'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
-    ]);
+    expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort());
   });
 
   it('round-trips list_detectors with the default thresholds, filtered by type', async () => {

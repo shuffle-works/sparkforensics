@@ -1,5 +1,5 @@
 import { formatDuration, typeTag } from './format-utils.ts';
-import { TAG_HELP } from './finding-tag-help.ts';
+import { tagHelp } from './finding-tag-help.ts';
 import { DEFAULT_NOISE_BAND, isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
 import type { Caveats, Comparability } from './comparability.ts';
 
@@ -136,7 +136,7 @@ function opposingCost(wall: VerdictMetric & { baseline: number; candidate: numbe
  * its tag when the tag has no help entry. */
 function categoryName(type: string): string {
   const tag = typeTag(type);
-  return TAG_HELP[tag]?.expansion ?? tag;
+  return tagHelp(tag)?.expansion ?? tag;
 }
 
 /** Net count change per displayed category name. Several rules share one name (every Plan Advisor

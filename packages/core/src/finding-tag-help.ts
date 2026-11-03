@@ -1,12 +1,15 @@
 // Plain-language help per finding tag: the expansion the tag stands for and a one-line description
 // of what it means. Shared by the dashboard (tag tooltips) and the
 // comparison verdict, which names finding categories by their expansion on every path.
+import type { FindingTag } from './finding-presentation.ts';
+
 type TagHelp = {
   expansion: string;
   description: string;
 };
 
-export const TAG_HELP: Record<string, TagHelp> = {
+// One entry for every tag the presentation table declares and no other: the type is the check.
+export const TAG_HELP: Record<FindingTag, TagHelp> = {
   INCMP: {
     expansion: 'Incomplete run',
     description: 'This event log never recorded an application-end event, so other findings and metrics reflect only what was captured.',
@@ -108,3 +111,8 @@ export const TAG_HELP: Record<string, TagHelp> = {
     description: 'The SQL execution plan has a pattern worth reviewing.',
   },
 };
+
+/** The help for a tag read from a free-form string (a report row, a filter). */
+export function tagHelp(tag: string): TagHelp | undefined {
+  return (TAG_HELP as Readonly<Record<string, TagHelp>>)[tag];
+}
