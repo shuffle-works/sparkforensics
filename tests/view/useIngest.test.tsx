@@ -2,7 +2,8 @@
 import { test, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useIngest } from '../../src/store/useIngest';
-import { store, emptyAppModel, selectAppModel, selectCatalog, selectConfigFindings } from '../../src/store/store';
+import { store, selectAppModel, selectCatalog, selectConfigFindings } from '../../src/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { interpretationOf } from '../../src/view/interpretation';
 import { deserializeRun, serializeRun } from '@sparkforensics/core/export';
 import * as recentFiles from '@sparkforensics/core/browser';

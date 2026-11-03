@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { collectRun } from '../src/cli/collect-run.js';
-import { analyze } from '../src/analyzer.js';
 import { computeOccupancy } from '../src/occupancy.js';
 import { computeTotalCores } from '../src/core-count.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 // Private event log, gitignored/local-only: the test skips unless
 // examples/private-log-01.zstd exists. The private-log table in
@@ -17,13 +16,11 @@ describe('estimateImpact: false-zero regression guard (2026-08-30 N1 occupancy r
   it.skipIf(!existsSync(fixturePath))(
     'a stage that ran alone (gate >= 0.95) with a real waste magnitude never reports wallClock.high === 0 or an unquantified basis (real fixture: gitignored, local-only)',
     async () => {
-      const { appModel } = await collectRun(fixturePath);
+      const run = await analyzedRunFrom(fixturePath);
+      const { appModel } = run;
       const totalCores = computeTotalCores(appModel.app ?? {}, appModel.executors.added);
       const occupancy = computeOccupancy(appModel.stages, totalCores);
-      const findings = analyze(
-        appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-        appModel.jobs, appModel.sql, appModel.runAggregates,
-      );
+      const findings = run.catalog;
 
       const violations = [];
       for (const f of findings) {

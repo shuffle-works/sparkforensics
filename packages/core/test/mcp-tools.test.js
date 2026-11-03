@@ -8,11 +8,10 @@ import {
 import * as collectRunModule from '../src/cli/collect-run.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
-import { collectRun } from '../src/cli/collect-run.js';
-import { analyze } from '../src/analyzer.js';
 import { evaluateBudgets } from '../src/cli/budgets.js';
 import { buildComparisonOutput } from '../src/comparison-output.js';
 import { COMPARISON_METRIC_KEYS } from '../src/run-comparison.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 // Helper lives at repo-root tests/helpers/: shared with tests/cli-sparkforensics-analyze.test.js.
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
 
@@ -1215,12 +1214,8 @@ describe('budgets on a redacted comparison', () => {
     const candidate = tmpEventLogWithStage('app-b', 'collect at ip-10-1-2-3.ec2.internal.scala:42', 2000);
     try {
       const prepare = async (path) => {
-        const { appModel } = await collectRun(path);
-        const catalog = analyze(
-          appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-          appModel.jobs, appModel.sql, appModel.runAggregates,
-        );
-        return { appModel, catalog };
+        const run = await analyzedRunFrom(path);
+        return { appModel: run.appModel, catalog: run.catalog };
       };
       const base = await prepare(baseline.path);
       const cand = await prepare(candidate.path);

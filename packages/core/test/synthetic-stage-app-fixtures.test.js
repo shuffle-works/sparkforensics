@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { collectRun } from '../src/cli/collect-run.ts';
-import { analyze } from '../src/analyzer.ts';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 // Hand-made logs, each built so one detector fires at its default thresholds.
 const analyzeFixture = async (name) => {
-  const { appModel } = await collectRun(fileURLToPath(new URL(`./fixtures/synthetic/${name}.ndjson`, import.meta.url)));
-  const findings = analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates);
-  return { appModel, findings };
+  const run = await analyzedRunFrom(fileURLToPath(new URL(`./fixtures/synthetic/${name}.ndjson`, import.meta.url)));
+  return { appModel: run.appModel, findings: run.catalog };
 };
 const ofType = (findings, type) => findings.filter((f) => f.type === type);
 

@@ -2,7 +2,7 @@
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { MemoryPressure } from '@/view/widgets/MemoryPressure';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel } from '@sparkforensics/core/types';

@@ -2,7 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import type { AppModel } from '@sparkforensics/core/types';
 import { testApp } from './_shared/model';

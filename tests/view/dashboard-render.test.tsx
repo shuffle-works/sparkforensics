@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
 import { auditConfig } from '@sparkforensics/core/analysis';
-import { store, emptyAppModel } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { Finding } from '@sparkforensics/core/types';
 import { testFinding, unknownTypeFinding } from './_shared/finding';
 import { runState } from './_shared/run';

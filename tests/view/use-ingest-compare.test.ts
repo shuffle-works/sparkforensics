@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { test, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { store, emptyAppModel, selectAppModel } from '@/store/store';
+import { store, selectAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { useIngest } from '@/store/useIngest';
 import type { RunSource } from '@/store/useIngest';
 import { serializeRun, type SerializedRun } from '@sparkforensics/core/export';

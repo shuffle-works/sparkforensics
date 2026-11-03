@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { PlanGraphRoute } from '@/view/PlanGraphRoute';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { ReactElement } from 'react';
 import type { AppModel } from '@sparkforensics/core/types';
 

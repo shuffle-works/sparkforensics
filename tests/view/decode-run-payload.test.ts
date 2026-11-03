@@ -4,7 +4,7 @@ import { gzipSync } from 'node:zlib';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export';
 import type { AppModel } from '@sparkforensics/core/types';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { inlineRunPayload } from '@/export/single-file';
 import { encodeRunPayload } from '@sparkforensics/core/analysis';
 import { makeRun } from './_shared/run';

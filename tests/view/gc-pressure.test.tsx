@@ -9,7 +9,8 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { GcPressure } from '../../src/view/widgets/GcPressure';
-import { emptyAppModel, store } from '../../src/store/store';
+import { store } from '../../src/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 

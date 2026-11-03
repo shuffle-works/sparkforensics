@@ -6,10 +6,11 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createState, runParse, runParseFiles, reassembleRollingEntries } from '../packages/core/src/parser-worker.ts';
-import { nodeFileFromPath, emptyAppModel, dispatch, isRollingLogDirectory } from '../packages/core/src/cli/collect-run.ts';
+import { nodeFileFromPath, dispatch, isRollingLogDirectory } from '../packages/core/src/cli/collect-run.ts';
 import { createModelCallbacks } from '../packages/core/src/model-assembler.ts';
+import { emptyAppModel } from '../packages/core/src/run-serialization.ts';
 import { FIELDS } from '../packages/core/src/stage-quantiles.ts';
-import { analyze } from '../packages/core/src/analyzer.ts';
+import { analyzeRun } from '../packages/core/src/analyzed-run.ts';
 import { parseThresholdOverrides } from '../packages/core/src/threshold-overrides.ts';
 
 const FLOOR_PCT = 0.005;
@@ -93,7 +94,7 @@ function score(runs, verbose, thresholds) {
   const tally = { skew: [0, 0, 0], straggler: [0, 0, 0], either: [0, 0, 0] };
   const ratios = [];
   for (const { path, appModel: m, appMs, truth } of runs) {
-    const findings = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates, { thresholds });
+    const findings = analyzeRun(m, { thresholds }).catalog;
     const fired = { skew: new Map(), straggler: new Map() };
     for (const f of findings) {
       if ((f.type === 'skew' || f.type === 'straggler') && f.impactBand !== 'info') fired[f.type].set(f.stageId, f);

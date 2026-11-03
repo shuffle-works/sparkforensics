@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { collectRun } from '../src/cli/collect-run.ts';
-import { analyze } from '../src/analyzer.ts';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
@@ -10,8 +9,8 @@ const skewOf = (findings) => findings.find((f) => f.type === 'partitionSizing' &
 // One 10-task stage: nine tasks read nothing and one reads 400 MiB.
 describe('single-key shuffle in a hand-made log', () => {
   it('names the single key and drops the AQE and partition-count advice', async () => {
-    const { appModel } = await collectRun(fileURLToPath(new URL('./fixtures/synthetic/single-key-shuffle.ndjson', import.meta.url)));
-    const f = skewOf(analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates));
+    const run = await analyzedRunFrom(fileURLToPath(new URL('./fixtures/synthetic/single-key-shuffle.ndjson', import.meta.url)));
+    const f = skewOf(run.catalog);
     expect(f.singleKey).toBe(true);
     expect(f.recommendation).toContain('holds 100% of the stage\'s shuffle read');
     expect(f.recommendation).toContain('almost all rows share one key');
@@ -21,7 +20,7 @@ describe('single-key shuffle in a hand-made log', () => {
 });
 
 describe('single-key shuffle rule', () => {
-  const run = (stage) => skewOf(analyze(makeApp(), new Map([[1, makeStage(stage)]]), [], []));
+  const run = (stage) => skewOf(analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeStage(stage)]]) }).catalog);
   const base = { shuffleReadP50: 0, shuffleReadMax: 360 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 };
 
   it('fires at 90% of the stage read with an empty median', () => {
@@ -49,7 +48,7 @@ describe('single-key shuffle next to a missed broadcast', () => {
   const findings = (config, buildStageIds = [0, 1], streamStageIds = buildStageIds, skewStage = 1) => {
     const stages = new Map([[skewStage, makeStage({ id: skewStage, shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [skewStage], planTree: plan(buildStageIds, streamStageIds) }]]);
-    return analyze(makeApp({ config, sparkVersion: '3.5.3' }), stages, [], [], new Map(), sql);
+    return analyzedRunFrom({ app: makeApp({ config, sparkVersion: '3.5.3' }), stages, sql }).catalog;
   };
 
   it('advises only a hint when the threshold already admits the small side', () => {

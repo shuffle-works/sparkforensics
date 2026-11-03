@@ -7,7 +7,7 @@ vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
 }));
 
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import { JoinKeyCast } from '@/view/widgets/JoinKeyCast';
 import type { Finding } from '@sparkforensics/core/types';

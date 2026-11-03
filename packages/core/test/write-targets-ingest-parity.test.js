@@ -3,14 +3,14 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectRun, emptyAppModel, nodeFileFromPath } from '../src/cli/collect-run.ts';
+import { collectRun, nodeFileFromPath } from '../src/cli/collect-run.ts';
 import { nodeParseCodecs } from '../src/cli/native-zstd.ts';
 import { createState, runParse } from '../src/parser-worker.ts';
 import { createModelCallbacks } from '../src/model-assembler.ts';
 import { routeMessage } from '../src/ingest.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { analyzeRun } from '../src/analyzed-run.ts';
-import { deserializeRun, serializeRun } from '../src/run-serialization.ts';
+import { deserializeRun, emptyAppModel, serializeRun } from '../src/run-serialization.ts';
 
 // The dashboard assembles its model from the worker's messages with createModelCallbacks (see
 // src/store/useIngest.ts); the CLI, MCP and SHS paths go through collectRun. Both must end with the

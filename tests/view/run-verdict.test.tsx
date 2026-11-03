@@ -3,7 +3,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';

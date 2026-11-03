@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync, zstdCompressSync } from 'node:zlib';
 import { zipSync } from '../src/vendor/fflate.js';
-import { collectRun, dispatch, emptyAppModel, nodeFileFromPath } from '../src/cli/collect-run.js';
+import { collectRun, dispatch, nodeFileFromPath } from '../src/cli/collect-run.js';
+import { emptyAppModel } from '../src/run-serialization.js';
 import { createState, runParse } from '../src/parser-worker.js';
 import { createModelCallbacks } from '../src/model-assembler.js';
 

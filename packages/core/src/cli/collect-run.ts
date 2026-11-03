@@ -3,6 +3,7 @@ import { join, basename } from 'node:path';
 import { createState, runParse, runParseFiles, reassembleRollingEntries } from '../parser-worker.ts';
 import { nodeParseCodecs } from './native-zstd.ts';
 import { createModelCallbacks } from '../model-assembler.ts';
+import { emptyAppModel } from '../run-serialization.ts';
 import { routeMessage, type IngestHandlers } from '../ingest.ts';
 import type { ParserEmit, ParserMessage, ParserMessageOf } from '../parser-messages.ts';
 import type { AppModel } from '../types.ts';
@@ -14,18 +15,6 @@ export interface FileLike {
   slice(start: number, end: number): { arrayBuffer(): Promise<ArrayBuffer> };
   /** Releases the file descriptor, if one is open. Safe to call more than once. */
   close(): void;
-}
-
-export function emptyAppModel(): AppModel {
-  return {
-    app: null,
-    stages: new Map(),
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
-  };
 }
 
 // File-like shape runParse/runParseFiles need (name, size, slice().arrayBuffer()), read with

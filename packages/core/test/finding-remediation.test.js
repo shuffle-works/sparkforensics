@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { analyze, auditConfig } from '../src/analyzer.js';
+import { auditConfig } from '../src/analyzer.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
@@ -9,7 +10,7 @@ const MiB = 1024 * 1024;
 const KRYO = 'org.apache.spark.serializer.KryoSerializer';
 
 function catalogOf(stages, app = makeApp(), sql = new Map()) {
-  return analyze(app, new Map(stages.map((s) => [s.id, s])), [], [], new Map(), sql);
+  return analyzedRunFrom({ app, stages: new Map(stages.map((s) => [s.id, s])), sql }).catalog;
 }
 
 // What a skew finding with no property to set reports: the fix is in the job's code or data.
@@ -76,7 +77,7 @@ describe('structured remediation', () => {
   it('gives autoscalingChurn a remediation for the idle timeout and each bound its text names', () => {
     const added = Array.from({ length: 10 }, (_, i) => ({ executorId: String(i + 1), timestamp: 0, totalCores: 1 }));
     const removed = added.map((e) => ({ executorId: e.executorId, timestamp: 60_000 }));
-    const churn = analyze(makeApp({ startTime: 0, endTime: 600_000, config: { 'spark.dynamicAllocation.enabled': 'true' } }), new Map(), added, removed)
+    const churn = analyzedRunFrom({ app: makeApp({ startTime: 0, endTime: 600_000, config: { 'spark.dynamicAllocation.enabled': 'true' } }), executors: { added: added, removed: removed } }).catalog
       .find((f) => f.type === 'autoscalingChurn');
     expect(churn.recommendation).toMatch(/executorIdleTimeout or widening the minExecutors\/maxExecutors bounds/);
     expect(churn.remediation).toEqual([
@@ -87,10 +88,7 @@ describe('structured remediation', () => {
   });
 
   describe('coldStart dynamic allocation remediation', () => {
-    const coldStart = (app) => analyze(
-      app, new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]),
-      [{ executorId: '1', timestamp: 120_000, totalCores: 4 }], [], new Map(),
-    ).find((f) => f.type === 'coldStart');
+    const coldStart = (app) => analyzedRunFrom({ app, stages: new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]), executors: { added: [{ executorId: '1', timestamp: 120_000, totalCores: 4 }], removed: [] } }).catalog.find((f) => f.type === 'coldStart');
     const app = (config, resources) => makeApp({ endTime: 200_000, config, resources });
 
     it('suggests raising min and initial executors only when dynamic allocation is on', () => {
@@ -214,7 +212,7 @@ describe('structured remediation', () => {
     const lowUtil = (app) => {
       const stages = new Map([[1, makeStage({ id: 1 })]]);
       const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }];
-      return analyze(app, stages, added, [], new Map(), new Map(), { busyCoreMs: 100 });
+      return analyzedRunFrom({ app, stages, executors: { added: added, removed: [] }, runAggregates: { busyCoreMs: 100 } }).catalog;
     };
     const key = (f) => f.remediation.map((r) => `${r.direction} ${r.key}`);
     const idleCores = (app) => lowUtil(app).find((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
@@ -430,7 +428,7 @@ describe('structured remediation', () => {
         { name: 'BroadcastExchange', detail: '', id: 2, metrics: [{ name: 'data size', value: 2 * 1024 * MiB, metricType: 'size' }], children: [] },
       ] };
       const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: tree }]]);
-      const over = (config) => analyze(makeApp({ config }), new Map(), [], [], new Map(), sql).find((f) => f.type === 'overBroadcast');
+      const over = (config) => analyzedRunFrom({ app: makeApp({ config }), sql }).catalog.find((f) => f.type === 'overBroadcast');
       const off = over({ 'spark.sql.autoBroadcastJoinThreshold': '-1' });
       expect(off.remediation).toEqual([]);
       expect(off.recommendation).toMatch(/remove the broadcast\(\) hint/);
@@ -450,7 +448,7 @@ describe('structured remediation', () => {
       });
       const caveats = (config) => {
         const app = makeApp({ config, rddInfo: new Map([[1, rdd(1)]]), rddBlockUpdates: 0 });
-        const findings = analyze(app, new Map([[1, makeStage({ id: 1 })]]), [{ executorId: '1', timestamp: 0, totalCores: 4 }], [], new Map());
+        const findings = analyzedRunFrom({ app, stages: new Map([[1, makeStage({ id: 1 })]]), executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] } }).catalog;
         return {
           storage: findings.find((f) => f.variant === 'storageUnobserved'),
           memory: findings.find((f) => f.variant === 'memoryBand'),
@@ -629,7 +627,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
   describe('autoscalingChurn and coldStart follow dynamic allocation', () => {
     const added = Array.from({ length: 10 }, (_, i) => ({ executorId: String(i + 1), timestamp: 0, totalCores: 1 }));
     const removed = added.map((e) => ({ executorId: e.executorId, timestamp: 60_000 }));
-    const churn = (config) => analyze(makeApp({ startTime: 0, endTime: 600_000, config }), new Map(), added, removed, new Map())
+    const churn = (config) => analyzedRunFrom({ app: makeApp({ startTime: 0, endTime: 600_000, config }), executors: { added: added, removed: removed } }).catalog
       .find((f) => f.type === 'autoscalingChurn');
     it('gives no dynamic-allocation advice when the run turns it off', () => {
       const off = churn({ 'spark.dynamicAllocation.enabled': 'false' });
@@ -642,10 +640,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
       expect(on.remediation).toHaveLength(3);
     });
     it('records on coldStart which case fired', () => {
-      const cold = (config) => analyze(
-        makeApp({ config }), new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]),
-        [{ executorId: '1', timestamp: 120_000, totalCores: 4 }], [], new Map(),
-      ).find((f) => f.type === 'coldStart');
+      const cold = (config) => analyzedRunFrom({ app: makeApp({ config }), stages: new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]), executors: { added: [{ executorId: '1', timestamp: 120_000, totalCores: 4 }], removed: [] } }).catalog.find((f) => f.type === 'coldStart');
       expect(cold({ 'spark.dynamicAllocation.enabled': 'false' }).dynamicAllocation).toBe('off');
       expect(cold({ 'spark.dynamicAllocation.enabled': 'false' }).remediation).toEqual([]);
       expect(cold({ 'spark.dynamicAllocation.enabled': 'true' }).dynamicAllocation).toBe('on');

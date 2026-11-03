@@ -5,12 +5,11 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { main } from '../bin/sparkforensics-analyze.mjs';
-import { collectRun } from '@sparkforensics/core/cli';
-import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
-import { analyze, auditConfig, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
+import { auditConfig, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
 import { createMcpServer, mcpToolEntries } from '@sparkforensics/core/mcp';
 import { CLI_SUBCOMMANDS } from '@sparkforensics/core/node';
 import { corpusLog } from '../../core/test/corpus-log.js';
+import { analyzedRunFrom } from '../../core/test/fixtures/analyzed-run.js';
 import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js';
 
 // Contract test: the CLI's JSON and the MCP tools must report the same run, comparison and budget
@@ -178,12 +177,7 @@ async function mcpCall(name, args) {
 // What the dashboard does: parse both runs, analyze, diff the two snapshots.
 async function dashboardComparison(baselinePath, candidatePath) {
   const prepare = async (path) => {
-    const { appModel, skippedLines } = await collectRun(path);
-    appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-    const catalog = analyze(
-      appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-      appModel.jobs, appModel.sql, appModel.runAggregates,
-    );
+    const { appModel, catalog } = await analyzedRunFrom(path);
     return { appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) };
   };
   const [base, cand] = await Promise.all([prepare(baselinePath), prepare(candidatePath)]);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.ts';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { maxOf, minOf } from '../src/array-extremes.ts';
 import { apiMergeWrites } from '../src/api-merge-writes.ts';
 import { computeCoreTimeSeries, coreCountHistogram } from '../src/core-time-series.ts';
@@ -51,7 +51,7 @@ describe('analyze() on a log with very many stages', () => {
     const findings = expectNearLinear((size) => {
       const stages = new Map();
       for (let id = 0; id < size; id++) stages.set(id, makeStage({ id, shuffleReadBytes: 2 * GIB }));
-      return () => analyze(makeApp(), stages, [], [], new Map());
+      return () => analyzedRunFrom({ app: makeApp(), stages }).catalog;
     }, count / 2);
     const shuffle = findings.filter((f) => f.type === 'shuffle');
     expect(shuffle).toHaveLength(count);

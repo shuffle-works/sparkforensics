@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { adviseFailure, adviseFailureGroup, adviseStageFailure } from '../src/failure-advice.ts';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { createState, processEvent } from '../src/parser-worker.js';
@@ -12,7 +12,7 @@ const group = (overrides) => ({
   reason: 'ExecutorLostFailure', className: null, message: null, lossReason: null, stackExcerpt: null, count: 1, ...overrides,
 });
 
-const findingOf = (rule, stage) => analyze(makeApp(), new Map([[stage.id, stage]]), [], [], new Map(), new Map())
+const findingOf = (rule, stage) => analyzedRunFrom({ app: makeApp(), stages: new Map([[stage.id, stage]]) }).catalog
   .find((f) => f.type === rule);
 
 const CONTAINER_KILL = 'Container killed by YARN for exceeding memory limits. 10.4 GB of 10 GB physical memory used.';
@@ -159,7 +159,7 @@ describe('failure advice from parsed events', () => {
     for (let i = lostTasks; i < 20; i++) taskEnd(i, false);
     const info = { 'Stage ID': 1, 'Completion Time': 20000, ...(failureReason && { 'Failure Reason': failureReason }) };
     const stage = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': info }, s).data;
-    return analyze(makeApp(), new Map([[1, stage]]), [], [], new Map(), new Map());
+    return analyzedRunFrom({ app: makeApp(), stages: new Map([[1, stage]]) }).catalog;
   }
 
   it('reads a container memory kill from the TaskEnd loss reason into failures and retryWaste', () => {
@@ -202,7 +202,7 @@ describe('failure advice from parsed events', () => {
       Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 20000,
       'Job Result': { Result: 'JobFailed', Exception: { Message: abort } },
     }, s);
-    return analyze(makeApp(), stages, [], [], s.jobs, new Map());
+    return analyzedRunFrom({ app: makeApp(), stages, jobs: s.jobs }).catalog;
   }
   const FETCH_FAILED = 'org.apache.spark.shuffle.FetchFailedException: Failed to connect to host-a/10.0.0.1:7337';
   const JOB_ABORTED = `Job aborted due to stage failure: ResultStage 1 (count at Example.scala:10) has failed the maximum allowable number of times: 4. Most recent failure reason:\n${FETCH_FAILED}`;

@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import { detectorInfoByType } from '@sparkforensics/core/analysis';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types';

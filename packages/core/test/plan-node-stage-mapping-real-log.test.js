@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { collectRun } from '../src/cli/collect-run.js';
-import { analyze } from '../src/analyzer.js';
 import { stageIdsForSqlExec } from '../src/sql-stages.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 // Private event logs, gitignored/local-only: each test skips unless its file
 // exists under examples/. The private-log table in
@@ -16,12 +15,8 @@ const secondLogPath = fileURLToPath(
 );
 
 async function analyzeFixture(path) {
-  const { appModel } = await collectRun(path);
-  const findings = analyze(
-    appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-    appModel.jobs, appModel.sql, appModel.runAggregates,
-  );
-  return { appModel, findings };
+  const run = await analyzedRunFrom(path);
+  return { appModel: run.appModel, findings: run.catalog };
 }
 
 describe('plan-node-to-stage mapping: real-log validation', () => {

@@ -7,7 +7,7 @@ import type { Finding, TaskData } from '@sparkforensics/core/types';
 
 import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 import { TestImpactBoard } from './_shared/board';

@@ -2,7 +2,8 @@
 import { test, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { gatherTaskIntervals } from '@/view/core-usage-histogram-data';
 import { DocsProvider } from '@/view/DocsContext';

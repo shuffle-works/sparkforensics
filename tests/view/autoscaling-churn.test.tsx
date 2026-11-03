@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { AutoscalingChurn, bucketChurn } from '../../src/view/widgets/AutoscalingChurn';
-import { emptyAppModel } from '../../src/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '../../src/view/DocsContext';
 import type { AppModel } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';

@@ -10,35 +10,23 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { StageTable } from '@/view/widgets/StageTable';
 import { SPILL_CLASS_SHORT, FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
+import { makeStage as makeCoreStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
 
-// Real per-stage fields as posted by the parser worker; the `Stage` type's
-// `stageId` field doesn't reflect runtime shape, so fixtures use `id` and the
-// widget casts through a raw shape internally.
 function makeStage(id: number, overrides: Record<string, unknown> = {}) {
-  return {
+  return makeCoreStage({
     id,
     name: `stage-${id}`,
     stageType: 'shuffle',
-    submittedAt: 0,
-    completedAt: 1000,
     taskCount: 10,
-    failedTasks: 0,
-    shuffleReadBytes: 0,
-    memoryBytesSpilled: 0,
-    gcPct: 0,
-    fetchWaitTime: 0,
     executorRunTime: 1000,
-    inputBytes: 0,
-    outputBytes: 0,
-    taskDurationP50: 100,
     taskDurationP95: 200,
-    spillClassification: 'unclassified',
     ...overrides,
-  };
+  });
 }
 
 function buildAppModel(stages: Array<[number, Record<string, unknown>]>): AppModel {

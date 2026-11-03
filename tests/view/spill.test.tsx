@@ -9,7 +9,8 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { Spill } from '@/view/widgets/Spill';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';

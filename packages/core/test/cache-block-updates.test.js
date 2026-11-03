@@ -3,9 +3,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
-import { collectRun } from '../src/cli/collect-run.js';
-import { analyze } from '../src/analyzer.js';
 import { corpusLog } from './corpus-log.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 // Hand-built Spark 3.5 log with spark.eventLog.logBlockUpdates.enabled=true and reduced storage
 // memory: a MEMORY_ONLY RDD with 4 of 10 partitions cached (later unpersisted), and a
@@ -15,8 +14,8 @@ import { corpusLog } from './corpus-log.js';
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cache-block-updates.ndjson');
 
 async function cacheFindings(path) {
-  const { appModel: m } = await collectRun(path);
-  return analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates)
+  const run = await analyzedRunFrom(path);
+  return run.catalog
     .filter((f) => f.type === 'cacheUtilization');
 }
 

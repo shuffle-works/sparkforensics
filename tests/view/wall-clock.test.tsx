@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { WallClock } from '../../src/view/widgets/WallClock';
 import type { AppModel } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { store } from '../../src/store/store';
 import { installInterpretation } from './_shared/interpretation';
 import { contrastRatio, installStylesheet, resolvedColor } from './_shared/css-contrast';
@@ -18,17 +19,13 @@ function renderWallClock(appModel: AppModel) {
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return {
+    ...emptyAppModel(),
     app: { startTime: 0, endTime: 100_000 },
     stages: new Map([
       [1, testStage({ id: 1, submittedAt: 10_000, completedAt: 40_000 })],
       [2, testStage({ id: 2, submittedAt: 60_000, completedAt: 80_000 })],
     ]),
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
     ...overrides,
-    evidenceAvailability: overrides.evidenceAvailability ?? null,
   };
 }
 

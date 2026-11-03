@@ -2,12 +2,13 @@
 import { test, describe, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
 import { Timeline, selectTimelineStages } from '@/view/widgets/Timeline';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
-import { testStage } from './_shared/model';
+import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types';
+import { makeStage as makeCoreStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
 
 function renderTimeline(appModel: AppModel, catalog: Finding[] = []) {
   return render(
@@ -17,11 +18,8 @@ function renderTimeline(appModel: AppModel, catalog: Finding[] = []) {
   );
 }
 
-// Real per-stage fields as posted by the parser worker; the `Stage` type's
-// `stageId` field doesn't reflect runtime shape, so the fixture bridges the
-// type gap with a cast, same as the widget itself does.
 function makeStage(id: number, submittedAt: number, completedAt: number) {
-  return testStage({ id, name: `s${id}`, submittedAt, completedAt });
+  return makeCoreStage({ id, name: `s${id}`, submittedAt, completedAt }) as unknown as Stage;
 }
 
 function buildAppModel(stages: Map<number, unknown>): AppModel {

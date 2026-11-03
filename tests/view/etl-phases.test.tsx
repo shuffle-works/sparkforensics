@@ -6,6 +6,7 @@ import { EtlPhases } from '../../src/view/widgets/EtlPhases';
 import { store } from '../../src/store/store';
 import type { AppModel, Stage } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
+import { emptyAppModel } from '@sparkforensics/core/export';
 
 // The widget renders the store's interpretation of the run, as the dashboard installs it.
 function renderEtlPhases(appModel: AppModel) {
@@ -14,15 +15,7 @@ function renderEtlPhases(appModel: AppModel) {
 }
 
 function makeAppModel(stages: [number, Partial<Stage>][]): AppModel {
-  return {
-    app: null,
-    stages: new Map(stages.map(([id, s]) => [id, { stageId: id, ...s } as Stage])),
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
-  };
+  return { ...emptyAppModel(), stages: new Map(stages.map(([id, s]) => [id, { stageId: id, ...s } as Stage])) };
 }
 
 describe('EtlPhases', () => {

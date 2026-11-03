@@ -2,7 +2,8 @@
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { CacheUtilization } from '@/view/widgets/CacheUtilization';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding, FindingOf, SparkAppInfo } from '@sparkforensics/core/types';

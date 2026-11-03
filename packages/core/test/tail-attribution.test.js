@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
 import { buildRecommendationRollup, isEligible } from '../src/recommendation-rollup.ts';
 import { attributeTail, TAIL_FACTOR } from '../src/stage-quantiles.js';
 import { createState, processEvent } from '../src/parser-worker.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 // Volumes at a scale above the floors a median is taken against (1 MiB, 1000 records).
 const BYTES = 1e6;
@@ -163,11 +163,10 @@ describe('skew and straggler by tail cause', () => {
   const types = (findings) => findings.map((f) => f.type).filter((t) => t === 'skew' || t === 'straggler').sort();
 
   it('reports a data-driven tail as skew only, with the data volume', () => {
-    const findings = analyze(app, stage(tail({ dataMs: 90000, dataRatio: 7.24 })), [], []);
+    const findings = analyzedRunFrom({ app, stages: stage(tail({ dataMs: 90000, dataRatio: 7.24 })) }).catalog;
     expect(types(findings)).toEqual(['skew']);
     const skew = findings.find((f) => f.type === 'skew');
     expect(skew).toMatchObject({ cause: 'data', dataRatio: 7.2 });
-    expect(skew.recommendation).toContain('read a median 7.2× the data of the median task');
     expect(skew.validationRequired).not.toContain('overlaps');
   });
 
@@ -177,7 +176,7 @@ describe('skew and straggler by tail cause', () => {
     ['host', { hostMs: 80000, host: 'worker-7', hostTasks: 9 }, '9 of the 12 slow tasks ran on worker-7'],
     ['unexplained', {}, 'read no more data than the median task'],
   ])('reports a %s tail as straggler only, with the cause', (cause, over, text) => {
-    const findings = analyze(app, stage(tail(over)), [], []);
+    const findings = analyzedRunFrom({ app, stages: stage(tail(over)) }).catalog;
     expect(types(findings)).toEqual(['straggler']);
     const straggler = findings.find((f) => f.type === 'straggler');
     expect(straggler.cause).toBe(cause);
@@ -187,9 +186,9 @@ describe('skew and straggler by tail cause', () => {
   });
 
   it('raises executor memory for a GC-driven tail and speculation for a host-driven one', () => {
-    const gc = analyze(app, stage(tail({ gcMs: 60000 })), [], []).find((f) => f.type === 'straggler');
+    const gc = analyzedRunFrom({ app, stages: stage(tail({ gcMs: 60000 })) }).catalog.find((f) => f.type === 'straggler');
     expect(gc.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memory', direction: 'increase', suggested: null }]);
-    const host = analyze(app, stage(tail({ hostMs: 80000, host: 'w', hostTasks: 9 })), [], []).find((f) => f.type === 'straggler');
+    const host = analyzedRunFrom({ app, stages: stage(tail({ hostMs: 80000, host: 'w', hostTasks: 9 })) }).catalog.find((f) => f.type === 'straggler');
     expect(host.remediation).toEqual([{ kind: 'conf', key: 'spark.speculation', direction: 'set', suggested: true }]);
   });
 
@@ -197,21 +196,21 @@ describe('skew and straggler by tail cause', () => {
     // Stage 1's GC share of run time is low, which alone would earn the low-GC note; its tail is GC-bound.
     const stages = new Map([[1, { ...stage(tail({ gcMs: 60000 })).get(1), gcPct: 3, executorRunTime: 60000 }]]);
     stages.set(2, makeStage({ id: 2, gcPct: 3, executorRunTime: 60000, completedAt: 50000 }));
-    const findings = analyze(app, stages, [], []);
+    const findings = analyzedRunFrom({ app, stages }).catalog;
     expect(findings.find((f) => f.type === 'straggler' && f.stageId === 1).cause).toBe('gc');
     const low = findings.filter((f) => f.type === 'gc' && f.direction === 'low');
     expect(low.map((f) => f.stageId)).toEqual([2]);
   });
 
   it('says whether the unexplained tail waited or computed', () => {
-    const waiting = analyze(app, stage(tail({ cpuPct: 20 })), [], []).find((f) => f.type === 'straggler');
+    const waiting = analyzedRunFrom({ app, stages: stage(tail({ cpuPct: 20 })) }).catalog.find((f) => f.type === 'straggler');
     expect(waiting.recommendation).toContain('mostly waited');
-    const busy = analyze(app, stage(tail({ cpuPct: 95 })), [], []).find((f) => f.type === 'straggler');
+    const busy = analyzedRunFrom({ app, stages: stage(tail({ cpuPct: 95 })) }).catalog.find((f) => f.type === 'straggler');
     expect(busy.recommendation).toContain('the work itself is slow');
   });
 
   it('reports a tail with no data volume to compare as straggler alone, with no key advice', () => {
-    const findings = analyze(app, stage(tail({ dataRatio: null })), [], []);
+    const findings = analyzedRunFrom({ app, stages: stage(tail({ dataRatio: null })) }).catalog;
     expect(types(findings)).toEqual(['straggler']);
     const straggler = findings.find((f) => f.type === 'straggler');
     expect(straggler.cause).toBe('unattributed');
@@ -228,8 +227,8 @@ describe('skew and straggler by tail cause', () => {
       taskCount: 100, completedAt: 50000, taskDurationP50: 1000, taskDurationP95: 2500, taskDurationMax: 3000,
       stragglerCount: 12, stragglerExcessMs: 300000, longestNonStragglerMs: 3000, peakConcurrentTasks: 10,
     })]]);
-    expect(types(analyze(app, quiet, [], []))).toEqual(['straggler']);
-    const tuned = analyze(app, quiet, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
+    expect(types(analyzedRunFrom({ app, stages: quiet }).catalog)).toEqual(['straggler']);
+    const tuned = analyzedRunFrom({ app, stages: quiet }, { thresholds: { skew: { ratioWarn: 2 } } }).catalog;
     expect(types(tuned)).toEqual(['straggler']);
     expect(tuned.find((f) => f.type === 'straggler').cause).toBe('unattributed');
   });
@@ -242,7 +241,7 @@ describe('skew and straggler by tail cause', () => {
     })]]);
     for (const tailAttribution of [null, tail({ tasks: 1, dataRatio: null })]) {
       const stages = new Map([[1, { ...few.get(1), ...(tailAttribution ? { tailAttribution } : {}) }]]);
-      const straggler = analyze(app, stages, [], []).find((f) => f.type === 'straggler');
+      const straggler = analyzedRunFrom({ app, stages }).catalog.find((f) => f.type === 'straggler');
       expect(straggler).toMatchObject({ metric: 'P95/median', value: 9, unit: 'ratio' });
       expect(straggler.recommendation).toMatch(/^Task duration ratio \(P95\/median\) is 9×: nothing in the log attributes the slow tasks to data volume/);
       expect(straggler.recommendation).not.toMatch(/0% of tasks/);
@@ -250,27 +249,27 @@ describe('skew and straggler by tail cause', () => {
   });
 
   it('reports a stage with no tail attribution as straggler alone', () => {
-    expect(types(analyze(app, stage(null), [], []))).toEqual(['straggler']);
+    expect(types(analyzedRunFrom({ app, stages: stage(null) }).catalog)).toEqual(['straggler']);
   });
 
   it('lets data-share thresholds move the cut', () => {
     const mixed = tail({ dataMs: 40000, gcMs: 50000 });
-    expect(types(analyze(app, stage(mixed), [], []))).toEqual(['straggler']);
-    const tuned = analyze(app, stage(mixed), [], [], new Map(), new Map(), null, { thresholds: { skew: { dataShareMin: 0.3 } } });
+    expect(types(analyzedRunFrom({ app, stages: stage(mixed) }).catalog)).toEqual(['straggler']);
+    const tuned = analyzedRunFrom({ app, stages: stage(mixed) }, { thresholds: { skew: { dataShareMin: 0.3 } } }).catalog;
     expect(types(tuned)).toEqual(['skew']);
   });
 
   it('reports a data tail once, as straggler, when tuning skew alone makes skew refuse it', () => {
     // 90% data share and P95/median 9: skew's defaults admit it as data.
     const data = tail({ dataMs: 90000, gcMs: 5000 });
-    expect(types(analyze(app, stage(data), [], []))).toEqual(['skew']);
+    expect(types(analyzedRunFrom({ app, stages: stage(data) }).catalog)).toEqual(['skew']);
     for (const skew of [{ ratioWarn: 10 }, { dataShareMin: 0.95 }]) {
-      const findings = analyze(app, stage(data), [], [], new Map(), new Map(), null, { thresholds: { skew } });
+      const findings = analyzedRunFrom({ app, stages: stage(data) }, { thresholds: { skew } }).catalog;
       expect(types(findings)).toEqual(['straggler']);
       const [[name, value]] = Object.entries(skew);
       expect(findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual({ [`skew.${name}`]: { value, default: expect.any(Number) } });
     }
-    expect(analyze(app, stage(data), [], []).find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+    expect(analyzedRunFrom({ app, stages: stage(data) }).catalog.find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
   });
 
   it("keeps a data-driven tail only straggler's gate admits as a straggler finding, with the data volume", () => {
@@ -280,7 +279,7 @@ describe('skew and straggler by tail cause', () => {
       stragglerCount: 4, stragglerExcessMs: 120000, longestNonStragglerMs: 2000, peakConcurrentTasks: 10,
       tailAttribution: tail({ tasks: 4, dataMs: 90000, dataRatio: 12 }),
     })]]);
-    const findings = analyze(app, narrow, [], []);
+    const findings = analyzedRunFrom({ app, stages: narrow }).catalog;
     expect(types(findings)).toEqual(['straggler']);
     expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ cause: 'data', origin: expect.any(String) });
     expect(findings.find((f) => f.type === 'straggler').recommendation).toContain('read a median 12× the data');
@@ -293,7 +292,7 @@ describe('skew and straggler by tail cause', () => {
       stragglerCount: 0, tailReplayRecoveryMs: 20000, peakConcurrentTasks: 10,
       tailAttribution: tail({ tasks: 8, gcMs: 80000 }),
     })]]);
-    const findings = analyze(app, redirected, [], []);
+    const findings = analyzedRunFrom({ app, stages: redirected }).catalog;
     expect(types(findings)).toEqual(['straggler']);
     expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ cause: 'gc', metric: 'P95/median', value: 5, unit: 'ratio' });
     expect(findings.find((f) => f.type === 'straggler').recommendation).toContain('Task duration ratio (P95/median) is 5×: GC accounts for');

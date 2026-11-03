@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, statSync } from 'node:fs';
-import { analyze, auditConfig } from '../src/analyzer.js';
-import { collectRun } from '../src/cli/collect-run.js';
+import { auditConfig } from '../src/analyzer.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 import { corpusLog } from './corpus-log.js';
@@ -58,7 +58,7 @@ function syntheticFindings() {
   const analyzed = SYNTHETIC_RUNS.flatMap(({ app, stage, added = [], jobs = [] }) => {
     const stages = new Map([[1, makeStage(stage)]]);
     const jobMap = new Map(jobs.map((j) => [j.id, j]));
-    return analyze(makeApp(app), stages, added, [], jobMap);
+    return analyzedRunFrom({ app: makeApp(app), stages, executors: { added: added, removed: [] }, jobs: jobMap }).catalog;
   });
   return [...analyzed, ...CONFIG_APPS.flatMap((app) => auditConfig(makeApp(app), new Map([[1, makeStage()]])))];
 }
@@ -102,8 +102,8 @@ describe('detector recommendations follow "<measurement>: <fix>"', () => {
   });
 
   it.skipIf(corpusFiles.length === 0).each(corpusFiles.map((p) => [p]))('holds for the corpus log %s', async (path) => {
-    const { appModel: m } = await collectRun(path);
-    expectConvention(analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates));
+    const run = await analyzedRunFrom(path);
+    expectConvention(run.catalog);
   });
 });
 

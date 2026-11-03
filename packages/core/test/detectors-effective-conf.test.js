@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { analyze, auditConfig } from '../src/analyzer.js';
+import { auditConfig } from '../src/analyzer.js';
 import { extractResources } from '../src/event-handlers.ts';
 import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 const MiB = 1024 * 1024;
 
 function catalogOf(stages, app, sql = new Map()) {
-  return analyze(app, new Map(stages.map((s) => [s.id, s])), [], [], new Map(), sql);
+  return analyzedRunFrom({ app, stages: new Map(stages.map((s) => [s.id, s])), sql }).catalog;
 }
 
 const join = () => ({ name: 'SortMergeJoin', detail: '', metrics: [], children: [

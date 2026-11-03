@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { analyze } from '@sparkforensics/core/analysis';
 import type { Finding, Stage } from '@sparkforensics/core/types';
 import { makeApp, makeStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from '../../packages/core/test/fixtures/analyzed-run.js';
 import { stageIdOf } from '@sparkforensics/core/view-model';
 import { byStageAsc, canToggleSort, orderByImpact } from '../../src/view/impact-sort';
 import { installInterpretation } from './_shared/interpretation';
@@ -153,7 +153,9 @@ test('an analyzed run ranks its idle allocation before a stage finding with less
   });
   const added = Array.from({ length: 10 }, (_, i) => ({ kind: 'added' as const, executorId: String(i + 1), host: 'h', timestamp: 0, totalCores: 4, resourceProfileId: 0 }));
   const aggregates = { busyCoreMs: 360 * MIN, coreHistogram: [], peakConcurrentCores: 4, perStage: {} };
-  const catalog = analyze(app, new Map([[1, stage as unknown as Stage]]), added, [], new Map(), new Map(), aggregates);
+  const catalog = analyzedRunFrom({
+    app, stages: new Map([[1, stage as unknown as Stage]]), executors: { added, removed: [] }, runAggregates: aggregates,
+  }).catalog;
   expect(catalog.find((f) => f.type === 'utilization')?.impactBand).toBe('warning');
   expect(catalog.find((f) => f.type === 'spill')?.impactBand).not.toBe('info');
   const interpreted = installInterpretation(catalog);

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { analyze } from '../src/analyzer.js';
-import { collectRun } from '../src/cli/collect-run.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { joinKeyCastOf } from '../src/join-key-cast.js';
 import { parseJoinKeys, partitioningArgs, summarizePlanTree } from '../src/plan-summary.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
@@ -162,7 +161,7 @@ describe('joinKeyCast finding', () => {
   function findingsFor(planTree) {
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
     const stages = new Map([[1, makeStage({ sqlExecutionId: 1, completedAt: 10_000, taskActiveMs: 10_000 })]]);
-    return analyze(makeApp({ endTime: 10_000 }), stages, [], [], new Map(), sql).filter((f) => f.type === 'joinKeyCast');
+    return analyzedRunFrom({ app: makeApp({ endTime: 10_000 }), stages, sql }).catalog.filter((f) => f.type === 'joinKeyCast');
   }
 
   it('is an info finding that carries the keys, the shuffle size and the advice', () => {
@@ -194,11 +193,8 @@ describe('joinKeyCast finding', () => {
 
 describe('joinKeyCast on a local Spark run', () => {
   it('flags the decimal-to-bigint join and the window that shuffles again', async () => {
-    const { appModel } = await collectRun(SPIKE_LOG);
-    const findings = analyze(
-      appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-      appModel.jobs, appModel.sql, appModel.runAggregates,
-    ).filter((f) => f.type === 'joinKeyCast');
+    const run = await analyzedRunFrom(SPIKE_LOG);
+    const findings = run.catalog.filter((f) => f.type === 'joinKeyCast');
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({
       impactBand: 'info', nodeName: 'SortMergeJoin', castKeys: ['cast(k as decimal(20,0))'], exchangeKeys: ['k'],

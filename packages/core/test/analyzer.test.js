@@ -1207,14 +1207,14 @@ describe('analyze: tiny tasks', () => {
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'tinyTask');
     expect(found).toHaveLength(1);
-    expect(found[0].recommendation).toContain('spark.sql.shuffle.partitions');
+    expect(found[0].remediation).toEqual([{ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'decrease', suggested: null }]);
   });
 
   it('omits spark.sql.shuffle.partitions wording when the stage has no shuffle read', () => {
     const stages = new Map([[1, makeStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 0 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'tinyTask');
-    expect(found[0].recommendation).not.toContain('spark.sql.shuffle.partitions');
+    expect(found[0].remediation).toEqual([]);
     expect(found[0].recommendation).toContain('.coalesce(15)');
   });
 });
@@ -1546,7 +1546,7 @@ describe('auditConfig: static config sanity', () => {
       // 10 GiB executor → default = max(384, 1024) = 1024 MiB; overhead 256 is below.
       const f = overheadFinding({ 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '256' }, { memoryMB: 10240, memoryOverheadMB: 256 }, '3.5.3');
       expect(f.impactBand).toBe('info');
-      expect(f.recommendation).toContain('1024 MiB');
+      expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '1024m' }]);
       expect(f.recommendation).toContain('10% of executor memory');
     });
 
@@ -1559,7 +1559,6 @@ describe('auditConfig: static config sanity', () => {
       const config = { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '2048', 'spark.executor.memoryOverheadFactor': '0.25' };
       const executor = { memoryMB: 10240, memoryOverheadMB: 2048 };
       const f = overheadFinding(config, executor, '3.5.3');
-      expect(f.recommendation).toContain('2560 MiB');
       expect(f.recommendation).toContain('25% of executor memory');
       expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '2560m' }]);
     });
@@ -1574,7 +1573,7 @@ describe('auditConfig: static config sanity', () => {
       const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '512', 'spark.executor.minMemoryOverhead': '1g' };
       const executor = { memoryMB: 1024, memoryOverheadMB: 512 };
       const f = overheadFinding(config, executor, '4.0.0');
-      expect(f.recommendation).toContain('1024 MiB');
+      expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '1024m' }]);
       expect(f.recommendation).toContain('max of 1024 MiB');
     });
 
@@ -1585,7 +1584,9 @@ describe('auditConfig: static config sanity', () => {
 
     it('ignores spark.executor.minMemoryOverhead before Spark 4, where the 384 MiB minimum is fixed', () => {
       const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '256', 'spark.executor.minMemoryOverhead': '128m' };
-      expect(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, '3.5.3').recommendation).toContain('384 MiB');
+      expect(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, '3.5.3').remediation).toEqual([
+        { kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '384m' },
+      ]);
     });
 
     it('reads both settings when the log records no Spark version', () => {
@@ -2331,7 +2332,7 @@ describe('analyze, cacheUtilization detector', () => {
       expect(findings[0]).toMatchObject({
         variant: 'storageUnobserved', dataUnavailable: true, impactBand: 'info', metric: 'persistedRdds', value: 2,
       });
-      expect(findings[0].recommendation).toContain('spark.eventLog.logBlockUpdates.enabled=true');
+      expect(findings[0].remediation).toEqual([{ kind: 'conf', key: 'spark.eventLog.logBlockUpdates.enabled', direction: 'set', suggested: true }]);
     });
 
     it('stays silent when the log has block updates: a persisted RDD with no blocks was never cached', () => {

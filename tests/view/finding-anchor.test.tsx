@@ -3,7 +3,8 @@ import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { Finding } from '@sparkforensics/core/types';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import { buildBoardLayout } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';

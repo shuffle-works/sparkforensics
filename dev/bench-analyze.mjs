@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Manual dev tool: eval harness for detector and estimator tuning. Runs the CLI's collectRun +
-// analyze pipeline per log in a child process and snapshots timings, peak memory and findings.
+// analyzeRun pipeline per log in a child process and snapshots timings, peak memory, the detector
+// findings, the config findings, the verdict's step order and the published evidence keys.
 // Details: docs-site/contributor-guide/testing.md.
 //
 // Usage:
@@ -42,17 +43,27 @@ function summarizeFinding(f) {
   };
 }
 
+// The keys each finding type publishes as evidence, from the evidence report both CLI and MCP print.
+function publishedEvidenceKeys(report) {
+  const byType = new Map();
+  for (const row of report.json.findings) {
+    const keys = byType.get(row.type) ?? new Set();
+    for (const key of Object.keys(row.evidence)) keys.add(key);
+    byType.set(row.type, keys);
+  }
+  return Object.fromEntries([...byType].sort(([a], [b]) => (a < b ? -1 : 1)).map(([type, keys]) => [type, [...keys].sort()]));
+}
+
 async function runChild(path) {
   const { collectRun } = await import(join(CORE, 'cli', 'collect-run.ts'));
-  const { analyze } = await import(join(CORE, 'analyzer.ts'));
+  const { analyzeRun } = await import(join(CORE, 'analyzed-run.ts'));
+  const { buildEvidenceReport } = await import(join(CORE, 'evidence-report.ts'));
   const t0 = performance.now();
   const { appModel, skippedLines } = await collectRun(path);
   const t1 = performance.now();
   const heapAfterParseMB = process.memoryUsage().heapUsed / 1e6;
-  const m = appModel;
-  const findings = analyze(
-    m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates,
-  );
+  const run = analyzeRun(appModel);
+  const m = run.appModel;
   const t2 = performance.now();
   const appDurationMs = m.app?.endTime && m.app?.startTime ? m.app.endTime - m.app.startTime : null;
   const result = {
@@ -66,7 +77,10 @@ async function runChild(path) {
     stages: m.stages.size,
     sqlExecutions: m.sql.size,
     appDurationMs,
-    findings: findings.map(summarizeFinding),
+    findings: run.catalog.map(summarizeFinding),
+    configFindings: run.configFindings.map(summarizeFinding),
+    verdictSteps: run.interpretation.verdict.steps.map((step) => step.key),
+    evidenceKeys: publishedEvidenceKeys(buildEvidenceReport(run.appModel, { markdown: false })),
   };
   process.stdout.write(JSON.stringify(result));
 }
@@ -125,11 +139,18 @@ function fmtMs(v) { return v == null ? '-' : `${(v / 1000).toFixed(1)}s`; }
 
 // The committed regression snapshot keeps only what is deterministic for a given log: timings
 // and memory vary per machine, so they are dropped and the diff below treats them as absent.
+function byKey(findings) {
+  return [...findings].sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+}
+
 function stableSnapshot(logs) {
   return {
     logs: logs.map((l) => (l.error ? { name: l.name, error: l.error } : {
       name: l.name, stages: l.stages, sqlExecutions: l.sqlExecutions, skippedLines: l.skippedLines,
-      findings: [...l.findings].sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0)),
+      findings: byKey(l.findings),
+      configFindings: byKey(l.configFindings),
+      verdictSteps: l.verdictSteps,
+      evidenceKeys: l.evidenceKeys,
     })),
   };
 }
@@ -164,23 +185,34 @@ function diffSnapshots(snapA, snapB, verbose) {
     const lb = b.get(name);
     if (!lb || la.error || lb.error) continue;
     parseA += la.parseMs ?? 0; parseB += lb.parseMs ?? 0; anA += la.analyzeMs ?? 0; anB += lb.analyzeMs ?? 0;
-    const fa = new Map(la.findings.map((f) => [f.key, f]));
-    const fb = new Map(lb.findings.map((f) => [f.key, f]));
     const lines = [];
-    for (const [k, f] of fa) {
-      if (!fb.has(k)) { totRemoved++; bump(f.type, 'removed'); lines.push(`  - ${f.band.padEnd(8)} ${k}  wc=${fmtMs(f.wcHigh)}`); continue; }
-      const g = fb.get(k);
-      if (f.band !== g.band) { totRebanded++; bump(f.type, 'rebanded'); lines.push(`  ~ ${f.band}->${g.band} ${k}  wc=${fmtMs(f.wcHigh)}->${fmtMs(g.wcHigh)}`); }
-      else if (f.wcHigh !== g.wcHigh || f.wcLow !== g.wcLow || f.value !== g.value || f.method !== g.method || f.basis !== g.basis || JSON.stringify(f.rawWaste) !== JSON.stringify(g.rawWaste) || f.confidence !== g.confidence) {
-        totEst++; bump(f.type, 'est');
-        if (verbose) lines.push(`  = ${k}  wc=[${fmtMs(f.wcLow)},${fmtMs(f.wcHigh)}]->[${fmtMs(g.wcLow)},${fmtMs(g.wcHigh)}] ${f.basis}->${g.basis} conf ${f.confidence}->${g.confidence} value ${f.value}->${g.value} method ${f.method}->${g.method}`);
+    for (const field of ['findings', 'configFindings']) {
+      const before = la[field] ?? [];
+      const after = lb[field] ?? [];
+      const prefix = field === 'configFindings' ? 'config ' : '';
+      const fa = new Map(before.map((f) => [f.key, f]));
+      const fb = new Map(after.map((f) => [f.key, f]));
+      for (const [k, f] of fa) {
+        if (!fb.has(k)) { totRemoved++; bump(f.type, 'removed'); lines.push(`  - ${prefix}${f.band.padEnd(8)} ${k}  wc=${fmtMs(f.wcHigh)}`); continue; }
+        const g = fb.get(k);
+        if (f.band !== g.band) { totRebanded++; bump(f.type, 'rebanded'); lines.push(`  ~ ${prefix}${f.band}->${g.band} ${k}  wc=${fmtMs(f.wcHigh)}->${fmtMs(g.wcHigh)}`); }
+        else if (f.wcHigh !== g.wcHigh || f.wcLow !== g.wcLow || f.value !== g.value || f.method !== g.method || f.basis !== g.basis || JSON.stringify(f.rawWaste) !== JSON.stringify(g.rawWaste) || f.confidence !== g.confidence) {
+          totEst++; bump(f.type, 'est');
+          if (verbose) lines.push(`  = ${prefix}${k}  wc=[${fmtMs(f.wcLow)},${fmtMs(f.wcHigh)}]->[${fmtMs(g.wcLow)},${fmtMs(g.wcHigh)}] ${f.basis}->${g.basis} conf ${f.confidence}->${g.confidence} value ${f.value}->${g.value} method ${f.method}->${g.method}`);
+        }
+      }
+      for (const [k, g] of fb) {
+        if (!fa.has(k)) { totAdded++; bump(g.type, 'added'); lines.push(`  + ${prefix}${g.band.padEnd(8)} ${k}  wc=${fmtMs(g.wcHigh)}`); }
+      }
+      const dupA = before.length - fa.size; const dupB = after.length - fb.size;
+      if (dupA !== dupB) { logChanges++; lines.push(`  ! duplicate-key ${prefix}findings ${dupA} -> ${dupB}`); }
+    }
+    for (const field of ['verdictSteps', 'evidenceKeys']) {
+      if (JSON.stringify(la[field]) !== JSON.stringify(lb[field])) {
+        logChanges++;
+        lines.push(`  ! ${field} ${JSON.stringify(la[field])} -> ${JSON.stringify(lb[field])}`);
       }
     }
-    for (const [k, g] of fb) {
-      if (!fa.has(k)) { totAdded++; bump(g.type, 'added'); lines.push(`  + ${g.band.padEnd(8)} ${k}  wc=${fmtMs(g.wcHigh)}`); }
-    }
-    const dupA = la.findings.length - fa.size; const dupB = lb.findings.length - fb.size;
-    if (dupA !== dupB) { logChanges++; lines.push(`  ! duplicate-key findings ${dupA} -> ${dupB}`); }
     const speed = la.parseMs == null || lb.parseMs == null ? '' : `parse ${la.parseMs.toFixed(0)}->${lb.parseMs.toFixed(0)}ms analyze ${la.analyzeMs.toFixed(0)}->${lb.analyzeMs.toFixed(0)}ms rss ${la.maxRssMB.toFixed(0)}->${lb.maxRssMB.toFixed(0)}MB`;
     if (lines.length || verbose) console.log(`${name}: ${la.findings.length} -> ${lb.findings.length} findings${speed ? `; ${speed}` : ''}`);
     for (const l of lines) console.log(l);

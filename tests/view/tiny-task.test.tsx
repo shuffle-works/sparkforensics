@@ -9,6 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { TinyTask } from '@/view/widgets/TinyTask';
 import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
@@ -17,15 +18,7 @@ function makeAppModel(stageIds: number[]): AppModel {
   const stages = new Map<number, unknown>(
     stageIds.map((id) => [id, { id, name: `sql-scan-${id}`, taskDurationP50: 40, taskDurationP95: 60, taskDurationMax: 90 }]),
   );
-  return {
-    app: null,
-    stages: stages as unknown as AppModel['stages'],
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
-  };
+  return { ...emptyAppModel(), stages: stages as unknown as AppModel['stages'] };
 }
 
 function tinyTaskFinding(stageId: number, value: number): Finding {

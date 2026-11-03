@@ -9,6 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { StageShape } from '@/view/widgets/StageShape';
 import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding, FindingOf, TaskData } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 
@@ -16,15 +17,7 @@ function makeAppModel(stageIds: number[]): AppModel {
   const stages = new Map<number, unknown>(
     stageIds.map((id) => [id, { id, name: `sql-scan-${id}`, taskDurationP50: 100, taskDurationP95: 500, taskDurationMax: 900 }]),
   );
-  return {
-    app: null,
-    stages: stages as unknown as AppModel['stages'],
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
-  };
+  return { ...emptyAppModel(), stages: stages as unknown as AppModel['stages'] };
 }
 
 const RULE_METRIC = { lowParallelism: 'pRatio', dataExplosion: 'oiRatio', taskStageSkew: 'taskStageSkew' } as const;

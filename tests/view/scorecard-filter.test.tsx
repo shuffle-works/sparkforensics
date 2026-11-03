@@ -3,7 +3,8 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import App from '@/App';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';

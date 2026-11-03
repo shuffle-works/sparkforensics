@@ -1,5 +1,6 @@
 import type { AppModel, Finding } from '@sparkforensics/core/types';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { interpretationOf, type InterpretationState } from '@/view/interpretation';
 import { runState } from './run';
 

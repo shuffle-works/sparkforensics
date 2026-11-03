@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { Table, TableBody } from '@/components/ui/table';
 import { computeRunEndSec, formatRunClock, runClockTicks } from '@/view/charts/run-clock';
 import { stepCodes } from '@/view/interpretation';

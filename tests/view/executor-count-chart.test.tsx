@@ -4,7 +4,7 @@ import { test, expect, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel } from '@sparkforensics/core/types';
 
 // Wrap-not-replace: tests still run the real downsample; the memoization test reads its call count.

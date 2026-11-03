@@ -5,19 +5,16 @@ import { Scorecard } from '../../src/view/widgets/Scorecard';
 import { store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testApp, testStage } from './_shared/model';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { makeRun } from './_shared/run';
 import { testFinding } from './_shared/finding';
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return {
+    ...emptyAppModel(),
     app: { startTime: 0, endTime: 60000, sparkVersion: '3.5.3' },
     stages: new Map([[0, testStage({ id: 0, submittedAt: 0, completedAt: 1000 })]]),
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
     ...overrides,
-    evidenceAvailability: overrides.evidenceAvailability ?? null,
   };
 }
 

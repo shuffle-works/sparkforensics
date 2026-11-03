@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { collectRun, emptyAppModel } from '../src/cli/collect-run.ts';
+import { collectRun } from '../src/cli/collect-run.ts';
+import { emptyAppModel } from '../src/run-serialization.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { extractWriteTargets } from '../src/write-targets.ts';
 import { corpusLog } from './corpus-log.js';

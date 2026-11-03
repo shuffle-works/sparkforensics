@@ -7,8 +7,8 @@ import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
 import { store } from '@/store/store';
-import { analyze, auditConfig } from '@sparkforensics/core/analysis';
-import { collectRun } from '@sparkforensics/core/cli';
+import { auditConfig } from '@sparkforensics/core/analysis';
+import { analyzedRunFrom } from '../../packages/core/test/fixtures/analyzed-run.js';
 import { runState } from './_shared/run';
 
 const ROOT = join(__dirname, '..', '..');
@@ -37,8 +37,7 @@ const VIEWS = [
 describe('every opened evidence panel shows evidence', () => {
   it.each(LOGS.flatMap((path) => VIEWS.map((view) => [path, view.name, view.search] as const)))('%s (%s)', async (path, _name, search) => {
     window.history.replaceState({}, '', `/${search}`);
-    const { appModel } = await collectRun(path);
-    const catalog = analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates);
+    const { appModel, catalog } = await analyzedRunFrom(path);
     store.setState({ status: 'ready', widgetDensity: 'basic', ...runState({ appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) }) });
 
     const user = userEvent.setup();

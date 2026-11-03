@@ -5,8 +5,8 @@ import { bandRun, CRITICAL_MIN_TASK_TIME_SHARE, gradeFinding } from '../src/impa
 import { ENTRY_BY_TYPE } from '../src/detectors.ts';
 import { rankedRollup, rankCostMs } from '../src/recommendation-rollup.ts';
 import { buildNextSteps } from '../src/run-verdict.ts';
-import { analyze } from '../src/analyzer.js';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 const HOUR_MS = 3_600_000;
 
@@ -212,7 +212,7 @@ describe('task-hour ranking: plan findings on the execution-wide stage fallback'
     const planTree = { name: 'Project', detail: '', metrics: [], children: [write] };
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 30 * 60_000, stageIds: [1, 2], planTree }]]);
     const stages = new Map([1, 2].map((id) => [id, stage(id, 100, { sqlExecutionId: 1 })]));
-    return analyze(makeApp(), stages, [], [], new Map(), sql).find((f) => f.type === 'smallFiles');
+    return analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.find((f) => f.type === 'smallFiles');
   }
 
   it('gives a smallFiles finding on the fallback no stage task time', () => {
