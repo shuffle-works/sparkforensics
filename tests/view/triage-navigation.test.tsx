@@ -6,13 +6,14 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { StrictMode } from 'react';
 
 import App from '@/App';
-import { emptyAppModel, store } from '@/store/store';
+import { emptyAppModel, selectAppModel, store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { WidgetCard } from '@/view/WidgetCard';
 import { useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { testFinding } from './_shared/finding';
+import { runState } from './_shared/run';
 
 // Conventions shared by the tests below:
 // - Stage Summary (StageTable) lives inside the Full app report tab, so tests select that tab to
@@ -171,6 +172,8 @@ function memoryFinding(stageId: number | null = null): Finding {
     impactBand: 'warning',
     variant: 'idleCores',
     value: 0.7,
+    // The measurement a stated row's evidence panel keeps beside the line that states the figure.
+    allocatedMBSeconds: 3_600_000,
     recommendation: 'Review executor allocation.',
   });
 }
@@ -186,6 +189,7 @@ function memoryBandFinding(executorId: number | string, impactBand: Finding['imp
     variant: 'memoryBand',
     executorId: String(executorId),
     value: 0.9,
+    heap: 900 * 1024 ** 2, allocatedBytes: 1024 ** 3, executorCount: 4,
     recommendation: `Review heap sizing for executor ${executorId}.`,
   });
 }
@@ -285,11 +289,10 @@ function SpillWithAnchoredRows({ catalog }: WidgetProps) {
   );
 }
 
-function renderReady(catalog: Finding[], stageIds: number[] = [], widgetDensity: 'basic' | 'advanced' = 'advanced') {
+function renderReady(catalog: Finding[], stageIds: number[] = [], widgetDensity: 'basic' | 'advanced' = 'advanced', configFindings: Finding[] = []) {
   store.setState({
     status: 'ready',
-    appModel: readyAppModel(stageIds),
-    catalog,
+    ...runState({ appModel: readyAppModel(stageIds), catalog, configFindings }, 'file-a'),
     activeFileId: 'file-a',
     taskDataCache: new Map(),
     errorMessage: null,
@@ -310,8 +313,7 @@ function renderReadyWithRdd(catalog: Finding[], rddInfo: Map<number, unknown>, s
   const model = readyAppModel(stageIds);
   store.setState({
     status: 'ready',
-    appModel: { ...model, app: { ...model.app, rddInfo } as unknown as AppModel['app'] },
-    catalog,
+    ...runState({ appModel: { ...model, app: { ...model.app, rddInfo } as unknown as AppModel['app'] }, catalog }, 'file-a'),
     activeFileId: 'file-a',
     taskDataCache: new Map(),
     errorMessage: null,
@@ -351,6 +353,12 @@ function stepEvidenceButton(index: number): HTMLElement {
 /** The evidence panel's heading inside a verdict step, steps numbered from 0. */
 function stepPanelHeading(index: number, name: string): HTMLElement {
   return within(verdictSteps()[index]).getByRole('heading', { name });
+}
+
+/** The anchored row inside a verdict step's evidence card. The step line states its finding, so the
+ * row leaves out its stage chip and is found by its anchor. */
+function panelRow(card: HTMLElement): HTMLElement | null {
+  return card.querySelector<HTMLElement>('[data-flashed]');
 }
 
 /** A finding's Stage Summary route button, which is in the Full app report tab. */
@@ -486,8 +494,7 @@ test('Strict Mode registration probing preserves a Reference route through commi
   const user = userEvent.setup();
   store.setState({
     status: 'ready',
-    appModel: readyAppModel([1]),
-    catalog: [memoryFinding(1)],
+    ...runState({ appModel: readyAppModel([1]), catalog: [memoryFinding(1)] }, 'file-a'),
     activeFileId: 'file-a',
     taskDataCache: new Map(),
     errorMessage: null,
@@ -529,7 +536,7 @@ test('a route opens only the exact panel of its finding and leaves Full app repo
   // Spill.tsx anchors each row, so routing focuses the row itself
   // rather than the disclosure title; see the anchor-routing tests below.
   const spillCard = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-  const row = within(spillCard).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]');
+  const row = panelRow(spillCard);
   await waitFor(() => expect(document.activeElement).toBe(row));
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'false');
   expect(screen.getByRole('button', { name: /clean checks/i })).toHaveAttribute('aria-expanded', 'false');
@@ -657,7 +664,7 @@ test('latest request wins before commit and stale routes never scroll or move fo
   // rather than the disclosure title; see the anchor-routing tests below.
   const skewTrigger = await screen.findByRole('heading', { name: 'Task Skew' });
   const skewCard = skewTrigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-  const skewRow = within(skewCard).getByRole('button', { name: 'Open details for Stage 2' }).closest('[data-flashed]');
+  const skewRow = panelRow(skewCard);
   await waitFor(() => expect(document.activeElement).toBe(skewRow));
   // The superseded spill route never opened its card.
   expect(screen.queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
@@ -672,7 +679,7 @@ test('catalog replacement cancels a pending route without scrolling or moving fo
 
   act(() => {
     initiator.click();
-    store.setState({ catalog: [] });
+    store.setState(runState({ appModel: selectAppModel(store.getState()), catalog: [] }, 'file-a'));
   });
 
   expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
@@ -687,7 +694,8 @@ test('active-file replacement cancels a pending route without scrolling or movin
 
   act(() => {
     initiator.click();
-    store.setState({ activeFileId: 'file-b' });
+    // Another run takes over the dashboard under its own key.
+    store.setState({ activeFileId: 'file-b', runKey: 'file-b' });
   });
 
   expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
@@ -718,7 +726,7 @@ test('Stage Summary routes a duplicate-tuple second occurrence with Enter and Sp
   const skewRow = () => {
     const skewTrigger = screen.getByRole('heading', { name: 'Task Skew' });
     const skewCard = skewTrigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-    return within(skewCard).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]');
+    return panelRow(skewCard);
   };
 
   await user.click(screen.getByRole('tab', { name: 'Full app report' }));
@@ -751,8 +759,10 @@ test('a step\'s panel shows only the stage of its own finding', async () => {
   const trigger = await screen.findByRole('heading', { name: 'Task Skew' });
   const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]');
   if (!card) throw new Error('Task Skew should remain inside its registered grid item');
-  expect(within(card).getAllByRole('button', { name: /open details for stage/i }).map((button) => button.getAttribute('aria-label')))
-    .toEqual(['Open details for Stage 9']);
+  // The step line states its finding, so the panel's row carries no stage chip: it names its stage by the stage's own name.
+  expect(card.querySelectorAll('[data-flashed]')).toHaveLength(1);
+  expect(card).toHaveTextContent('stage-9');
+  expect(card).not.toHaveTextContent('stage-2');
   expect(stepEvidenceButton(0)).toHaveAttribute('aria-expanded', 'false');
 });
 
@@ -768,10 +778,12 @@ test('each step of a type opens its own evidence panel without routing, and both
   expect(stepEvidenceButton(0)).toHaveAttribute('aria-expanded', 'true');
   expect(stepEvidenceButton(1)).toHaveAttribute('aria-expanded', 'true');
   // Each panel holds only the stage of the step it sits under.
-  const stageButtons = (index: number) => within(stepPanelHeading(index, 'Task Skew').closest('section') as HTMLElement)
-    .getAllByRole('button', { name: /open details for stage/i }).map((button) => button.getAttribute('aria-label'));
-  expect(stageButtons(0)).toEqual(['Open details for Stage 2']);
-  expect(stageButtons(1)).toEqual(['Open details for Stage 9']);
+  const panel = (index: number) => stepPanelHeading(index, 'Task Skew').closest('section') as HTMLElement;
+  for (const [index, stage] of [[0, 'stage-2'], [1, 'stage-9']] as const) {
+    expect(panel(index).querySelectorAll('[data-flashed]')).toHaveLength(1);
+    expect(panel(index)).toHaveTextContent(stage);
+    expect(panel(index)).not.toHaveTextContent(stage === 'stage-2' ? 'stage-9' : 'stage-2');
+  }
   expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
 });
 
@@ -836,7 +848,7 @@ test.each<{
 
     const trigger = stepPanelHeading(1, heading);
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-    const row = within(card).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]') as HTMLElement;
+    const row = panelRow(card) as HTMLElement;
     expect(document.activeElement).toBe(row);
     expect(row).toHaveAttribute('data-flashed', 'true');
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
@@ -947,15 +959,17 @@ test('activeRouteTarget reflects the pending route while unresolved, and clears 
   act(() => initiator.click());
   expect(screen.getByTestId('active-target')).toHaveTextContent('spill');
 
-  // Active-file replacement cancels the pending route (existing cancellation
-  // path, see "active-file replacement cancels a pending route..." above);
-  // activeRouteTarget must clear along with it. (Clearing the catalog instead
+  // Another run replacing the dashboard cancels the pending route (the dashboard remounts under the
+  // new run's key, see "active-file replacement cancels a pending route..." above); the new
+  // dashboard starts with no active target, so its step's card is opened again to read it. (Clearing the catalog instead
   // would also drop the spill finding's impact band, unmounting this widget via
   // Alerts's active/clean split, a confound unrelated to what's under test.)
   act(() => {
-    store.setState({ activeFileId: 'file-b' });
+    store.setState({ activeFileId: 'file-b', runKey: 'file-b' });
   });
-  expect(screen.getByTestId('active-target')).toHaveTextContent('none');
+  await waitForDashboard();
+  act(() => stepEvidenceButton(1).click());
+  expect(await screen.findByTestId('active-target')).toHaveTextContent('none');
 });
 
 // ShuffleIO renders every flagged stage's `StagePill` a second time in its
@@ -988,7 +1002,7 @@ test('a real ShuffleIO.tsx row (Task 6) is anchor-routable: focus and the flash 
     });
 
     const trigger = stepPanelHeading(1, 'Shuffle I/O');
-    const row = findShuffleRow(1) as HTMLElement;
+    const row = panelRow(trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement) as HTMLElement;
     expect(document.activeElement).toBe(row);
     expect(row).toHaveAttribute('data-flashed', 'true');
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
@@ -1113,7 +1127,7 @@ test.each<{
 
     const trigger = stepPanelHeading(1, heading);
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-    const row = within(card).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]') as HTMLElement;
+    const row = panelRow(card) as HTMLElement;
     expect(row).not.toBeNull();
     expect(document.activeElement).toBe(row);
     expect(row).toHaveAttribute('data-flashed', 'true');
@@ -1517,8 +1531,7 @@ test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row'
     impactBand: 'critical', recommendation: 'Lead setting.', impactEstimate: leadSaving,
   });
   try {
-    store.setState({ configFindings: [lead, finding, other] });
-    renderReady([]);
+    renderReady([], [], 'advanced', [lead, finding, other]);
     await waitForDashboard();
     await openGroupEvidence('configAudit');
     await screen.findByRole('heading', { name: 'Config Audit' });
@@ -1538,7 +1551,7 @@ test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row'
     await waitFor(() => expect(document.activeElement).toBe(row));
     expect(row).toHaveAttribute('data-flashed', 'true');
   } finally {
-    store.setState({ configFindings: [] });
+    store.getState().resetModel();
   }
 });
 
@@ -1634,7 +1647,7 @@ test('in Basic view a route to a step\'s folded evidence opens it and lands on i
 
   const trigger = await screen.findByRole('heading', { name: 'Spill' });
   const spillCard = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-  const row = within(spillCard).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]');
+  const row = panelRow(spillCard);
   await waitFor(() => expect(document.activeElement).toBe(row));
   // The evidence stays open once the route has completed.
   expect(stepEvidenceButton(1)).toHaveAttribute('aria-expanded', 'true');

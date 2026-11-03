@@ -3,9 +3,9 @@ import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Scorecard } from '../../src/view/widgets/Scorecard';
 import { store } from '@/store/store';
-import { interpretRun } from '@sparkforensics/core/analysis';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testApp, testStage } from './_shared/model';
+import { makeRun } from './_shared/run';
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return {
@@ -22,7 +22,7 @@ function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
 
 // The tiles render the run's interpretation (figures and flags), computed as the live app does.
 function scorecardProps(appModel: AppModel, catalog: Finding[]) {
-  return { interpretation: interpretRun(appModel, catalog, []), catalog };
+  return { interpretation: makeRun({ appModel, catalog }).interpretation, catalog };
 }
 
 test('renders the wall-clock and efficiency KPI labels', () => {

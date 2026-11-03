@@ -57,22 +57,3 @@ test('popstate re-applies filters from the restored URL', () => {
   expect(screen.getByTestId('impact').textContent).toBe('warning');
 });
 
-test('changing fileId clears the selection (a new file is a fresh investigation)', async () => {
-  const user = userEvent.setup();
-  const { rerender } = render(
-    <FindingFilterProvider options={OPTIONS} fileId="file-A"><Probe /></FindingFilterProvider>,
-  );
-
-  await user.click(screen.getByText('toggle-critical'));
-  expect(screen.getByTestId('impact').textContent).toBe('critical');
-  expect(window.location.search).toBe('?impact=critical');
-
-  rerender(<FindingFilterProvider options={OPTIONS} fileId="file-B"><Probe /></FindingFilterProvider>);
-  expect(screen.getByTestId('impact').textContent).toBe(''); // reset on file switch
-  expect(window.location.search).toBe(''); // and its params stripped
-
-  // Same file re-render (e.g. a catalog refresh) must NOT clear an active filter.
-  await user.click(screen.getByText('toggle-critical'));
-  rerender(<FindingFilterProvider options={OPTIONS} fileId="file-B"><Probe /></FindingFilterProvider>);
-  expect(screen.getByTestId('impact').textContent).toBe('critical');
-});

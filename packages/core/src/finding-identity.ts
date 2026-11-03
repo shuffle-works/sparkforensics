@@ -18,19 +18,35 @@ export function findingBand(finding: Finding): string {
   return finding.impactBand ?? 'unknown';
 }
 
-// Location: stage, else SQL execution, else audited config property, else the whole run.
-function findingLocation(finding: Finding, locator: FindingLocator): string {
-  if (finding.stageId != null) return `stage:${locator.stage(finding.stageId)}`;
-  if ('executionId' in finding && typeof finding.executionId === 'number') return `execution:${locator.execution(finding.executionId)}`;
-  if (finding.type === 'configAudit') return `property:${finding.property}`;
-  return 'run';
+/** Where a finding sits in its run: a stage, else a SQL execution, else an audited config property,
+ * else the whole run. The one rule both a finding's id within a run and its key across two runs read. */
+export type FindingLocation =
+  | { scope: 'stage'; stageId: number }
+  | { scope: 'execution'; executionId: number }
+  | { scope: 'property'; property: string }
+  | { scope: 'run' };
+
+export function findingLocation(finding: Finding): FindingLocation {
+  if (finding.stageId != null) return { scope: 'stage', stageId: finding.stageId };
+  if ('executionId' in finding && typeof finding.executionId === 'number') return { scope: 'execution', executionId: finding.executionId };
+  if (finding.type === 'configAudit') return { scope: 'property', property: finding.property };
+  return { scope: 'run' };
+}
+
+function locationLabel(location: FindingLocation, locator: FindingLocator): string {
+  switch (location.scope) {
+    case 'stage': return `stage:${locator.stage(location.stageId)}`;
+    case 'execution': return `execution:${locator.execution(location.executionId)}`;
+    case 'property': return `property:${location.property}`;
+    case 'run': return 'run';
+  }
 }
 
 /** The identity of a finding across two runs: its type, rule and location. Never its value or its
  * impact band, which both move from run to run for the same problem (`findingId` hashes the value,
  * so it matches only within one run). */
 export function findingKey(finding: Finding, locator: FindingLocator): string {
-  return `${finding.type}|${findingRule(finding)}|${findingLocation(finding, locator)}`;
+  return `${finding.type}|${findingRule(finding)}|${locationLabel(findingLocation(finding), locator)}`;
 }
 
 export interface FindingDiff {

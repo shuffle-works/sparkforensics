@@ -13,7 +13,7 @@ const getTaskData = async (): Promise<TaskData> => ({ metrics: [], fieldNames: [
 // widget's own order, which is what the order tests read.
 function renderCachingOpportunity(catalog: Finding[], defaultCollapsed = false, interpreted = true) {
   if (interpreted) installInterpretation(catalog);
-  else store.getState().setInterpretation(null);
+  else store.setState({ run: null, runKey: null });
   return render(
     <StageDetailProvider>
       <CachingOpportunity appModel={emptyAppModel()} catalog={catalog} getTaskData={getTaskData} defaultCollapsed={defaultCollapsed} />

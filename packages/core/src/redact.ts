@@ -10,7 +10,10 @@
 // Deterministic (sorted assignment), idempotent (pseudonyms map to themselves),
 // and non-mutating (returns a fresh, deep-copied tree).
 
-import { decodeCollections, encodeCollections, type ExportRunData } from './export-data.ts';
+import { NO_TASK_DATA, type AnalyzedRun } from './analyzed-run.ts';
+import { decodeCollections, encodeCollections } from './export-data.ts';
+import { interpretRun } from './run-interpretation.ts';
+import { deserializeModel, FIELDS, serializeModel, type SerializedRun } from './run-serialization.ts';
 import type { AppModel, Finding } from './types.ts';
 import { isDetectorConfKey, REDACTED_CONF_VALUE } from './spark-conf.ts';
 import { REDACTED_TEXT, redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
@@ -308,7 +311,7 @@ export function redactComparison<T>(comparison: T): T {
 // HTML-export counterpart to redactReport/redactComparison. Unlike
 // redactReport, this also walks executors.added/removed for their literal
 // `host` field, since raw executor records reach the export, not just findings.
-type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'> & {
+type RunTree = Pick<SerializedRun, 'app' | 'executors' | 'catalog' | 'configFindings'> & {
   // Each stage's `hostStats[].host` names a host with no executor or finding record.
   stages?: unknown[];
   // Each SQL execution carries the session settings it ran with (`modifiedConfigs`), which can hold
@@ -357,43 +360,32 @@ function redactRunTree<T extends RunTree>(input: T): T {
   return { ...out, app: { ...app, config: { ...app.config, 'spark.app.name': app.id ?? '' } } };
 }
 
+/** The fields of a serialized run that `FIELDS` marks `redact`. */
+function redactedFields<T extends object>(serialized: T): Partial<T> {
+  return Object.fromEntries(Object.entries(serialized).filter(([key]) => FIELDS[key as keyof SerializedRun].redaction === 'redact')) as Partial<T>;
+}
+
 /** A run's model and findings with every identifier pseudonymized. Redact this before anything derives
  * text from the run: the verdict truncates Spark's failure reason, and an
- * identifier cut by that truncation is a fragment no later pass can match. */
+ * identifier cut by that truncation is a fragment no later pass can match. Each field follows its
+ * policy in `FIELDS`: `redact` fields are pseudonymized and `keep` fields are counts and ids that
+ * pass through. */
 export function redactRunModel(
   appModel: AppModel,
   catalog: Finding[],
   configFindings: Finding[],
 ): { appModel: AppModel; catalog: Finding[]; configFindings: Finding[] } {
+  const serialized = { ...serializeModel(appModel), catalog, configFindings };
   // Maps and Sets would lose their entries in the deep copy, so they cross as
   // tagged plain objects, the way the export payload carries them.
-  const tree = encodeCollections({
-    app: appModel.app,
-    stages: [...appModel.stages.values()],
-    jobs: [...appModel.jobs.values()],
-    sql: [...appModel.sql.values()],
-    executors: appModel.executors,
-    runAggregates: appModel.runAggregates,
-    evidenceAvailability: appModel.evidenceAvailability,
-    catalog,
-    configFindings,
-  }) as RunTree & { stages: unknown[]; jobs: unknown[]; sql: unknown[]; runAggregates: unknown; evidenceAvailability: unknown };
-  const redacted = decodeCollections(redactRunTree(tree)) as typeof tree;
-  const byId = <V extends { id: number }>(items: unknown[]) => new Map((items as V[]).map((item) => [item.id, item]));
-  return {
-    appModel: {
-      app: redacted.app,
-      stages: byId(redacted.stages),
-      jobs: byId(redacted.jobs),
-      sql: byId(redacted.sql),
-      executors: redacted.executors,
-      runAggregates: redacted.runAggregates as AppModel['runAggregates'],
-      evidenceAvailability: redacted.evidenceAvailability as AppModel['evidenceAvailability'],
-      // Counts and execution ids, nothing to pseudonymize.
-      skippedLines: appModel.skippedLines,
-      unreadableSqlExecutions: appModel.unreadableSqlExecutions,
-    } as AppModel,
-    catalog: redacted.catalog,
-    configFindings: redacted.configFindings,
-  };
+  const redacted = decodeCollections<Partial<typeof serialized>>(redactRunTree(encodeCollections(redactedFields(serialized)) as RunTree));
+  const merged = { ...serialized, ...redacted };
+  return { appModel: deserializeModel(merged), catalog: merged.catalog, configFindings: merged.configFindings };
+}
+
+/** The run with every identifier pseudonymized and its interpretation derived from the redacted
+ * findings. Task data is dropped: raw task records are never redacted. */
+export function redactRun(run: AnalyzedRun): AnalyzedRun {
+  const { appModel, catalog, configFindings } = redactRunModel(run.appModel, run.catalog, run.configFindings);
+  return { appModel, catalog, configFindings, interpretation: interpretRun(appModel, catalog, configFindings), taskData: NO_TASK_DATA };
 }

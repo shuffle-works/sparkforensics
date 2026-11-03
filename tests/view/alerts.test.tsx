@@ -5,9 +5,10 @@ import userEvent from '@testing-library/user-event';
 import { CleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { detectorInfoByType, interpretRun } from '@sparkforensics/core/analysis';
+import { detectorInfoByType } from '@sparkforensics/core/analysis';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
+import { makeRun } from './_shared/run';
 
 function skewFinding(stageId: number, impactBand: ImpactBand): Finding {
   return testFinding({ type: 'skew', stageId, impactBand, metric: 'P95/median', value: 5, recommendation: `Rebalance Stage ${stageId}.` });
@@ -69,7 +70,7 @@ describe('Clean checks on a log that could not be fully checked', () => {
     const activeTypes = new Set(computeActiveWidgets(catalog, [], DETECTORS, appModel, 'basic').map((widget) => widget.type));
     render(
       <DocsProvider>
-        <CleanChecks activeTypes={activeTypes} coverage={interpretRun(appModel, catalog, []).coverage} detectors={DETECTORS} />
+        <CleanChecks activeTypes={activeTypes} coverage={makeRun({ appModel, catalog }).interpretation.coverage} detectors={DETECTORS} />
       </DocsProvider>,
     );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Clean checks' }));

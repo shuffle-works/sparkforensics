@@ -7,8 +7,8 @@ import { findingActionLabel, findingName } from '@sparkforensics/core/view-model
 import { DocsWidgetApp } from '@/docs-widget/DocsWidgetApp';
 import { followHostTheme, hostTheme, reportHeight } from '@/docs-widget/host';
 import { loadExportPayload } from '@/export/hydrate-store';
-import { store } from '@/store/store';
-import { eligibleFindings, findingAt } from '@/view/interpretation';
+import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
+import { eligibleFindings, findingById, interpretationOf } from '@/view/interpretation';
 import { evidencePlacement } from '@/view/evidence-placement';
 import { verdictEvidenceOwners } from '@/view/verdict-evidence';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
@@ -42,7 +42,8 @@ afterEach(() => vi.restoreAllMocks());
 // Every docs page frames this app for its type: the page must show the finding the example names.
 test.each(Object.entries(examples))('%s: shows its example finding from the committed run', async (_type, example) => {
   expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
-  const { catalog, configFindings } = store.getState();
+  const catalog = selectCatalog(store.getState());
+  const configFindings = selectConfigFindings(store.getState());
   const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
   expect(finding).toBeDefined();
 
@@ -62,11 +63,13 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   // offers the evidence control, opened, exactly when the check keeps a row beyond it; a finding shown
   // by its card alone needs the check to keep a row, or the page would show nothing. Either way the
   // panel has evidence under its title, and no control routes away from the page.
-  const { appModel, interpretation, widgetDensity } = store.getState();
+  const { run, widgetDensity } = store.getState();
+  const appModel = selectAppModel(store.getState());
+  const interpretation = interpretationOf(run!);
   const isLine = eligibleFindings(interpretation).includes(finding)
-    || interpretation!.data.verdict.steps.some((step) => findingAt(interpretation!, step.leadIndex) === finding);
+    || interpretation.data.verdict.steps.some((step) => findingById(interpretation, step.leadId) === finding);
   // A type the dashboard mounts no card for (the always-mounted reference tile) has no panel here either.
-  const hasWidget = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity)
+  const hasWidget = computeActiveWidgets(catalog, configFindings, interpretation.data.detectors, appModel, widgetDensity)
     .some((widget) => widget.type === finding.type);
   const kept = hasWidget ? keptRows(finding.type, [finding], isLine ? [example.finding.id] : [], { density: widgetDensity, appModel }) : [];
   expect(screen.queryByRole('button', { name: /show evidence/i })).toBeNull();
@@ -89,11 +92,16 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
 // row or a card. A placement of none would leave the page with an empty frame.
 test.each(Object.entries(examples))('%s: the dashboard places its example finding', (_type, example) => {
   expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
-  const { appModel, catalog, configFindings, interpretation, widgetDensity } = store.getState();
+  const state = store.getState();
+  const appModel = selectAppModel(state);
+  const catalog = selectCatalog(state);
+  const configFindings = selectConfigFindings(state);
+  const interpretation = interpretationOf(state.run!);
+  const { widgetDensity } = state;
   const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
-  const widgets = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity);
+  const widgets = computeActiveWidgets(catalog, configFindings, interpretation.data.detectors, appModel, widgetDensity);
 
-  const placement = evidencePlacement(interpretation!, finding, new Set(widgets.map((widget) => widget.widgetId)));
+  const placement = evidencePlacement(interpretation, finding, new Set(widgets.map((widget) => widget.widgetId)));
 
   expect(placement.kind).not.toBe('none');
 });
@@ -104,15 +112,20 @@ test.each(Object.entries(examples))('%s: the dashboard places its example findin
 test('a step led by a finding with no board card offers no evidence control', async () => {
   const example = examples.coreLocality;
   expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
-  const { appModel, catalog, configFindings, interpretation, widgetDensity } = store.getState();
+  const state = store.getState();
+  const appModel = selectAppModel(state);
+  const catalog = selectCatalog(state);
+  const configFindings = selectConfigFindings(state);
+  const interpretation = interpretationOf(state.run!);
+  const { widgetDensity } = state;
   const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
   const available = new Set(
-    computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity).map((widget) => widget.widgetId),
+    computeActiveWidgets(catalog, configFindings, interpretation.data.detectors, appModel, widgetDensity).map((widget) => widget.widgetId),
   );
-  const placement = evidencePlacement(interpretation!, finding, available);
+  const placement = evidencePlacement(interpretation, finding, available);
   expect(placement).toMatchObject({ kind: 'step', widgetId: null });
   if (placement.kind !== 'step') return;
-  expect(verdictEvidenceOwners(interpretation!, available).has(placement.index)).toBe(false);
+  expect(verdictEvidenceOwners(interpretation, available).has(placement.index)).toBe(false);
 
   render(<DocsWidgetApp findingId={example.finding.id} />);
 

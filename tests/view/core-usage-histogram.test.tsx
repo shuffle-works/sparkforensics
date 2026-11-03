@@ -8,6 +8,7 @@ import { gatherTaskIntervals } from '@/view/core-usage-histogram-data';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, TaskData } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
+import { runState } from './_shared/run';
 
 const FIELD_NAMES = [
   'duration',
@@ -183,14 +184,14 @@ test('does not fetch task data while collapsed, fetches once expanded, and does 
   expect(getTaskData).toHaveBeenCalledTimes(1);
 });
 
-test('shows an honest export-mode message instead of fetching task data', async () => {
+test('shows an honest message instead of fetching task data when the run has none', async () => {
   const user = userEvent.setup();
   const appModel = buildAppModel([1]);
   const getTaskData = vi.fn(async (): Promise<TaskData> => ({
     metrics: taskArray(0, 1000),
     fieldNames: FIELD_NAMES,
   }));
-  store.setState({ exportMode: true });
+  store.setState(runState({ taskData: { kind: 'none' } }));
 
   render(
     <DocsProvider>
@@ -199,7 +200,7 @@ test('shows an honest export-mode message instead of fetching task data', async 
   );
   await user.click(screen.getByRole('button', { name: /core-usage distribution/i }));
 
-  expect(await screen.findByText(/isn.t included in exported reports/i)).toBeInTheDocument();
+  expect(await screen.findByText(/isn.t available for this run/i)).toBeInTheDocument();
   expect(getTaskData).not.toHaveBeenCalled();
-  store.setState({ exportMode: false });
+  store.getState().resetModel();
 });

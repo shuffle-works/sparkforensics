@@ -1,8 +1,8 @@
 // The interpretation layer of a run as plain data: the verdict, which checks could not run and
 // why, every finding's formatted savings, and the run-shape figures. Everything here can change
 // the conclusion about a run, so it is computed once, by the core that ran the detectors, and
-// handed to the renderer as data. The live dashboard (useIngest) and both HTML-export producers
-// (html-export.ts) call `interpretRun`; the exported bundle only renders what it carries, so an
+// handed to the renderer as data. `analyzeRun` calls `interpretRun` for every surface, and `redactRun`
+// calls it again over the redacted findings; the exported bundle only renders what it carries, so an
 // exported file shows the conclusions of the core that wrote it, not of the core that opens it.
 import { checkCoverage, hasFinishedStage, verdictGaps } from './check-coverage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
@@ -44,10 +44,10 @@ export interface FindingSavings {
   provenance: string | null;
 }
 
-/** One verdict step, fully worded. `leadIndex` names the finding the step routes to. */
+/** One verdict step, fully worded. `leadId` names the finding the step routes to. */
 export interface InterpretedStep {
   key: string;
-  leadIndex: number;
+  leadId: string;
   stageId: number | null;
   /** The other finding types flagged at the same location. */
   relatedTypes: string[];
@@ -59,9 +59,9 @@ export interface InterpretedStep {
 }
 
 /** One cost-lane entry: a finding ranked by the busy core time its fix removes.
- * `leadIndex` names the finding. */
+ * `leadId` names the finding. */
 export interface InterpretedCostStep {
-  leadIndex: number;
+  leadId: string;
   stageId: number | null;
   /** The core time as printed ("2.3 core-h"). */
   figure: string;
@@ -119,7 +119,7 @@ export interface CoreLocalityData {
 
 /** A stage's findings as the stage dialog lists them, in the verdict's step order. */
 export interface StageFindingsData {
-  findingIndexes: number[];
+  findingIds: string[];
   /** Finding types in "start with the first" order; types the verdict cannot route follow. */
   typeOrder: string[];
 }
@@ -129,21 +129,20 @@ export interface StageFindingsData {
  * figure. */
 export interface RollupGroupData extends Omit<RankedRollupGroup, 'members'> {
   /** Members, representative first. */
-  memberIndexes: number[];
+  memberIds: string[];
 }
 
 /** The unfiltered Findings board: which findings it lists and its groups in fix-first order. */
 export interface RollupData {
-  eligibleIndexes: number[];
+  eligibleIds: string[];
   groups: RollupGroupData[];
 }
 
-/** Findings are referred to by index into the run's findings in catalog-then-config order
- * (`[...catalog, ...configFindings]`), the order both producers pass them in: no copies, so a
- * renderer resolves them to the very objects it already holds. */
+/** Findings are referred to by their `id`, which is unique across a run's catalog and config
+ * findings, so the order the findings are held in never matters to a reader. */
 export interface RunInterpretation {
-  /** Parallel to the findings: each one's formatted savings. */
-  savings: FindingSavings[];
+  /** Each finding's formatted savings, keyed by finding id. */
+  savings: Record<string, FindingSavings>;
   verdict: RunVerdictData;
   coverage: CoverageData;
   runShape: RunShapeData;
@@ -160,8 +159,8 @@ export interface RunInterpretation {
   coreLocality: CoreLocalityData;
   /** Per finding type: widget order, doc anchor and clean-check criterion. */
   detectors: Record<string, DetectorInfo>;
-  /** Every rankable finding's index, in `rankBySavings` order. */
-  savingsRank: number[];
+  /** Every rankable finding's id, in `rankBySavings` order. */
+  savingsRank: string[];
   /** Keyed by stage id, for stages with at least one finding. */
   stages: Record<string, StageFindingsData>;
   rollup: RollupData;
@@ -226,7 +225,7 @@ function interpretCoverage(appModel: AppModel, allFindings: Finding[]): Coverage
 // The stage dialog's grouping: the verdict's location rule (a sql-scope finding touching only
 // this stage counts), ordered by the stage's own verdict step, then by worst band.
 function interpretStages(
-  catalog: Finding[], indexOf: Map<Finding, number>, failedJobStageIds: ReadonlySet<number> | null,
+  catalog: Finding[], failedJobStageIds: ReadonlySet<number> | null,
 ): Record<string, StageFindingsData> {
   const byStage = new Map<number, Finding[]>();
   for (const finding of catalog) {
@@ -244,17 +243,21 @@ function interpretStages(
     const otherTypes = [...new Set(findings.map((f) => f.type))]
       .filter((type) => !stepTypes.includes(type))
       .sort((a, b) => worstBand(a) - worstBand(b));
-    stages[String(stageId)] = { findingIndexes: findings.map((f) => indexOf.get(f)!), typeOrder: [...stepTypes, ...otherTypes] };
+    stages[String(stageId)] = { findingIds: findings.map(idOf), typeOrder: [...stepTypes, ...otherTypes] };
   }
   return stages;
 }
 
 const DISPLAY_TYPES: ReadonlySet<string> = new Set(FINDING_DISPLAY_ORDER);
 
+function idOf(finding: Finding): string {
+  if (finding.id == null) throw new Error(`A ${finding.type} finding has no id; interpretRun needs the findings analyze() and auditConfig() return.`);
+  return finding.id;
+}
+
 /** Every conclusion the dashboard shows about a run whose detectors already ran. */
 export function interpretRun(appModel: AppModel, catalog: Finding[], configFindings: Finding[]): RunInterpretation {
   const allFindings = [...catalog, ...configFindings];
-  const indexOf = new Map(allFindings.map((finding, index) => [finding, index]));
   const verdict = buildRunVerdict(appModel, allFindings);
   const { outcome } = verdict;
   const failed = outcome.failedJobs > 0;
@@ -264,7 +267,7 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
     const quoted = quotesReasonOf(step.lead, outcome) && outcome.reason ? quotedReasonText(outcome.reason) : null;
     return {
       key: step.key,
-      leadIndex: indexOf.get(step.lead)!,
+      leadId: idOf(step.lead),
       stageId: step.stageId,
       relatedTypes: step.related.map((f) => f.type),
       recommendation: quoted?.shown ?? recommendationText(step.lead),
@@ -272,7 +275,7 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
     };
   });
   return {
-    savings: allFindings.map(findingSavings),
+    savings: Object.fromEntries(allFindings.map((finding) => [idOf(finding), findingSavings(finding)])),
     verdict: {
       title: verdict.title,
       summary: verdict.summary,
@@ -281,7 +284,7 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
       failureReason: outcome.reason,
       steps,
       costSteps: verdict.costLane.map(({ finding, figure }) => ({
-        leadIndex: indexOf.get(finding)!,
+        leadId: idOf(finding),
         stageId: singleStageId(finding),
         figure,
       })),
@@ -301,12 +304,12 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
       ratio: computeCoreLocalityRatio([...appModel.stages.values()], { topN: Infinity }),
     },
     detectors: detectorInfoByType(),
-    savingsRank: rankBySavings(allFindings).map((finding) => indexOf.get(finding)!),
-    stages: interpretStages(catalog, indexOf, failed ? outcome.failedJobStageIds : null),
+    savingsRank: rankBySavings(allFindings).map(idOf),
+    stages: interpretStages(catalog, failed ? outcome.failedJobStageIds : null),
     rollup: {
-      eligibleIndexes: eligible.map((finding) => indexOf.get(finding)!),
+      eligibleIds: eligible.map(idOf),
       groups: rankedRollup(eligible, appModel.stages)
-        .map(({ members, ...group }) => ({ ...group, memberIndexes: members.map((finding) => indexOf.get(finding)!) })),
+        .map(({ members, ...group }) => ({ ...group, memberIds: members.map(idOf) })),
     },
   };
 }

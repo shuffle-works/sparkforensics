@@ -3,8 +3,7 @@ import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatDuration, simulateScaling, hasUsableRunAggregates } from '@sparkforensics/core/view-model';
 import type { AppModel } from '@sparkforensics/core/types';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { useInterpretation } from '@/view/interpretation';
-import type { InterpretationState } from '@/store/store';
+import { useInterpretation, type InterpretationState } from '@/view/interpretation';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
 import { DocsLink } from '../DocsContext';

@@ -2,8 +2,10 @@
 // server share. It re-exports and holds no code of its own. The HTML export bundle never reaches
 // it (scripts/export-analysis-guard.mjs); what the export shows comes through `view-model` and
 // `export`.
+export * from './analyzed-run.ts';
 export * from './analyzer.ts';
 export * from './comparability.ts';
+export * from './compared-run.ts';
 export * from './comparison-output.ts';
 export * from './comparison-verdict.ts';
 export * from './core-locality-ratio.ts';

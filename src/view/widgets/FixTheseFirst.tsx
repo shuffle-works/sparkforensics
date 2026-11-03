@@ -16,7 +16,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { boardRollup, useFindingSavings, useStepCodes, type BoardGroup } from '@/view/interpretation';
 import { StepCode } from '@/view/StepCode';
-import type { InterpretationState } from '@/store/store';
+import type { InterpretationState } from '@/view/interpretation';
 import { RowPagination } from '@/view/RowPagination';
 import type { AnyEvidencePanel } from '@/view/evidence-panel';
 import { InlineEvidence, useEvidenceOpen, useEvidencePanel, useRouteLanding } from '@/view/InlineEvidence';

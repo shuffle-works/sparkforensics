@@ -15,8 +15,8 @@ export {
 export { loadThresholdOverrides } from './cli/threshold-config.ts';
 export { resolveFromShs } from './shs-load.ts';
 export { validateShsRequest } from './shs-request.js';
-export { deriveEvidenceAvailability } from './evidence-availability.ts';
-export { buildEvidenceReport, runFindings, toFindingsFilter } from './evidence-report.ts';
+export { analyzeRun } from './analyzed-run.ts';
+export { buildEvidenceReport, toFindingsFilter } from './evidence-report.ts';
 export { renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND } from './run-comparison.ts';
 export { buildComparisonOutput } from './comparison-output.ts';
 export { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';

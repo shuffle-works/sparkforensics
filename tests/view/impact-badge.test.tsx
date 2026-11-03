@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { test, expect } from 'vitest';
+import { test, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TagBadge, ImpactDot, Chip } from '../../src/view/ImpactBadge';
 import { store } from '../../src/store/store';
+import { runState } from './_shared/run';
+
+// The badge reads the doc anchors of its finding type from the installed run's interpretation.
+beforeEach(() => store.setState(runState()));
 
 test('renders ALL-CAPS tag with no emoji', () => {
   render(<TagBadge type="spill" impactBand="critical" />);

@@ -2,15 +2,15 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
-import { store, emptyAppModel } from '@/store/store';
+import { store } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import type { RunSource } from '@/store/useIngest';
 import * as recentFiles from '@sparkforensics/core/browser';
 
 // Lets a test make the analysis step throw, as it would on odd log data.
 const analysis = vi.hoisted(() => ({ failWith: null as Error | null }));
-vi.mock('@sparkforensics/core/analysis', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@sparkforensics/core/analysis')>();
+vi.mock('@core-src/analyzer.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@core-src/analyzer.ts')>();
   return {
     ...actual,
     analyze: (...args: Parameters<typeof actual.analyze>) => {
@@ -43,7 +43,7 @@ beforeEach(() => {
   analysis.failWith = null;
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   store.getState().resetModel();
-  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel(), compareSeed: null });
+  store.setState({ sessionCache: new Map(), activeFileId: null, compareSeed: null });
 });
 
 afterEach(() => vi.restoreAllMocks());

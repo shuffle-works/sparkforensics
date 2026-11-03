@@ -130,6 +130,7 @@ function AppRoutes() {
   const errorMessage = useStore((s) => s.errorMessage);
   const errorNonce = useStore((s) => s.errorNonce);
   const shsParsing = useStore((s) => s.shsParsing);
+  const runKey = useStore((s) => s.runKey);
   const { cancelParse } = useIngest();
   const planGraphActive = useStore((s) => s.planGraph.active);
   const comparisonActive = useStore((s) => s.comparison.active);
@@ -155,7 +156,7 @@ function AppRoutes() {
           </p>
         }
       >
-        <DashboardRoute />
+        <DashboardRoute key={runKey} />
       </Suspense>
     );
   }

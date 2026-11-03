@@ -25,10 +25,6 @@ export function constantCountSentence(counts: readonly number[], executorCount: 
 
 export type ExecutorCountChartProps = {
   appModel: AppModel;
-  // Switching to a cached recent file mutates appModel's fields in place
-  // rather than replacing the object, so this is a required memo key
-  // alongside appModel.
-  activeFileId?: string | null;
 };
 
 interface ExecutorSeries {
@@ -75,7 +71,7 @@ export function ExecutorCountTooltip({ active, payload, label }: { active?: bool
   );
 }
 
-export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, activeFileId }: ExecutorCountChartProps) {
+export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel }: ExecutorCountChartProps) {
   const { chartData, sampled, hasSeries, peak, constantSentence } = useMemo(() => {
     const { times, counts } = computeExecutorSeries(appModel);
     const chartData = times.map((label, i) => ({ label, count: counts[i] }));
@@ -83,7 +79,7 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
     const hasSeries = counts.length > 0;
     const peak = hasSeries ? Math.max(...counts) : 0;
     return { chartData, sampled, hasSeries, peak, constantSentence: constantCountSentence(counts, appModel.executors.added.length) };
-  }, [appModel, activeFileId]);
+  }, [appModel]);
 
   if (!hasSeries) {
     return (

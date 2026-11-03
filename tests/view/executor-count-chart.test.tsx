@@ -103,7 +103,7 @@ test('self-hides with an unavailable message when the run has no end time record
   expect(screen.queryByRole('button', { name: /table/i })).not.toBeInTheDocument();
 });
 
-// Guards the useMemo (keyed on appModel + activeFileId) that skips recomputing
+// Guards the useMemo (keyed on appModel) that skips recomputing
 // the executor series and downsample pipeline on an unrelated re-render.
 test('does not recompute the executor series when an unrelated re-render occurs with the same props', async () => {
   const user = userEvent.setup();
@@ -125,33 +125,6 @@ test('does not recompute the executor series when an unrelated re-render occurs 
 
   await user.click(screen.getByRole('button', { name: 'tick' }));
   expect((downsample as Mock).mock.calls.length - callsBefore).toBe(1);
-});
-
-// applySnapshot mutates appModel's fields in place (same object
-// reference), so an activeFileId change must still swap the chart to the new file.
-test('reflects a new file after appModel is mutated in place and activeFileId changes (cached-file switch)', async () => {
-  const appModel = buildAppModel();
-
-  const peakOfLastSeries = () =>
-    Math.max(...((downsample as Mock).mock.lastCall![0] as { count: number }[]).map((p) => p.count));
-
-  const { rerender } = render(<ExecutorCountChart appModel={appModel} activeFileId="file-a" />);
-  expect(peakOfLastSeries()).toBe(2);
-
-  appModel.executors = {
-    added: [
-      { executorId: '1', timestamp: 0 },
-      { executorId: '2', timestamp: 10_000 },
-      { executorId: '3', timestamp: 20_000 },
-    ] as unknown as AppModel['executors']['added'],
-    removed: [
-      { executorId: '1', timestamp: 90_000 },
-    ] as unknown as AppModel['executors']['removed'],
-  };
-
-  rerender(<ExecutorCountChart appModel={appModel} activeFileId="file-b" />);
-
-  expect(peakOfLastSeries()).toBe(3);
 });
 
 test('the hover text reads as one line on the theme popover surface, not Recharts\' white default', () => {

@@ -30,7 +30,7 @@ export function StageTaskSpread({
   between?: ReactNode;
   children?: ReactNode;
 }) {
-  const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
+  const { unavailable: noTaskData, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const { expanded, data: taskData, error: taskDataError, toggle } = useExpandableRow(
     liveGetTaskData ? () => liveGetTaskData(stageId) : undefined,
   );
@@ -57,8 +57,8 @@ export function StageTaskSpread({
               fieldNames={taskData.fieldNames}
               markers={{ p50: stage?.taskDurationP50, p95: stage?.taskDurationP95 }}
             />
-          ) : exportMode ? (
-            <p className="text-xs text-muted-foreground">Task data isn&rsquo;t included in exported reports.</p>
+          ) : noTaskData ? (
+            <p className="text-xs text-muted-foreground">Task data isn&rsquo;t available for this run.</p>
           ) : taskDataError ? (
             <p className="text-xs text-muted-foreground">Task data unavailable for this stage.</p>
           ) : (

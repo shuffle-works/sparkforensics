@@ -3,10 +3,11 @@ import { test, expect } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export';
-import { interpretRun, encodeRunPayload } from '@sparkforensics/core/analysis';
 import type { AppModel } from '@sparkforensics/core/types';
 import { emptyAppModel } from '@/store/store';
 import { inlineRunPayload } from '@/export/single-file';
+import { encodeRunPayload } from '@sparkforensics/core/analysis';
+import { makeRun } from './_shared/run';
 
 function sampleData(overrides: Partial<ExportRunData> = {}): ExportRunData {
   return {
@@ -54,8 +55,8 @@ test('revives the Maps the CLI tags, so a widget can call .values() on app.rddIn
   const rddInfo = new Map([[3, { id: 3, name: 'cached', stageIds: [1] }]]);
   const appModel = { ...emptyAppModel(), app: { id: 'app-1', rddInfo } as unknown as AppModel['app'] };
   const provenance = { coreVersion: '0.1.0', buildId: 'dev', producer: 'test' };
-  const data = buildExportRunData(appModel, [], [], 0, interpretRun(appModel, [], []), provenance);
-  const decoded = decode(encode(data));
+  const data = buildExportRunData(makeRun({ appModel }), provenance);
+  const decoded = decode(encodeRunPayload(data));
   expect(decoded.app?.rddInfo).toBeInstanceOf(Map);
   expect([...(decoded.app!.rddInfo as Map<number, unknown>).values()]).toEqual([...rddInfo.values()]);
 });

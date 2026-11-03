@@ -6,8 +6,8 @@ How the A/B comparison engine matches stages and builds a comparison.
 
 `packages/core/src/run-comparison.ts` is the whole A/B engine. The entry point
 `compareRuns(baseline, candidate)` takes two `{ label, snapshot }` run records
-(each `snapshot` a `SessionSnapshot`: `app`, `stages`, `executors`, `sql`,
-`jobs`, `runAggregates`, `evidenceAvailability`, `catalog`, `taskData`) and returns one plain object the view renders. It runs on
+(each `snapshot` a `ComparedRun`, `packages/core/src/compared-run.ts`: an `AppModel`
+with the run's detector `catalog`) and returns one plain object the view renders. It runs on
 already-parsed snapshots, with no worker involved.
 
 - `stageIdentity(stage, snapshot)` is a run-independent key: `normalizeStageName`

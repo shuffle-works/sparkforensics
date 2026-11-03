@@ -65,6 +65,11 @@ rendered output and correct it afterwards:
 - `no-panel-forgery`: an `EvidencePanel` made by a cast, a `type`/`rows` literal
   or a direct `evidencePanel(...)` call outside `evidence-panel.ts` and
   `detector-registry.tsx`.
+- `no-run-reset-effect`: a `useEffect` or `useLayoutEffect` in `src/` that lists
+  `appModel` or `activeFileId` in its dependencies and calls a state setter in its
+  body. A new run remounts the dashboard, which keyed by `runKey` starts per-run
+  state fresh (see [State model](./architecture/state-and-history.md#state-model)). A
+  setter inside a callback, such as a fetch's `.then`, is not matched.
 
 Each rule's message names the remedy. A legitimate use gets a suppression on the
 line above it, `// ast-grep-ignore: <rule-id>`, with the reason in the comment
@@ -349,11 +354,12 @@ Before adding a widget test file, or a per-widget or per-detector test:
   rows: it calls the `rows` function (or renders the `Row`) and asserts what a
   row decides, stated or not, in both densities. Do not repeat a sort, paging or
   anchor test in a widget's file.
-- `tests/view/_shared/` holds `testFinding` (`finding.ts`) and
-  `installInterpretation` (`interpretation.ts`), plus helpers for evidence
-  panels and the detector examples. Reuse them before pasting boilerplate. A
-  widget with a real difference (a `React.lazy`-loaded chunk, a custom row
-  finder) keeps its own test.
+- `tests/view/_shared/` holds `testFinding` (`finding.ts`),
+  `installInterpretation` (`interpretation.ts`) and `makeRun`/`runState`
+  (`run.ts`, which build and install a run from hand-made parts), plus helpers
+  for evidence panels and the detector examples. Reuse them before pasting
+  boilerplate. A widget with a real difference (a `React.lazy`-loaded chunk, a
+  custom row finder) keeps its own test.
 - `packages/core/test/fixtures/` holds the shared stage and app fixture
   factories (`makeStage`/`makeApp`). Import them instead of pasting a local
   copy into a new core test file.
