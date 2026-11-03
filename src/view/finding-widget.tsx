@@ -157,12 +157,12 @@ function RowList<R extends AnyRow>({
   rows, Row, appModel, getTaskData, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName, title,
 }: RowListProps<R>) {
   const [page, setPage] = useWidgetState(useCardStateKey(`page:${title ?? ''}`), 0);
-  const mountedRef = useRef(false);
+  // Compare with the last values, not a mounted flag: StrictMode runs mount effects twice with refs kept.
+  const resetKeyRef = useRef({ appModel, sortMode });
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
+    const last = resetKeyRef.current;
+    if (last.appModel === appModel && last.sortMode === sortMode) return;
+    resetKeyRef.current = { appModel, sortMode };
     setPage(0);
   }, [sortMode]);
 

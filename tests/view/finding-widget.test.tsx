@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -125,6 +126,24 @@ describe('the finding widget shell', () => {
     const findings = Array.from({ length: 8 }, (_, i) => spill(i + 1, 1000 - i));
     renderWidget(findings, findings[7]);
     expect(shownRows()).toContain('row s8');
+  });
+
+  it('keeps the routed page under StrictMode when the route mounts the list', () => {
+    const findings = Array.from({ length: 8 }, (_, i) => spill(i + 1, 1000 - i));
+    installInterpretation(findings);
+    const layout = layoutOf(findings);
+    store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: layout.keyOf(findings[7]) });
+    render(
+      <StrictMode>
+        <DocsProvider>
+          <BoardLayoutContext.Provider value={layout}>
+            <Widget appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />
+          </BoardLayoutContext.Provider>
+        </DocsProvider>
+      </StrictMode>,
+    );
+    expect(shownRows()).toEqual(['row s7', 'row s8']);
+    expect(screen.getByText('row s8').closest('li')).toHaveFocus();
   });
 
   it('pages freely once the route has landed, and does not flash the routed row again when it mounts again', async () => {
