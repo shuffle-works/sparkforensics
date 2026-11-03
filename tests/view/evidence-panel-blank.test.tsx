@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { Finding, TaskData } from '@sparkforensics/core/types';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';

@@ -11,7 +11,7 @@ import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { NestedLoopJoin } from '@/view/widgets/NestedLoopJoin';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {
   return {

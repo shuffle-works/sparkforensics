@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { CacheUtilization } from '@/view/widgets/CacheUtilization';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel, Finding, FindingOf, SparkAppInfo } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf, SparkAppInfo } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

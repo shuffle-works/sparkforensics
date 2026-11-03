@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type { EvidenceKey } from '@sparkforensics/core/types.ts';
+import type { EvidenceKey } from '@sparkforensics/core/types';
 
 export const EVIDENCE_LABELS: Record<EvidenceKey, string> = {
   executorMetrics: 'Executor metrics',

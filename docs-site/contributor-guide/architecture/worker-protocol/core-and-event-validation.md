@@ -6,7 +6,7 @@ All of `src/` (browser SPA) and `packages/core/src/` (shared analysis logic)
 is strict TypeScript, except for a few plain-`.js` files: the two vendored
 third-party decompressors, `packages/core/src/vendor/fflate.js`
 and `packages/core/src/vendor/fzstd.js` (left untouched deliberately: vendored code, not
-project code), `load-vendored.js` (copied byte-for-byte into `vendor-core/`, so it must
+project code), `load-vendored.js` and `load-node-core.js` (copied byte-for-byte into `vendor-core/`, so they must
 run without TS stripping), and the SHS helpers `shs-request.js` and `proxy.js`, which the
 local server imports as plain JS. Every remaining import of a same-repo `.ts` module uses a `.ts`
 specifier (e.g. `import { dispatchLine } from './event-handlers.ts'`), not

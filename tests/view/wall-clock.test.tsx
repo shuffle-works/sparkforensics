@@ -4,7 +4,7 @@ import { test, expect } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WallClock } from '../../src/view/widgets/WallClock';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
 import { store } from '../../src/store/store';
 import { installInterpretation } from './_shared/interpretation';

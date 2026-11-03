@@ -6,7 +6,7 @@ import { MemoryUtilization } from '../../src/view/widgets/MemoryUtilization';
 import { EvidenceAvailabilityProvider } from '../../src/view/EvidenceAvailabilityContext';
 import { DocsProvider } from '../../src/view/DocsContext';
 import { emptyAppModel, store } from '../../src/store/store';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

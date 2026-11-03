@@ -1,14 +1,10 @@
 import { useCallback } from 'react';
-import { createIngestClient } from '@sparkforensics/core/ingest.ts';
-import { createModelCallbacks } from '@sparkforensics/core/model-assembler.ts';
-import { analyze, auditConfig } from '@sparkforensics/core/analyzer.ts';
-import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
-import { captureSnapshot, applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import { runLabel } from '@sparkforensics/core/format-utils.ts';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
-import { isShsErrorCode } from '@sparkforensics/core/shs-request.js';
+import { createIngestClient, createModelCallbacks, analyze, auditConfig, isShsErrorCode } from '@sparkforensics/core/analysis';
+import { deriveEvidenceAvailability, runLabel } from '@sparkforensics/core/view-model';
+import { captureSnapshot, applySnapshot } from '@sparkforensics/core/export';
+import * as recentFiles from '@sparkforensics/core/browser';
 import { store } from './store';
-import type { EvidenceAvailability, TaskData } from '@sparkforensics/core/types.ts';
+import type { EvidenceAvailability, TaskData } from '@sparkforensics/core/types';
 
 interface Opts { makeClient?: () => ReturnType<typeof createIngestClient>; }
 

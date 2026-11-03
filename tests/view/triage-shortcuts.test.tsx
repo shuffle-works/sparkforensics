@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import App from '@/App';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { store, emptyAppModel } from '@/store/store';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 function readyAppModel() {
   return {

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { PlanView } from '../../src/view/widgets/PlanView';
 import { store } from '../../src/store/store';
-import type { AppModel, PlanNode } from '@sparkforensics/core/types.ts';
+import type { AppModel, PlanNode } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
 
 const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode => ({

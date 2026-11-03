@@ -1,5 +1,5 @@
-import type { LocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
-import type { AppModel, Finding, FindingOf, FindingType } from '@sparkforensics/core/types.ts';
+import type { LocalityChart } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding, FindingOf, FindingType } from '@sparkforensics/core/types';
 
 /** What decides the rows a widget shows. */
 export interface PanelInput<T extends FindingType> {

@@ -1,4 +1,4 @@
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import type { FindingOf } from '@sparkforensics/core/types';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 import { stageGroupRows, stageGroupSummary, type StageGroupRow } from './StageGroup.rows';
 

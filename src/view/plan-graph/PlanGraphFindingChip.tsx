@@ -1,7 +1,7 @@
 import { TagBadge } from '@/view/ImpactBadge';
 import { StageEntryButton } from '@/view/plan-graph/stage-selection';
-import { formatFindingChipDetail } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { formatFindingChipDetail } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 
 /** One finding chip on a plan-graph group box: the ALL-CAPS tag pill (via
  * TagBadge) followed by the finding's compact magnitude and recoverable time

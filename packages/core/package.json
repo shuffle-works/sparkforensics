@@ -16,7 +16,14 @@
     "diagnostics"
   ],
   "exports": {
-    "./*": "./src/*"
+    "./analysis": "./src/analysis.ts",
+    "./browser": "./src/browser.ts",
+    "./cli": "./src/cli.ts",
+    "./export": "./src/export.ts",
+    "./mcp": "./src/mcp.ts",
+    "./node": "./src/node.ts",
+    "./types": "./src/types.ts",
+    "./view-model": "./src/view-model.ts"
   },
   "scripts": {
     "test": "vitest run",

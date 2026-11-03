@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { AutoscalingChurn, bucketChurn } from '../../src/view/widgets/AutoscalingChurn';
 import { emptyAppModel } from '../../src/store/store';
 import { DocsProvider } from '../../src/view/DocsContext';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

@@ -10,7 +10,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 
 import { useIngest } from '../../src/store/useIngest';
 import { store, emptyAppModel } from '../../src/store/store';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import * as recentFiles from '@sparkforensics/core/browser';
 
 // Methods are non-enumerable so `recentFiles.add`'s IndexedDB `put()`
 // structuredClone of the entry doesn't choke on function-valued properties:

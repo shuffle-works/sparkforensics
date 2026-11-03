@@ -3,8 +3,8 @@ import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Scorecard } from '../../src/view/widgets/Scorecard';
 import { store } from '@/store/store';
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { interpretRun } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testApp, testStage } from './_shared/model';
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {

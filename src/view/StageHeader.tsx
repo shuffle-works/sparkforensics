@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { StagePill } from '@/view/StagePill';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 
 /** Stage-pill + stage-name row header, shared by Skew, StageShape, TinyTask,
  * GcPressure, ShuffleIO, and PartitionSizing. Spill uses a different per-row

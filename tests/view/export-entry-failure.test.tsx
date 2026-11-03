@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { screen } from '@testing-library/react';
-import { RUN_PAYLOAD_GLOBAL } from '@sparkforensics/core/run-payload.ts';
+import { RUN_PAYLOAD_GLOBAL } from '@sparkforensics/core/export';
 
 // The export entry runs at import time, so each test sets up the page, then imports it fresh.
 vi.mock('@/store/useIngest', async () => {

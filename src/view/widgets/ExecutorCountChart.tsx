@@ -5,7 +5,7 @@ import { CHART_COLORS, CHART_TOOLTIP_BOX_STYLE, ChartFrame } from '@/view/charts
 import { downsample } from '@/view/charts/downsample';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 
 const HEIGHT = 220;
 

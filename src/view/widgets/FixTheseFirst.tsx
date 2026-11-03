@@ -1,16 +1,19 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
-import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
+import {
+  findingStageIds,
+  coreFindingGenericRecommendation,
+  sharedDocAnchor,
+  formatStageIdsLabel,
+  pathBasename,
+  findingActionLabel,
+  recommendationText,
+} from '@sparkforensics/core/view-model';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
-import { recommendationText } from '@sparkforensics/core/finding-names.ts';
 import { boardRollup, useFindingSavings, useStepCodes, type BoardGroup } from '@/view/interpretation';
 import { StepCode } from '@/view/StepCode';
 import type { InterpretationState } from '@/store/store';

@@ -1,4 +1,4 @@
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StageHeader } from '@/view/StageHeader';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';

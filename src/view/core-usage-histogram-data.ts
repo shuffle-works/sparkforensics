@@ -1,5 +1,5 @@
-import { computeCoreTimeSeries } from '@sparkforensics/core/core-time-series.ts';
-import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
+import { computeCoreTimeSeries } from '@sparkforensics/core/analysis';
+import type { AppModel, TaskData } from '@sparkforensics/core/types';
 
 // Live-only: built from per-task data the parser worker holds, which an HTML export does not
 // carry, so the export build swaps this module for a stub (vite.export.config.ts).

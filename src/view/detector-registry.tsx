@@ -37,9 +37,9 @@ import { taskFailuresModel } from '@/view/widgets/TaskFailures.rows';
 import { tinyTaskModel } from '@/view/widgets/TinyTask.rows';
 import { underBroadcastModel } from '@/view/widgets/UnderBroadcast.rows';
 import { unprunedScanModel } from '@/view/widgets/UnprunedScan.rows';
-import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
-import { FINDING_PRESENTATION } from '@sparkforensics/core/finding-presentation.ts';
-import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types.ts';
+import type { DetectorInfo } from '@sparkforensics/core/analysis';
+import { FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types';
 
 // Each widget module is dynamically imported so Vite/Rollup splits it into
 // its own chunk instead of bundling every widget into the main entry: these

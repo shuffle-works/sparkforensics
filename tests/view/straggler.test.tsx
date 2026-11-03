@@ -3,7 +3,7 @@
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 
 import { Straggler } from '@/view/widgets/Straggler';

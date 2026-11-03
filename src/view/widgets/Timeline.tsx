@@ -2,8 +2,8 @@ import { memo, useMemo, useState } from 'react';
 import { Inbox } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, Finding, Stage } from '@sparkforensics/core/types.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding, Stage } from '@sparkforensics/core/types';
 import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
 import { formatRunClock, runClockTicks } from '@/view/charts/run-clock';

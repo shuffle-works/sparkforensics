@@ -7,7 +7,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { ScalingSim, makespanYAxisDomain } from '@/view/widgets/ScalingSim';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
-import type { AppModel, Job } from '@sparkforensics/core/types.ts';
+import type { AppModel, Job } from '@sparkforensics/core/types';
 import { testApp } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 

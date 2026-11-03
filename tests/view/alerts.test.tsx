@@ -5,9 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { CleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { detectorInfoByType, interpretRun } from '@sparkforensics/core/analysis';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 
 function skewFinding(stageId: number, impactBand: ImpactBand): Finding {

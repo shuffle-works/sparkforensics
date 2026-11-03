@@ -10,7 +10,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { Skew } from '@/view/widgets/Skew';
 import { store } from '@/store/store';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

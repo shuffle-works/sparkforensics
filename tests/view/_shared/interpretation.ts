@@ -1,5 +1,5 @@
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { interpretRun } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { emptyAppModel, store, type InterpretationState } from '@/store/store';
 
 /** Interprets `catalog` (and `configFindings`) the way the live app does and

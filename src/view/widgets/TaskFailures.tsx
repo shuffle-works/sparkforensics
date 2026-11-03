@@ -1,4 +1,4 @@
-import { formatTaskFailureHeadline, type TaskFailureGroup } from '@sparkforensics/core/task-failure.ts';
+import { formatTaskFailureHeadline, type TaskFailureGroup } from '@sparkforensics/core/view-model';
 import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { StagePill } from '@/view/StagePill';

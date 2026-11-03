@@ -10,7 +10,7 @@ import {
 } from 'react';
 
 import { cn } from '@/lib/utils';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { useStore } from '@/store/store';
 import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
 import { useRouteFocusedCardKey, useTriageNavigation } from '@/view/TriageNavigationContext';

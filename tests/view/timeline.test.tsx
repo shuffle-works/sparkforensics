@@ -6,7 +6,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
 import { Timeline, selectTimelineStages } from '@/view/widgets/Timeline';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
 
 function renderTimeline(appModel: AppModel, catalog: Finding[] = []) {

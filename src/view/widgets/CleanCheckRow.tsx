@@ -2,7 +2,7 @@ import { CircleCheckIcon, CircleDashedIcon } from 'lucide-react';
 
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { typeTag } from '@sparkforensics/core/format-utils.ts';
+import { typeTag } from '@sparkforensics/core/view-model';
 
 export interface CleanCheckRowProps {
   type: string;

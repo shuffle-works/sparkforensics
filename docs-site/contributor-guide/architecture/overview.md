@@ -16,7 +16,7 @@ Owns the DOM (React) and a summary `AppModel` (jobs, stages, sql, executors, no
 raw tasks), held in a Zustand store (`src/store/store.ts`).
 
 `src/store/useIngest.ts` is the composition root. It owns the ingest client's
-lifecycle (`createIngestClient`, `@sparkforensics/core/ingest.ts`) and wires
+lifecycle (`createIngestClient`, from `@sparkforensics/core/analysis`) and wires
 `model-assembler.ts`'s `createModelCallbacks` (worker message → `AppModel`)
 into store updates: `onProgress` → `parse`; `onDone` → derives
 `evidenceAvailability` from the final normalized model plus

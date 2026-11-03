@@ -1,6 +1,6 @@
-import { rankedRollup, type RankedRollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { FindingSavings } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { rankedRollup, type RankedRollupGroup } from '@sparkforensics/core/view-model';
+import type { FindingSavings } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { useStore, type InterpretationState } from '@/store/store';
 
 // Read-only access to the store's run interpretation (see store.ts). Views render the

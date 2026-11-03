@@ -21,12 +21,10 @@ import { store, useStore } from '@/store/store';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
-import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
-import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
+import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER, findingStageIds, stageIdsForSqlExec } from '@sparkforensics/core/view-model';
 import { cn } from '@/lib/utils';
 import type { RecentFileEntry } from '@/view/RecentList';
-import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/core/types';
 
 // Relative, not `/docs/`: the app itself can be published under a subpath
 // (e.g. the hub's `/sparkforensics/`), and a leading slash would resolve

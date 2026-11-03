@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 import { cn } from '@/lib/utils';
 import { useStore, type InterpretationState } from '@/store/store';
-import type { ImpactBand, Stage } from '@sparkforensics/core/types.ts';
+import type { ImpactBand, Stage } from '@sparkforensics/core/types';
 import { computeRunEndSec, formatRunClock, runClockTicks, runStartMs } from '@/view/charts/run-clock';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
 import { findingAt, stepCodes } from '@/view/interpretation';

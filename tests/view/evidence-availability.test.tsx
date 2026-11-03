@@ -3,8 +3,8 @@ import { afterEach, beforeEach, expect, test } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
-import type { EvidenceAvailability } from '@sparkforensics/core/types.ts';
+import { auditConfig } from '@sparkforensics/core/analysis';
+import type { EvidenceAvailability } from '@sparkforensics/core/types';
 import { testApp } from './_shared/model';
 import { store, emptyAppModel } from '@/store/store';
 import { Dashboard } from '@/view/Dashboard';

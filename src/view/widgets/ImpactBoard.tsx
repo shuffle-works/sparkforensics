@@ -2,7 +2,7 @@ import { Suspense, useMemo, useState } from 'react';
 
 import { Table, TableBody } from '@/components/ui/table';
 import { useWidgetDensity } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useInterpretation, type BoardGroup } from '@/view/interpretation';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';

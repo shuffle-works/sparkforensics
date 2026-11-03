@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../bin/sparkforensics-analyze.mjs';
-import { zipSync, strToU8 } from '@sparkforensics/core/vendor/fflate.js';
+import { zipSync, strToU8 } from '@sparkforensics/core/export';
 
 // Synthetic single-stage log: ten tasks, the last `slowMs` long, finishing at `slowMs`.
 function log({ slowMs, appId, appName = 't' }) {

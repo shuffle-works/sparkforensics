@@ -10,7 +10,7 @@ import { StageDetailProvider } from '@/view/StageDetailContext';
 import { FindingRow } from '@/view/widgets/FixTheseFirst';
 import { StageTable } from '@/view/widgets/StageTable';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
-import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 function timed(type: FindingType, stageId: number, highMs: number, impactBand: ImpactBand = 'critical'): Finding {

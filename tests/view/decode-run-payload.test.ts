@@ -2,12 +2,11 @@
 import { test, expect } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { decodeRunPayload } from '@/export/hydrate-store';
-import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export-data.ts';
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export';
+import { interpretRun, encodeRunPayload } from '@sparkforensics/core/analysis';
+import type { AppModel } from '@sparkforensics/core/types';
 import { emptyAppModel } from '@/store/store';
 import { inlineRunPayload } from '@/export/single-file';
-import { encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 
 function sampleData(overrides: Partial<ExportRunData> = {}): ExportRunData {
   return {

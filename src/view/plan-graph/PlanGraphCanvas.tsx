@@ -15,12 +15,11 @@ import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
 import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
 import { PlanGraphStageGroupNode, PlanGraphUnmatchedStageNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
+import { formatDuration, findingStageIds } from '@sparkforensics/core/view-model';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { orderByImpact } from '@/view/impact-sort';
 import { useInterpretation } from '@/view/interpretation';
-import type { Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, PlanGraphNodeData, StageId } from '@sparkforensics/core/types.ts';
+import type { Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, PlanGraphNodeData, StageId } from '@sparkforensics/core/types';
 
 const nodeTypes = {
   planNode: PlanGraphNode,

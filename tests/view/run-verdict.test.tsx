@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
-import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

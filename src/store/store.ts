@@ -1,10 +1,9 @@
 import { createStore } from 'zustand/vanilla';
 import { useStore as useZustand } from 'zustand';
-import { captureSnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import type { ExportProvenance } from '@sparkforensics/core/export-data.ts';
-import type { RunInterpretation } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, EvidenceAvailability, Finding, TaskData, StageId } from '@sparkforensics/core/types.ts';
+import { captureSnapshot } from '@sparkforensics/core/export';
+import type { SessionSnapshot, ExportProvenance } from '@sparkforensics/core/export';
+import type { RunInterpretation } from '@sparkforensics/core/analysis';
+import type { AppModel, EvidenceAvailability, Finding, TaskData, StageId } from '@sparkforensics/core/types';
 
 export function emptyAppModel(): AppModel {
   return {

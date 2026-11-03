@@ -1,4 +1,4 @@
-import type { EvidenceAvailability as EvidenceAvailabilityLedger, EvidenceAvailabilityEntry, EvidenceReasonCode, EvidenceState } from '@sparkforensics/core/types.ts';
+import type { EvidenceAvailability as EvidenceAvailabilityLedger, EvidenceAvailabilityEntry, EvidenceReasonCode, EvidenceState } from '@sparkforensics/core/types';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { evidenceLabel, useEvidenceAvailabilityDisclosure, useEvidenceRowRegistration } from '@/view/EvidenceAvailabilityContext';

@@ -2,7 +2,7 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { runFindingKeys, useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
 import { TriageNavigationProvider, type TriageNavigation } from '@/view/TriageNavigationContext';
 import { testFinding } from './_shared/finding';

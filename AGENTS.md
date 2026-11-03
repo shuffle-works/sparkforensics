@@ -3,7 +3,8 @@
 Spark event-log analyzer: a static, zero-backend browser dashboard (React +
 TypeScript in `src/`, optional local-server mode in `packages/server/`) that
 parses Spark History NDJSON logs in a Web Worker. Shared analysis lives in
-`packages/core/` (`@sparkforensics/core/*`), which the CLI and MCP packages
+`packages/core/` (named entry points, `@sparkforensics/core/analysis` and the
+rest of its `exports` map), which the CLI and MCP packages
 vendor. Contributor docs: `docs-site/contributor-guide/` (start at
 `architecture/index.md`, `development-setup.md`, `testing.md`).
 

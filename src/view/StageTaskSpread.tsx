@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, StageId, TaskData } from '@sparkforensics/core/types.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { AppModel, StageId, TaskData } from '@sparkforensics/core/types';
 import { DurationHistogram } from '@/view/charts/DurationHistogram';
 import { ExpandToggleButton } from '@/view/ExpandToggleButton';
 import { useExpandableRow } from '@/view/useExpandableRow';

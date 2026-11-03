@@ -1,4 +1,4 @@
-import type { EvidenceKey } from '@sparkforensics/core/types.ts';
+import type { EvidenceKey } from '@sparkforensics/core/types';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
 import { evidenceLabel, useEvidenceAvailabilityNavigation } from '@/view/EvidenceAvailabilityContext';
 

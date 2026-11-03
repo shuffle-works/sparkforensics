@@ -7,7 +7,7 @@ import { StrictMode } from 'react';
 
 import App from '@/App';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { WidgetCard } from '@/view/WidgetCard';
 import { useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
@@ -27,7 +27,7 @@ import { testFinding } from './_shared/finding';
 // - Queries are scoped to the widget card because the verdict step for the same finding also
 //   renders a "Stage N" button.
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(() => new Promise(() => {})),
   add: vi.fn(async () => ({})),

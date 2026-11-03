@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import type { FindingOf } from '@sparkforensics/core/types';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';

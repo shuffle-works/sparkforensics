@@ -18,7 +18,7 @@ vi.mock('@/store/useIngest', () => ({
   }),
 }));
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => []),
   add: vi.fn(async () => ({})),

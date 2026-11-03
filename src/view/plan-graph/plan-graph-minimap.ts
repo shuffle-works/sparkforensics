@@ -1,6 +1,6 @@
 import type { Node } from '@xyflow/react';
-import type { Finding } from '@sparkforensics/core/types.ts';
-import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import type { Finding } from '@sparkforensics/core/types';
+import { worstImpactBand } from '@sparkforensics/core/view-model';
 import { CHART_COLORS } from '@/view/charts/ChartTheme';
 
 /** MiniMap node fill. A plan node is colored by the worst finding band on it so

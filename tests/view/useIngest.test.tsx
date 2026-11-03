@@ -3,8 +3,8 @@ import { test, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useIngest } from '../../src/store/useIngest';
 import { store, emptyAppModel } from '../../src/store/store';
-import { captureSnapshot, applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import { captureSnapshot, applySnapshot } from '@sparkforensics/core/export';
+import * as recentFiles from '@sparkforensics/core/browser';
 
 function fakeClient(doneArg: any = { skippedLines: 0 }) {
   let handlers: any;

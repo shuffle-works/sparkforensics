@@ -4,8 +4,8 @@ import { renderHook, act } from '@testing-library/react';
 import { store, emptyAppModel } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import type { RunSource } from '@/store/useIngest';
-import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import type { SessionSnapshot } from '@sparkforensics/core/export';
+import * as recentFiles from '@sparkforensics/core/browser';
 
 // A Map that records every set(key, value), so a test can prove a snapshot was
 // written exactly once for a key (i.e. never clobbered by a redundant re-write).

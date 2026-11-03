@@ -32,7 +32,7 @@ vi.mock('@/store/useIngest', () => ({
 
 // DropZone renders in the idle/error routes; it reads recentFiles on mount,
 // which touches indexedDB; stub it out the same way tests/view/dropzone.test.tsx does.
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => []),
   add: vi.fn(async () => ({})),

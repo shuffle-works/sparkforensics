@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { IncompleteRun } from '@/view/widgets/IncompleteRun';
-import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 
 function finding(overrides: Partial<FindingOf<'incompleteRun'>> = {}): Finding {

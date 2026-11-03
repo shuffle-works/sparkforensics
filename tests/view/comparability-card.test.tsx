@@ -2,7 +2,7 @@
 import { test, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { RunComparison } from '@/view/RunComparison';
-import { compareRuns } from '@sparkforensics/core/run-comparison.ts';
+import { compareRuns } from '@sparkforensics/core/analysis';
 
 // One stage and `executors` two-core executors alive for the whole run window.
 const run = (label: string, { wallMs, executors, taskMs, config }: { wallMs: number; executors: number; taskMs: number; config: Record<string, string> }): any => ({

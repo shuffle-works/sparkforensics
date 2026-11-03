@@ -17,7 +17,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["vite/client", "node"],
-    "paths": { "@/*": ["./src/*"] }
+    "paths": { "@/*": ["./src/*"], "@core-src/*": ["./packages/core/src/*"] }
   },
   "include": ["src", "tests/view", "packages/core/src"],
   "references": [{ "path": "./tsconfig.node.json" }]

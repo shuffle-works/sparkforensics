@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { AppModel, TaskData } from '@sparkforensics/core/types';
 import { loadCoreUsageHistogram } from '@/view/core-usage-histogram-data';
 import { useLiveTaskData } from '@/view/useLiveTaskData';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';

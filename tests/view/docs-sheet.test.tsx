@@ -7,8 +7,8 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider, useDocs } from '@/view/DocsContext';
 import { DocsSheet } from '@/view/DocsSheet';
 import { TagBadge } from '@/view/ImpactBadge';
-import { docsUrl } from '@sparkforensics/core/docs-config.ts';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import { docsUrl } from '@sparkforensics/core/view-model';
+import type { ImpactBand } from '@sparkforensics/core/types';
 
 // The docs panel resizes via react-resizable-panels, which constructs a
 // ResizeObserver on mount; jsdom has none. A no-op stub is enough (the panel

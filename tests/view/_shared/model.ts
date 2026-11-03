@@ -1,4 +1,4 @@
-import type { AppResources, SparkAppInfo, Stage } from '@sparkforensics/core/types.ts';
+import type { AppResources, SparkAppInfo, Stage } from '@sparkforensics/core/types';
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 

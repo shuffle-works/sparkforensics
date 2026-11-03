@@ -1,6 +1,12 @@
-import { formatBytes, formatDuration, formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
-import { SLOW_HOST_DIMENSION_LABEL } from '@sparkforensics/core/finding-generic-recommendation.ts';
-import type { SlowHostFinding } from '@sparkforensics/core/finding-types.ts';
+import {
+  formatBytes,
+  formatDuration,
+  formatMetricValue,
+  IMPACT_BAND_ORDER,
+  numericValue,
+  SLOW_HOST_DIMENSION_LABEL,
+} from '@sparkforensics/core/view-model';
+import type { SlowHostFinding } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 

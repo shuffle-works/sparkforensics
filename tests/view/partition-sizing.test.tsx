@@ -9,7 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { PartitionSizing } from '@/view/widgets/PartitionSizing';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 function buildAppModel(stages: Record<number, Record<string, unknown>>): AppModel {

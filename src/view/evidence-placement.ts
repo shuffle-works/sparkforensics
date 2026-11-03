@@ -1,5 +1,5 @@
 import type { InterpretationState } from '@/store/store';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { findingAt, eligibleFindings } from '@/view/interpretation';
 import { triageTargetFor } from '@/view/triage-target';
 

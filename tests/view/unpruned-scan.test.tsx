@@ -11,7 +11,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { UnprunedScan } from '@/view/widgets/UnprunedScan';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {

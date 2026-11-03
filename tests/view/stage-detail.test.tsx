@@ -8,7 +8,7 @@ import type { TriageTarget } from '@/view/triage-target';
 import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { DocsProvider } from '@/view/DocsContext';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding, PlanNode, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, PlanNode, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { formatBytes, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, numericValue } from '@sparkforensics/core/view-model';
 import { DocsLink } from '@/view/DocsContext';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';

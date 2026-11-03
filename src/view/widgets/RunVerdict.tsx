@@ -4,13 +4,12 @@ import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, Cir
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
-import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/analysis';
+import type { Finding } from '@sparkforensics/core/types';
 import type { AnyEvidencePanel } from '@/view/evidence-panel';
 import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
-import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
+import { findingName, recommendationParts, findingActionLabel } from '@sparkforensics/core/view-model';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';

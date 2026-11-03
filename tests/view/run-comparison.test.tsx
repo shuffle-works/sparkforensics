@@ -3,7 +3,7 @@ import { test, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RunComparison } from '@/view/RunComparison';
-import { compareRuns } from '@sparkforensics/core/run-comparison.ts';
+import { compareRuns } from '@sparkforensics/core/analysis';
 
 const mk = (stages: any, app: any) => ({
   snapshot: {

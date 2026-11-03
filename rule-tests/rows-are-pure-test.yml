@@ -6,7 +6,7 @@ valid:
       findings.filter((finding) => !isStated(finding, stated)).map((finding) => ({ findings: [finding] }))
     );
   - |
-    import type { Finding } from '@sparkforensics/core/types.ts';
+    import type { Finding } from '@sparkforensics/core/types';
     export const total = (findings: Finding[]) => findings.length;
   - "const useless = 1;"
 invalid:

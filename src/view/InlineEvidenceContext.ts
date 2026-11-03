@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import type { ImpactBand } from '@sparkforensics/core/types';
 
 /** What a finding's in-place evidence panel knows about the line above it. */
 export interface InlineEvidenceState {

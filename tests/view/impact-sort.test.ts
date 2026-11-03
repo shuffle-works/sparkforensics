@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
-import { analyze } from '@sparkforensics/core/analyzer.ts';
-import type { Finding, Stage } from '@sparkforensics/core/types.ts';
+import { analyze } from '@sparkforensics/core/analysis';
+import type { Finding, Stage } from '@sparkforensics/core/types';
 import { makeApp, makeStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
-import { stageIdOf } from '@sparkforensics/core/findings-of-type.ts';
+import { stageIdOf } from '@sparkforensics/core/view-model';
 import { byStageAsc, canToggleSort, orderByImpact } from '../../src/view/impact-sort';
 import { installInterpretation } from './_shared/interpretation';
 

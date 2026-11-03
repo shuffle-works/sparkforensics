@@ -1,6 +1,8 @@
 import type { ExchangeWidth, Finding } from './finding-types.ts';
 import type { FinalizedStage } from './stage-quantiles.ts';
 export type { DetectorType, FindingType } from './detectors.ts';
+// `@sparkforensics/core/types` entry point: the finding variants are exported from here with the model types.
+export type * from './finding-types.ts';
 
 export type StageId = number;
 export type ImpactBand = 'critical' | 'warning' | 'info';

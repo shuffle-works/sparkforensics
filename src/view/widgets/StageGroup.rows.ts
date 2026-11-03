@@ -1,6 +1,5 @@
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding, FindingOf, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
+import { findingsOfType, IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/view-model';
+import type { Finding, FindingOf, ImpactBand, StageId } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import { resolvePlanTree } from '@/view/plan-tree';
 

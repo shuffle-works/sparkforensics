@@ -6,8 +6,8 @@ import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { ConfigAudit } from '@/view/widgets/ConfigAudit';
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import { auditConfig } from '@sparkforensics/core/analysis';
+import type { AppModel } from '@sparkforensics/core/types';
 import { testApp, testStage } from './_shared/model';
 
 // One stage outside any SQL execution, so the serializer check applies.

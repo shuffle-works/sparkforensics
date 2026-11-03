@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),

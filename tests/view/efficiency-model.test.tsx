@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { emptyAppModel, store } from '@/store/store';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 import { testApp } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 

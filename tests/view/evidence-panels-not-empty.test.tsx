@@ -7,8 +7,8 @@ import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
 import { store, emptyAppModel } from '@/store/store';
-import { analyze, auditConfig } from '@sparkforensics/core/analyzer.ts';
-import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
+import { analyze, auditConfig } from '@sparkforensics/core/analysis';
+import { collectRun } from '@sparkforensics/core/cli';
 
 const ROOT = join(__dirname, '..', '..');
 const FIXTURE_DIR = join(ROOT, 'packages', 'core', 'test', 'fixtures');

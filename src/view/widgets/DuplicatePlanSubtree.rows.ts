@@ -1,6 +1,5 @@
-import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import { duplicateSubtreeDetail, duplicateSubtreeNote } from '@sparkforensics/core/finding-generic-recommendation.ts';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { IMPACT_BAND_ORDER, duplicateSubtreeDetail, duplicateSubtreeNote } from '@sparkforensics/core/view-model';
+import type { FindingOf } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';

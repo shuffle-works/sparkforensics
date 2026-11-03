@@ -6,7 +6,7 @@ import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { DESIGN_SPIKE_DISCLAIMER } from '@/view/design-spike-disclaimer';
 import { useInterpretation } from '@/view/interpretation';
 import type { InterpretationState } from '@/store/store';
-import { formatDuration, MS_PER_CORE_HOUR } from '@sparkforensics/core/format-utils.ts';
+import { formatDuration, MS_PER_CORE_HOUR } from '@sparkforensics/core/view-model';
 
 /** Whether the run has allocated compute to measure; the grid mounts the tile only then. */
 export function hasEfficiencyModel(interpretation: InterpretationState | null): boolean {

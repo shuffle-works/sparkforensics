@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { Table, TableBody } from '@/components/ui/table';
 import { useStore, useWidgetDensity } from '@/store/store';
 import { useIngest } from '@/store/useIngest';

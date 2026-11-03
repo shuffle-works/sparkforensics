@@ -3,7 +3,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { alwaysMountedWidgets, isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry';
-import { findingName } from '@sparkforensics/core/finding-names.ts';
+import { findingName } from '@sparkforensics/core/view-model';
 import { runFindingKeys } from '@/view/finding-anchor';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
@@ -54,7 +54,7 @@ import {
   selectTriageTargetForFinding,
   type TriageTarget,
 } from '@/view/triage-target';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 type ActiveTab = 'findings' | 'full-report';
 

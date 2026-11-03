@@ -1,4 +1,4 @@
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
+import { interpretRun } from '@sparkforensics/core/analysis';
 import { store, type State } from '@/store/store';
 
 // The live app's producer of the store's `interpretation`: whenever the run model or its

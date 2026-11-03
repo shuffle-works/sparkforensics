@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 
-import { findingKey, type FindingLocator } from '@sparkforensics/core/finding-identity.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingKey, type FindingLocator } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 import { useRouteFlashedFinding, useTriageNavigation } from './TriageNavigationContext';
 
 /**

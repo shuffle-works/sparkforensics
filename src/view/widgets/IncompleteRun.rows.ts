@@ -1,6 +1,6 @@
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import type { FindingOf } from '@sparkforensics/core/types';
 
 export interface IncompleteRunRow extends WidgetRow<'incompleteRun'> {
   finding: FindingOf<'incompleteRun'>;

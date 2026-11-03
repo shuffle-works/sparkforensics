@@ -1,9 +1,7 @@
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import { simulateScaling } from '@sparkforensics/core/scaling-sim.ts';
-import { hasUsableRunAggregates } from '@sparkforensics/core/evidence-availability.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import { formatDuration, simulateScaling, hasUsableRunAggregates } from '@sparkforensics/core/view-model';
+import type { AppModel } from '@sparkforensics/core/types';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { useInterpretation } from '@/view/interpretation';
 import type { InterpretationState } from '@/store/store';

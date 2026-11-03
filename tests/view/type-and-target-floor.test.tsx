@@ -14,7 +14,7 @@ import { DocsProvider } from '../../src/view/DocsContext';
 import { DropZone } from '../../src/view/DropZone';
 import { PinnedStageDeltas, PairTable } from '../../src/view/PinnedStageDeltas';
 import { PlanGraphNodeDetail } from '../../src/view/plan-graph/PlanGraphNodeDetail';
-import type { AppModel, PlanNode } from '@sparkforensics/core/types.ts';
+import type { AppModel, PlanNode } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
 
 // DropZone renders inside DocsProvider; ingest and recent-files are mocked so
@@ -29,7 +29,7 @@ vi.mock('@/store/useIngest', () => ({
     getTaskData: vi.fn(),
   }),
 }));
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => []),
   add: vi.fn(async () => ({})),

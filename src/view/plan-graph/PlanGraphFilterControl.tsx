@@ -1,6 +1,6 @@
 import { Chip } from '@/view/ImpactBadge';
 import { PlanGraphRadioControl } from '@/view/plan-graph/PlanGraphRadioControl';
-import type { PlanGraphFilterMode } from '@sparkforensics/core/types.ts';
+import type { PlanGraphFilterMode } from '@sparkforensics/core/types';
 
 const OPTIONS: Array<{ value: PlanGraphFilterMode; label: string; description: string }> = [
   {

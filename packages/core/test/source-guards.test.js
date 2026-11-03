@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -28,5 +28,41 @@ describe('type escape hatches', () => {
     });
     const total = hits.reduce((sum, hit) => sum + Number(hit.split(': ')[1]), 0);
     expect(total, `casts through unknown:\n${hits.join('\n')}`).toBeLessThanOrEqual(MAX_UNKNOWN_CASTS);
+  });
+});
+
+// The site (/src) reaches core through named entry points only, so a core file can move without
+// touching its importers. The exports map in packages/core/package.json lists the same names.
+const siteDir = path.resolve(srcDir, '..', '..', '..', 'src');
+const CORE_PACKAGE = '@sparkforensics/core';
+// The entry points the site may import. `cli`, `mcp` and `node` are Node-only entry points.
+const SITE_ENTRY_POINTS = ['analysis', 'browser', 'export', 'types', 'view-model'];
+
+function siteSourceFiles(dir = siteDir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return siteSourceFiles(full);
+    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+  });
+}
+
+describe('core entry points', () => {
+  it('the site imports core only through its entry points', () => {
+    const offenders = siteSourceFiles().flatMap((file) => {
+      const specifiers = readFileSync(file, 'utf8').match(/@sparkforensics\/core[^'"`\s]*/g) ?? [];
+      return specifiers
+        .filter((specifier) => !SITE_ENTRY_POINTS.map((name) => `${CORE_PACKAGE}/${name}`).includes(specifier))
+        .map((specifier) => `${path.relative(siteDir, file)}: ${specifier}`);
+    });
+    expect(offenders, `import core through ${SITE_ENTRY_POINTS.join(', ')}:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('the exports map names explicit entry points, each a file, and no wildcard', () => {
+    const { exports } = JSON.parse(readFileSync(path.join(srcDir, '..', 'package.json'), 'utf8'));
+    for (const [name, target] of Object.entries(exports)) {
+      expect(name).not.toContain('*');
+      expect(existsSync(path.resolve(srcDir, '..', target)), `${name} -> ${target}`).toBe(true);
+    }
+    expect(Object.keys(exports)).toEqual(expect.arrayContaining(SITE_ENTRY_POINTS.map((name) => `./${name}`)));
   });
 });

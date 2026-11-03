@@ -1,6 +1,6 @@
 import type { NodeProps } from '@xyflow/react';
 import { Chip } from '@/view/ImpactBadge';
-import type { PlanGraphSegmentGroupNodeData } from '@sparkforensics/core/types.ts';
+import type { PlanGraphSegmentGroupNodeData } from '@sparkforensics/core/types';
 
 export type PlanGraphSegmentGroupNodeProps = NodeProps & { data: PlanGraphSegmentGroupNodeData };
 

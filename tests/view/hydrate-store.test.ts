@@ -3,9 +3,9 @@ import { test, expect, beforeEach, vi } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { store, emptyAppModel } from '@/store/store';
 import { hydrateExportStore, loadExportPayload, unsupportedPayloadReason } from '@/export/hydrate-store';
-import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export';
+import { interpretRun } from '@sparkforensics/core/analysis';
+import type { Finding } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
 import { testFinding } from './_shared/finding';
 

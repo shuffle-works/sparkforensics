@@ -1,8 +1,8 @@
 import { Suspense, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import type { LocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
-import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { LocalityChart } from '@sparkforensics/core/analysis';
+import { worstImpactBand } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { useWidgetDensity } from '@/store/store';
 import { useInterpretation } from '@/view/interpretation';
 import { EvidenceInitiallyOpenContext, InlineEvidenceContext } from '@/view/InlineEvidenceContext';

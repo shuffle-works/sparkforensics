@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReactFlowProvider } from '@xyflow/react';
 import { PlanGraphNode } from '../../src/view/plan-graph/PlanGraphNode';
-import type { PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import type { PlanGraphNodeData } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 
 function nodeData(overrides: Partial<PlanGraphNodeData & { durationSharePct: number | null }> = {}) {

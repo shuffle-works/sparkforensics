@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { ImpactBoard } from '../../src/view/widgets/ImpactBoard';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
-import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { Finding, TaskData } from '@sparkforensics/core/types';
 import type { TriageTarget } from '../../src/view/triage-target';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';

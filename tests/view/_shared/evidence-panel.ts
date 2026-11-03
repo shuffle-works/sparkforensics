@@ -1,7 +1,7 @@
 import { evidencePanel, type EvidencePanel, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import { evidencePanelFor } from '@/view/detector-registry';
 import { emptyAppModel } from '@/store/store';
-import type { AppModel, Finding, FindingOf, FindingType } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf, FindingType } from '@sparkforensics/core/types';
 
 const everyFinding = <T extends FindingType>({ findings }: { findings: readonly FindingOf<T>[] }): WidgetRow<T>[] => findings.map((finding) => ({ findings: [finding] }));
 

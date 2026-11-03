@@ -5,13 +5,11 @@ import type { Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
-import { analyze } from '@sparkforensics/core/analyzer.ts';
-import { computeCoreLocalityRatio } from '@sparkforensics/core/core-locality-ratio.ts';
-import { buildLocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
+import { analyze, computeCoreLocalityRatio, buildLocalityChart } from '@sparkforensics/core/analysis';
 import { downsample } from '@/view/charts/downsample';
 import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
@@ -19,8 +17,8 @@ import { testFinding } from './_shared/finding';
 // Both mocks call through to the real implementation; only the large-series
 // test below overrides buildLocalityChart's return value for one call. The widget
 // reads its chart model (series, rescaling, peak) from core's buildLocalityChart.
-vi.mock('@sparkforensics/core/core-usage-locality.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@sparkforensics/core/core-usage-locality.ts')>();
+vi.mock('@sparkforensics/core/analysis', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sparkforensics/core/analysis')>();
   return { ...actual, buildLocalityChart: vi.fn(actual.buildLocalityChart) };
 });
 vi.mock('@/view/charts/downsample', async (importOriginal) => {

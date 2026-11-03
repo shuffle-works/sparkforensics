@@ -1,5 +1,5 @@
 import dagre, { type LayoutConfig } from '@dagrejs/dagre';
-import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types';
 
 export interface LaidOutNode extends PlanGraphNodeData {
   position: { x: number; y: number };

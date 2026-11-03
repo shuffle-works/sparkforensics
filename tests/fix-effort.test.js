@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
+import { DETECTORS } from '@sparkforensics/core/analysis';
 
 describe('fixEffort data model', () => {
   it('every DETECTORS entry has a fixEffort tag', () => {

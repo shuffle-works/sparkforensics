@@ -2,7 +2,7 @@
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 import { ExportApp } from '@/export/ExportApp';
 import { store } from '@/store/store';

@@ -9,7 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { StageShape } from '@/view/widgets/StageShape';
 import { store } from '@/store/store';
-import type { AppModel, Finding, FindingOf, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf, TaskData } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageIds: number[]): AppModel {

@@ -1,4 +1,4 @@
-import { formatBytes } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes } from '@sparkforensics/core/view-model';
 import { StageHeader } from '@/view/StageHeader';
 import { StagePillGroup } from '@/view/StagePill';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';

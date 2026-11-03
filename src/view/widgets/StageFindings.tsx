@@ -2,15 +2,13 @@ import { ArrowRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
+import { findingActionLabel, recommendationParts, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/view-model';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';
 import { emptySelection, matchesFilter } from '@/view/finding-filter';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
-import { formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import type { Finding, ImpactBand, Stage } from '@sparkforensics/core/types.ts';
+import type { Finding, ImpactBand, Stage } from '@sparkforensics/core/types';
 
 interface RecEntry {
   extended: string | null;

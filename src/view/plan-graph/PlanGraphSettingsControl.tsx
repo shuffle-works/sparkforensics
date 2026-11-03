@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { PlanGraphFilterControl } from '@/view/plan-graph/PlanGraphFilterControl';
 import { PlanGraphDurationModeControl } from '@/view/plan-graph/PlanGraphDurationModeControl';
 import { cn } from '@/lib/utils';
-import type { PlanGraphDurationMode, PlanGraphFilterMode } from '@sparkforensics/core/types.ts';
+import type { PlanGraphDurationMode, PlanGraphFilterMode } from '@sparkforensics/core/types';
 
 export interface PlanGraphSettingsControlProps {
   filterMode: PlanGraphFilterMode;

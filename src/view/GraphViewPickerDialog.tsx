@@ -3,7 +3,7 @@ import { Workflow } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ImpactDot } from '@/view/ImpactBadge';
-import type { ImpactBand, StageId } from '@sparkforensics/core/types.ts';
+import type { ImpactBand, StageId } from '@sparkforensics/core/types';
 
 export interface GraphViewPickerEntry {
   executionId: number;
