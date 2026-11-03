@@ -641,7 +641,10 @@ sup.footnote-ref {
   vertical-align: baseline;
 }
 
+/* The markers carry the chip box before citation-chips.ts wires them, so
+   wiring them after mount moves nothing on the page. */
 .citation-chip,
+.vp-doc sup.footnote-ref > a,
 .vp-doc a.citation-chip {
   position: relative;
   top: -0.3em;

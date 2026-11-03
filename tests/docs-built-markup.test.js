@@ -24,9 +24,10 @@ beforeAll(async () => {
   mkdirSync(path.join(root, '.vitepress/theme'), { recursive: true });
   writeFileSync(path.join(root, 'index.md'), '---\nlayout: home\n---\n');
   writeFileSync(path.join(root, 'guide.md'), '# Guide\n\n## Section\n');
+  writeFileSync(path.join(root, 'cited.md'), '# Cited\n\nOne[^a], two[^b], one again[^a].\n\n[^a]: First.\n[^b]: Second.\n');
   writeFileSync(
     path.join(root, '.vitepress/config.mts'),
-    `import config from ${JSON.stringify(configPath)};\nexport default { vite: config.vite };\n`,
+    `import config from ${JSON.stringify(configPath)};\nexport default { vite: config.vite, markdown: config.markdown };\n`,
   );
   writeFileSync(
     path.join(root, '.vitepress/theme/index.mts'),
@@ -52,5 +53,14 @@ describe('docs header markup in the built HTML', () => {
 
   it('gives the home page a main landmark', () => {
     expect(page('index.html').querySelector('.VPHome').getAttribute('role')).toBe('main');
+  });
+});
+
+describe('footnote markers in the built HTML', () => {
+  // citation-chips.ts wires these markers after mount. They must already carry the chip label, or
+  // the relabel rewraps the text above a deep-link target and pushes it under the nav.
+  it('renders each marker as its citation-chip label', () => {
+    const markers = page('cited.html').querySelectorAll('sup.footnote-ref > a');
+    expect([...markers].map((el) => el.textContent)).toEqual(['1', '2', '1']);
   });
 });

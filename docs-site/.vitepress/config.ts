@@ -62,7 +62,13 @@ export default defineConfig({
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${DOCS_BASE}favicon.svg` }],
   ],
   markdown: {
-    config(md) { md.use(footnote); },
+    config(md) {
+      md.use(footnote);
+      // Emit each marker as its citation-chip label ("2", not "[2:1]") so the server-rendered
+      // line wrapping already matches the chip; citation-chips.ts then only wires behavior, and
+      // the router's deep-link jump is not undone by a reflow above the target heading.
+      md.renderer.rules.footnote_caption = (tokens, idx) => String(tokens[idx].meta.id + 1);
+    },
   },
   vite: {
     resolve: {
