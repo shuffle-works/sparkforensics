@@ -136,12 +136,12 @@ export function useIngest(opts: Opts = {}) {
     pendingRef.current = null;
     clientRef.current = make();
     return createModelCallbacks(store.getState().appModel, {
-      onProgress: (p: any) =>
-        store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
-      onDone: (d: any) => { void runDone(d?.skippedLines ?? 0); },
-      onError: (e: any) => {
+      onProgress: (p) =>
+        store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed, etaMs: null }),
+      onDone: (summary) => { void runDone(summary.skippedLines); },
+      onError: (e) => {
         if (onError) onError(e);
-        else store.getState().setError(String(e?.message ?? e));
+        else store.getState().setError(String(e.message ?? e));
       },
     });
   }, [make, runDone]);
@@ -312,13 +312,13 @@ export function useIngest(opts: Opts = {}) {
           return;
         }
         const cb = createModelCallbacks(store.getState().appModel, {
-          onProgress: (p: any) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
+          onProgress: (p) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed, etaMs: null }),
           // A throw here (snapshotting, or opening the comparison) would otherwise leave the
           // "Parsing run N of 2" screen up forever.
-          onDone: (d: any) => {
-            try { onDone(d?.skippedLines ?? 0); } catch (e) { abort(which, e); }
+          onDone: (summary) => {
+            try { onDone(summary.skippedLines); } catch (e) { abort(which, e); }
           },
-          onError: (e: any) => abort(which, e),
+          onError: (e) => abort(which, e),
         });
         resolved.start(cb);
       } catch (e) {

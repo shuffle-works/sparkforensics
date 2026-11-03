@@ -6,7 +6,7 @@ import { store, emptyAppModel } from '../../src/store/store';
 import { captureSnapshot, applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 
-function fakeClient(doneArg?: any) {
+function fakeClient(doneArg: any = { skippedLines: 0 }) {
   let handlers: any;
   return {
     startParse: (_f: File, h: any) => {
@@ -97,7 +97,7 @@ test('startLoad stores the skipped-line count from the done payload', () => {
   expect(store.getState().skippedLines).toBe(5);
 });
 
-test('startLoad resets skippedLines to 0 when the done payload omits it', () => {
+test('startLoad resets skippedLines to 0 when the parse skipped none', () => {
   store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], skippedLines: 7 });
   const { result } = renderHook(() => useIngest({ makeClient: fakeClient }));
   act(() => result.current.startLoad(new File(['x'], 'log')));
@@ -143,7 +143,7 @@ test('runDone derives configFindings from the app config, once, alongside catalo
       name: 'demo', id: 'app-1',
       resources: { dynamicAllocationEnabled: true },
     });
-    h.onDone({});
+    h.onDone({ skippedLines: 0 });
   };
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
 

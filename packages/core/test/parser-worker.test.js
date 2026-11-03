@@ -354,7 +354,7 @@ describe('processEvent: ApplicationStart', () => {
     }, s);
     expect(s.app).toMatchObject({ id: 'application_123_1', name: 'test-app', startTime: 1000, endTime: null, sparkVersion: '3.4.0', config: {} });
     expect(s.app.resources.executor.memoryMB).toBeNull();
-    expect(msg).toEqual({ type: 'app', data: s.app });
+    expect(msg).toEqual({ type: 'app', data: { ...s.app, rddInfo: new Map() } });
   });
 });
 
@@ -2141,7 +2141,7 @@ describe('decodeShsArchive', () => {
     const appMsg = messages.find((m) => m.type === 'app');
     const doneMsg = messages.find((m) => m.type === 'done');
     expect(appMsg.data.id).toBe('app-1');
-    expect(doneMsg.skippedLines).toBe(0);
+    expect(doneMsg.data.skippedLines).toBe(0);
   });
 
   // shs-load.ts passes the Node-native zstd decoder; the browser's call leaves fzstd in place.

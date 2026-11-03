@@ -1,4 +1,5 @@
 import type { ExchangeWidth, Finding } from './finding-types.ts';
+import type { FinalizedStage } from './stage-quantiles.ts';
 export type { DetectorType, FindingType } from './detectors.ts';
 
 export type StageId = number;
@@ -12,13 +13,57 @@ export interface SparkAppInfo {
   // supplies one), not just `undefined`.
   sparkVersion?: string | null;
   config?: Record<string, string>;
-  resources?: Record<string, unknown>;
+  resources?: AppResources;
   evidenceInputs?: EvidenceInputs;
   startTime?: number;
   // startApplication seeds this to `null` (app still running); the
   // ApplicationEnd handler later overwrites it with a real number.
   endTime?: number | null;
-  [key: string]: unknown;
+  // Cluster-mode logs only: Spark writes no attempt id for a client or local run.
+  attemptId?: string;
+  rddInfo?: Map<number, RddInfo>;
+  // SparkListenerBlockUpdated events seen for rdd_* blocks (0 when logBlockUpdates was off).
+  rddBlockUpdates?: number;
+}
+
+export interface AppResources {
+  executor: {
+    memory: string | null;
+    memoryMB: number | null;
+    memoryOverhead: string | null;
+    memoryOverheadMB: number | null;
+    cores: number | null;
+    instances: number | null;
+  };
+  driver: {
+    memory: string | null;
+    memoryMB: number | null;
+    memoryOverhead: string | null;
+    memoryOverheadMB: number | null;
+    cores: number | null;
+  };
+  dynamicAllocationEnabled: boolean | null;
+  shuffleServiceEnabled: boolean | null;
+  serializer: string | null;
+  // The run's effective spark.eventLog.logStageExecutorMetrics (off unless set); null for a log with
+  // no recorded properties. The evidence ledger reads it without importing the defaults table.
+  stageExecutorMetricsLogging: boolean | null;
+}
+
+export interface RddInfo {
+  id: number;
+  name: string;
+  callsite: string;
+  storageLevel: { useDisk: boolean; useMemory: boolean; deserialized: boolean; replication: number };
+  numPartitions: number;
+  numCachedPartitions: number;
+  memorySize: number;
+  diskSize: number;
+  // Where numCachedPartitions/memorySize/diskSize came from: 'rddInfo' is StageSubmitted's RDD Info
+  // snapshot (always 0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); 'blockUpdates' is the
+  // per-block SparkListenerBlockUpdated stream (spark.eventLog.logBlockUpdates.enabled=true).
+  storageSource: 'rddInfo' | 'blockUpdates';
+  stageIds: number[];
 }
 
 export interface EvidenceInputs {
@@ -74,69 +119,8 @@ export interface StageAttemptTotals {
   durationMs: number | null;
 }
 
-export interface Stage {
-  id: StageId;
-  name?: string;
-  stageType?: string;
-  sqlExecutionId?: number | null;
-  planTree?: PlanNode | null;
-  submittedAt?: number;
-  completedAt?: number;
-  parentIds?: number[];
-  taskCount?: number;
-  failedTasks?: number;
-  inputBytes?: number;
-  outputBytes?: number;
-  // Summed Records Written; null when no task of the stage reported one (absent when the stage carries no record count).
-  outputRecords?: number | null;
-  // Times the stage was submitted and how many of those attempts failed, counted across
-  // resubmits.
-  stageAttempts?: number;
-  failedStageAttempts?: number;
-  // The summed work of the attempts before the latest one, which the stage's own figures leave
-  // out; null or absent when the stage ran once. Read only by the CLI's metrics block.
-  earlierAttempts?: StageAttemptTotals | null;
-  // The summed work the stage's own figures also leave out: a failed attempt's tasks that ended
-  // after its StageCompleted, and task attempts another attempt of the same task superseded
-  // (failed retries, losing speculative copies); null or absent when there was none. Read only by
-  // the CLI's metrics block.
-  lateAttemptWork?: StageAttemptTotals | null;
-  shuffleReadBytes?: number;
-  shuffleReadMax?: number;
-  shuffleReadP50?: number;
-  shuffleWriteBytes?: number;
-  fetchWaitTime?: number;
-  memoryBytesSpilled?: number;
-  diskBytesSpilled?: number;
-  spillClassification?: 'skew' | 'volume' | 'unclassified';
-  jvmGCTime?: number;
-  executorRunTime?: number;
-  // Summed task CPU time, in nanoseconds (Spark's unit); 0 on logs that predate the metric.
-  executorCpuTime?: number;
-  gcPct?: number;
-  taskDurationP50?: number;
-  taskDurationP95?: number;
-  taskDurationMax?: number;
-  peakExecutionMemoryMax?: number;
-  // Wall-clock ms during which at least one of the stage's tasks ran (finalizeStage's
-  // computeTaskActiveMs).
-  taskActiveMs?: number;
-  // Summed (duration - P50) over the tasks slower than 4x P50 (finalizeStage), core-ms.
-  stragglerExcessMs?: number;
-  // Longest task at or under 4x P50, the longest a straggler fix leaves (finalizeStage).
-  longestNonStragglerMs?: number;
-  // Wall-clock a list-scheduling replay of the stage's tasks recovers with every task over 4x P50
-  // capped at P50 (finalizeStage's computeTailReplayRecoveryMs), ms.
-  tailReplayRecoveryMs?: number;
-  // Most of the stage's tasks running at once (finalizeStage's computePeakConcurrentTasks).
-  peakConcurrentTasks?: number;
-  // What the stage's slow tail was made of (finalizeStage's attributeTail); absent when no task
-  // ran over 3x P50.
-  tailAttribution?: TailAttribution;
-  localityStats?: { locality: string; count: number }[];
-  details?: string;
-  [key: string]: unknown;
-}
+// A stage in the posted model: exactly what finalizeStage builds.
+export type Stage = FinalizedStage;
 
 // The tail of a stage: its non-failed tasks over TAIL_FACTOR x P50. Each cause is the summed time
 // (ms) of the tail's excess over P50 that the cause accounts for, taken in the order data, GC, fetch
@@ -192,12 +176,13 @@ export interface SqlExecution {
   planTree?: PlanNode | null;
   description?: string;
   startTime?: number;
+  endTime?: number | null;
+  stageIds?: number[];
   rootExecutionId?: number;
   /** `<Command>\nArguments: <line>` of a Delta write command's root node (see stripPlanDescription). */
   commandArguments?: string;
   /** Session settings this execution ran with that differ from the SparkContext's (`SQLExecutionStart.modifiedConfigs`). */
   modifiedConfigs?: Record<string, string>;
-  [key: string]: unknown;
 }
 export interface PlanGraphNodeData {
   id: string;
@@ -333,7 +318,6 @@ export interface RunAggregates {
   /** Per executor id, the run peak of each executor metric any TaskEnd reported (lower bounds:
    * Spark samples at heartbeat). Absent on a log without Spark 3+ task executor metrics. */
   executorPeakMetrics?: Record<string, Record<string, number>>;
-  [key: string]: unknown;
 }
 
 export interface AppModel {

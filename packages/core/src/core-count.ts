@@ -1,5 +1,5 @@
 // Total cores: sum executor totalCores, else peakExecutors x configured cores.
-export function computeTotalCores(app: {resources?: {executor?: {cores?: number}}}, executorsAdded: Array<{totalCores?: number}>): number {
+export function computeTotalCores(app: {resources?: {executor?: {cores?: number | null}}}, executorsAdded: Array<{totalCores?: number}>): number {
   let total = executorsAdded.reduce((s, e) => s + (e.totalCores ?? 0), 0);
   if (total <= 0) {
     const cores = app.resources?.executor?.cores ?? null;
@@ -25,7 +25,7 @@ function sweepPeak(events: Array<{time: number; delta: number}>): number {
 }
 
 export function computePeakConcurrentCores(
-  app: {resources?: {executor?: {cores?: number}}},
+  app: {resources?: {executor?: {cores?: number | null}}},
   executorsAdded: Array<{executorId: string; timestamp: number; totalCores?: number}>,
   executorsRemoved: Array<{executorId: string; timestamp: number}>,
 ): number {

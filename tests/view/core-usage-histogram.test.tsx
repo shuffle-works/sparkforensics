@@ -7,6 +7,7 @@ import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { gatherTaskIntervals } from '@/view/core-usage-histogram-data';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
+import { testStage } from './_shared/model';
 
 const FIELD_NAMES = [
   'duration',
@@ -29,7 +30,7 @@ function taskArray(launch: number, finish: number): Float64Array {
 }
 
 function buildAppModel(stageIds: number[]): AppModel {
-  return { ...emptyAppModel(), stages: new Map(stageIds.map((id) => [id, { id }])) };
+  return { ...emptyAppModel(), stages: new Map(stageIds.map((id) => [id, testStage({ id })])) };
 }
 
 test('gatherTaskIntervals extracts launch/finish across all stages', async () => {

@@ -2,14 +2,19 @@
 // dashboard's comparison view and the MCP compare_runs tool) share these, so one name never means
 // two figures.
 import { nsToMs } from './format-utils.ts';
-import type { Stage } from './types.ts';
+import type { Stage, StageAttemptTotals } from './types.ts';
 
 /** Each stage followed by the work its own figures leave out, shaped like a stage: the attempts a
  * resubmit replaced, and task attempts the stage record dropped (a failed attempt's late tasks,
  * failed retries, losing speculative copies). Summing the result counts every attempt's work,
  * failed ones too. A stage's own record, which the detectors and per-stage views read, is left as
  * it is. */
-export function withEarlierAttempts(stages: Stage[]): Stage[] {
+export type StageWork = Omit<StageAttemptTotals, 'durationMs'> & { id: number; submittedAt: number; completedAt?: number };
+
+/** A stage, or the work row `withEarlierAttempts` adds after it, which carries only the totals. */
+export type AttemptRow = StageWork & Partial<Omit<Stage, keyof StageWork>>;
+
+export function withEarlierAttempts(stages: Stage[]): AttemptRow[] {
   return stages.flatMap((s) => [s, ...[s.earlierAttempts, s.lateAttemptWork]
     .filter((work) => work != null)
     .map(({ durationMs, ...totals }) => ({ id: s.id, ...totals, submittedAt: 0, completedAt: durationMs ?? undefined }))]);

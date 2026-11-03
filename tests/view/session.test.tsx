@@ -35,7 +35,7 @@ function makeClient() {
         h.onApp({ name: 'app-b', id: 'app-b-id' });
         h.onStage({ id: 2, stageId: 2, name: 'stage-b' });
       }
-      h.onDone();
+      h.onDone({ skippedLines: 0 });
     }),
     startParseFromUrl: vi.fn(),
     startParseFiles: vi.fn(),

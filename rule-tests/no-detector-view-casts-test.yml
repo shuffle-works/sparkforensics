@@ -1,0 +1,9 @@
+id: no-detector-view-casts
+valid:
+  - "const ctx: DetectorCtx = { stages, sql };"
+  - "const rows = value as unknown as Row[];"
+  - "const occupancy = computeOccupancy(stages, totalCores);"
+invalid:
+  - "const stages2 = stages as unknown as Map<number, OccupancyStage>;"
+  - "const ctx = value as unknown as DetectorCtx;"
+  - "const sql2 = sql as unknown as DetectorCtx['sql'];"

@@ -8,6 +8,7 @@ import { ShsProxyErrorBodySchema } from './shs-schemas.ts';
 import { naturalCompare, reassembleRollingEntries } from './rolling-log-reassembly.ts';
 import { listZipEntries, streamZipEntry, type ZipEntry, type ZipSource } from './zip-archive.ts';
 import type { ZstdDecoderFactory } from './parser-worker.ts';
+import type { ParserEmit, ParserMessage } from './parser-messages.ts';
 
 export { naturalCompare, reassembleRollingEntries };
 
@@ -100,7 +101,7 @@ function createEntryDecoder(name: string, onChunk: (chunk: Uint8Array) => void, 
   };
 }
 
-type EmitFn = (msg: unknown) => void;
+type EmitFn = ParserEmit;
 
 function emitShsError(emit: EmitFn, code: string, message?: string): void {
   emit({ type: 'error', source: 'shs', code, ...(message ? { message } : {}) });
@@ -109,7 +110,7 @@ function emitShsError(emit: EmitFn, code: string, message?: string): void {
 export async function runParseFromUrl(
   request: unknown,
   state: ParserState,
-  { fetchImpl = fetch, emit = (msg: unknown) => self.postMessage(msg) }: { fetchImpl?: typeof fetch; emit?: EmitFn } = {}
+  { fetchImpl = fetch, emit = (msg: ParserMessage) => self.postMessage(msg) }: { fetchImpl?: typeof fetch; emit?: EmitFn } = {}
 ): Promise<void> {
   // buildProxyRequestUrl is untyped JS; `request`'s real shape isn't pinned here.
   const url = buildProxyRequestUrl(request as Parameters<typeof buildProxyRequestUrl>[0]);

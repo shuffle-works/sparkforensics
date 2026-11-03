@@ -1,15 +1,15 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorConfigTarget, type DetectorCtx, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
-import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
+import { computeOccupancy } from './occupancy.ts';
 import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import type {
-  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
+  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorAddedEvent, ExecutorRemovedEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
 
 // The runner reads each entry through the Detector contract, not its own precise `as const` shape:
@@ -226,15 +226,15 @@ function linkSingleKeyToBroadcast(findings: Finding[], sql: Map<number, SqlExecu
 // The run's idle core-ms (the Wasted core-hours figure), the ceiling for one stage's idle claim.
 function runIdleCoreMs(
   app: SparkAppInfo | null,
-  executorsAdded: ExecutorEvent[],
-  executorsRemoved: ExecutorEvent[],
+  executorsAdded: ExecutorAddedEvent[],
+  executorsRemoved: ExecutorRemovedEvent[],
   runAggregates: RunAggregates | null,
 ): number | null {
   const { wastedCoreHours } = computeWastedCoreHours(
     app,
-    executorsAdded as Array<{ executorId: string; timestamp: number; totalCores?: number }>,
+    executorsAdded,
     runAggregates,
-    executorsRemoved as Array<{ executorId: string; timestamp: number }>,
+    executorsRemoved,
   );
   return wastedCoreHours == null ? null : wastedCoreHours * MS_PER_CORE_HOUR;
 }
@@ -244,8 +244,8 @@ function runIdleCoreMs(
 export function analyze(
   app: SparkAppInfo | null,
   stages: Map<number, Stage>,
-  executorsAdded: ExecutorEvent[],
-  executorsRemoved: ExecutorEvent[],
+  executorsAdded: ExecutorAddedEvent[],
+  executorsRemoved: ExecutorRemovedEvent[],
   jobs: Map<number, Job> = new Map(),
   sql: Map<number, SqlExecution> = new Map(),
   runAggregates: RunAggregates | null = null,
@@ -254,27 +254,21 @@ export function analyze(
   // `app ?? {}`: detectors tolerate a null app (malformed logs), so this must too.
   // computePeakConcurrentCores (not computeTotalCores): the occupancy ceiling needs a
   // concurrent-capacity bound; a cumulative sum overstates it under dynamic allocation.
-  // Casts: the function reads only executorId/timestamp/totalCores, but totalCores isn't
-  // on ExecutorRemovedEvent, so the ExecutorEvent union mismatches its parameter shapes.
   const totalCores = computePeakConcurrentCores(
     app ?? {},
-    executorsAdded as Array<{ executorId: string; timestamp: number; totalCores?: number }>,
-    executorsRemoved as Array<{ executorId: string; timestamp: number }>,
+    executorsAdded,
+    executorsRemoved,
   );
   // One occupancy sweep per analysis, shared by the detectors' runtime floors and every entry's
   // estimate(), so a floor gates on the same occupancy-clipped figure displayed as savings.
   const impact: EstimateCtx = {
     stages, totalCores, sql,
-    occupancy: computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores),
+    occupancy: computeOccupancy(stages, totalCores),
     runIdleCoreMs: runIdleCoreMs(app, executorsAdded, executorsRemoved, runAggregates),
   };
-  // The one cast from the posted-model types to the detector-side shapes: types.ts's Stage and
-  // SqlExecution carry a catch-all index signature, while every field DetectorStage/DetectorSqlExec
-  // declare is one finalizeStage and event-handlers.ts always set (see detectors.ts's header).
   const ctx: DetectorCtx = {
     app, jobs, executorsAdded, executorsRemoved, runAggregates, impact,
-    stages: stages as unknown as DetectorCtx['stages'],
-    sql: sql as unknown as DetectorCtx['sql'],
+    stages, sql,
     skewThresholds: skewThresholdsFor(thresholds),
   };
   const out: Finding[] = [];
@@ -326,7 +320,7 @@ const auditConfigCache = new WeakMap<SparkAppInfo, { rddWork: boolean; findings:
 function computeAuditConfig(app: SparkAppInfo | null, stages: Map<number, Stage> | undefined): Finding[] {
   const out: Finding[] = [];
   const seen = new Set<string>();
-  const target = { app, stages: stages as unknown as DetectorConfigTarget['stages'] };
+  const target = { app, stages };
   for (const d of detectors) if (d.scope === 'config') push(out, seen, d, d.withThresholds()(target));
   // configAudit's estimate is unconditionally costOnly('none'): needs no stages/totalCores, so an
   // empty context gives parity with analyze().
@@ -339,7 +333,7 @@ function computeAuditConfig(app: SparkAppInfo | null, stages: Map<number, Stage>
  * work (the serializer note needs RDD stages) see the run's work; without it they stay silent. */
 export function auditConfig(app: SparkAppInfo | null, stages?: Map<number, Stage>): Finding[] {
   if (app === null) return computeAuditConfig(app, stages);
-  const rddWork = hasStageOutsideSql(stages as unknown as DetectorConfigTarget['stages']);
+  const rddWork = hasStageOutsideSql(stages);
   const cached = auditConfigCache.get(app);
   if (cached?.rddWork === rddWork) return cached.findings.slice();
   const findings = computeAuditConfig(app, stages);

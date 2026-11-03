@@ -12,6 +12,7 @@ import { downsample } from '@/view/charts/downsample';
 import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { testStage } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 
 // Both mocks call through to the real implementation; only the large-series
@@ -324,7 +325,7 @@ test('shows the idle-core cross-link when a memoryUtilization idleCores finding 
 // computeCoreLocalityRatio and the finding's stored value is caught here.
 test('the rendered finding value and the widget\'s own locality computation agree on the same fixture', async () => {
   // Full stage shape so analyze() runs its whole detector roster; only the locality fields are tuned.
-  const stage = {
+  const stage = testStage({
     id: 1, name: 'test', submittedAt: 0, completedAt: 60_000,
     taskCount: 100, failedTasks: 0,
     shuffleReadBytes: 0, shuffleWriteBytes: 0, fetchWaitTime: 0,
@@ -344,7 +345,7 @@ test('the rendered finding value and the widget\'s own locality computation agre
       { locality: 'PROCESS_LOCAL', count: 80 },
       { locality: 'ANY', count: 20 },
     ],
-  };
+  });
   const app = { id: 'app_1', name: 'test', startTime: 0, endTime: 60_000, sparkVersion: '3.4.0', config: {} };
   const stages = new Map([[1, stage]]);
 

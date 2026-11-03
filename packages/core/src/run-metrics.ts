@@ -4,7 +4,7 @@
 import { computeAllocation, type Allocation } from './allocation.ts';
 import { maxOf } from './array-extremes.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
-import { totalExecutorCpuMs, totalOutputRows, withEarlierAttempts } from './run-totals.ts';
+import { totalExecutorCpuMs, totalOutputRows, withEarlierAttempts, type AttemptRow } from './run-totals.ts';
 import { isPythonStage } from './python-stage.ts';
 import { stageIdentity } from './run-comparison.ts';
 import { hasCompleteApplicationInterval } from './scorecard-estimates.ts';
@@ -73,7 +73,7 @@ export interface RunMetrics {
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 // Σ of a field over the stages that carry a finite value; null when none does.
-function sumOf(stages: Stage[], pick: (s: Stage) => number | null | undefined): number | null {
+function sumOf(stages: AttemptRow[], pick: (s: AttemptRow) => number | null | undefined): number | null {
   let sum = 0, present = false;
   for (const s of stages) {
     const v = pick(s);
@@ -83,7 +83,7 @@ function sumOf(stages: Stage[], pick: (s: Stage) => number | null | undefined): 
 }
 
 // 0 means either no execution memory used or not recorded; only a positive peak is reported.
-function peakExecutionMemory(stages: Stage[]): number | null {
+function peakExecutionMemory(stages: AttemptRow[]): number | null {
   const peaks = stages.map((s) => s.peakExecutionMemoryMax).filter((v): v is number => finite(v) && v > 0);
   return maxOf(peaks);
 }
@@ -97,7 +97,7 @@ function maxSkew(stages: Stage[], minTasksForP95: number): number | null {
 
 // Failed stage attempts and stages submitted more than once, from the parser's per-stage attempt
 // counts; null when any stage record lacks them.
-function stageAttempts(stages: Stage[]): { failed: number; retried: number } | null {
+function stageAttempts(stages: AttemptRow[]): { failed: number; retried: number } | null {
   let failed = 0, retried = 0;
   for (const s of stages) {
     if (!finite(s.stageAttempts) || !finite(s.failedStageAttempts)) return null;
@@ -116,7 +116,7 @@ function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
   // attempt finished a task.
   const finished = attempts.some((s) => (s.taskCount ?? 0) > 0) ? attempts : [];
   const tasks = sumOf(attempts, (s) => s.taskCount);
-  const fromTasks = (pick: (s: Stage) => number | undefined): number | null => (finished.length > 0 ? sumOf(finished, pick) : null);
+  const fromTasks = (pick: (s: AttemptRow) => number | undefined): number | null => (finished.length > 0 ? sumOf(finished, pick) : null);
   const durations = attempts.filter((s) => finite(s.submittedAt) && finite(s.completedAt) && (s.completedAt as number) >= (s.submittedAt as number));
   return {
     durationMs: durations.length > 0 ? sumOf(durations, (s) => (s.completedAt as number) - (s.submittedAt as number)) : null,

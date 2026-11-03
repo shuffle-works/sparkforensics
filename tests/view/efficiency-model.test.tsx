@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { emptyAppModel, store } from '@/store/store';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import type { AppModel } from '@sparkforensics/core/types.ts';
+import { testApp } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 
 // The widget renders the store's interpretation of the run, as the dashboard installs it.
@@ -25,7 +26,7 @@ function buildStages(completedAt: number): AppModel['stages'] {
 function buildAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return {
     ...emptyAppModel(),
-    app: { startTime: 0, endTime: 3600000, resources: { executor: { cores: 1, memory: '4g' }, driver: { memory: '2g', cores: 1 } } },
+    app: testApp({ startTime: 0, endTime: 3600000, resources: { executor: { cores: 1, memory: '4g' }, driver: { memory: '2g', cores: 1 } } }),
     stages: buildStages(1800000),
     executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 2, resourceProfileId: null }], removed: [] },
     runAggregates: { busyCoreMs: 900000, perStage: { 1: { totalTaskDurationSum: 900000, taskCount: 4 } } },

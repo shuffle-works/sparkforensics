@@ -25,14 +25,7 @@ export interface RddInfoRow {
   diskSize?: number;
 }
 
-// `appModel.app` carries a runtime `rddInfo` Map not on the frozen `SparkAppInfo` type; bridged with
-// a single cast.
-interface AppWithRddInfo {
-  rddInfo?: Map<number, RddInfoRow>;
-}
-
-export const rddInfoOf = (appModel: AppModel): Map<number, RddInfoRow> | undefined =>
-  (appModel.app as unknown as AppWithRddInfo | null)?.rddInfo;
+export const rddInfoOf = (appModel: AppModel): Map<number, RddInfoRow> | undefined => appModel.app?.rddInfo;
 
 /** The RDDs with cached partitions in memory or on disk, largest first. */
 export const cachedRdds = (rddInfo: Map<number, RddInfoRow> | undefined): RddInfoRow[] => rddInfo

@@ -4,10 +4,9 @@
 import { allocatedCoreMs, computeAllocation, lastObservedTimestamp } from './allocation.ts';
 import { buildEffectiveConf } from './effective-conf.ts';
 import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
-import { totalOutputRows, withEarlierAttempts } from './run-totals.ts';
+import { totalOutputRows, withEarlierAttempts, type AttemptRow } from './run-totals.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { StageAlignment } from './stage-alignment.ts';
-import type { Stage } from './types.ts';
 
 /** A configuration key whose value differs between the runs. A side that does not set the key is
  * null. */
@@ -210,7 +209,7 @@ export function withinBand(baseline: number, candidate: number, noiseBand: numbe
 }
 
 function compareVolume(
-  baseStages: Stage[], candStages: Stage[], metrics: Array<{ key: string; baseline: number | null; candidate: number | null }>, noiseBand: number,
+  baseStages: AttemptRow[], candStages: AttemptRow[], metrics: Array<{ key: string; baseline: number | null; candidate: number | null }>, noiseBand: number,
 ): VolumeComparability {
   const row = (key: string) => metrics.find((m) => m.key === key);
   const inputBytes = figure(row('inputBytes')?.baseline ?? null, row('inputBytes')?.candidate ?? null);
@@ -247,7 +246,7 @@ export function buildComparability(
   metrics: Array<{ key: string; baseline: number | null; candidate: number | null }>,
   { ignoreConf, confRedactRegex, noiseBand, caveatThresholds }: ComparabilityOptions,
 ): Comparability {
-  const attempts = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
+  const attempts = (snap: SessionSnapshot): AttemptRow[] => withEarlierAttempts([...snap.stages.values()]);
   const allocation = (snap: SessionSnapshot) => (snap.executors ? computeAllocation(snap) : null);
   const baseAlloc = allocation(baseSnap), candAlloc = allocation(candSnap);
   const row = (key: string) => metrics.find((m) => m.key === key);

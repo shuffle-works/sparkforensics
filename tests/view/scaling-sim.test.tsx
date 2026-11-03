@@ -8,6 +8,7 @@ import { ScalingSim, makespanYAxisDomain } from '@/view/widgets/ScalingSim';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import type { AppModel, Job } from '@sparkforensics/core/types.ts';
+import { testApp } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 
 // Fixture mirrors the real per-stage shape posted by the parser worker so
@@ -15,7 +16,7 @@ import { installInterpretation } from './_shared/interpretation';
 function runnableAppModel(): AppModel {
   return {
     ...emptyAppModel(),
-    app: { startTime: 0, endTime: 1000, resources: { executor: { cores: 2 } } },
+    app: testApp({ startTime: 0, endTime: 1000, resources: { executor: { cores: 2 } } }),
     stages: new Map([[1, { stageId: 1, submittedAt: 0, completedAt: 1000 }]]) as unknown as AppModel['stages'],
     runAggregates: { perStage: { 1: { totalTaskDurationSum: 2000, taskCount: 4 } } },
     evidenceAvailability: {
@@ -96,7 +97,7 @@ describe('ScalingSim', () => {
 
   it('renders the unavailable fallback when the model has no baseline cores', () => {
     const model = runnableAppModel();
-    model.app = { startTime: 0, endTime: 1000, resources: {} };
+    model.app = testApp({ startTime: 0, endTime: 1000, resources: {} });
     model.executors = { added: [], removed: [] };
     installInterpretation([], model);
     render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);

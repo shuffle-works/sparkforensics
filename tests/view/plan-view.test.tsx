@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { PlanView } from '../../src/view/widgets/PlanView';
 import { store } from '../../src/store/store';
 import type { AppModel, PlanNode } from '@sparkforensics/core/types.ts';
+import { testStage } from './_shared/model';
 
 const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode => ({
   name,
@@ -21,7 +22,7 @@ function makeAppModel(
 ): AppModel {
   return {
     app: null,
-    stages: new Map([[stageId, { id: stageId, sqlExecutionId: 1 }]]),
+    stages: new Map([[stageId, testStage({ id: stageId, sqlExecutionId: 1 })]]),
     executors: { added: [], removed: [] },
     sql: new Map([[1, { id: 1, planTree, stageIds }]]),
     jobs: new Map(),

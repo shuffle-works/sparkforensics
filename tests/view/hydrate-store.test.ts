@@ -6,6 +6,7 @@ import { hydrateExportStore, loadExportPayload, unsupportedPayloadReason } from 
 import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { testStage } from './_shared/model';
 import { testFinding } from './_shared/finding';
 
 beforeEach(() => {
@@ -28,7 +29,7 @@ function sampleData(overrides: Partial<ExportRunData> = {}): ExportRunData {
     schemaVersion: EXPORT_DATA_SCHEMA_VERSION,
     provenance: { coreVersion: '0.1.0', buildId: 'abc123', producer: 'sparkforensics-analyze 9.9.9' },
     app: { id: 'app-1', name: 'Test App', sparkVersion: '3.5.0' },
-    stages: [{ id: 1, name: 's1' }],
+    stages: [testStage({ id: 1, name: 's1' })],
     jobs: [{ id: 1, submissionTime: 0, stageIds: [1], sqlExecutionId: null, result: null, succeeded: true, exception: null, completionTime: 1000 }],
     sql: [{ id: 1, planTree: null }],
     executors: { added: [], removed: [] },

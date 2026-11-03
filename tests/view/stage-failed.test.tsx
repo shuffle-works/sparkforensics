@@ -8,10 +8,11 @@ import { StageFailed } from '../../src/view/widgets/StageFailed';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel } from '../../src/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { testStage } from './_shared/model';
 import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageNames: Record<number, string>): AppModel {
-  const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), { id: Number(id), name }]));
+  const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), testStage({ id: Number(id), name })]));
   return { ...emptyAppModel(), stages };
 }
 

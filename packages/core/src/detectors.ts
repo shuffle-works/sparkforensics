@@ -37,8 +37,14 @@ import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import { adviseFailureGroup, adviseStageFailure } from './failure-advice.ts';
-import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
-import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
+import type {
+  ExecutorAddedEvent, ExecutorRemovedEvent, Finding, FixEffort, ImpactEstimate, Job, PlanNode, RawWasteFigure, RddInfo,
+  RunAggregates, SparkAppInfo, SqlExecution, TailAttribution,
+} from './types.ts';
+import type {
+  FinalizedStage, StageExecutorStat, StageFailureReason,
+} from './stage-quantiles.ts';
+import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -49,129 +55,29 @@ function binaryThresholdLabel(bytes: number): string {
   return `${Math.round(bytes / size * 10) / 10} ${unit}`;
 }
 
-// Local runtime shapes.
-//
-// types.ts's Stage/SqlExecution/SparkAppInfo describe the posted AppModel surface for the view
-// layer (with a catch-all index signature). This file needs the FULL set of fields finalizeStage
-// computes and event-handlers.ts records carry, accessed directly (arithmetic, comparisons), so
-// an index-signature type would force an `unknown` cast at nearly every access. Every field below
-// is verified against a real access here.
-interface DetectorHostStat { host: string; taskCount: number; totalDuration: number; }
-interface DetectorExecutorStat {
-  executorId: string; taskCount: number; totalDuration: number;
-  // Sum and Welford M2 of ln(1 + task duration) over the executor's tasks: the stage's task spread
-  // on the log scale. Absent on a stage recorded without them.
-  logDurationSum?: number; logDurationM2?: number;
-  inputBytes: number; shuffleReadBytes: number; shuffleWriteBytes: number;
-}
-interface DetectorFailureReason { reason: string; count: number; }
-interface DetectorLocalityStat { locality: string; count: number; }
-type DetectorFailedTaskSample = TaskAttemptSample;
-// Per-executor snapshot from a StageExecutorMetrics event: a loose bag of Spark's
-// ExecutorMetrics field names, only a few of which any detector reads.
-interface DetectorExecutorMetricsSnapshot {
-  jvmHeapMemory?: number;
-  onHeapStorageMemory?: number;
-  offHeapStorageMemory?: number;
-  [key: string]: number | undefined;
-}
+// Detector views of the posted model: each is a Pick of the type that builds it, so a renamed or
+// never-set field is a compile error here rather than a detector that goes quiet.
+type DetectorExecutorStat = StageExecutorStat;
+type DetectorFailureReason = StageFailureReason;
+type DetectorRddInfo = RddInfo;
 
-export interface DetectorStage {
-  id: number;
-  sqlExecutionId?: number | null;
-  taskCount: number;
-  failedTasks: number;
-  inputBytes: number;
-  outputBytes: number;
-  submittedAt: number;
-  completedAt: number;
-  shuffleReadBytes: number;
-  shuffleReadP50: number;
-  shuffleReadMax: number;
-  memoryBytesSpilled: number;
-  peakExecutionMemoryMax?: number;
-  spillClassification: 'skew' | 'volume' | 'unclassified';
-  spillDiskMax?: number;
-  spillMemMax?: number;
-  spillDiskP50?: number;
-  spillMemP50?: number;
-  gcPct: number;
-  executorRunTime: number;
-  executorCpuTime: number;
-  taskDurationP50: number;
-  taskDurationP95: number;
-  taskDurationMax: number;
-  hostStats?: DetectorHostStat[];
-  executorStats?: DetectorExecutorStat[];
-  executorMetrics: Map<string, DetectorExecutorMetricsSnapshot>;
-  failureReasons?: DetectorFailureReason[];
-  failureGroups?: TaskFailureGroup[];
-  // Failures of the attempts a retry superseded, most frequent first.
-  retryFailureGroups?: TaskFailureGroup[];
-  localityStats?: DetectorLocalityStat[];
-  stragglerCount: number;
-  stragglerExcessMs?: number;
-  longestNonStragglerMs?: number;
-  peakConcurrentTasks?: number;
-  tailAttribution?: TailAttribution;
-  speculativeTasks: number;
-  speculationWastedAttempts: number;
-  speculationWasteMs: number;
-  wastedAttempts: number;
-  retryWasteMs: number;
-  stageFailureReason: string | null;
-  failedTaskSamples?: DetectorFailedTaskSample[];
-  retryTaskSamples?: DetectorFailedTaskSample[];
-}
+export type DetectorStage = Pick<FinalizedStage,
+  | 'id' | 'sqlExecutionId' | 'taskCount' | 'failedTasks' | 'inputBytes' | 'outputBytes' | 'submittedAt' | 'completedAt'
+  | 'shuffleReadBytes' | 'shuffleReadP50' | 'shuffleReadMax' | 'memoryBytesSpilled' | 'peakExecutionMemoryMax'
+  | 'spillClassification' | 'spillDiskMax' | 'spillMemMax' | 'spillDiskP50' | 'spillMemP50'
+  | 'gcPct' | 'executorRunTime' | 'executorCpuTime' | 'taskDurationP50' | 'taskDurationP95' | 'taskDurationMax'
+  | 'hostStats' | 'executorStats' | 'executorMetrics' | 'failureReasons' | 'failureGroups' | 'retryFailureGroups'
+  | 'localityStats' | 'stragglerCount' | 'stragglerExcessMs' | 'longestNonStragglerMs' | 'peakConcurrentTasks'
+  | 'tailAttribution' | 'speculativeTasks' | 'speculationWastedAttempts' | 'speculationWasteMs'
+  | 'wastedAttempts' | 'retryWasteMs' | 'stageFailureReason' | 'failedTaskSamples' | 'retryTaskSamples'>;
 
-export interface DetectorSqlExec {
-  id: number;
-  planTree?: PlanNode | null;
-  description?: string;
-  // The session settings this execution ran with that differ from the SparkContext's.
-  modifiedConfigs?: Record<string, string>;
-  // What a Delta command's target is resolved from (delta-targets.ts).
-  rootExecutionId?: number;
-  commandArguments?: string;
-}
+export type DetectorSqlExec = Pick<SqlExecution, 'id' | 'planTree' | 'description' | 'modifiedConfigs' | 'rootExecutionId' | 'commandArguments'>;
 
-interface DetectorRddInfo {
-  id: number;
-  name: string;
-  storageLevel: { useMemory: boolean; useDisk: boolean };
-  numPartitions: number;
-  numCachedPartitions: number;
-  memorySize: number;
-  diskSize: number;
-  storageSource?: 'rddInfo' | 'blockUpdates';
-}
+type DetectorApp = Pick<SparkAppInfo, 'startTime' | 'endTime' | 'resources' | 'config' | 'sparkVersion' | 'rddInfo' | 'rddBlockUpdates'>;
 
-interface DetectorApp {
-  startTime?: number;
-  endTime?: number | null;
-  resources?: {
-    executor?: { cores?: number; memoryMB?: number; memoryOverheadMB?: number };
-    dynamicAllocationEnabled?: boolean;
-    shuffleServiceEnabled?: boolean;
-    serializer?: string;
-  };
-  config?: Record<string, string>;
-  sparkVersion?: string | null;
-  rddInfo?: Map<number, DetectorRddInfo>;
-  // SparkListenerBlockUpdated events seen for rdd_* blocks (0 when logBlockUpdates was off).
-  rddBlockUpdates?: number;
-}
-
-interface DetectorExecutorAddedEvent { executorId: string; timestamp: number; totalCores?: number; host?: string; }
-interface DetectorExecutorRemovedEvent { executorId: string; timestamp: number; }
-interface DetectorJob {
-  result: string | null;
-  succeeded: boolean | null;
-  exception: unknown;
-  // Nullable as on types.ts's Job: a job can lack either timestamp if the log never recorded it.
-  submissionTime: number | null;
-  completionTime: number | null;
-}
+type DetectorExecutorAddedEvent = Pick<ExecutorAddedEvent, 'executorId' | 'timestamp' | 'totalCores' | 'host'>;
+type DetectorExecutorRemovedEvent = Pick<ExecutorRemovedEvent, 'executorId' | 'timestamp'>;
+type DetectorJob = Pick<Job, 'result' | 'succeeded' | 'exception' | 'submissionTime' | 'completionTime'>;
 
 // The full context analyze() passes as every stage/sql detect()'s second arg, and as the first
 // arg for 'app' scope. 'config' scope gets a narrower `{ app }` (auditConfig) instead.
@@ -185,11 +91,7 @@ export interface DetectorCtx {
   executorsRemoved: DetectorExecutorRemovedEvent[];
   jobs: Map<number, DetectorJob>;
   sql: Map<number, DetectorSqlExec>;
-  runAggregates?: {
-    busyCoreMs?: number;
-    perStage?: Record<string, { totalTaskDurationSum: number; taskCount: number }>;
-    executorPeakMetrics?: Record<string, Record<string, number>>;
-  } | null;
+  runAggregates?: Pick<RunAggregates, 'busyCoreMs' | 'perStage' | 'executorPeakMetrics'> | null;
   // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
   // its claim against the same occupancy sweep the displayed savings come from.
   impact: EstimateCtx;

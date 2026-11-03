@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import type { EvidenceAvailability } from '@sparkforensics/core/types.ts';
+import { testApp } from './_shared/model';
 import { store, emptyAppModel } from '@/store/store';
 import { Dashboard } from '@/view/Dashboard';
 import { EvidenceAvailability as EvidenceAvailabilityWidget } from '@/view/widgets/EvidenceAvailability';
@@ -158,12 +159,12 @@ test('Duplicate Plan Subtree finding opens SQL-plan evidence with keyboard activ
 test('Config Audit finding switches to the Full app report tab before focusing its ledger entry', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
-  const app = {
+  const app = testApp({
     startTime: 0,
     endTime: 60_000,
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  };
+  });
   store.setState({
     ...store.getState(),
     appModel: { ...readyModel(), app },
@@ -228,12 +229,12 @@ test('a second evidence click after returning to Findings switches tabs again', 
 test('Config Audit finding opens Spark-configuration evidence', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
-  const app = {
+  const app = testApp({
     startTime: 0,
     endTime: 60_000,
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  };
+  });
   store.setState({
     ...store.getState(),
     appModel: { ...readyModel(), app },
