@@ -73,11 +73,8 @@ function boardGroup({ members, ...group }: RankedRollupGroup): BoardGroup {
   return { ...group, key: `${group.kind}-${group.type}-${group.unit ?? ''}`, findings: members };
 }
 
-/** The Findings board over `shown` (the findings the active filter keeps). Unfiltered, it is the
- * run's own fix-first list, exactly as the interpretation carries it. Under a filter the groups
- * are recomputed over the eligible findings the filter keeps: a time group's "recoverable" figure
- * caps the summed savings at the union of its members' stage intervals, and that union cannot be
- * re-totalled from the carried per-group figures once members drop out. */
+/** The Findings board over `shown` (the findings the active filter keeps): the run's eligible
+ * findings the filter keeps, ranked into fix-first groups. */
 export function boardRollup(
   state: InterpretationState | null,
   shown: Finding[],
@@ -86,13 +83,7 @@ export function boardRollup(
   if (!state) return { eligible: [], groups: [] };
   const kept = new Set(shown);
   const eligible = eligibleFindings(state).filter((finding) => kept.has(finding));
-  const unfiltered = state.findings.every((finding) => kept.has(finding));
-  const groups = unfiltered
-    ? state.data.rollup.groups.map(({ memberIds, ...group }) => boardGroup({
-      ...group, members: memberIds.map((id) => state.byId.get(id)).filter((f): f is Finding => f != null),
-    }))
-    : rankedRollup(eligible, stages).map(boardGroup);
-  return { eligible, groups };
+  return { eligible, groups: rankedRollup(eligible, stages).map(boardGroup) };
 }
 
 /** Step codes for the verdict's next steps (F1 is the first step), so a step can be found

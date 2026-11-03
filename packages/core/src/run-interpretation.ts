@@ -15,7 +15,7 @@ import { bandRank, worstImpactBand } from './impact-band-order.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';
-import { isEligible, rankedRollup, type RankedRollupGroup } from './recommendation-rollup.ts';
+import { isEligible } from './recommendation-rollup.ts';
 import { quotesReasonOf } from './run-outcome.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
 import { findingsOfType } from './findings-of-type.ts';
@@ -132,18 +132,10 @@ export interface StageFindingsData {
   typeOrder: string[];
 }
 
-/** One row group of the Findings board: a finding type (split by impact kind, and by unit for
- * resource figures), its members representative first, the band it sits under, and its trailing
- * figure. */
-export interface RollupGroupData extends Omit<RankedRollupGroup, 'members'> {
-  /** Members, representative first. */
-  memberIds: string[];
-}
-
-/** The unfiltered Findings board: which findings it lists and its groups in fix-first order. */
+/** The unfiltered Findings board: which findings it lists. The board ranks them into groups with
+ * `rankedRollup`. */
 export interface RollupData {
   eligibleIds: string[];
-  groups: RollupGroupData[];
 }
 
 /** Findings are referred to by their `id`, which is unique across a run's catalog and config
@@ -313,10 +305,6 @@ export function interpretRun(
     detectors: detectorInfoByType(),
     savingsRank: rankBySavings(allFindings).map(idOf),
     stages: interpretStages(catalog, failed ? outcome.failedJobStageIds : null),
-    rollup: {
-      eligibleIds: eligible.map(idOf),
-      groups: rankedRollup(eligible, appModel.stages)
-        .map(({ members, ...group }) => ({ ...group, memberIds: members.map(idOf) })),
-    },
+    rollup: { eligibleIds: eligible.map(idOf) },
   };
 }
