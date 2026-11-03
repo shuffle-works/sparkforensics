@@ -59,7 +59,7 @@ test('renders the WidgetCard heading and a chart region when stages have core-ti
     </DocsProvider>,
   );
 
-  expect(screen.getByRole('heading', { name: /core usage/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /core locality/i })).toBeInTheDocument();
   expect(screen.getByRole('img', { name: /concurrent core usage/i })).toBeInTheDocument();
 });
 
@@ -111,7 +111,7 @@ test('renders a fallback message and no chart region when no stage has core-time
   installInterpretation([], model);
   render(<CoreUsageArea appModel={emptyAppModel()} catalog={[]} defaultCollapsed={false} />);
 
-  expect(screen.getByRole('heading', { name: /core usage/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /core locality/i })).toBeInTheDocument();
   expect(screen.getByText(/no stage activity/i)).toBeInTheDocument();
   expect(screen.queryByRole('img')).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /learn more/i })).not.toBeInTheDocument();

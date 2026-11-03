@@ -8,6 +8,7 @@ import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
+import { runFindingKeys } from '@/view/finding-anchor';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetModel } from '@/view/finding-widget';
 import { TriageNavigationProvider } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
@@ -43,14 +44,14 @@ function spill(stageId: number, savingsMs: number, stageTaskMs = 10 * savingsMs,
   return testFinding({ type: 'spill', stageId, impactBand, id: `s${stageId}`, value: 1024, recommendation: 'r', confidence: 'low', impactEstimate: estimate(savingsMs, stageTaskMs) });
 }
 
-function renderWidget(findings: FindingOf<'spill'>[], target: TriageTarget | null = null, registerFindingAnchor: (finding: unknown) => () => void = vi.fn(() => vi.fn())) {
+function renderWidget(findings: FindingOf<'spill'>[], target: TriageTarget | null = null, registerFindingAnchor: (key: string) => () => void = vi.fn(() => vi.fn())) {
   installInterpretation(findings);
   const wrap = (children: ReactNode) => (
     <DocsProvider>
       <TriageNavigationProvider
         registerWidget={vi.fn(() => vi.fn())}
         registerFindingAnchor={registerFindingAnchor}
-        findingKey={() => ''}
+        findingKey={runFindingKeys(findings)}
         reportWidgetOpen={vi.fn()}
         clearRouteFocus={vi.fn()}
         focusedCardKey={null}
@@ -130,10 +131,11 @@ describe('the finding widget shell', () => {
   });
 
   it('registers every row\'s findings as route anchors', () => {
-    const register = vi.fn((_finding: unknown) => vi.fn());
+    const register = vi.fn((_key: string) => vi.fn());
     const findings = [spill(1, 100), spill(2, 200)];
     renderWidget(findings, null, register);
-    const registered = register.mock.calls.map(([finding]) => finding);
-    expect(registered).toEqual(expect.arrayContaining(findings));
+    const registered = register.mock.calls.map(([key]) => key);
+    const keyOf = runFindingKeys(findings);
+    expect(new Set(registered)).toEqual(new Set(findings.map(keyOf)));
   });
 });
