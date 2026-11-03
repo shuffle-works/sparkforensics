@@ -1,5 +1,5 @@
-import type { LocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import type { LocalityChart } from '@sparkforensics/core/analysis';
+import type { FindingOf } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 

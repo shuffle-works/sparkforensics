@@ -1,5 +1,5 @@
-import { formatMetricValue, numericValue } from '@sparkforensics/core/format-utils.ts';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { formatMetricValue, numericValue } from '@sparkforensics/core/view-model';
+import type { FindingOf } from '@sparkforensics/core/types';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 import { stageGroupRows, stageGroupSummary, type StageGroupRow } from './StageGroup.rows';
 

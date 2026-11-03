@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 
-import type { InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, EvidenceKey, Finding } from '@sparkforensics/core/types.ts';
+import type { InterpretedStep } from '@sparkforensics/core/analysis';
+import type { AppModel, EvidenceKey, Finding } from '@sparkforensics/core/types';
 import type { BoardTab, ResolvedRoute } from '@/store/board';
 import type { InterpretationState } from '@/view/interpretation';
 import { evidencePanelFor, isAlwaysMountedType, REGISTRY, type WidgetProps } from '@/view/detector-registry';

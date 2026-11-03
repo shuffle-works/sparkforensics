@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { HEIGHT_MESSAGE } from '../../../src/docs-widget/host';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useData } from 'vitepress';
+import { postToFrame, receiveDocsFrameMessage } from '../../../src/docs-widget/frame-messages';
 import data from '../detectors-data.json';
 import { FIX_EFFORT_LABEL, SCOPE_LABEL, exampleFrameSrc, sentenceCase, siteHref, type DetectorData } from './detectors';
 
@@ -14,14 +15,27 @@ const sharedWith = computed(() =>
 );
 
 // The example is the dashboard's own widget in a frame (docs-widget.html). The frame reports its
-// content height; until it does, it holds room for a typical card.
+// content height; until it does, it holds room for a typical card. Its first theme is the page's
+// theme once mounted (the server render cannot know it), set in the source once; a new source
+// reloads the frame, so later changes go to it as messages.
+const { isDark } = useData();
 const frame = ref<HTMLIFrameElement | null>(null);
 const frameHeight = ref(480);
-function onFrameMessage(event: MessageEvent) {
-  if (event.source !== frame.value?.contentWindow || event.data?.type !== HEIGHT_MESSAGE) return;
-  frameHeight.value = event.data.height;
+const frameTheme = ref<'light' | 'dark' | null>(null);
+const frameSrc = computed(() => (frameTheme.value ? exampleFrameSrc(r.value.type, frameTheme.value) : undefined));
+function pushTheme() {
+  const target = frame.value?.contentWindow;
+  if (target) postToFrame(target, { type: 'sparkforensics:docs-theme', theme: isDark.value ? 'dark' : 'light' });
 }
-onMounted(() => window.addEventListener('message', onFrameMessage));
+function onFrameMessage(event: MessageEvent) {
+  const message = receiveDocsFrameMessage(event, frame.value?.contentWindow);
+  if (message?.type === 'sparkforensics:docs-widget-height') frameHeight.value = message.height;
+}
+watch(isDark, pushTheme);
+onMounted(() => {
+  frameTheme.value = isDark.value ? 'dark' : 'light';
+  window.addEventListener('message', onFrameMessage);
+});
 onBeforeUnmount(() => window.removeEventListener('message', onFrameMessage));
 
 // Compact text for a threshold value: scalars as is, structures as short JSON.
@@ -80,7 +94,8 @@ const airflowSnippet = computed(() => {
       <iframe
         ref="frame"
         class="det-example"
-        :src="exampleFrameSrc(r.type)"
+        :src="frameSrc"
+        @load="pushTheme"
         :style="{ height: `${frameHeight}px` }"
         title="Example finding, as the dashboard shows it"
         loading="lazy"

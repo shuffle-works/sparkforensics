@@ -1,4 +1,4 @@
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { emptyAppModel, store } from '@/store/store';
 import { interpretationOf, type InterpretationState } from '@/view/interpretation';
 import { runState } from './run';

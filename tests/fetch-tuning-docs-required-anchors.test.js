@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
-import { KNOWN_DOC_ANCHORS } from '@sparkforensics/core/docs-config.ts';
+import { DETECTORS } from '@sparkforensics/core/analysis';
+import { KNOWN_DOC_ANCHORS } from '@sparkforensics/core/view-model';
 import { collectRequiredAnchors } from '../scripts/fetch-tuning-docs.mjs';
 
 describe('collectRequiredAnchors', () => {

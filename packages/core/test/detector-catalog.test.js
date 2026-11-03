@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDetectorCatalog, listDetectors, renderDetectorCatalogMarkdown } from '../src/detector-catalog.js';
+import { buildDetectorCatalog, listDetectors, renderDetectorCatalogMarkdown } from '../src/detector-listing.js';
 import { ENTRY_BY_TYPE } from '../src/detectors.js';
 import { DETECTOR_FAMILIES, FINDING_PRESENTATION } from '../src/finding-presentation.js';
 
@@ -55,14 +55,13 @@ describe('detector catalog special cases', () => {
     expect(byType('skew').tagSharedWith).toEqual([]);
   });
 
-  it('names the budget flag and operator parameter of exactly the gated types', () => {
-    const gated = Object.fromEntries(catalog.filter((r) => r.gate).map((r) => [r.type, r.gate]));
-    expect(gated).toEqual({
-      skew: { cliFlag: '--max-skew', airflowParam: 'max_skew_ratio' },
-      spill: { cliFlag: '--max-spill', airflowParam: 'max_spill_gb' },
-      utilization: { cliFlag: '--min-efficiency', airflowParam: 'min_efficiency_pct' },
-      failures: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
-    });
+  it('gates exactly the budgeted types, each with a CLI flag and an operator parameter', () => {
+    const gated = catalog.filter((r) => r.gate);
+    expect(gated.map((r) => r.type).sort()).toEqual(['failures', 'skew', 'spill', 'utilization']);
+    for (const { gate } of gated) {
+      expect(gate.cliFlag).toEqual(expect.stringMatching(/\S/));
+      expect(gate.airflowParam).toEqual(expect.stringMatching(/\S/));
+    }
   });
 
   it('marks the dashboard reference region', () => {

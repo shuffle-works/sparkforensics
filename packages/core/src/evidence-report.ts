@@ -7,9 +7,9 @@ import {
   describeTunedThresholds, tunedDetectorCatalog, tunedDetectors, tunedRunNote, tunedThresholdsForType,
 } from './threshold-overrides.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
-import {
-  typeTag, formatBytes, formatCores, formatDuration, formatWallClockRange, IMPACT_BAND_ORDER,
-} from './format-utils.ts';
+import { typeTag } from './finding-presentation.ts';
+import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { formatBytes, formatCores, formatDuration, formatWallClockRange } from './units.ts';
 import { findingName, titleCase } from './finding-names.ts';
 import { mdInline } from './markdown-inline.ts';
 import { redactReport, redactRunModel } from './redact.ts';
@@ -30,6 +30,7 @@ import type {
   AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
   TunedThresholds, Remediation,
 } from './types.ts';
+import type { AllKeys } from './finding-types.ts';
 
 export const EVIDENCE_SCHEMA_VERSION: number = 5;
 
@@ -248,11 +249,11 @@ const EVIDENCE_KEYS = {
   joinKeyCast: ['executionId', 'stageIds', 'nodeName', 'castKeys', 'exchangeKeys'],
   underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'joinType', 'buildSide', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
-} as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };
+} as const satisfies { [T in FindingType]: readonly AllKeys<FindingEvidenceMap[T]>[] };
 
 // The other direction: an evidence field EVIDENCE_KEYS doesn't list fails here.
 type UnlistedEvidenceKey = {
-  [T in FindingType]: Exclude<keyof FindingEvidenceMap[T], (typeof EVIDENCE_KEYS)[T][number]>;
+  [T in FindingType]: Exclude<AllKeys<FindingEvidenceMap[T]>, (typeof EVIDENCE_KEYS)[T][number]>;
 }[FindingType];
 type AssertNever<T extends never> = T;
 export type EvidenceKeysComplete = AssertNever<UnlistedEvidenceKey>;
@@ -260,12 +261,11 @@ export type EvidenceKeysComplete = AssertNever<UnlistedEvidenceKey>;
 // The finding's evidence, keys sorted for a stable order. An undefined field (spill's
 // spillMagnitude without a magnitude) is absent, as in the JSON.
 function projectEvidence(f: Finding): Record<string, unknown> {
-  const fields = f as unknown as Record<string, unknown>;
-  const evidence: Record<string, unknown> = {};
-  for (const k of [...EVIDENCE_KEYS[f.type]].sort()) {
-    if (fields[k] !== undefined) evidence[k] = fields[k];
-  }
-  return evidence;
+  const keys: ReadonlySet<string> = new Set(EVIDENCE_KEYS[f.type]);
+  const entries = Object.entries(f)
+    .filter(([k, v]) => keys.has(k) && v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return Object.fromEntries(entries);
 }
 
 function findingRow(f: Finding, key: string): FindingRow {
@@ -655,8 +655,8 @@ function renderVerdict(verdict: VerdictJson): string[] {
 // "host h" or "executor e" for a slow-host row, which names one or the other.
 function slowHostSubject(row: FindingRow): string | undefined {
   if (row.type !== 'slowHost') return undefined;
-  const { host, executorId } = row.evidence;
-  return host !== undefined ? `host ${host}` : executorId !== undefined ? `executor ${executorId}` : undefined;
+  const evidence = row.evidence;
+  return evidence.variant === 'multiDim' ? `executor ${evidence.executorId}` : `host ${evidence.host}`;
 }
 
 // The rows of one host (or, for a per-executor row, one executor) in a single entry, at the place of

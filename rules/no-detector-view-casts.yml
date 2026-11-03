@@ -1,0 +1,19 @@
+id: no-detector-view-casts
+language: tsx
+severity: error
+message: A model type is cast to a detector view or an occupancy view through unknown.
+note: |
+  DetectorStage, DetectorSqlExec and OccupancyStage are Picks of the model types, so a Stage or a
+  SqlExecution passes where they are expected without a cast. A cast through unknown hides a renamed
+  or never-set field, which leaves a detector quiet or computing NaN.
+rule:
+  any:
+    - pattern: $VALUE as unknown as DetectorCtx
+    - pattern: $VALUE as unknown as DetectorCtx[$KEY]
+    - pattern: $VALUE as unknown as DetectorStage
+    - pattern: $VALUE as unknown as DetectorSqlExec
+    - pattern: $VALUE as unknown as DetectorConfigTarget
+    - pattern: $VALUE as unknown as DetectorConfigTarget[$KEY]
+    - pattern: $VALUE as unknown as Map<number, OccupancyStage>
+files:
+  - packages/core/src/**

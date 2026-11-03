@@ -10,7 +10,7 @@ import { buildLocalityChart, type LocalityChart } from './core-usage-locality.ts
 import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
 import { computeEfficiencyModel } from './efficiency-model.ts';
 import { attributeEtlPhases } from './etl-phases.ts';
-import { IMPACT_BAND_ORDER, worstImpactBand } from './format-utils.ts';
+import { IMPACT_BAND_ORDER, worstImpactBand } from './impact-band-order.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';

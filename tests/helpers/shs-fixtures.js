@@ -1,4 +1,4 @@
-import { zipSync, strToU8, Zip, ZipDeflate } from '@sparkforensics/core/vendor/fflate.js';
+import { zipSync, strToU8, Zip, ZipDeflate } from '@sparkforensics/core/export';
 
 export function shsZipFetch(ndjson, { status = 200 } = {}) {
   return async () => {

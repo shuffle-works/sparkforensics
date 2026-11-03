@@ -3,7 +3,7 @@ import { Suspense, useCallback, useMemo, useState, type DragEvent, type ReactNod
 import { selectAppModel, selectCatalog, selectConfigFindings, store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry';
-import { findingName } from '@sparkforensics/core/finding-names.ts';
+import { findingName } from '@sparkforensics/core/view-model';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import {
   buildBoardLayout,
@@ -50,7 +50,7 @@ import { useIngest } from '@/store/useIngest';
 import { useTriageShortcuts } from '@/view/useTriageShortcuts';
 import { useRecentFiles } from '@/view/useRecentFiles';
 import type { TriageTarget } from '@/view/triage-target';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 type ActiveTab = 'findings' | 'full-report';
 

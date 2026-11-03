@@ -1,7 +1,5 @@
-import { formatBytes, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
-import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
-import { stageIdOf } from '@sparkforensics/core/findings-of-type.ts';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { formatBytes, IMPACT_BAND_ORDER, numericValue, recommendationParts, stageIdOf } from '@sparkforensics/core/view-model';
+import type { FindingOf } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';

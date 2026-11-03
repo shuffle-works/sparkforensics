@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, ArrowRight, Bot, BookOpen, FileText, Gauge, GitCompareArrows, Moon, ShieldCheck, Sun, TriangleAlert, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DOCS_BASE_DIR } from '@sparkforensics/core/docs-config.ts';
-import { CI_AUTOMATION_URL } from '@sparkforensics/core/docs-site-config.ts';
+import { DOCS_BASE_DIR, CI_AUTOMATION_URL } from '@sparkforensics/core/view-model';
 import { DetectorStrip } from '@/view/DetectorStrip';
 import { DropZone } from '@/view/DropZone';
 import { McpSetupGuide } from '@/view/McpSetupGuide';

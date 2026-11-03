@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { DocsProvider } from '@/view/DocsContext';
 import { DropZone } from '@/view/DropZone';
 import { store } from '@/store/store';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import * as recentFiles from '@sparkforensics/core/browser';
 
 const startLoad = vi.fn();
 const startLoadFolder = vi.fn();
@@ -22,7 +22,7 @@ vi.mock('@/store/useIngest', () => ({
   }),
 }));
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => []),
   add: vi.fn(async () => ({})),

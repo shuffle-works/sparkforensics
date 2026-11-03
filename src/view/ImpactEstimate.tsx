@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { useFindingSavings } from '@/view/interpretation';
 
 export function ImpactEstimate({ finding }: { finding: Finding }) {

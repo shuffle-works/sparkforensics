@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ComponentType } from 'react';
-import type { AppModel, Finding, FindingType } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType } from '@sparkforensics/core/types';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),

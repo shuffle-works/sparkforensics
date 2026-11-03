@@ -10,9 +10,9 @@
 // (`stage-structure.ts`) and a detail similarity pair what the exact key splits. `stageIdentity`
 // itself stays the frozen exact key.
 
-import { normalizeDetail } from './detectors.ts';
+import { normalizeDetail } from './detectors/plan-shape.ts';
 import { isDeltaLogRead, scanRelationId } from './plan-summary.ts';
-import { withEarlierAttempts, totalExecutorCpuMs } from './run-totals.ts';
+import { withEarlierAttempts, totalExecutorCpuMs, type AttemptRow } from './run-totals.ts';
 import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { normalizeStageName, stageIdentityWith, type DetailNormalizer } from './stage-identity.ts';
 import { alignSequences } from './sequence-alignment.ts';
@@ -215,7 +215,7 @@ export const REPLANNED_COUNTS_TOWARD_COVERAGE = true;
 // Sum of a field over the stage's own record and the work its figures leave out (earlier
 // attempts, a failed attempt's late tasks), the same all-attempt sums the run totals use.
 // null when no row carried a finite value, so an unrecorded field is not a false 0.
-function attemptSum(rows: Stage[], field: Exclude<PairDeltaMetric, 'executorCpuTime'>): number | null {
+function attemptSum(rows: AttemptRow[], field: Exclude<PairDeltaMetric, 'executorCpuTime'>): number | null {
   let sum = 0, present = false;
   for (const row of rows) {
     const v = row[field];

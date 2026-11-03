@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createState, dispatchLine, resolvePlanTree } from '../src/event-handlers.ts';
-import { computePlanShapes } from '../src/detectors.ts';
+import { computePlanShapes } from '../src/detectors/plan-shape.ts';
 import { collectRun } from '../src/cli/collect-run.ts';
 import { walkPlanTree } from '../src/plan-tree-walk.ts';
 import { corpusLog } from './corpus-log.js';

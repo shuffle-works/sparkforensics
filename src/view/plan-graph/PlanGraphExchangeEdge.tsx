@@ -1,5 +1,5 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
-import { formatBytes } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes } from '@sparkforensics/core/view-model';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { exchangeEdgeStrokeWidth, exchangeEdgeOpacity } from './plan-graph-edge';
 

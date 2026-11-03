@@ -14,13 +14,13 @@ import {
 } from 'recharts';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { AppModel, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { AppModel, ImpactBand } from '@sparkforensics/core/types';
 import { DocsLink } from '@/view/DocsContext';
 import { EmptyState } from '@/view/EmptyState';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
-import { formatBytes } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes } from '@sparkforensics/core/view-model';
 
 const HEIGHT = 240;
 

@@ -6,15 +6,16 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { ScalingSim, makespanYAxisDomain } from '@/view/widgets/ScalingSim';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel, Job } from '@sparkforensics/core/types.ts';
+import type { AppModel, Job } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
+import { testApp } from './_shared/model';
 
 // Fixture mirrors the real per-stage shape posted by the parser worker so
 // simulateScaling can actually run.
 function runnableAppModel(): AppModel {
   return {
     ...emptyAppModel(),
-    app: { startTime: 0, endTime: 1000, resources: { executor: { cores: 2 } } },
+    app: testApp({ startTime: 0, endTime: 1000, resources: { executor: { cores: 2 } } }),
     stages: new Map([[1, { stageId: 1, submittedAt: 0, completedAt: 1000 }]]) as unknown as AppModel['stages'],
     runAggregates: { perStage: { 1: { totalTaskDurationSum: 2000, taskCount: 4 } } },
     evidenceAvailability: {
@@ -93,7 +94,7 @@ describe('ScalingSim', () => {
 
   it('renders the unavailable fallback when the model has no baseline cores', () => {
     const model = runnableAppModel();
-    model.app = { startTime: 0, endTime: 1000, resources: {} };
+    model.app = testApp({ startTime: 0, endTime: 1000, resources: {} });
     model.executors = { added: [], removed: [] };
     installInterpretation([], model);
     render(<ScalingSim appModel={model} />);

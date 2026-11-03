@@ -1,8 +1,5 @@
-import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
-import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { sharedDocAnchor, recommendationParts, IMPACT_BAND_ORDER, findingsOfType } from '@sparkforensics/core/view-model';
+import type { FindingOf } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 

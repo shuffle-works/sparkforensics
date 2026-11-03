@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
@@ -397,7 +397,7 @@ describe('the stage-finding boards (Skew, StageShape, TinyTask) in an evidence p
     2: { name: 'map at B.scala:2', taskDurationP50: 10, taskDurationP95: 1000, taskDurationMax: 2000 },
   };
   const skew = (id: string, stageId: number, confidence?: string) =>
-    testFinding({ type: 'skew', id, stageId, impactBand: 'warning', metric: 'p95/p50', value: 4, confidence }) as Finding;
+    testFinding({ type: 'skew', id, stageId, impactBand: 'warning', metric: 'P95/median', value: 4, confidence }) as Finding;
   const tiny = (id: string, stageId: number) =>
     testFinding({ type: 'tinyTask', id, stageId, impactBand: 'info', metric: 'taskDurationP50', value: 10 }) as Finding;
   const shape = (id: string, stageId: number) =>
@@ -410,7 +410,7 @@ describe('the stage-finding boards (Skew, StageShape, TinyTask) in an evidence p
     renderIn(<Skew {...props(catalog)} />, ['a']);
     expect(stageButton(1)).not.toBeInTheDocument();
     expect(stageButton(2)).toBeInTheDocument();
-    expect(screen.getAllByText(/p95\/p50: 4/)).toHaveLength(1);
+    expect(screen.getAllByText(/P95\/median: 4/)).toHaveLength(1);
     expect(screen.getAllByText(/P50 .* P95 /)).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: /task detail/i })).toHaveLength(2);
     expect(screen.getByText('map at A.scala:1')).toBeInTheDocument();
@@ -422,7 +422,7 @@ describe('the stage-finding boards (Skew, StageShape, TinyTask) in an evidence p
     installInterpretation(catalog);
     renderIn(<Skew {...props(catalog)} />, ['a']);
     expect(screen.getByText(/low confidence/)).toBeInTheDocument();
-    expect(screen.queryByText(/p95\/p50: 4/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/P95\/median: 4/)).not.toBeInTheDocument();
   });
 
   it('Skew keeps everything outside a panel', () => {
@@ -430,7 +430,7 @@ describe('the stage-finding boards (Skew, StageShape, TinyTask) in an evidence p
     installInterpretation(catalog);
     renderIn(<Skew {...props(catalog)} />, null);
     expect(stageButton(1)).toBeInTheDocument();
-    expect(screen.getAllByText(/p95\/p50: 4/)).toHaveLength(2);
+    expect(screen.getAllByText(/P95\/median: 4/)).toHaveLength(2);
   });
 
   it('StageShape drops the label of the stated finding and keeps the other findings on the stage', () => {

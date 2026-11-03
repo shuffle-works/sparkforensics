@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
 
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
-import { typeTag } from '@sparkforensics/core/format-utils.ts';
+import { DETECTORS } from '@sparkforensics/core/analysis';
+import { typeTag } from '@sparkforensics/core/view-model';
 import { TAG_HELP } from '@/view/finding-tag-help';
 
 const CURRENT_FINDING_TYPES = [...new Set(DETECTORS.flatMap((d) => d.emits))];

@@ -2,7 +2,7 @@
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
 wallClock, estimateMethod, rawWaste?, coreTimeMs?, idleCoreTimeMs?, stageTaskMs?}` (`packages/core/src/types.ts`), attached by
-its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
+its `DETECTORS` entry's `estimate()` (entries live in `packages/core/src/detectors/`), which
 `estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
 and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose
 (assumed throughputs, per-stage measurements, the occupancy clip wrappers) live in
@@ -115,7 +115,7 @@ and sort CPU share of `executorRunTime`), so its core-work half is the work left
 share: `(stage.executorRunTime − removed) / totalCores`.
 
 `skew` and `straggler` are the exception (`estimateSingleStage`'s `shortensLongestTask`
-option, passed by `detectors.ts`'s `tailClaimImpact`, which both their `estimate()` and their
+option, passed by `detectors/tail.ts`'s `tailClaimImpact`, which both their `estimate()` and their
 `detect()` runtime-floor gate call on the same tail claim, so firing and display agree; `stageSlowness`'s
 more-partitions estimate and `partitionSizing`'s `lowShuffleParallelism` pass it too, since splitting partitions
 splits the longest task). Their claim shortens the

@@ -1,8 +1,6 @@
 import { ArrowRight } from 'lucide-react';
-import { DETECTOR_CATALOG_URL, detectorPageUrl } from '@sparkforensics/core/docs-site-config.ts';
-import { titleCase } from '@sparkforensics/core/finding-names.ts';
-import { FINDING_PRESENTATION } from '@sparkforensics/core/finding-presentation.ts';
-import type { FindingType } from '@sparkforensics/core/types.ts';
+import { DETECTOR_CATALOG_URL, detectorPageUrl, titleCase, FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
+import type { FindingType } from '@sparkforensics/core/types';
 import { TagBadge } from '@/view/ImpactBadge';
 
 // Typed as FindingType so renaming a type breaks the build here.

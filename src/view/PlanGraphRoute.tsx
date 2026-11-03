@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { resolvePlanTree } from '@/view/plan-tree';
-import { buildPlanGraphModel } from '@sparkforensics/core/plan-graph-model.ts';
+import { buildPlanGraphModel } from '@sparkforensics/core/view-model';
 import { PlanGraphCanvas, type CenterRequest } from '@/view/plan-graph/PlanGraphCanvas';
 import { PlanGraphStageDetail } from '@/view/plan-graph/PlanGraphStageDetail';
 import { StageSelectionProvider, type StageSelection } from '@/view/plan-graph/stage-selection';
@@ -14,7 +14,7 @@ import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
 import { useIngest } from '@/store/useIngest';
 import { useRecentFiles } from '@/view/useRecentFiles';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
-import type { AppModel, Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, StageId } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, StageId } from '@sparkforensics/core/types';
 
 export interface PlanGraphRouteProps {
   stageId: StageId;

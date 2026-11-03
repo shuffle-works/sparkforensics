@@ -21,11 +21,11 @@ export default [
     },
   },
   {
-    // Guard against em dashes in detectors.ts's user-facing strings. Scoped to
-    // this one file; em dashes are fine elsewhere. Uses a trivial no-op parser
+    // Guard against em dashes in the user-facing strings of detectors.ts and the detectors/
+    // modules. Scoped to those files; em dashes are fine elsewhere. Uses a trivial no-op parser
     // (returns an empty Program) plus a raw-text scan because espree can't parse
     // TypeScript and typescript-eslint crashes against TS 7 (see ignores below).
-    files: ['packages/core/src/detectors.ts'],
+    files: ['packages/core/src/detectors.ts', 'packages/core/src/detectors/**/*.ts'],
     languageOptions: {
       parser: {
         parse(text) {
@@ -66,7 +66,7 @@ export default [
                       node,
                       loc: { line, column },
                       message:
-                        'Em dash (—) not allowed in detectors.ts string/template literals; use a period, comma, or parenthetical instead.',
+                        'Em dash (—) not allowed in detector string/template literals; use a period, comma, or parenthetical instead.',
                     });
                   }
                 },
@@ -78,6 +78,14 @@ export default [
     },
     rules: {
       'em-dash-guard/no-em-dash-text': 'error',
+    },
+  },
+  {
+    // Each detectors/ module stays small enough to review: split a growing one by family or helper.
+    // max-lines counts raw text, so it works with the no-op parser above.
+    files: ['packages/core/src/detectors/**/*.ts'],
+    rules: {
+      'max-lines': ['error', { max: 1200, skipBlankLines: false, skipComments: false }],
     },
   },
   {

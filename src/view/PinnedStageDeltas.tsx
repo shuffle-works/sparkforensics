@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { WidgetCard } from '@/view/WidgetCard';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration } from '@sparkforensics/core/format-utils.ts';
-import { direction } from '@sparkforensics/core/run-comparison.ts';
+import { formatBytes, formatDuration } from '@sparkforensics/core/view-model';
+import { direction } from '@sparkforensics/core/analysis';
 
 export interface StageMetrics {
   duration: number | null;

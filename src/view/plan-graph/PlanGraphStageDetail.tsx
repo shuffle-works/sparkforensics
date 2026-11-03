@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { PlanGraphInspector } from '@/view/plan-graph/PlanGraphInspector';
 import { useNarrowViewport } from '@/view/plan-graph/useNarrowViewport';
 import { StageFindings } from '@/view/widgets/StageFindings';
-import type { Finding, Stage } from '@sparkforensics/core/types.ts';
+import type { Finding, Stage } from '@sparkforensics/core/types';
 
 /** The findings of one stage, in the inspector slot of the plan graph: the same
  * block the stage detail dialog opens with, so the graph stays on screen. The

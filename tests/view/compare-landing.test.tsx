@@ -6,7 +6,7 @@ import { DocsProvider } from '@/view/DocsContext';
 import { CompareLanding } from '@/view/CompareLanding';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store } from '@/store/store';
-import { FINDING_PRESENTATION } from '@sparkforensics/core/finding-presentation.ts';
+import { FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
 
 // CompareLanding renders a real <DropZone />, which needs a DocsProvider
 // ancestor (DocsLink throws via useDocs() otherwise) and touches recent-files.ts
@@ -27,7 +27,7 @@ vi.mock('@/store/useIngest', () => ({
   }),
 }));
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => []),
   add: vi.fn(async () => ({})),

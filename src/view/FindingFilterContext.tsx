@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import type { ImpactBand } from '@sparkforensics/core/types';
 import {
   emptySelection,
   parseFilterSelection,

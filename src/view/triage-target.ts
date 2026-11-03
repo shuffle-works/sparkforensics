@@ -1,5 +1,5 @@
-import { findingName } from '@sparkforensics/core/finding-names.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingName } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 import type { InterpretationState } from '@/view/interpretation';
 import { REGISTRY } from './detector-registry';
 import type { WidgetRegion } from './detector-registry';

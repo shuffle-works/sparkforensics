@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import { useStore } from '@/store/store';
-import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
+import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/view-model';
 
 const DEFAULT_ANCHOR = '#intro';
 

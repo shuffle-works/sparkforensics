@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSkewRatio } from '../src/detectors.js';
+import { computeSkewRatio } from '../src/detectors/tail.js';
 
 describe('computeSkewRatio', () => {
   it('returns null when the stage has no measurable median (p50 === 0)', () => {

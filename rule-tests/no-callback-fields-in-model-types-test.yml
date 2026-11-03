@@ -1,0 +1,7 @@
+id: no-callback-fields-in-model-types
+valid:
+  - "interface Stage { stageId: number; name?: string; }"
+  - "interface Node { ids: Array<(number)>; }"
+invalid:
+  - "interface GroupNode { onToggle: (id: string) => void; }"
+  - "interface GroupNode { onToggle?(id: string): void; }"

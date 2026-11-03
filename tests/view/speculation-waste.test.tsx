@@ -3,7 +3,7 @@
 import { test, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { emptyAppModel } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),

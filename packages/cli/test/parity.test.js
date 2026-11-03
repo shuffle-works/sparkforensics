@@ -5,12 +5,10 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { main } from '../bin/sparkforensics-analyze.mjs';
-import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
-import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
-import { analyze } from '@sparkforensics/core/analyzer.ts';
-import { buildComparison } from '@sparkforensics/core/run-comparison.ts';
-import { comparisonOutput } from '@sparkforensics/core/comparison-output.ts';
-import { createMcpServer } from '@sparkforensics/core/mcp-server-factory.ts';
+import { collectRun } from '@sparkforensics/core/cli';
+import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
+import { analyze, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
+import { createMcpServer } from '@sparkforensics/core/mcp';
 import { corpusLog } from '../../core/test/corpus-log.js';
 
 // Contract test: the CLI's JSON and the MCP tools must report the same run, comparison and budget

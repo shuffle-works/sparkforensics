@@ -4,8 +4,8 @@ import { renderHook, act } from '@testing-library/react';
 import { store, emptyAppModel, selectAppModel } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import type { RunSource } from '@/store/useIngest';
-import { serializeRun, type SerializedRun } from '@sparkforensics/core/run-serialization.ts';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import { serializeRun, type SerializedRun } from '@sparkforensics/core/export';
+import * as recentFiles from '@sparkforensics/core/browser';
 import { makeRun, runState } from './_shared/run';
 
 // A Map that records every set(key, value), so a test can prove a snapshot was

@@ -1,4 +1,4 @@
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
 import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';

@@ -2,9 +2,9 @@
 // thresholds an override actually moved off its specification default. Only the CLI and the MCP
 // server accept overrides; the dashboard always runs the defaults. Reading the file is
 // cli/threshold-config.ts's job, so this module stays free of Node APIs.
-import {
-  DETECTORS, ENTRY_BY_TYPE, detectorCatalog, type Detector, type DetectorCatalogEntry, type DetectorThresholds, type ThresholdOverrides,
-} from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, detectorCatalog, type DetectorCatalogEntry } from './detector-catalog.ts';
+import type { ThresholdOverrides } from './detectors.ts';
+import type { Detector, DetectorThresholds } from './detectors/types.ts';
 import type { TunedThreshold, TunedThresholds } from './types.ts';
 
 const entries: readonly Detector[] = DETECTORS;

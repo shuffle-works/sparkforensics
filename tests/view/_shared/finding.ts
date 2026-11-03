@@ -1,4 +1,4 @@
-import type { Finding, FindingOf, FindingType } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf, FindingType } from '@sparkforensics/core/types';
 
 /** A test fixture finding of one `type`, holding only the fields the test needs. Every field
  * given must exist on that type's finding member with its declared type, so a fixture can't drift

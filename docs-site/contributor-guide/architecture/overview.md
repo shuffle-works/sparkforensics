@@ -17,7 +17,7 @@ Owns the DOM (React) and the run on screen, an `AnalyzedRun` whose summary `AppM
 held in a Zustand store (`src/store/store.ts`).
 
 `src/store/useIngest.ts` is the composition root. It owns the ingest client's
-lifecycle (`createIngestClient`, `@sparkforensics/core/ingest.ts`) and wires
+lifecycle (`createIngestClient`, from `@sparkforensics/core/analysis`) and wires
 `model-assembler.ts`'s `createModelCallbacks` (worker message → `AppModel`)
 into a model the load owns: `onProgress` → `parse`; `onDone` → `analyzeRun`
 (`analyzed-run.ts`: the evidence ledger from the final normalized model plus its

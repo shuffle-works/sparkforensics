@@ -6,9 +6,9 @@ import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
 import { layoutWithDagre, runDagre, clearLayoutCache } from '../../src/view/plan-graph/dagre-layout';
 import { WORKER_LAYOUT_MIN_NODES, overrideLayoutWorkerFactory } from '../../src/view/plan-graph/layout-worker-client';
 import * as dagreLayout from '../../src/view/plan-graph/dagre-layout';
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
 import { StageSelectionProvider } from '../../src/view/plan-graph/stage-selection';
-import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
+import type { PlanGraphModel } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 function transformX(testId: string): number {

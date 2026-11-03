@@ -1,0 +1,21 @@
+id: no-detectors-value-import
+language: tsx
+severity: error
+message: A core module imports the assembled detector list by value.
+note: |
+  detectors.ts assembles the DETECTORS list. Only the analyzer and the entry catalog import it by
+  value. Every other module reads the entries through detector-catalog.ts and the helpers from the
+  detectors/ modules, so the shared helpers never depend on the list built from them. Use
+  `import type` for its types.
+rule:
+  kind: import_statement
+  not:
+    regex: ^import\s+type\s
+  has:
+    field: source
+    regex: ^['"](\./|(\.\./)+)detectors(\.(ts|js))?['"]$
+files:
+  - packages/core/src/**
+ignores:
+  - packages/core/src/analyzer.ts
+  - packages/core/src/detector-catalog.ts

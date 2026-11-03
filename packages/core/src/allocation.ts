@@ -1,7 +1,7 @@
 import { computePeakConcurrentExecutorCount } from './core-count.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, type ConfLayers } from './spark-conf.ts';
-import type { SparkAppInfo, Stage } from './types.ts';
+import type { SparkAppInfo } from './types.ts';
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_SECOND = 1000;
@@ -38,7 +38,7 @@ interface RemovedExecutor { executorId: string; timestamp: number }
 
 export interface AllocationInput {
   app: Pick<SparkAppInfo, 'startTime' | 'endTime' | 'config' | 'sparkVersion'> | null;
-  stages: Map<number, Pick<Stage, 'submittedAt' | 'completedAt'>>;
+  stages: Map<number, { submittedAt?: number; completedAt?: number }>;
   executors: { added: AddedExecutor[]; removed: RemovedExecutor[] };
 }
 

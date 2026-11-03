@@ -1,6 +1,6 @@
 // cyrb53: fast, non-cryptographic, deterministic 53-bit string hash. Not a
 // security boundary; 53 bits keeps collision risk negligible at the per-node
-// call volume the plan-identity digests (run-comparison.ts, detectors.ts) put
+// call volume the plan-identity digests (run-comparison.ts, detectors/plan-shape.ts) put
 // through it.
 export function cyrb53(str: string, seed = 0): string {
   let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;

@@ -4,11 +4,11 @@ import { renderHook, act } from '@testing-library/react';
 import { useIngest } from '../../src/store/useIngest';
 import { store, emptyAppModel, selectAppModel, selectCatalog, selectConfigFindings } from '../../src/store/store';
 import { interpretationOf } from '../../src/view/interpretation';
-import { deserializeRun, serializeRun } from '@sparkforensics/core/run-serialization.ts';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import { deserializeRun, serializeRun } from '@sparkforensics/core/export';
+import * as recentFiles from '@sparkforensics/core/browser';
 import { makeRun, runState } from './_shared/run';
 
-function fakeClient(doneArg?: any) {
+function fakeClient(doneArg: any = { skippedLines: 0 }) {
   let handlers: any;
   return {
     startParse: (_f: File, h: any) => {
@@ -143,7 +143,7 @@ test('runDone derives configFindings from the app config, once, alongside catalo
       name: 'demo', id: 'app-1',
       resources: { dynamicAllocationEnabled: true },
     });
-    h.onDone({});
+    h.onDone({ skippedLines: 0 });
   };
   const { result } = renderHook(() => useIngest({ makeClient: () => client }));
 

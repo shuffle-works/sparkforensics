@@ -1,4 +1,4 @@
-import { formatBytes, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/view-model';
 import { Chip, ImpactDot } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StagePill } from '@/view/StagePill';

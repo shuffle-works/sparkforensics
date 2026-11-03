@@ -1,5 +1,5 @@
-import { findingKey, type FindingLocator } from '@sparkforensics/core/finding-identity.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingKey, type FindingLocator } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 
 // A stage or execution is named by its id: the keys of one run need no label shared with another.
 const RUN_LOCATOR: FindingLocator = { stage: (id) => `#${id}`, execution: (id) => `#${id}` };

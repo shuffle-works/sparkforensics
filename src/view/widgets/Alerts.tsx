@@ -4,13 +4,11 @@ import { useWidgetState } from '@/view/useWidgetState';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER, worstImpactBand, findingName } from '@sparkforensics/core/view-model';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
-import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
-import type { CoverageData } from '@sparkforensics/core/run-interpretation.ts';
-import { findingName } from '@sparkforensics/core/finding-names.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { DetectorInfo, CoverageData } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { findingsFor } from '@/view/finding-widget';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 

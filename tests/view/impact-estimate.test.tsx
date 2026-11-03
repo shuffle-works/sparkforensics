@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { ImpactEstimate } from '../../src/view/ImpactEstimate.tsx';
 import { installInterpretation } from './_shared/interpretation';
 

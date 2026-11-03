@@ -1,9 +1,8 @@
 import { memo, useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 
-import { findingName, titleCase } from '@sparkforensics/core/finding-names.ts';
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import { VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, Finding, FindingOf, FindingType, TaskData } from '@sparkforensics/core/types.ts';
+import { findingName, titleCase, findingsOfType, worstImpactBand } from '@sparkforensics/core/view-model';
+import { VISIBLE_LIMIT } from './visible-limit';
+import type { AppModel, Finding, FindingOf, FindingType, TaskData } from '@sparkforensics/core/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWidgetDensity } from '@/store/store';
 import type { WidgetProps } from '@/view/detector-registry';

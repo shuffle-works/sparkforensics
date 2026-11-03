@@ -1,9 +1,12 @@
 import { store } from '@/store/store';
 import {
-  EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections, type ExportRunData,
-} from '@sparkforensics/core/export-data.ts';
-import { deserializeRun } from '@sparkforensics/core/run-serialization.ts';
-import { gunzipSync, strFromU8 } from '@sparkforensics/core/vendor/fflate.js';
+  EXPORT_DATA_SCHEMA_VERSION,
+  reviveExportCollections,
+  type ExportRunData,
+  deserializeRun,
+  gunzipSync,
+  strFromU8,
+} from '@sparkforensics/core/export';
 
 /** Reverses the CLI's write-time encoding of data.js (base64-decode, gunzip,
  * UTF-8-decode, JSON.parse with nested Maps and Sets revived). strFromU8's second arg must stay falsy: the

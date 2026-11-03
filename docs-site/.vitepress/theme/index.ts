@@ -8,6 +8,7 @@ import DetectorPage from './DetectorPage.vue';
 import DetectorTypeList from './DetectorTypeList.vue';
 import DetectorThresholds from './DetectorThresholds.vue';
 import DetectorMcpExample from './DetectorMcpExample.vue';
+import { postToParent } from '../../../src/docs-widget/frame-messages';
 import { setupCitationChips } from './citation-chips';
 // Trace fonts, self-hosted (bundled woff2): the docs make no font request.
 import '@fontsource-variable/instrument-sans/wdth.css';
@@ -43,6 +44,18 @@ function writeSharedTheme(isDark: boolean): void {
   document.documentElement.dataset.theme = value;
 }
 
+// The app frames these docs in its side panel, where Esc pressed inside the frame never reaches the
+// app. Tell the app about an Esc this page leaves unhandled; an open search box or modal dialog
+// owns it.
+function forwardEscapeToFrameHost(): void {
+  if (window.parent === window) return;
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (document.querySelector('.VPLocalSearchBox, [role="dialog"][aria-modal="true"]')) return;
+    postToParent({ type: 'sparkforensics:docs-escape' });
+  });
+}
+
 const theme: Theme = {
   extends: DefaultTheme,
   enhanceApp({ app, router }) {
@@ -54,6 +67,8 @@ const theme: Theme = {
     app.component('DetectorMcpExample', DetectorMcpExample);
 
     if (!inBrowser) return; // this hook also runs during SSR's data pass
+
+    forwardEscapeToFrameHost();
 
     // Wire citation chips after every client-side route change (each page
     // renders its own footnotes list from scratch).

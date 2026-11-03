@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import {
   formatTriageCopy,
   rankTriageTargets,

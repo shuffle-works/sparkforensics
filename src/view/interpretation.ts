@@ -1,7 +1,7 @@
-import { rankedRollup, type RankedRollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { AnalyzedRun } from '@sparkforensics/core/analyzed-run.ts';
-import type { FindingSavings, RunInterpretation } from '@sparkforensics/core/run-interpretation.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { rankedRollup, type RankedRollupGroup } from '@sparkforensics/core/view-model';
+import type { AnalyzedRun } from '@sparkforensics/core/analysis';
+import type { FindingSavings, RunInterpretation } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { useStore } from '@/store/store';
 
 // Read-only access to the installed run's interpretation (see store.ts). Views render the

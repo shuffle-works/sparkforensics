@@ -1,5 +1,5 @@
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
-import { matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/finding-filter-predicate.ts';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types';
+import { matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/view-model';
 
 /** Fixed impact-band vocabulary, in triage order. */
 export const IMPACT_BANDS: readonly ImpactBand[] = ['critical', 'warning', 'info'];

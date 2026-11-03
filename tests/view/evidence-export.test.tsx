@@ -9,9 +9,9 @@ import { store, emptyAppModel } from '@/store/store';
 import { EvidenceExport } from '@/view/EvidenceExport';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { EXPORT_TEMPLATE_FILE } from '@/export/single-file';
-import * as reportBuilder from '@sparkforensics/core/evidence-report.ts';
-import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
-import { buildHtmlExportData } from '@sparkforensics/core/html-export.ts';
+import * as reportBuilder from '@sparkforensics/core/analysis';
+import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export';
+import { buildHtmlExportData } from '@sparkforensics/core/analysis';
 import { runState } from './_shared/run';
 
 function seedRun() {

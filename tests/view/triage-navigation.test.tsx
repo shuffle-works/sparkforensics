@@ -6,7 +6,7 @@ import { StrictMode } from 'react';
 
 import App from '@/App';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';
 
@@ -16,7 +16,7 @@ import { runState } from './_shared/run';
 // route-focus.test.tsx; a row's page, focus and flash are tested in finding-widget.test.tsx and
 // finding-anchor.test.tsx. These keep the wiring between the controls, the store and the board.
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(() => new Promise(() => {})),
   add: vi.fn(async () => ({})),
@@ -77,7 +77,7 @@ function skewFinding(stageId: number, impactBand: Finding['impactBand']): Findin
     type: 'skew',
     stageId,
     impactBand,
-    metric: 'p95Median',
+    metric: 'P95/median',
     value: 5,
     recommendation: `Rebalance Stage ${stageId}.`,
   };
@@ -87,7 +87,7 @@ function skewFinding(stageId: number, impactBand: Finding['impactBand']): Findin
 // (app-level). A few tests pass an explicit `stageId` to get a genuine
 // StageTable route button, the only click-through into a reference-region finding.
 function memoryFinding(stageId: number | null = null): Finding {
-  return {
+  return testFinding({
     type: 'memoryUtilization',
     stageId,
     impactBand: 'warning',
@@ -96,7 +96,7 @@ function memoryFinding(stageId: number | null = null): Finding {
     // The measurement a stated row's evidence panel keeps beside the line that states the figure.
     allocatedMBSeconds: 3_600_000,
     recommendation: 'Review executor allocation.',
-  };
+  });
 }
 
 function renderReady(catalog: Finding[], stageIds: number[] = [], widgetDensity: 'basic' | 'advanced' = 'advanced') {

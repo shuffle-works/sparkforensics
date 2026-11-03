@@ -10,7 +10,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 
 import { useIngest } from '../../src/store/useIngest';
 import { store, selectAppModel } from '../../src/store/store';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import * as recentFiles from '@sparkforensics/core/browser';
 
 // Methods are non-enumerable so `recentFiles.add`'s IndexedDB `put()`
 // structuredClone of the entry doesn't choke on function-valued properties:
@@ -35,7 +35,7 @@ function makeClient() {
         h.onApp({ name: 'app-b', id: 'app-b-id' });
         h.onStage({ id: 2, stageId: 2, name: 'stage-b' });
       }
-      h.onDone();
+      h.onDone({ skippedLines: 0 });
     }),
     startParseFromUrl: vi.fn(),
     startParseFiles: vi.fn(),

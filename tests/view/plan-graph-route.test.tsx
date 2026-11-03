@@ -7,7 +7,7 @@ import { StageDetailProvider } from '@/view/StageDetailContext';
 import { PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { emptyAppModel } from '@/store/store';
 import type { ReactElement } from 'react';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 
 // Count every Dagre layout pass (the expensive main-thread work) so a
 // regression test can assert that merely opening a node detail card does not

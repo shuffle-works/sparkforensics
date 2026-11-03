@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event';
 
 import { PlanExplorer } from '../../src/view/widgets/PlanExplorer';
 import { store } from '../../src/store/store';
-import type { AppModel, PlanNode } from '@sparkforensics/core/types.ts';
+import type { AppModel, PlanNode } from '@sparkforensics/core/types';
+import { testStage } from './_shared/model';
 
 const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode => ({
   name,
@@ -17,7 +18,7 @@ const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode
 function makeAppModel(planTree: PlanNode | null, stageId = 1): AppModel {
   return {
     app: null,
-    stages: new Map([[stageId, { id: stageId, sqlExecutionId: 1 }]]),
+    stages: new Map([[stageId, testStage({ id: stageId, sqlExecutionId: 1 })]]),
     executors: { added: [], removed: [] },
     sql: new Map([[1, { id: 1, planTree }]]),
     jobs: new Map(),
@@ -34,7 +35,7 @@ describe('PlanExplorer', () => {
 
   it('renders nothing and does not throw for a stage with no linked SQL execution at all', () => {
     const appModel = makeAppModel(null);
-    appModel.stages.set(2, { id: 2 }); // no sqlExecutionId
+    appModel.stages.set(2, testStage({ id: 2 })); // no sqlExecutionId
     const { container } = render(<PlanExplorer stageId={2} appModel={appModel} />);
     expect(container).toBeEmptyDOMElement();
   });

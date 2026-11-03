@@ -1,5 +1,6 @@
 import type { Finding } from './types.ts';
-import { ENTRY_BY_TYPE, isExecutionWideStageIds } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detector-catalog.ts';
+import { isExecutionWideStageIds } from './detectors/plan-attribution.ts';
 import { coreTimeFor, stageTaskMs, type EstimateCtx } from './impact-model.ts';
 
 export type { EstimateCtx } from './impact-model.ts';

@@ -106,7 +106,7 @@ evidence bundle for one finding, for drill-down after `diagnose_run`),
 `get_finding_documentation` (detection/tuning reference docs for one
 finding type, independent of any run), and `get_reference_doc` (a full
 tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). `list_detectors` (the detector catalog, no run needed; the CLI's `detectors` subcommand prints the same
-records from `buildDetectorCatalog()` in `packages/core/src/detector-catalog.ts`). None
+records from `buildDetectorCatalog()` in `packages/core/src/detector-listing.ts`). None
 re-implement detector logic: `list_runs` lists candidates
 (`packages/core/src/list-runs.ts`), and the rest repackage
 `analyzeRun`/`buildEvidenceReport`/`compareRuns`/`evaluateBudgets`
@@ -237,7 +237,8 @@ data.
 into each package's own `vendor-core/` at pack time, pre-stripping TypeScript
 to plain `.js` (Node's native TS stripping refuses to run on `.ts` files
 under `node_modules`, which is exactly where a published `vendor-core/`
-lands). Each package's bin/entry point resolves its needed module through
+lands). Each package's bin loads `packages/core/src/node.ts`, the one module that
+exports every core name the CLI and MCP bins use, through `load-node-core.js` and
 `packages/core/src/load-vendored.js`: from `vendor-core/` if present, else from
 the real `packages/core/src/` sibling loaded as `.ts` directly. In a monorepo
 checkout a leftover `vendor-core/` is used only while its `core-source-hash.txt`

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildDetectorCatalog } from '@sparkforensics/core/detector-catalog.ts';
+import { buildDetectorCatalog } from '@sparkforensics/core/analysis';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 
 // `sparkforensics-analyze detectors`, run in process: the bin's wiring (stdout, exit code, the usage text).

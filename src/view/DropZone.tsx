@@ -7,11 +7,10 @@ import { RecentList, type RecentFileEntry } from '@/view/RecentList';
 import { type NormalizedShsRequest, type RunSource, useIngest } from '@/store/useIngest';
 import { store, useStore } from '@/store/store';
 import { SAMPLE_RUN_ID } from '@/view/sample-run';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
-import { reassembleRollingEntries } from '@sparkforensics/core/rolling-log-reassembly.ts';
+import * as recentFiles from '@sparkforensics/core/browser';
+import { reassembleRollingEntries, isShsRequestValid, validateShsRequest } from '@sparkforensics/core/analysis';
 import { cn } from '@/lib/utils';
-import { isShsRequestValid, validateShsRequest } from '@sparkforensics/core/shs-request.js';
-import { ALTERNATIVE_LOG_RETRIEVAL_URL } from '@sparkforensics/core/docs-site-config.ts';
+import { ALTERNATIVE_LOG_RETRIEVAL_URL } from '@sparkforensics/core/view-model';
 
 type ShsField = 'baseUrl' | 'appId' | 'attemptId';
 

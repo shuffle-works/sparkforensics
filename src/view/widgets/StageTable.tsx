@@ -34,14 +34,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, worstImpactBand } from '@sparkforensics/core/view-model';
 import { Chip, TagBadge } from '@/view/ImpactBadge';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
 import { savingsOf, stepCodes, useInterpretation } from '@/view/interpretation';
 import { StepCode } from '@/view/StepCode';
 import { WidgetCard } from '@/view/WidgetCard';
-import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { useWidgetState } from '@/view/useWidgetState';
 

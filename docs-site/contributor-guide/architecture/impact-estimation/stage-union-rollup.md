@@ -56,7 +56,7 @@ wall-clock claim. Left as "ms", a `resource`-tier total sitting next to a
 `time`-tier "recoverable time" total would read as directly comparable when it
 isn't: the resource figure was never gate-clipped against any stage's occupancy,
 so it can exceed what the stage actually spent. So every surface prints a
-cost-only `ms` figure as core time (`asCoreTime()` in `format-utils.ts`, also
+cost-only `ms` figure as core time (`asCoreTime()` in `units.ts`, also
 applied by `resourceGroupTotal()`), never as a duration.
 `rollupGroupStat` (same module) calls this out in the trailing-stat copy
 `FixTheseFirst.tsx` renders: a `resource`-kind group (any unit, including `ms`)

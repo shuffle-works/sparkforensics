@@ -9,7 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { TinyTask } from '@/view/widgets/TinyTask';
 import { store } from '@/store/store';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 
@@ -66,7 +66,7 @@ describe('TinyTask', () => {
 
   it('renders nothing when the catalog has no tinyTask findings', () => {
     const appModel = makeAppModel([1]);
-    const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning', metric: 'ratio', value: 8 }];
+    const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning', metric: 'P95/median', value: 8 }];
     const { container } = render(<TinyTask appModel={appModel} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
     expect(container).toBeEmptyDOMElement();
   });

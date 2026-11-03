@@ -1,18 +1,19 @@
 import { coreCountHistogram } from './core-time-series.ts';
-import type { FailedTaskSample } from './event-handlers.ts';
+import type { FailedTaskSample, StageRecord } from './event-handlers.ts';
 import { medianOfSorted } from './median.ts';
 import type { TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
-import type { TailAttribution } from './types.ts';
+import type { StageAttemptTotals, TailAttribution } from './types.ts';
 
 // Single source of truth for the packed per-task numeric array: FIELDS (offset
 // constants), TASK_FIELD_NAMES (display labels), and the finalizeStage hot-loop
 // push order are all derived from this list. `prop` is the task record's real
 // property name, kept separate from `name` since MEM_SPILLED's display label
 // ('memorySpilled') differs from it (memSpilled).
+type TaskNumericProp = 'duration' | 'gcTime' | 'memSpilled' | 'diskSpilled' | 'shuffleRead' | 'shuffleWrite' | 'launchTime' | 'finishTime';
 interface TaskFieldDescriptor {
   key: string;
   name: string;
-  prop: string;
+  prop: TaskNumericProp;
 }
 
 const TASK_FIELD_DESCRIPTORS: TaskFieldDescriptor[] = [
@@ -44,58 +45,141 @@ export const TASK_FIELD_NAMES: string[] = TASK_FIELD_DESCRIPTORS.map((d) => d.na
 
 const TASK_FIELD_PROPS = TASK_FIELD_DESCRIPTORS.map((d) => d.prop);
 
-// Numeric accumulator fields on `stage` that this function reads/increments.
-// `stage`'s public parameter type stays the loose Record shape; this narrow view is only for the
-// arithmetic below, never a restatement of the object's real shape.
-interface StageNumericAccumulator {
+export interface StageHostStat { host: string; taskCount: number; totalDuration: number; }
+export interface StageExecutorStat {
+  executorId: string; taskCount: number; totalDuration: number;
+  // Sum and Welford M2 of ln(1 + task duration) over the executor's tasks: the stage's task spread
+  // on the log scale.
+  logDurationSum: number; logDurationM2: number;
+  inputBytes: number; shuffleReadBytes: number; shuffleWriteBytes: number;
+}
+export interface StageFailureReason { reason: string; count: number; }
+export interface StageLocalityStat { locality: string; count: number; }
+// Per-executor snapshot from a StageExecutorMetrics event: Spark's ExecutorMetrics field names, only
+// a few of which any detector reads.
+export interface StageExecutorMetricsSnapshot {
+  jvmHeapMemory?: number;
+  onHeapStorageMemory?: number;
+  offHeapStorageMemory?: number;
+  [key: string]: number | undefined;
+}
+
+// A stage as finalizeStage posts it, the one place a stage is built. The record's internal
+// accumulation state (task attempts, intern tables, late-event bookkeeping) is not part of it.
+export interface FinalizedStage {
+  id: number;
+  name: string;
+  details: string;
+  stageType: 'REDUCE' | 'MAP';
+  sqlExecutionId: number | null;
+  submittedAt: number;
+  completedAt: number;
+  parentIds: number[];
+  taskCount: number;
+  failedTasks: number;
+  speculativeTasks: number;
+  stageFailureReason: string | null;
+  // Times the stage was submitted and how many of those attempts failed, counted across resubmits.
+  stageAttempts: number;
+  failedStageAttempts: number;
+  // The summed work of the attempts before the latest one, which the stage's own figures leave out;
+  // null when the stage ran once. Read only by the CLI's metrics block.
+  earlierAttempts: StageAttemptTotals | null;
+  // The summed work the stage's own figures also leave out: a failed attempt's tasks that ended
+  // after its StageCompleted, and task attempts another attempt of the same task superseded
+  // (failed retries, losing speculative copies); null when there was none.
+  lateAttemptWork: StageAttemptTotals | null;
+  inputBytes: number;
+  outputBytes: number;
+  // Summed Records Written; null when no task of the stage reported one.
+  outputRecords: number | null;
   shuffleReadBytes: number;
+  shuffleReadP50: number;
+  shuffleReadP95: number;
+  shuffleReadMax: number;
   shuffleWriteBytes: number;
   fetchWaitTime: number;
   memoryBytesSpilled: number;
   diskBytesSpilled: number;
+  spillMemP50: number;
+  spillMemP95: number;
+  spillMemMax: number;
+  spillDiskP50: number;
+  spillDiskP95: number;
+  spillDiskMax: number;
+  spillClassification: 'skew' | 'volume' | 'unclassified';
   jvmGCTime: number;
   executorRunTime: number;
+  // Summed task CPU time, in nanoseconds (Spark's unit); 0 on logs that predate the metric.
   executorCpuTime: number;
-  inputBytes: number;
-  outputBytes: number;
-  outputRecords: number | null;
+  gcPct: number;
+  taskDurationP50: number;
+  taskDurationP95: number;
+  taskDurationMax: number;
+  peakExecutionMemoryMax: number;
+  // Wall-clock ms during which at least one of the stage's tasks ran.
+  taskActiveMs: number;
+  stragglerCount: number;
+  // Summed (duration - P50) over the tasks slower than STRAGGLER_FACTOR x P50, core-ms.
+  stragglerExcessMs: number;
+  // Longest task at or under STRAGGLER_FACTOR x P50, the longest a straggler fix leaves.
+  longestNonStragglerMs: number;
+  // Wall-clock a list-scheduling replay of the stage's tasks recovers with every task over
+  // STRAGGLER_FACTOR x P50 capped at P50, ms.
+  tailReplayRecoveryMs: number;
+  // Most of the stage's tasks running at once.
+  peakConcurrentTasks: number;
+  // What the stage's slow tail was made of; absent when no task ran over TAIL_FACTOR x P50.
+  tailAttribution?: TailAttribution;
+  hostStats: StageHostStat[];
+  executorStats: StageExecutorStat[];
+  executorMetrics: Map<string, StageExecutorMetricsSnapshot>;
+  failureReasons: StageFailureReason[];
+  failureGroups: TaskFailureGroup[];
+  // Failures of the attempts a retry superseded, most frequent first.
+  retryFailureGroups: TaskFailureGroup[];
+  localityStats: StageLocalityStat[];
+  failedTaskSamples: FailedTaskSample[];
+  retryTaskSamples: FailedTaskSample[];
+  retryWasteMs: number;
+  wastedAttempts: number;
+  speculationWasteMs: number;
+  speculationWastedAttempts: number;
 }
 
 export function finalizeStage(
   stageId: number,
-  stage: Record<string, unknown> & { taskAttempts: Map<unknown, Record<string, number>> | null },
+  stage: StageRecord,
   state: { taskStore: Map<number, Float64Array> }
-): { type: 'stage'; data: Record<string, unknown> } | null {
+): { type: 'stage'; data: FinalizedStage } | null {
   // Already finalized (e.g. a duplicate/replayed StageCompleted event):
   // degrade gracefully instead of crashing on stage.taskAttempts.values().
-  if (stage.taskAttempts === null) return null;
-
-  const acc = stage as unknown as StageNumericAccumulator;
+  const attempts = stage.taskAttempts;
+  if (attempts === null) return null;
 
   const buf: number[] = [];
   let taskCount = 0, failedTasks = 0, speculativeTasks = 0;
-  const hostStats = new Map();
-  const executorStats = new Map();
-  const failureReasons = new Map();
+  const hostStats = new Map<string, { taskCount: number; totalDuration: number }>();
+  const executorStats = new Map<string, Omit<StageExecutorStat, 'executorId'>>();
+  const failureReasons = new Map<string, number>();
   const failedTaskSamples: FailedTaskSample[] = [];
   // Keyed by the interned detail object: accumulateTask shares one per distinct failure.
   const failureGroups = new Map<TaskFailureDetail, number>();
-  const localityStats = new Map();
+  const localityStats = new Map<string, number>();
   let peakExecutionMemoryMax = 0;
 
-  const attempts = stage.taskAttempts;
   for (const t of attempts.values()) {
     taskCount++;
     if (t.failed) {
       failedTasks++;
       if (t.reason) failureReasons.set(t.reason, (failureReasons.get(t.reason) ?? 0) + 1);
-      const failure = (t as unknown as { failure?: TaskFailureDetail | null }).failure;
+      const failure = t.failure;
       if (failure) failureGroups.set(failure, (failureGroups.get(failure) ?? 0) + 1);
       if (failedTaskSamples.length < MAX_TASK_SAMPLES) {
         failedTaskSamples.push({
           taskId: t.taskId, attemptNumber: t.attemptNumber, host: t.host, executorId: t.executorId,
           reason: t.reason, peakExecMem: t.peakExecMem, memSpilled: t.memSpilled, shuffleWrite: t.shuffleWrite,
-        } as unknown as FailedTaskSample);
+        });
       }
     }
     if (t.speculative) speculativeTasks++;
@@ -126,17 +210,17 @@ export function finalizeStage(
       localityStats.set(t.locality, (localityStats.get(t.locality) ?? 0) + 1);
     }
     if (t.peakExecMem > peakExecutionMemoryMax) peakExecutionMemoryMax = t.peakExecMem;
-    acc.shuffleReadBytes += t.shuffleRead;
-    acc.shuffleWriteBytes += t.shuffleWrite;
-    acc.fetchWaitTime += t.fetchWaitTime;
-    acc.memoryBytesSpilled += t.memSpilled;
-    acc.diskBytesSpilled += t.diskSpilled;
-    acc.jvmGCTime += t.gcTime;
-    acc.executorRunTime += t.executorRunTime;
-    acc.executorCpuTime += t.executorCpuTime;
-    acc.inputBytes += t.inputBytes;
-    acc.outputBytes += t.outputBytes;
-    if (t.outputRecords != null) acc.outputRecords = (acc.outputRecords ?? 0) + t.outputRecords;
+    stage.shuffleReadBytes += t.shuffleRead;
+    stage.shuffleWriteBytes += t.shuffleWrite;
+    stage.fetchWaitTime += t.fetchWaitTime;
+    stage.memoryBytesSpilled += t.memSpilled;
+    stage.diskBytesSpilled += t.diskSpilled;
+    stage.jvmGCTime += t.gcTime;
+    stage.executorRunTime += t.executorRunTime;
+    stage.executorCpuTime += t.executorCpuTime;
+    stage.inputBytes += t.inputBytes;
+    stage.outputBytes += t.outputBytes;
+    if (t.outputRecords != null) stage.outputRecords = (stage.outputRecords ?? 0) + t.outputRecords;
     for (let i = 0; i < TASK_FIELD_PROPS.length; i++) buf.push(t[TASK_FIELD_PROPS[i]]);
   }
   stage.taskCount = taskCount;
@@ -150,7 +234,7 @@ export function finalizeStage(
   state.taskStore.set(stageId, arr);
 
   const { p50, p95, max } = computeDurationQuantiles(arr);
-  const spillClass = acc.memoryBytesSpilled > 0 ? classifySpill(arr) : 'unclassified';
+  const spillClass = stage.memoryBytesSpilled > 0 ? classifySpill(arr) : 'unclassified';
   const { p50: shuffleReadP50, p95: shuffleReadP95, max: shuffleReadMax } = computeFieldQuantiles(arr, FIELDS.SHUFFLE_READ);
   const { p50: spillMemP50, p95: spillMemP95, max: spillMemMax } = computeFieldQuantiles(arr, FIELDS.MEM_SPILLED);
   const { p50: spillDiskP50, p95: spillDiskP95, max: spillDiskMax } = computeFieldQuantiles(arr, FIELDS.DISK_SPILLED);
@@ -170,7 +254,7 @@ export function finalizeStage(
     }
   }
 
-  const tailAttribution = p50 > 0 ? attributeTail(attempts.values() as unknown as Iterable<TailTask>, p50) : null;
+  const tailAttribution = p50 > 0 ? attributeTail(attempts.values(), p50) : null;
   const peakConcurrentTasks = computePeakConcurrentTasks(arr);
   const tailReplayRecoveryMs = stragglerCount > 0
     ? computeTailReplayRecoveryMs(arr, p50, peakConcurrentTasks)
@@ -189,41 +273,48 @@ export function finalizeStage(
   const failureGroupsArr: TaskFailureGroup[] = [...failureGroups.entries()]
     .map(([detail, count]) => ({ ...detail, count }))
     .sort((a, b) => b.count - a.count);
-  const retryFailures = (stage as unknown as { retryFailures?: Map<TaskFailureDetail, number> }).retryFailures;
-  const retryFailureGroups: TaskFailureGroup[] = [...(retryFailures ?? new Map<TaskFailureDetail, number>()).entries()]
+  const retryFailureGroups: TaskFailureGroup[] = [...stage.retryFailures.entries()]
     .map(([detail, count]) => ({ ...detail, count }))
     .sort((a, b) => b.count - a.count);
   const localityStatsArr = [...localityStats.entries()].map(
     ([locality, count]) => ({ locality, count })
   );
 
-  const data: Record<string, unknown> = {
-    ...stage,
-    hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount, stragglerExcessMs, longestNonStragglerMs,
-    tailReplayRecoveryMs,
-    failedTaskSamples,
-    failureGroups: failureGroupsArr,
-    retryFailureGroups,
-    peakExecutionMemoryMax,
-    taskActiveMs: computeTaskActiveMs(arr),
-    peakConcurrentTasks,
-    ...(tailAttribution ? { tailAttribution } : {}),
-    taskDurationP50: p50,
-    taskDurationP95: p95,
-    taskDurationMax: max,
-    shuffleReadP50, shuffleReadP95, shuffleReadMax,
+  const data: FinalizedStage = {
+    id: stage.id, name: stage.name, details: stage.details,
+    stageType: stage.shuffleReadBytes > 0 ? 'REDUCE' : 'MAP',
+    sqlExecutionId: stage.sqlExecutionId,
+    submittedAt: stage.submittedAt, completedAt: stage.completedAt, parentIds: stage.parentIds,
+    taskCount, failedTasks, speculativeTasks,
+    stageFailureReason: stage.stageFailureReason,
+    stageAttempts: stage.stageAttempts, failedStageAttempts: stage.failedStageAttempts,
+    earlierAttempts: stage.earlierAttempts, lateAttemptWork: stage.lateAttemptWork,
+    inputBytes: stage.inputBytes, outputBytes: stage.outputBytes, outputRecords: stage.outputRecords,
+    shuffleReadBytes: stage.shuffleReadBytes, shuffleReadP50, shuffleReadP95, shuffleReadMax,
+    shuffleWriteBytes: stage.shuffleWriteBytes, fetchWaitTime: stage.fetchWaitTime,
+    memoryBytesSpilled: stage.memoryBytesSpilled, diskBytesSpilled: stage.diskBytesSpilled,
     spillMemP50, spillMemP95, spillMemMax,
     spillDiskP50, spillDiskP95, spillDiskMax,
-    gcPct: acc.executorRunTime > 0 ? (acc.jvmGCTime / acc.executorRunTime) * 100 : 0,
     spillClassification: spillClass,
-    stageType: acc.shuffleReadBytes > 0 ? 'REDUCE' : 'MAP',
+    jvmGCTime: stage.jvmGCTime, executorRunTime: stage.executorRunTime, executorCpuTime: stage.executorCpuTime,
+    gcPct: stage.executorRunTime > 0 ? (stage.jvmGCTime / stage.executorRunTime) * 100 : 0,
+    taskDurationP50: p50, taskDurationP95: p95, taskDurationMax: max,
+    peakExecutionMemoryMax,
+    taskActiveMs: computeTaskActiveMs(arr),
+    stragglerCount, stragglerExcessMs, longestNonStragglerMs, tailReplayRecoveryMs,
+    peakConcurrentTasks,
+    ...(tailAttribution ? { tailAttribution } : {}),
+    hostStats: hostStatsArr, executorStats: executorStatsArr,
+    executorMetrics: stage.executorMetrics,
+    failureReasons: failureReasonsArr,
+    failureGroups: failureGroupsArr,
+    retryFailureGroups,
+    localityStats: localityStatsArr,
+    failedTaskSamples,
+    retryTaskSamples: stage.retryTaskSamples,
+    retryWasteMs: stage.retryWasteMs, wastedAttempts: stage.wastedAttempts,
+    speculationWasteMs: stage.speculationWasteMs, speculationWastedAttempts: stage.speculationWastedAttempts,
   };
-  delete data.taskAttempts; // internal-only field, already nulled above; never part of the public message
-  delete data.failureDetails; // internal-only intern table, summarized by failureGroups
-  delete data.retryFailures; // summarized by retryFailureGroups
-  delete data.speculativeWinners; // internal-only late-TaskEnd pairing state, kept worker-side
-  delete data.lateSpeculationWaste;
-  delete data.stageAttemptId;
 
   return { type: 'stage', data };
 }

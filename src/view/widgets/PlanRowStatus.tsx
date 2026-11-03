@@ -1,4 +1,4 @@
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 
 /** The confidence marker of a SQL-plan card, on the header once: the findings' shared confidence, or

@@ -23,7 +23,7 @@ describe('export analysis guard', () => {
     expect(moduleIds).toContain('src/export/main-export.tsx');
     expect(moduleIds).toContain('src/view/Dashboard.tsx');
     // Core ids must normalize to packages/core/src too, or the allowlist would match nothing.
-    expect(moduleIds).toContain('packages/core/src/format-utils.ts');
+    expect(moduleIds).toContain('packages/core/src/units.ts');
     expect(moduleIds.filter((id) => exportModuleViolation(id) != null)).toEqual([]);
   }, 180_000);
 
@@ -50,7 +50,7 @@ describe('export analysis guard', () => {
       [abs('src/export/main-export.tsx')]: [],
       [abs('src/view/Widget.tsx')]: [abs('src/export/main-export.tsx')],
       [abs('packages/core/src/analyzer.ts')]: [abs('src/view/Widget.tsx')],
-      [abs('packages/core/src/format-utils.ts')]: [abs('src/view/Widget.tsx')],
+      [abs('packages/core/src/units.ts')]: [abs('src/view/Widget.tsx')],
     };
     const violations = findForbiddenModules(Object.keys(importers), (id) => importers[id], root);
 
@@ -69,7 +69,7 @@ describe('export analysis guard', () => {
     expect(exportModuleViolation('packages/core/src/occupancy.ts')).toBe('core module not on the export allowlist');
     expect(exportModuleViolation('packages/core/src/stage-quantiles.ts')).toBe('core module not on the export allowlist');
     expect(exportModuleViolation('src/store/useIngest.ts')).toBe('live-only module');
-    expect(exportModuleViolation('packages/core/src/format-utils.ts')).toBeNull();
+    expect(exportModuleViolation('packages/core/src/units.ts')).toBeNull();
     expect(exportModuleViolation('src/view/Dashboard.tsx')).toBeNull();
   });
 });

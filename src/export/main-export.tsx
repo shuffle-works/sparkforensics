@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { RUN_PAYLOAD_GLOBAL } from '@sparkforensics/core/run-payload.ts';
+import { RUN_PAYLOAD_GLOBAL } from '@sparkforensics/core/export';
 import { AppCrashView, ErrorBoundary } from '@/view/ErrorBoundary';
 import { loadExportPayload } from './hydrate-store';
 import { ExportApp } from './ExportApp';

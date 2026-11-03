@@ -1,4 +1,4 @@
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import type { InterpretationState } from '@/view/interpretation';
 import { rankedBySavings } from './interpretation';
 

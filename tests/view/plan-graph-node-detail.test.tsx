@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphNodeDetail, type PlanGraphNodeDetailData } from '@/view/plan-graph/PlanGraphNodeDetail';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 function node(overrides: Partial<PlanGraphNodeDetailData> = {}): PlanGraphNodeDetailData {
   return {

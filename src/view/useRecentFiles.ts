@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
+import * as recentFiles from '@sparkforensics/core/browser';
 import { useIngest } from '@/store/useIngest';
 import type { RecentFileEntry } from '@/view/RecentList';
 

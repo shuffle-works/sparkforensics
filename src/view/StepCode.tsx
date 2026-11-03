@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 
 import { cn } from '@/lib/utils';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import type { ImpactBand } from '@sparkforensics/core/types';
 import { IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
 
 /** Whether step codes show. A host that shows one finding on its own (the docs example) turns them

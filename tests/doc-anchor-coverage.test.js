@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
+import { DETECTORS } from '@sparkforensics/core/analysis';
 import { computeDocAnchorCoverage } from '../scripts/doc-anchor-coverage.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));

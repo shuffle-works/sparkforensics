@@ -20,7 +20,7 @@ npm run build         # production build, outputs dist/ (plus dist/export-templa
 npm run preview       # serves dist/ locally
 npx tsc --noEmit      # typecheck (strict TypeScript across src/, tests/view/ and packages/core/src/)
 npm run lint          # eslint over the repo's JS (.ts/.tsx are covered by tsc and lint:structure)
-npm run lint:structure  # ast-grep structure rules over src/ (rules/, tested by rule-tests/)
+npm run lint:structure  # ast-grep structure rules over src/ and packages/core/src/ (rules/, tested by rule-tests/)
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
 
@@ -120,18 +120,50 @@ npm run docs:preview   # serves the built docs site locally
   detector page frames, built from `docs-widget.html` by
   `npm run build:docs-widget`, which `docs:dev` and `docs:build` run.
 - `packages/{cli,mcp,server}/vendor-core/` (gitignored) is rebuilt only at
-  `prepack`. In the monorepo the bins load `packages/core/src/load-vendored.js`,
-  which uses a leftover `vendor-core/` only while its `core-source-hash.txt`
-  matches `packages/core/src`; otherwise it warns on stderr and runs the
-  source. `load-vendored.js` is the one module a bin locates by hand
-  (`vendor-core/load-vendored.js` in a packed install); the bin loads every
-  other core module through its exported `loadVendored()`.
+  `prepack`. In the monorepo the bins load `packages/core/src/load-node-core.js`,
+  which resolves through `load-vendored.js` and uses a leftover `vendor-core/`
+  only while its `core-source-hash.txt` matches `packages/core/src`; otherwise
+  it warns on stderr and runs the source. `load-node-core.js` is the one module
+  a bin locates by hand (`vendor-core/load-node-core.js` in a packed install).
+  It loads `packages/core/src/node.ts` once, and the bin reads every core name
+  it uses from that module. `packages/core/test/node-entry.test.js` runs each
+  bin with `--help` and fails when it does not start.
 - The CLI's `export-template/` has no such check. Without it,
   `--export-html` from source uses the repo-root `dist-export/` from
   `npm run build:export` (not produced by `npm run build`); a leftover
   `export-template/` wins over that, so rebuild it with
   `node scripts/vendor-export-template.mjs` or delete it before trusting a
   local `--export-html`.
+
+### Core entry points
+
+`@sparkforensics/core` lists its entry points in the `exports` map of
+`packages/core/package.json`, with no wildcard. Each is a plain re-export file
+in `packages/core/src/`:
+
+- `analysis`: the analysis the app and the tools share (`analyze`,
+  `auditConfig`, the detector catalog and docs, thresholds, run
+  interpretation and comparison, evidence report, ingest).
+- `view-model`: what `src/view` renders (formatting, finding names,
+  presentation and filters, the plan graph model, evidence availability).
+- `export`: the HTML export data, run payload and session snapshot, plus the
+  vendored gzip codec that decodes them.
+- `types`: the model and finding types (`export type` only).
+- `browser`: core services that need a real browser (the IndexedDB recent-files
+  list); `scripts/vendor-core.mjs` leaves it out of the vendor tree.
+- `cli` and `mcp`: the `cli/` modules, and the MCP server factory with its
+  tools and error shape.
+- `node`: every name the CLI and MCP bins read.
+
+`src/` imports core through `analysis`, `browser`, `export`, `types` and
+`view-model` only (the `core-entry-points-only` rule of `npm run lint:structure`). The export
+build reaches `view-model` and `export`, so they re-export only modules on
+`ALLOWED_EXPORT_CORE_MODULES` in `scripts/export-analysis-guard.mjs`; a new
+analysis import for the export goes through `interpretRun`, not through a new
+re-export there. Specs that mock or load one core module by file import it
+through the `@core-src/` alias (`vitest.config.js` and `tsconfig.json`), which
+points at `packages/core/src/`; `packages/cli/test` imports `load-vendored.js`
+by relative path.
 
 ## The docs site's anchor clicks
 

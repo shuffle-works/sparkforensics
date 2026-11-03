@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import dagre from '@dagrejs/dagre';
 import { layoutWithDagre, runDagre, clearLayoutCache, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
-import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types';
 
 function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): PlanGraphNodeData {
   return {

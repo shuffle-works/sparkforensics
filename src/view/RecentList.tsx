@@ -2,8 +2,8 @@ import { X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatBytes } from '@sparkforensics/core/format-utils.ts';
-import type { RecentFileEntry } from '@sparkforensics/core/recent-files.ts';
+import { formatBytes } from '@sparkforensics/core/view-model';
+import type { RecentFileEntry } from '@sparkforensics/core/browser';
 
 // Canonical shape lives in packages/core/src/recent-files.ts (the IndexedDB layer); re-export
 // it here for callers importing from this module.

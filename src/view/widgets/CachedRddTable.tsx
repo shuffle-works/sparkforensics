@@ -7,8 +7,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { pathBasename, formatBytes, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { pathBasename, formatBytes, worstImpactBand } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';

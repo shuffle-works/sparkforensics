@@ -3,8 +3,9 @@ import { afterEach, beforeEach, expect, test } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
-import type { EvidenceAvailability } from '@sparkforensics/core/types.ts';
+import { auditConfig } from '@sparkforensics/core/analysis';
+import type { EvidenceAvailability } from '@sparkforensics/core/types';
+import { testApp } from './_shared/model';
 import { store, emptyAppModel } from '@/store/store';
 import { Dashboard } from '@/view/Dashboard';
 import { EvidenceAvailability as EvidenceAvailabilityWidget } from '@/view/widgets/EvidenceAvailability';
@@ -135,12 +136,12 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
     // An ordinary (non-dataUnavailable) row: the dataUnavailable placeholder
     // carries no evidence pill of its own (it would be circular, its
     // whole content IS the "evidence unavailable" note).
-    ...runState({ appModel: readyModel(), catalog: [{
-      type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3', impactBand: 'info',
+    ...runState({ appModel: readyModel(), catalog: [testFinding({
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '3', impactBand: 'info',
       // The measurements behind the figure, which the panel keeps beside the line that states it.
       heap: 200 * 1024 ** 2, allocatedBytes: 1024 ** 3, executorCount: 4,
       recommendation: 'Executor 3 used only 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
-    }] }),
+    })] }),
   });
   renderDashboard();
 
@@ -171,12 +172,12 @@ test('Unpruned Scan finding opens SQL-plan evidence with keyboard activation', a
 test('Config Audit finding switches to the Full app report tab before focusing its ledger entry', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
-  const app = {
+  const app = testApp({
     startTime: 0,
     endTime: 60_000,
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  };
+  });
   store.setState({
     ...store.getState(),
     ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app) }),
@@ -234,12 +235,12 @@ test('a second evidence click after returning to Findings switches tabs again', 
 test('Config Audit finding opens Spark-configuration evidence', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
-  const app = {
+  const app = testApp({
     startTime: 0,
     endTime: 60_000,
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  };
+  });
   store.setState({
     ...store.getState(),
     ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app) }),

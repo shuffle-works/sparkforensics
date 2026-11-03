@@ -14,8 +14,8 @@ import { useStageDetail } from '@/view/StageDetailContext';
 import { resolvePlanTree } from '@/view/plan-tree';
 import { PlanView } from '@/view/widgets/PlanView';
 import { StageFindings } from '@/view/widgets/StageFindings';
-import { formatBytes, formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types.ts';
+import { formatBytes, formatDuration } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types';
 
 export interface StageDetailDialogProps {
   appModel: AppModel;

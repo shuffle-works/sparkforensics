@@ -250,11 +250,11 @@ describe('dispatch', () => {
     expect(handlers[handlerName]).toHaveBeenCalledWith(payload);
   });
 
-  it('routes a done message to onDone, narrowed to skippedLines only', () => {
+  it('routes a done message to onDone with its whole summary', () => {
     const handlers = { onDone: vi.fn() };
-    const msg = { type: 'done', skippedLines: 3, extraField: 'should be dropped' };
+    const msg = { type: 'done', data: { skippedLines: 3, unreadableSqlExecutions: [7] } };
     dispatch(msg, handlers);
-    expect(handlers.onDone).toHaveBeenCalledWith({ skippedLines: 3 });
+    expect(handlers.onDone).toHaveBeenCalledWith({ skippedLines: 3, unreadableSqlExecutions: [7] });
   });
 
   it('routes an error message to onError', () => {

@@ -1,6 +1,5 @@
-import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding, FindingOf, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
+import { findingsOfType, IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/view-model';
+import type { Finding, FindingOf, ImpactBand, StageId } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import { resolvePlanTree } from '@/view/plan-tree';
 
@@ -79,8 +78,14 @@ export function stageGroupRows<T extends StageGroupType>({ findingLabel, idPrefi
             .map((finding, i): StageGroupEntry => ({ finding, stated: statedFlags[i], label: findingLabel(finding), showStatus: advanced }))
             .filter(({ finding, stated: entryStated }) => !entryStated || (advanced && Boolean(finding.confidence) && finding.confidence !== 'high')),
           p50Stated: statesP50 && statedFlags.some(Boolean),
+          // A per-executor (multiDim) finding names no host.
           slowHost: slowHost
-            ? { impactBand: slowHost.impactBand, host: slowHost.host, ratio: slowHost.value, taskSharePct: Math.round((slowHost.hostTaskShare ?? 0) * 100) }
+            ? {
+              impactBand: slowHost.impactBand,
+              host: slowHost.variant === 'multiDim' ? undefined : slowHost.host,
+              ratio: slowHost.value,
+              taskSharePct: slowHost.variant === 'multiDim' ? 0 : Math.round(slowHost.hostTaskShare * 100),
+            }
             : null,
           straggler: straggler
             ? {

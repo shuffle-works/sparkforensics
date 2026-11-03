@@ -1,13 +1,14 @@
 // The run verdict: where to start, a short summary, and the top places to look, ranked by
 // stage task time or idle core time, then potential savings (failures first on a failed run). Shared by the dashboard's
 // verdict card and the CLI/MCP evidence report, so both paths name the same first step in the same words.
-import { ENTRY_BY_TYPE } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detector-catalog.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
-import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
+import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { formatDuration, formatRawWaste, readsAsZero } from './units.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible, rankCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';

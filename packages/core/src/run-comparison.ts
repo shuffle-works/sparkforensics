@@ -1,15 +1,16 @@
 import { computeWallClock } from './wall-clock.ts';
-import { normalizeDetail } from './detectors.ts';
+import { normalizeDetail } from './detectors/plan-shape.ts';
 import { normalizeStageName, stageIdentityWith, identityIndexWith, pairEqualCounts } from './stage-identity.ts';
 import { computeAllocation } from './allocation.ts';
-import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
+import { totalExecutorCpuMs, withEarlierAttempts, type AttemptRow } from './run-totals.ts';
 import { comparedRun } from './compared-run.ts';
 import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
 import { mdInline } from './markdown-inline.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator } from './finding-identity.ts';
 import { cyrb53 } from './string-hash.ts';
-import { IMPACT_BAND_ORDER, formatBytes, formatRawWaste, fmtMs } from './format-utils.ts';
+import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { formatBytes, formatRawWaste, fmtMs } from './units.ts';
 import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { ComparedRun } from './compared-run.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
@@ -178,7 +179,7 @@ type NumericStageField =
 
 // Sum a numeric stage field over a stage list; `present` is false when no stage
 // carried a finite value (so the metric renders Unavailable rather than a false 0).
-function sumField(stages: Stage[], field: NumericStageField): { sum: number; present: boolean } {
+function sumField(stages: AttemptRow[], field: NumericStageField): { sum: number; present: boolean } {
   let sum = 0, present = false;
   for (const s of stages) {
     const v = s[field];
@@ -248,7 +249,7 @@ export function metricDeltas(baseSnap: ComparedRun, candSnap: ComparedRun, noise
   const out: MetricDeltaRow[] = [];
   // Run totals count every task attempt, failed and speculative ones too (run-totals.ts), the
   // same sums the CLI metrics block reports; skew stays on each stage's latest attempt.
-  const attemptsOf = (snap: ComparedRun): Stage[] => withEarlierAttempts([...snap.stages.values()]);
+  const attemptsOf = (snap: ComparedRun): AttemptRow[] => withEarlierAttempts([...snap.stages.values()]);
 
   // Wall-clock: always computable (computeWallClock tolerates a null app).
   out.push(metric('wallClock', 'Wall-clock duration',

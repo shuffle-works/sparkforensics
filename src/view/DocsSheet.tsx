@@ -6,6 +6,7 @@ import { XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useDocs } from '@/view/DocsContext';
+import { receiveDocsFrameMessage } from '@/docs-widget/frame-messages';
 
 /** What's currently loaded in the iframe: the resolved `path` and the theme
  * the load was made with. A docs-site page has no live channel back to this
@@ -54,28 +55,6 @@ function siteFrameSrc(path: string, theme: 'dark' | 'light'): string {
   return `${base}${sep}t=${theme}${hash}`;
 }
 
-/** Esc inside the docs iframe never reaches this document, so the panel
- * could only be closed with Esc while focus was outside it. Listen in the
- * frame's own document (same-origin docs only; a cross-origin frame throws
- * on access and keeps the X button). Esc that
- * closes the docs' own search popup is left to it. */
-function listenForEscapeInFrame(frame: HTMLIFrameElement, close: () => void): void {
-  let doc: Document | null = null;
-  try {
-    doc = frame.contentDocument;
-  } catch {
-    return;
-  }
-  if (!doc) return;
-  doc.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || event.defaultPrevented) return;
-    // The docs site is a separate document: whether its search box or a modal is open is only in its DOM.
-    // ast-grep-ignore: no-dom-routing
-    if (doc!.querySelector('.VPLocalSearchBox, [role="dialog"][aria-modal="true"]')) return;
-    close();
-  });
-}
-
 /** The docs slide-in panel: a shadcn Sheet wrapping the docs iframe. Mount
  * once inside <DocsProvider>. Radix (base-ui) owns focus/inert/ESC. */
 export function DocsSheet() {
@@ -88,6 +67,19 @@ export function DocsSheet() {
   const panelMinSize = useSyncExternalStore(subscribeToWindowResize, clampedPanelMinSize);
 
   const currentTargetRef = useRef<LoadedTarget | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Esc pressed inside the docs iframe never reaches this document: the docs page posts an `escape`
+  // message when it leaves the key unhandled (an open search box or dialog keeps it).
+  useEffect(() => {
+    if (!isOpen) return;
+    const onMessage = (event: MessageEvent) => {
+      const message = receiveDocsFrameMessage(event, frameRef.current?.contentWindow);
+      if (message?.type === 'sparkforensics:docs-escape') close();
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [isOpen, close]);
   // The iframe's `src` is driven declaratively (not via a ref mutation) so it
   // doesn't race the Sheet portal mounting the iframe a commit after `isOpen`
   // flips true: React applies whatever `loadedSrc` holds once the node
@@ -191,10 +183,10 @@ export function DocsSheet() {
                   </Dialog.Close>
                 </div>
                 <iframe
+                  ref={frameRef}
                   src={loadedSrc ?? undefined}
                   title={panelLabel}
                   className="w-full flex-1 border-0"
-                  onLoad={(event) => listenForEscapeInFrame(event.currentTarget, close)}
                 />
               </div>
             </Panel>

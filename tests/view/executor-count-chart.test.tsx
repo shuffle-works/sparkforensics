@@ -5,7 +5,7 @@ import type { Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyAppModel } from '@/store/store';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 
 // Wrap-not-replace: tests still run the real downsample; the memoization test reads its call count.
 vi.mock('@/view/charts/downsample', async (importOriginal) => {

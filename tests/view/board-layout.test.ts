@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, test } from 'vitest';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
 import { buildBoardLayout, resolveRoute, walkableLines, type BoardLayout } from '@/view/board-layout';
 import { bandLandmark, BOARD_LANDMARK, EVIDENCE_CARD_KEY, evidenceRowKey, VERDICT_LANDMARK } from '@/view/route-keys';

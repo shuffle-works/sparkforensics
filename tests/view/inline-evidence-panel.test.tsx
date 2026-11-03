@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
-import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
+import { coreFindingGenericRecommendation, worstImpactBand } from '@sparkforensics/core/view-model';
+import type { Finding, FindingOf } from '@sparkforensics/core/types';
 
 import { ImpactEstimate } from '@/view/ImpactEstimate';
 import { InlineEvidence } from '@/view/InlineEvidence';

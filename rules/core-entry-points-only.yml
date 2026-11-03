@@ -1,0 +1,16 @@
+id: core-entry-points-only
+language: tsx
+severity: error
+message: The site imports core through a path that is not one of its entry points.
+note: |
+  The site reaches core through the named entry points `@sparkforensics/core/analysis`, `browser`,
+  `export`, `types` and `view-model`, so a core file can move without touching its importers. The
+  exports map in packages/core/package.json lists the same names. `cli`, `mcp` and `node` are
+  Node-only entry points.
+rule:
+  kind: string
+  regex: ^['"]@sparkforensics/core
+  not:
+    regex: ^['"]@sparkforensics/core/(analysis|browser|export|types|view-model)['"]$
+files:
+  - src/**

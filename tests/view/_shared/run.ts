@@ -1,6 +1,6 @@
-import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
-import type { AnalyzedRun } from '@sparkforensics/core/analyzed-run.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { interpretRun } from '@sparkforensics/core/analysis';
+import type { AnalyzedRun } from '@sparkforensics/core/analysis';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { emptyAppModel } from '@/store/store';
 
 export interface RunParts {

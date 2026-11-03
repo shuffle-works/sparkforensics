@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildLocalityChart, computeLocalityAreaSeries } from '../src/core-usage-locality.js';
-import { formatCores } from '../src/format-utils.js';
+import { formatCores } from '../src/units.js';
 
 describe('computeLocalityAreaSeries', () => {
   it('distributes stage core-time across its window, split by locality', () => {

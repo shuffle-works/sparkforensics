@@ -6,7 +6,8 @@ import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
 import { Timeline, selectTimelineStages } from '@/view/widgets/Timeline';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
+import { testStage } from './_shared/model';
 
 function renderTimeline(appModel: AppModel, catalog: Finding[] = []) {
   return render(
@@ -20,7 +21,7 @@ function renderTimeline(appModel: AppModel, catalog: Finding[] = []) {
 // `stageId` field doesn't reflect runtime shape, so the fixture bridges the
 // type gap with a cast, same as the widget itself does.
 function makeStage(id: number, submittedAt: number, completedAt: number) {
-  return { id, name: `s${id}`, submittedAt, completedAt };
+  return testStage({ id, name: `s${id}`, submittedAt, completedAt });
 }
 
 function buildAppModel(stages: Map<number, unknown>): AppModel {

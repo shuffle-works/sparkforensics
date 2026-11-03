@@ -74,7 +74,7 @@ from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), over th
 finding's own full `recommendation` sentence in smaller muted text, both
 wrapping rather than truncating, then one **Show evidence** button); and a right-aligned monospace stage
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
-`formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). The
+`formatWallClockRange`/`formatRawWaste` in `packages/core/src/units.ts`). The
 **Show evidence** button (`EvidenceButton`), not the row, is the click
 target. A row whose widget has no rows to show beyond the line above has no button (see
 [row-expand-contract](./row-expand-contract.md#in-place-evidence-panel)). Every other row opens its own evidence in place as a table row below

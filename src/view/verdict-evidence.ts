@@ -1,5 +1,5 @@
 import type { InterpretationState } from '@/view/interpretation';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { evidencePlacement } from '@/view/evidence-placement';
 import { findingById } from '@/view/interpretation';
 

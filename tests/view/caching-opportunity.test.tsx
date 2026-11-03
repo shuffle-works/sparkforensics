@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { CachingOpportunity } from '@/view/widgets/CachingOpportunity';
-import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 const getTaskData = async (): Promise<TaskData> => ({ metrics: [], fieldNames: [] });
