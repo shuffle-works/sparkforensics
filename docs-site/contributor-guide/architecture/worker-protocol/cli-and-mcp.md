@@ -103,8 +103,7 @@ Each entry has a `name`, a `description`, an `inputSchema`, an `outputSchema` (t
 a successful call's `structuredContent`, registered as a loose object so an extra key is allowed),
 a `handler`, and `cli`: either `{ twin }` naming the CLI command or flag mode that gives the same
 data, or `{ none }` giving the reason there is no twin. `createMcpServer()` in
-`packages/core/src/mcp-server-factory.ts` registers every entry, and `assertToolsMatchTable()`
-throws when the registered names and the table's differ. To add a tool, add an entry with a CLI
+`packages/core/src/mcp-server-factory.ts` registers every entry, and no tool exists outside the table. To add a tool, add an entry with a CLI
 twin or a stated reason and an `outputSchema`, and list the tool in `docs-site/user-guide/mcp-tools.md`;
 `packages/core/test/mcp-tool-table.test.js` fails an entry with no `cli` decision, and calls every
 tool, which checks the `structuredContent` against its `outputSchema`.

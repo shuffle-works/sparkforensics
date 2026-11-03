@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMcpServer, assertToolsMatchTable, MCP_TOOL_NAMES } from '../src/mcp-server-factory.js';
+import { createMcpServer, MCP_TOOL_NAMES } from '../src/mcp-server-factory.js';
 import { mcpToolEntries } from '../src/mcp-tool-table.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -56,14 +56,6 @@ describe('MCP tool table', () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(entries.map((e) => e.name).sort());
     expect([...MCP_TOOL_NAMES].sort()).toEqual(entries.map((e) => e.name).sort());
-  });
-
-  it('fails the consistency check for a tool that is only in the table', () => {
-    const registered = entries.map((e) => e.name);
-    expect(() => assertToolsMatchTable(registered, entries)).not.toThrow();
-    const tableOnly = [...entries, { ...entries[0], name: 'table_only_tool' }];
-    expect(() => assertToolsMatchTable(registered, tableOnly)).toThrow(/table_only_tool/);
-    expect(() => assertToolsMatchTable([...registered, 'registered_only_tool'], entries)).toThrow(/registered_only_tool/);
   });
 
   it('advertises an outputSchema for every tool and accepts a real successful call of each', async () => {
