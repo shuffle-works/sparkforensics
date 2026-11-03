@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { deriveImpactBand } from '../src/impact-band.ts';
+import { bandRun, gradeFinding } from '../src/impact-band.ts';
+import { DETECTORS, ENTRY_BY_TYPE } from '../src/detectors.ts';
+import { FAILURE_TYPES } from '../src/run-outcome.ts';
 import type { Finding, SparkAppInfo } from '../src/types.ts';
 
 const APP_20_MIN: SparkAppInfo = { startTime: 0, endTime: 20 * 60_000 };
@@ -28,7 +30,27 @@ function informationalFinding(impactBand: Finding['impactBand']): Finding {
   } as Finding;
 }
 
-describe('deriveImpactBand', () => {
+// Grades each finding under its own detector entry's policy, as analyze() does.
+function deriveImpactBand(findings: Finding[], app: SparkAppInfo | null): void {
+  const run = bandRun(app, new Map());
+  for (const finding of findings) gradeFinding(finding, ENTRY_BY_TYPE.get(finding.type)!, run);
+}
+
+describe('band policy', () => {
+  it('is declared by every detector entry, with a failure policy only where the verdict treats the run as failed', () => {
+    expect(DETECTORS.every((entry) => ['derived', 'own', 'failure'].includes(entry.bandPolicy))).toBe(true);
+    expect([...FAILURE_TYPES].sort()).toEqual(['jobFailureRate', 'stageFailed']);
+  });
+
+  it('keeps the own band of an `own` and a `failure` entry whatever the estimate says', () => {
+    const own = { ...timeFinding('critical', 1_000), type: 'utilization' } as Finding;
+    const failure = { ...timeFinding('critical', 1_000), type: 'stageFailed' } as Finding;
+    deriveImpactBand([own, failure], APP_20_MIN);
+    expect([own.impactBand, failure.impactBand]).toEqual(['critical', 'critical']);
+  });
+});
+
+describe('gradeFinding', () => {
   it('promotes an info-graded finding to critical when recoverable time is a large fraction of the run', () => {
     // 30_000ms recoverable / 1_200_000ms run = 2.5%, over the 2% critical floor.
     const findings = [timeFinding('info', 30_000)];

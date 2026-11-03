@@ -5,7 +5,7 @@ import { assertNever } from './assert-never.ts';
 import { findingLocation } from './finding-identity.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
-import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
+import { bandRun, gradeFinding, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
@@ -311,8 +311,8 @@ export function analyze(
   const findings = linkSingleKeyToBroadcast(reconcileExecutorMemoryAdvice(applySuppression(out)), sql);
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
-  deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
-  capCriticalByTaskTime(findings, stages);
+  const run = bandRun(app, stages, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
+  for (const finding of findings) gradeFinding(finding, ENTRY_BY_TYPE.get(finding.type)!, run);
   // Ascending IMPACT_BAND_ORDER (critical 0 -> info 2) puts the worst band first;
   // stable sort keeps DETECTORS declaration order within a band.
   findings.sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
@@ -335,7 +335,6 @@ function computeAuditConfig(app: SparkAppInfo | null, stages: Map<number, Stage>
   // configAudit's estimate is unconditionally costOnly('none'): needs no stages/totalCores, so an
   // empty context gives parity with analyze().
   estimateImpact(out, { stages: new Map(), occupancy: new Map(), totalCores: 0 });
-  deriveImpactBand(out, app);
   return out.map((f) => ({ ...f, stageId: f.stageId ?? null }));
 }
 

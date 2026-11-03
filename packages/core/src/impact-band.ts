@@ -1,7 +1,6 @@
-import type { Finding, SparkAppInfo, Stage } from './types.ts';
+import type { Finding, Stage } from './types.ts';
 import { stageTaskMs } from './impact-model.ts';
 import { runTiming } from './run-timing.ts';
-import { FAILURE_TYPES } from './run-outcome.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
 
 // The run-wide noise floor, as a share of the run's duration, that grades every wall-clock
@@ -26,57 +25,58 @@ export function appDurationMs(app: { startTime?: number | null; endTime?: number
 }
 
 /**
- * Overwrites `.impactBand` for any finding with a quantified wall-clock estimate, grading it purely
- * by recoverable time as a fraction of the run's duration: a full replace (either direction), not a
- * promote-only floor. Findings with no wallClock estimate (resourceOnly/informational), an
- * unknown/zero app duration, or an explicit safety-signal exemption (partitionSizing's
- * maxPartitionTooBig rule) are left as the detector set them. Mutates in place and returns the array.
- *
- * Grades wallClock.high, the optimistic figure the verdict ranking uses after stage task time or idle core time.
- *
- * `floorsFor` supplies a finding type's floors when a tuned run moved them (skew's and straggler's
- * own floorPctWarn/floorPctCrit); omitted, or for any type it returns nothing, the defaults above.
+ * How a detector's band reaches the report, declared on every entry:
+ * - `derived`: graded by the recoverable wall-clock share of the run, then a critical band is
+ *   capped at warning when the finding's stage carries little of the run's task time;
+ * - `own`: the detector's own band stands, still capped by task time (it is not a time-recovery band);
+ * - `failure`: the detector's own band stands whatever the stage costs.
  */
-export function deriveImpactBand(
-  findings: Finding[], app: SparkAppInfo | null, floorsFor?: (type: string) => ImpactBandFloors | null,
-): Finding[] {
-  const durationMs = appDurationMs(app);
-  if (durationMs == null) return findings;
-  for (const finding of findings) {
-    // maxPartitionTooBig is a hardcoded-critical OOM/crash-risk safety signal, not a
-    // time-recovery one, yet it carries a real wallClock estimate (unlike the other hardcoded-
-    // critical findings, which stay costOnly/informational and are exempted below by having no
-    // wallClock at all). Exempt it explicitly so a long-running job never demotes an active
-    // crash risk down to 'info' just because fixing it saves little wall-clock time relative to
-    // the run.
-    if (finding.type === 'partitionSizing' && finding.rule === 'maxPartitionTooBig') continue;
-    const recoverableMs = finding.impactEstimate?.wallClock?.high;
-    if (recoverableMs == null) continue;
-    const pct = recoverableMs / durationMs;
-    const { warnPct, critPct } = floorsFor?.(finding.type) ?? DEFAULT_FLOORS;
-    finding.impactBand = pct >= critPct ? 'critical' : pct >= warnPct ? 'warning' : 'info';
-  }
-  return findings;
+export type BandPolicy = 'derived' | 'own' | 'failure';
+
+/** The slice of a detector entry grading reads. `gradeAs` names a finding the entry grades under
+ * another policy (partitionSizing's OOM-risk rule stays critical). */
+export interface BandEntry { bandPolicy: BandPolicy; gradeAs?: (finding: Finding) => BandPolicy }
+
+type FloorsFor = (type: string) => ImpactBandFloors | null;
+
+/** What grading reads of a run, computed once: its duration, its task time, and the floors a tuned
+ * run moved (skew's and straggler's own floorPctWarn/floorPctCrit). */
+export interface BandRun {
+  durationMs: number | null;
+  runTaskMs: number;
+  stages: Map<number, Stage>;
+  floorsFor?: FloorsFor;
+}
+
+export function bandRun(
+  app: { startTime?: number | null; endTime?: number | null } | null, stages: Map<number, Stage>,
+  floorsFor?: FloorsFor,
+): BandRun {
+  let runTaskMs = 0;
+  for (const stage of stages.values()) runTaskMs += stageTaskMs(stage);
+  return { durationMs: appDurationMs(app), runTaskMs, stages, floorsFor };
 }
 
 /**
- * Caps a `critical` band at `warning` when the finding's stage carries under
- * CRITICAL_MIN_TASK_TIME_SHARE of the run's task time. Failures and partitionSizing's
- * maxPartitionTooBig stay critical whatever the stage costs, and a finding with no single stage or
- * no recorded task time has nothing to compare. Mutates in place and returns the array.
+ * Sets `.impactBand` under the entry's policy, in place. A `derived` finding with a quantified
+ * wall-clock estimate on a run with a known duration is graded purely by `wallClock.high`, the
+ * optimistic figure the verdict ranking uses, as a share of the run: a full replace in either
+ * direction, not a promote-only floor. Every policy but `failure` then caps a critical band at
+ * warning when the finding's single stage carries under CRITICAL_MIN_TASK_TIME_SHARE of the run's
+ * task time; a finding with no single stage or no recorded task time has nothing to compare.
  */
-export function capCriticalByTaskTime(findings: Finding[], stages: Map<number, Stage>): Finding[] {
-  let runTaskMs = 0;
-  for (const stage of stages.values()) runTaskMs += stageTaskMs(stage);
-  if (runTaskMs <= 0) return findings;
-  for (const finding of findings) {
-    if (finding.impactBand !== 'critical') continue;
-    if (FAILURE_TYPES.has(finding.type)) continue;
-    if (finding.type === 'partitionSizing' && finding.rule === 'maxPartitionTooBig') continue;
-    const stageId = singleStageId(finding);
-    const stage = stageId == null ? undefined : stages.get(stageId);
-    const taskMs = stage ? stageTaskMs(stage) : 0;
-    if (taskMs > 0 && taskMs / runTaskMs < CRITICAL_MIN_TASK_TIME_SHARE) finding.impactBand = 'warning';
+export function gradeFinding(finding: Finding, entry: BandEntry, run: BandRun): void {
+  const policy = entry.gradeAs?.(finding) ?? entry.bandPolicy;
+  if (policy === 'failure') return;
+  const recoverableMs = finding.impactEstimate?.wallClock?.high;
+  if (policy === 'derived' && run.durationMs != null && recoverableMs != null) {
+    const pct = recoverableMs / run.durationMs;
+    const { warnPct, critPct } = run.floorsFor?.(finding.type) ?? DEFAULT_FLOORS;
+    finding.impactBand = pct >= critPct ? 'critical' : pct >= warnPct ? 'warning' : 'info';
   }
-  return findings;
+  if (finding.impactBand !== 'critical' || run.runTaskMs <= 0) return;
+  const stageId = singleStageId(finding);
+  const stage = stageId == null ? undefined : run.stages.get(stageId);
+  const taskMs = stage ? stageTaskMs(stage) : 0;
+  if (taskMs > 0 && taskMs / run.runTaskMs < CRITICAL_MIN_TASK_TIME_SHARE) finding.impactBand = 'warning';
 }

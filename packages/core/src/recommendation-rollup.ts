@@ -227,7 +227,7 @@ export function rankFindings(findings: Finding[]): Finding[] {
     const tierDelta = tierOf(a) - tierOf(b);
     if (tierDelta !== 0) return tierDelta;
     if (tierOf(a) === TIER_TIME) {
-      // Same unit (ms) on both sides. Rank on .high, matching deriveImpactBand
+      // Same unit (ms) on both sides. Rank on .high, matching gradeFinding
       // and triage-target.ts, so ordering, badge color, and the "click to
       // investigate" target all agree on the same figure.
       return b.impactEstimate!.wallClock!.high - a.impactEstimate!.wallClock!.high;

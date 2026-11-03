@@ -1,0 +1,19 @@
+id: no-finding-type-in-impact-band
+language: tsx
+severity: error
+message: A finding type or rule name is spelled out in `impact-band.ts`.
+note: |
+  Which findings a band is derived for, and which keep the detector's own, is a detector entry's
+  `bandPolicy` (and `gradeAs` for one finding of an entry), declared in `detectors.ts` beside the
+  detector that makes the finding. `gradeFinding` only applies it. Declare the policy on the entry
+  instead of naming a type or rule here.
+rule:
+  kind: string_fragment
+  not:
+    any:
+      - regex: ^(critical|warning|info|derived|own|failure)$
+      - inside:
+          kind: import_statement
+          stopBy: end
+files:
+  - packages/core/src/impact-band.ts

@@ -15,7 +15,7 @@ import { isBatchEvalPythonNode } from './python-stage.ts';
 import { computeCoreLocalityRatio, NON_LOCAL_TIERS } from './core-locality-ratio.ts';
 import { STRAGGLER_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
-import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
+import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs, type BandPolicy } from './impact-band.ts';
 import {
   BROADCAST_BANDWIDTH_BPS, EXECUTOR_STARTUP_OVERHEAD_MS, FILE_OPEN_OVERHEAD_MS, IDEAL_BYTES_PER_PARTITION_TASK,
   NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, SPILL_TASK_TIME_SHARE_MAX,
@@ -1516,6 +1516,11 @@ interface DetectorSpec<
   // cross-detector suppression is the explicit `suppressedBy` below.
   order: number;
   fixEffort: FixEffort;
+  // How this entry's finding bands are set (impact-band.ts): required, so a detector author's
+  // choice of band is never replaced by omission.
+  bandPolicy: BandPolicy;
+  // A finding of this entry that grades under another policy than `bandPolicy`.
+  gradeAs?(finding: FindingOf<TEmits[number]>): BandPolicy;
   version: number;
   docAnchor?: string;
   thresholds: T;
@@ -1851,7 +1856,7 @@ const LOCAL_TIERS = new Set(['PROCESS_LOCAL', 'NODE_LOCAL']);
 
 export const DETECTORS = [
   defineStageDetector({
-    type: 'skew', order: 30, fixEffort: 'code', version: 1,
+    type: 'skew', order: 30, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['skew'],
     docAnchor: '#bottleneck-skew',
     // dataShareMin: the share of the slow tasks' extra time that run time proportional to their data
@@ -1890,7 +1895,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'stageShape', order: 35, fixEffort: 'code', version: 2,
+    type: 'stageShape', order: 35, bandPolicy: 'own', fixEffort: 'code', version: 2,
     emits: ['stageShape'],
     docAnchor: '#bottleneck-stage-shape',
     // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
@@ -1988,7 +1993,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'shuffle', order: 20, fixEffort: 'config', version: 1,
+    type: 'shuffle', order: 20, bandPolicy: 'derived', fixEffort: 'config', version: 1,
     emits: ['shuffle'],
     docAnchor: '#bottleneck-shuffle',
     // stageFloorPct: the 0.5% runtime floor. The shuffle claim is clipped to the stage, so on a
@@ -2034,7 +2039,10 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'partitionSizing', order: 22, fixEffort: 'config', version: 1,
+    type: 'partitionSizing', order: 22, bandPolicy: 'derived', fixEffort: 'config', version: 1,
+    // maxPartitionTooBig is an OOM/crash-risk safety signal, not a time-recovery one: it stays critical
+    // however little wall-clock fixing it saves.
+    gradeAs: (finding) => (finding.rule === 'maxPartitionTooBig' ? 'failure' : 'derived'),
     emits: ['partitionSizing'],
     docAnchor: '#bottleneck-partition-sizing',
     thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, singleKeyShare: 0.9, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
@@ -2071,10 +2079,10 @@ export const DETECTORS = [
         });
       }
       if (max >= thresholds.maxPartBytes) {
-        // Fixed 'critical': an OOM/crash-risk safety signal, not a time-waste one. Exempted in
-        // impact-band.ts's deriveImpactBand from the wall-clock-based overwrite every other
-        // finding here gets, so a long-running job can't demote an active crash risk to 'info'
-        // just because the modeled time savings are a small fraction of total runtime.
+        // Fixed 'critical': an OOM/crash-risk safety signal, not a time-waste one. This entry's
+        // `gradeAs` keeps it out of the wall-clock grading every other finding here gets, so a
+        // long-running job can't demote an active crash risk to 'info' just because the modeled
+        // time savings are a small fraction of total runtime.
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'critical',
           rule: 'maxPartitionTooBig', metric: 'shuffleReadMax', value: max,
@@ -2122,7 +2130,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'spill', order: 10, fixEffort: 'code', version: 1,
+    type: 'spill', order: 10, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['spill'],
     docAnchor: '#bottleneck-spill',
     // stageFloorPct: the 0.5% runtime floor, as for shuffle.
@@ -2194,7 +2202,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'gc', order: 50, fixEffort: 'config', version: 1,
+    type: 'gc', order: 50, bandPolicy: 'derived', fixEffort: 'config', version: 1,
     emits: ['gc'],
     docAnchor: '#bottleneck-gc',
     thresholds: {
@@ -2268,7 +2276,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'slowHost', order: 60, fixEffort: 'config', version: 2,
+    type: 'slowHost', order: 60, bandPolicy: 'derived', fixEffort: 'config', version: 2,
     emits: ['slowHost'],
     docAnchor: '#bottleneck-slow-host',
     thresholds: {
@@ -2406,7 +2414,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'stageSlowness', order: 65, fixEffort: 'code', version: 2,
+    type: 'stageSlowness', order: 65, bandPolicy: 'derived', fixEffort: 'code', version: 2,
     emits: ['stageSlowness'],
     docAnchor: '#bottleneck-stage-slowness',
     thresholds: { infoMin: 15 },
@@ -2462,7 +2470,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'stageFailed', order: 42, fixEffort: 'code', version: 1,
+    type: 'stageFailed', order: 42, bandPolicy: 'failure', fixEffort: 'code', version: 1,
     emits: ['stageFailed'],
     docAnchor: '#bottleneck-failures',
     thresholds: {},
@@ -2487,7 +2495,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineStageDetector({
-    type: 'failures', order: 40, fixEffort: 'code', version: 2,
+    type: 'failures', order: 40, bandPolicy: 'own', fixEffort: 'code', version: 2,
     emits: ['failures'],
     docAnchor: '#bottleneck-failures',
     thresholds: { minTasks: 10, warnRate: 0.05, critRate: 0.20 },
@@ -2522,7 +2530,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineStageDetector({
-    type: 'straggler', order: 70, fixEffort: 'code', version: 1,
+    type: 'straggler', order: 70, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['straggler'],
     docAnchor: '#bottleneck-straggler',
     // floorPctWarn/floorPctCrit default to impact-band.ts's run-wide noise floor, so a tail this
@@ -2571,7 +2579,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'speculationWaste', order: 71, fixEffort: 'config', version: 1,
+    type: 'speculationWaste', order: 71, bandPolicy: 'derived', fixEffort: 'config', version: 1,
     emits: ['speculationWaste'],
     docAnchor: '#bottleneck-speculation-waste',
     thresholds: { minWasted: 5, minWasteMs: 60000 },
@@ -2597,7 +2605,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'retryWaste', order: 45, fixEffort: 'code', version: 1,
+    type: 'retryWaste', order: 45, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['retryWaste'],
     docAnchor: '#bottleneck-retry-waste',
     thresholds: { minWasted: 3, minWasteMs: 30000 },
@@ -2631,7 +2639,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'tinyTask', order: 80, fixEffort: 'code', version: 1,
+    type: 'tinyTask', order: 80, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['tinyTask'],
     docAnchor: '#bottleneck-tiny-tasks',
     // stageFloorPct: the tiered detectors' 0.5% runtime floor. Coalescing can't save more than the
@@ -2672,7 +2680,7 @@ export const DETECTORS = [
   defineAppDetector({
     // No docAnchor: the upstream spark-tuning-reference docs have no section for this
     // tool-specific "capture stopped early" signal.
-    type: 'incompleteRun', order: 5, fixEffort: 'code', version: 1,
+    type: 'incompleteRun', order: 5, bandPolicy: 'own', fixEffort: 'code', version: 1,
     emits: ['incompleteRun'],
     thresholds: {},
     detect(ctx): Finding | null {
@@ -2686,7 +2694,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineAppDetector({
-    type: 'coldStart', order: 90, fixEffort: 'code', version: 1,
+    type: 'coldStart', order: 90, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['coldStart'],
     docAnchor: '#bottleneck-cold-start',
     thresholds: { gapSeconds: 30 },
@@ -2738,7 +2746,7 @@ export const DETECTORS = [
     },
   }),
   defineAppDetector({
-    type: 'utilization', order: 100, fixEffort: 'config', version: 1,
+    type: 'utilization', order: 100, bandPolicy: 'own', fixEffort: 'config', version: 1,
     emits: ['utilization'],
     docAnchor: '#bottleneck-utilization',
     // Idle share grades: the finding fires under `minUtil` busy; the verdict note and the Scorecard
@@ -2804,7 +2812,7 @@ export const DETECTORS = [
     // modeled stage time stays within tolerance of the observed one. `utilization` measures idle
     // allocation; this names the size the stages' own parallelism needs. The model is idealized, so
     // the finding is always low confidence and silent when the model misses the observed run.
-    type: 'rightSizing', order: 101, fixEffort: 'config', version: 1,
+    type: 'rightSizing', order: 101, bandPolicy: 'own', fixEffort: 'config', version: 1,
     emits: ['rightSizing'],
     docAnchor: '#bottleneck-utilization',
     thresholds: { tolerancePct: 10, maxCoreShare: 0.75, minBaselineCores: 8, maxModelErrorPct: 20 },
@@ -2834,7 +2842,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineAppDetector({
-    type: 'memoryUtilization', order: 102, fixEffort: 'config', version: 1,
+    type: 'memoryUtilization', order: 102, bandPolicy: 'own', fixEffort: 'config', version: 1,
     emits: ['memoryUtilization'],
     docAnchor: '#bottleneck-memory-utilization',
     thresholds: {
@@ -2981,7 +2989,7 @@ export const DETECTORS = [
     // sizes come from SparkListenerBlockUpdated when the log has it, else from StageSubmitted's
     // RDD Info (0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); with neither, on
     // Spark 2.3+ with logBlockUpdates off, a storageUnobserved caveat replaces them.
-    type: 'cacheUtilization', order: 103, fixEffort: 'code', version: 2,
+    type: 'cacheUtilization', order: 103, bandPolicy: 'own', fixEffort: 'code', version: 2,
     emits: ['cacheUtilization'],
     docAnchor: '#bottleneck-cache-utilization',
     thresholds: {
@@ -3051,7 +3059,7 @@ export const DETECTORS = [
     // Non-local task ratio across stage.localityStats (RACK_LOCAL + ANY vs all tasks), the other
     // half of the "Wasted Cores Ratio" (idle-core half is memoryUtilization's idleCores).
     // NO_PREF stays in the denominator only: shuffle-read stages legitimately report it.
-    type: 'coreLocality', order: 103, fixEffort: 'config', version: 1,
+    type: 'coreLocality', order: 103, bandPolicy: 'own', fixEffort: 'config', version: 1,
     emits: ['coreLocality'],
     docAnchor: '#bottleneck-core-locality',
     thresholds: { minTasks: 50, warnRatio: 0.15, critRatio: 0.35 },
@@ -3097,7 +3105,7 @@ export const DETECTORS = [
     // Short-lived executors: stood up and torn down before doing useful work (wasteful
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
-    type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 2,
+    type: 'autoscalingChurn', order: 103, bandPolicy: 'own', fixEffort: 'config', version: 2,
     emits: ['autoscalingChurn'],
     docAnchor: '#bottleneck-autoscaling-churn',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
@@ -3154,7 +3162,7 @@ export const DETECTORS = [
   defineAppDetector({
     // Cross-execution relation reuse: flags an input relation scanned by two or more SQL
     // executions in one run, firing on real relation names (parquet:..., jdbc:...).
-    type: 'cachingOpportunity', order: 105, fixEffort: 'code', version: 1,
+    type: 'cachingOpportunity', order: 105, bandPolicy: 'own', fixEffort: 'code', version: 1,
     emits: ['cachingOpportunity'],
     docAnchor: '#bottleneck-caching-opportunity',
     thresholds: { minExecutions: 2 },
@@ -3341,7 +3349,7 @@ export const DETECTORS = [
     },
   }),
   defineAppDetector({
-    type: 'jobFailureRate', order: 110, fixEffort: 'code', version: 1,
+    type: 'jobFailureRate', order: 110, bandPolicy: 'failure', fixEffort: 'code', version: 1,
     emits: ['jobFailureRate'],
     docAnchor: '#bottleneck-job-failure-rate',
     thresholds: { infoRate: 0.10, warnRate: 0.30, critRate: 0.50 },
@@ -3381,7 +3389,7 @@ export const DETECTORS = [
     },
   }),
   defineConfigDetector({
-    type: 'configAudit', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
+    type: 'configAudit', order: 121, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
     emits: ['configAudit'],
     docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
     detect(target): Finding | null {
@@ -3404,7 +3412,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineConfigDetector({
-    type: 'configAudit', order: 122, fixEffort: 'config', version: 1, inScorecard: false,
+    type: 'configAudit', order: 122, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
     emits: ['configAudit'],
     docAnchor: '#config-serializer', thresholds: {}, property: 'spark.serializer',
     detect(target): Finding | null {
@@ -3429,7 +3437,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineConfigDetector({
-    type: 'configAudit', order: 123, fixEffort: 'config', version: 1, inScorecard: false,
+    type: 'configAudit', order: 123, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
     emits: ['configAudit'],
     docAnchor: '#config-memory-overhead', thresholds: { floorMB: 384, floorPct: 0.1 }, property: 'spark.executor.memoryOverhead',
     detect(target, thresholds): Finding | null {
@@ -3450,7 +3458,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineSqlDetector({
-    type: 'duplicatePlanSubtree', order: 130, fixEffort: 'code', version: 2,
+    type: 'duplicatePlanSubtree', order: 130, bandPolicy: 'derived', fixEffort: 'code', version: 2,
     emits: ['duplicatePlanSubtree'],
     docAnchor: '#bottleneck-duplicate-plan-subtree',
     // stageFloorPct: the 0.5% runtime floor. The claim counts at most each linked stage's own
@@ -3544,7 +3552,7 @@ export const DETECTORS = [
     },
   }),
   defineSqlDetector({
-    type: 'smallFiles', order: 131, fixEffort: 'config', version: 2,
+    type: 'smallFiles', order: 131, bandPolicy: 'derived', fixEffort: 'config', version: 2,
     emits: ['smallFiles'],
     docAnchor: '#bottleneck-small-files',
     thresholds: { minFiles: 100, maxAvgFileSizeMB: 3 },
@@ -3602,7 +3610,7 @@ export const DETECTORS = [
     // Entry-level type is an identifier only; it never appears on an emitted finding. Findings
     // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
     // opposite-direction rules.
-    type: 'broadcastSizing', order: 132, fixEffort: 'config', version: 3,
+    type: 'broadcastSizing', order: 132, bandPolicy: 'derived', fixEffort: 'config', version: 3,
     // Listed over-first: the two share order 132, and this list order is their display tie-break.
     emits: ['overBroadcast', 'underBroadcast'],
     docAnchor: '#bottleneck-broadcast-sizing',
@@ -3709,7 +3717,7 @@ export const DETECTORS = [
     },
   }),
   defineSqlDetector({
-    type: 'pythonUdf', order: 134, fixEffort: 'code', version: 1,
+    type: 'pythonUdf', order: 134, bandPolicy: 'own', fixEffort: 'code', version: 1,
     emits: ['pythonUdf'],
     docAnchor: '#pyspark',
     // Unvalidated against a real workload (no corpus or private log runs a Python UDF): set high so
@@ -3756,7 +3764,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineSqlDetector({
-    type: 'nestedLoopJoin', order: 133, fixEffort: 'code', version: 1,
+    type: 'nestedLoopJoin', order: 133, bandPolicy: 'derived', fixEffort: 'code', version: 1,
     emits: ['nestedLoopJoin'],
     docAnchor: '#joins',
     // minOutputRows: below it the join is cheap whatever its shape. minExpansion: a
@@ -3832,7 +3840,7 @@ export const DETECTORS = [
     },
   }),
   defineSqlDetector({
-    type: 'mergeRewrite', order: 135, fixEffort: 'code', version: 1,
+    type: 'mergeRewrite', order: 135, bandPolicy: 'own', fixEffort: 'code', version: 1,
     emits: ['mergeRewrite'],
     docAnchor: '#table-formats',
     // rewrittenRows: unmodified rows rewritten (at least minCopiedRows, and minCopiedToChangedRatio
@@ -3886,7 +3894,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineSqlDetector({
-    type: 'unprunedScan', order: 137, fixEffort: 'code', version: 1,
+    type: 'unprunedScan', order: 137, bandPolicy: 'own', fixEffort: 'code', version: 1,
     emits: ['unprunedScan'],
     docAnchor: '#table-formats',
     // A scan of a partitioned table (it reports "number of partitions read") that reads at least
@@ -3932,7 +3940,7 @@ export const DETECTORS = [
     estimate: noWasteModel,
   }),
   defineSqlDetector({
-    type: 'joinKeyCast', order: 136, fixEffort: 'code', version: 1,
+    type: 'joinKeyCast', order: 136, bandPolicy: 'own', fixEffort: 'code', version: 1,
     emits: ['joinKeyCast'],
     docAnchor: '#joins',
     thresholds: {},
