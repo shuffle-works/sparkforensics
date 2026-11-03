@@ -975,10 +975,13 @@ describe('evaluateBudgetsForRun', () => {
   it('evaluates a single-run budget against a freshly resolved source', async () => {
     const { dir, path } = tmpEventLogWithDuration('app-a', 1000);
     try {
-      const { runId, results, violated, inconclusive } = await evaluateBudgetsForRun(
+      const evaluated = await evaluateBudgetsForRun(
         { source: { path } }, { maxRuntimeMs: 500 },
       );
-      expect(typeof runId).toBe('string');
+      const { candidateRunId, results, violated, inconclusive } = evaluated;
+      expect(typeof candidateRunId).toBe('string');
+      expect(evaluated).not.toHaveProperty('baselineRunId');
+      expect(evaluated).not.toHaveProperty('runId');
       expect(results).toEqual([{ name: 'max-runtime', status: 'violation', detail: 'Runtime 1000ms exceeds budget 500ms.' }]);
       expect(violated).toBe(true);
       expect(inconclusive).toBe(false);
@@ -1003,7 +1006,7 @@ describe('evaluateBudgetsForRun', () => {
     try {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = await evaluateBudgetsForRun({ runId }, { maxRuntimeMs: 5000 });
-      expect(result.runId).toBe(runId);
+      expect(result.candidateRunId).toBe(runId);
       expect(result.violated).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1014,10 +1017,11 @@ describe('evaluateBudgetsForRun', () => {
     const a = tmpEventLogWithDuration('app-a', 1000);
     const b = tmpEventLogWithDuration('app-b', 2000);
     try {
-      const { runId, results, violated } = await evaluateBudgetsForRun(
+      const { baselineRunId, candidateRunId, results, violated } = await evaluateBudgetsForRun(
         { source: { path: a.path } }, { maxRegressionPct: 10 }, { source: { path: b.path } },
       );
-      expect(typeof runId).toBe('string');
+      expect(typeof baselineRunId).toBe('string');
+      expect(typeof candidateRunId).toBe('string');
       expect(results).toEqual([{
         name: 'max-regression', metric: 'wallClock', status: 'violation',
         detail: 'Metric "wallClock" regressed 100.0%, exceeding budget 10%.',
@@ -1039,7 +1043,6 @@ describe('evaluateBudgetsForRun', () => {
       expect(result).toEqual({
         baselineRunId: baselineId,
         candidateRunId: candidateId,
-        runId: baselineId,
         results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }],
         violated: true,
         inconclusive: false,

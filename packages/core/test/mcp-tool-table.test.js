@@ -79,9 +79,10 @@ describe('MCP tool table', () => {
     await call('list_runs', { dir });
     await call('get_run_summary', { runId: diagnosis.runId });
     const compared = await call('compare_runs', { sourceA: { path: baseline }, sourceB: { path: candidate } });
-    expect(compared.runIdA).toBe(compared.baselineRunId);
+    for (const removed of ['runIdA', 'runIdB', 'metricDeltas', 'findingsDelta']) expect(compared).not.toHaveProperty(removed);
     const budgets = await call('evaluate_budgets', { source: { path: candidate }, maxRuntimeMs: 10_000 });
     expect(budgets.violated).toBe(false);
+    expect(budgets).not.toHaveProperty('runId');
     await call('evaluate_budgets', { runId: compared.baselineRunId, runIdB: compared.candidateRunId, maxRegressionPct: 50 });
     await call('get_finding_evidence', { runId: diagnosis.runId, findingId });
     await call('get_finding_documentation', { type: 'skew' });

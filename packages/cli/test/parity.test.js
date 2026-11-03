@@ -49,8 +49,6 @@ const COMPARISON_ALLOWED = [
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
   { path: 'baselineRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
   { path: 'candidateRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
-  { path: 'runIdA', only: 'mcp', reason: 'Deprecated alias of `baselineRunId`; checked equal below.' },
-  { path: 'runIdB', only: 'mcp', reason: 'Deprecated alias of `candidateRunId`; checked equal below.' },
   { path: 'stagePairs', only: 'cli', reason: 'One row per paired stage can be large, so compare_runs returns it only with include: [\'stagePairs\']; the CLI always does. Checked equal with that include below.' },
 ];
 
@@ -263,9 +261,8 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
       // The two CLI outputs carry the same run, comparison and budgets.
       expect(single).toEqual({ schemaVersion: line.schemaVersion, run: line.run, comparison: line.comparison, budgets: line.budgets });
-      // The deprecated run ids carry the same values as the new ones, and the removed repeats are gone.
-      expect(viaMcp.runIdA).toBe(viaMcp.baselineRunId);
-      expect(viaMcp.runIdB).toBe(viaMcp.candidateRunId);
+      expect(viaMcp).not.toHaveProperty('runIdA');
+      expect(viaMcp).not.toHaveProperty('runIdB');
       expect(viaMcp).not.toHaveProperty('metricDeltas');
       expect(viaMcp).not.toHaveProperty('findingsDelta');
     });

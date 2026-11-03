@@ -57,10 +57,6 @@ export interface RunSummary extends RunOutcomeSummary {
 export interface McpCompareRunsResult extends ComparisonOutput {
   baselineRunId: string;
   candidateRunId: string;
-  /** @deprecated Same as `baselineRunId`; see `DEPRECATIONS`. */
-  runIdA: string;
-  /** @deprecated Same as `candidateRunId`; see `DEPRECATIONS`. */
-  runIdB: string;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -545,8 +541,6 @@ export async function compareRuns(
   return {
     baselineRunId,
     candidateRunId,
-    runIdA: baselineRunId,
-    runIdB: candidateRunId,
     ...output,
     ...tunedField(opts?.thresholds),
     ...(opts?.markdown ? { markdown: renderComparisonMarkdown(comparison, output.verdict, tunedDetectors(opts?.thresholds)) } : {}),
@@ -569,8 +563,6 @@ export async function evaluateBudgetsForRun(
   baselineRunId?: string;
   /** The run the budgets were evaluated on. */
   candidateRunId: string;
-  /** @deprecated The first run's id, the baseline with two runs; read candidateRunId for the run judged; see `DEPRECATIONS`. */
-  runId: string;
   results: BudgetResult[]; violated: boolean; inconclusive: boolean;
   tunedThresholds?: Record<string, TunedThresholds>;
 }> {
@@ -617,7 +609,6 @@ export async function evaluateBudgetsForRun(
   return {
     ...(baseline ? { baselineRunId: baseline.runId } : {}),
     candidateRunId: candidate.runId,
-    runId: first.runId,
     results, violated, inconclusive,
     ...tunedField(opts?.thresholds),
   };

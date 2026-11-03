@@ -41,8 +41,7 @@ The CLI's JSON is one envelope, `{ schemaVersion, run, comparison?, budgets }`, 
 `cliEnvelope()` in `packages/core/src/cli-envelope.ts` for a single run, a run against a
 baseline and each NDJSON line. `packages/cli/schema/cli-envelope.schema.json` describes it
 and the CLI tests validate every JSON mode against it, so a change to the envelope's keys
-bumps `CLI_ENVELOPE_SCHEMA_VERSION` and the schema together. `--legacy-json` (removed in
-0.13.0) writes the JSON without the envelope through `legacyCliJson()` and `legacyCliLine()`.
+bumps `CLI_ENVELOPE_SCHEMA_VERSION` and the schema together.
 
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in

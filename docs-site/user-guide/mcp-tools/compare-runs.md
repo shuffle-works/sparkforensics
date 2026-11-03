@@ -14,8 +14,7 @@ carries the same `generator` (the `sparkforensics-mcp` build that wrote the resu
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
 when `include` asks for it (the CLI always carries it), plus
 `baselineRunId` and `candidateRunId`, which are handles for the runs this server process has
-cached: match runs by `baselineApp` and `candidateApp`. `runIdA` and `runIdB` carry the same
-values; they are deprecated and removed in 0.13.0.
+cached: match runs by `baselineApp` and `candidateApp`.
 Each row of `findings` lists its stage names in `stages` and the same names with the
 directories of their call-site paths removed in `stageLabels`; each `stagePairs` row has
 the same kind of label in `stageLabel`. The raw names in `stages` still carry those paths,
@@ -33,7 +32,6 @@ Parameters:
 - `baselineRunId` / `sourceA`: identify the baseline (`source` has the shape in
   [Common parameters](../mcp-tools.md#common-parameters); [Run roles](../mcp-tools.md#run-roles) compares the baseline and candidate across surfaces)
 - `candidateRunId` / `sourceB`: identify the candidate
-- `runIdA`, `runIdB`: deprecated names of `baselineRunId` and `candidateRunId`, removed in 0.13.0
 - `redact`: `boolean` (default `false`), pseudonymizes any app id, host name
   or user name embedded in free text (stage names and similar) in the
   response: see [the MCP tools reference](../mcp-tools.md) and [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
@@ -135,8 +133,6 @@ Example response with `include: ["stagePairs"]` (`metrics` trimmed to its first 
 {
   "baselineRunId": "aaaa1111-...",
   "candidateRunId": "bbbb2222-...",
-  "runIdA": "aaaa1111-...",
-  "runIdB": "bbbb2222-...",
   "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" },
   "baselineApp": { "id": "application_0000000000000_0001", "attemptId": null },
   "candidateApp": { "id": "application_0000000000000_0002", "attemptId": null },

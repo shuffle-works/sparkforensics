@@ -38,10 +38,6 @@ output and `$defs/ndjsonLine` validates one line of the
 `budgetResult`). The schema fixes the envelope's own keys and names the required
 top-level keys of `run` and `comparison`; it does not list every field inside them.
 
-`--legacy-json` writes the JSON without the envelope: the run's report alone for a single
-run, `{ candidate, comparison }` with `--baseline`, and `candidate` in place of
-`run` on each NDJSON line (with no `schemaVersion`), and no budget results in a
-single-run output. It is deprecated and removed in 0.13.0.
 Budget violations and inconclusive budgets print to stderr as
 `[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one

@@ -70,8 +70,8 @@ The CLI and the two MCP tools that take two runs give the runs different roles:
 
 Absolute budgets and the `run-complete` check apply to the candidate. With
 two runs, `evaluate_budgets` returns `baselineRunId` and `candidateRunId`, so a result is never
-read as the wrong run's. It still returns `runId`, the id of the first run; that field is
-deprecated and removed in 0.13.0.
+read as the wrong run's. With one run it returns `candidateRunId` alone: the run the budgets
+were evaluated on.
 
 ## Redaction {#redaction}
 

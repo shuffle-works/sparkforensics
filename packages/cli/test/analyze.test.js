@@ -12,7 +12,6 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 // shares this same fixture helper.
 import { shsZipFetch, historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
-import { deprecationNote } from '../../core/src/deprecations.ts';
 import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js';
 
 // Regression coverage for the published `sparkforensics-analyze` bin, not just
@@ -1234,8 +1233,6 @@ describe('skipped log lines', () => {
 });
 
 describe('sparkforensics-analyze JSON envelope', () => {
-  const LEGACY_NOTICE = deprecationNote('usage', '--legacy-json');
-
   // A baseline, a candidate and a file that is not an event log, to cover pass and error lines.
   function withLogs(fn) {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-envelope-'));
@@ -1314,50 +1311,11 @@ describe('sparkforensics-analyze JSON envelope', () => {
     });
   });
 
-  describe('--legacy-json', () => {
-    it('writes the run report alone for a single run', () => {
-      withLogs(({ candidate }) => {
-        const { stdout, status } = runCli([candidate, '--legacy-json']);
-        expect(status).toBe(0);
-        const legacy = JSON.parse(stdout);
-        expect(legacy).toEqual(parseEnvelope(runCli([candidate]).stdout).run);
-        expect(legacy).not.toHaveProperty('run');
-        expect(legacy).not.toHaveProperty('budgets');
-      });
-    });
-
-    it('writes { candidate, comparison } with --baseline', () => {
-      withLogs(({ candidate, baseline }) => {
-        const { stdout, status } = runCli([candidate, '--baseline', baseline, '--legacy-json']);
-        expect(status).toBe(0);
-        const legacy = JSON.parse(stdout);
-        const { run, comparison } = parseEnvelope(runCli([candidate, '--baseline', baseline]).stdout);
-        expect(Object.keys(legacy)).toEqual(['candidate', 'comparison']);
-        expect(legacy).toEqual({ candidate: run, comparison });
-      });
-    });
-
-    it('writes { log, status, exitCode, error, budgets, candidate, comparison } per NDJSON line', () => {
-      withLogs(({ candidate, garbage, baseline }) => {
-        const { stdout, status } = runCli([candidate, garbage, '--baseline', baseline, '--max-runtime', '100000', '--legacy-json']);
-        const lines = stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
-        const envelopeLines = parseNdjsonLines(runCli([candidate, garbage, '--baseline', baseline, '--max-runtime', '100000']).stdout);
-        expect(lines.map((l) => Object.keys(l))).toEqual([
-          ['log', 'status', 'exitCode', 'error', 'budgets', 'candidate', 'comparison'],
-          ['log', 'status', 'exitCode', 'error', 'budgets', 'candidate', 'comparison'],
-        ]);
-        expect(lines[0].candidate).toEqual(envelopeLines[0].run);
-        expect(lines[0].comparison).toEqual(envelopeLines[0].comparison);
-        expect(lines[0].budgets).toEqual(envelopeLines[0].budgets);
-        expect(lines[1]).toMatchObject({ status: 'error', exitCode: 4, candidate: null, comparison: null });
-        expect(status).toBe(4);
-      });
-    });
-
-    it('is described as deprecated in --help', () => {
-      const { stderr } = runCli(['--help']);
-      expect(stderr).toContain('--legacy-json');
-      expect(stderr).toContain(LEGACY_NOTICE);
+  it('rejects --legacy-json as a usage error', () => {
+    withLogs(({ candidate }) => {
+      const { stdout, status } = runCli([candidate, '--legacy-json']);
+      expect(status).toBe(2);
+      expect(stdout).toBe('');
     });
   });
 });

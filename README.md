@@ -275,7 +275,7 @@ output's `effectiveConf` block, next to its `metrics` block (both in
 exist, or the command exits `2`). The JSON is one `{ schemaVersion, run, comparison, budgets }`
 object, described by `packages/cli/schema/cli-envelope.schema.json`
 ([JSON output](https://github.com/shuffle-works/sparkforensics/blob/main/docs-site/user-guide/getting-started/ci-and-automation.md#json-output));
-`--legacy-json` writes the JSON without the envelope and is deprecated, removed in 0.13.0. Exit codes:
+Exit codes:
 `0` pass, `1` a budget was violated, `2` usage error (bad flags, arguments or
 a `--thresholds`/`--budgets` file), `3` a budget was inconclusive (e.g. missing
 evidence for a regression check), `4` the candidate log can't be read or

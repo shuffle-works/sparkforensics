@@ -13,7 +13,6 @@ import { IMPACT_BANDS } from './impact-band-order.ts';
 import { COMPARISON_METRIC_KEYS } from './run-comparison.ts';
 import { FINDING_TYPES } from './cli/flag-values.ts';
 import { listDetectors } from './detector-listing.ts';
-import { deprecationNote } from './deprecations.ts';
 
 // z.enum wants a non-empty tuple; these lists are never empty.
 const nonEmpty = <T extends string>(values: readonly T[]) => values as [T, ...T[]];
@@ -176,8 +175,6 @@ const getRunSummaryOutput = {
 
 const compareRunsOutput = {
   baselineRunId: outputRunId, candidateRunId: outputRunId,
-  runIdA: z.string().optional().describe(`Same as baselineRunId. ${deprecationNote('compare_runs result', 'runIdA')}`),
-  runIdB: z.string().optional().describe(`Same as candidateRunId. ${deprecationNote('compare_runs result', 'runIdB')}`),
   verdict: z.unknown().optional(), metrics: z.unknown().optional(), findings: z.unknown().optional(),
   comparability: z.unknown().optional(), stagePairs: z.unknown().optional(), runtimeCoverage: z.unknown().optional(),
 };
@@ -185,7 +182,6 @@ const compareRunsOutput = {
 const evaluateBudgetsOutput = {
   baselineRunId: z.string().optional().describe('Present with two runs: the regression baseline.'),
   candidateRunId: outputRunId,
-  runId: z.string().optional().describe(`The first run's id: the baseline when two runs are given, so read candidateRunId for the run the budgets judged. ${deprecationNote('evaluate_budgets result', 'runId')}`),
   results: z.array(z.unknown()), violated: z.boolean(), inconclusive: z.boolean(),
   tunedThresholds: z.unknown().optional(),
 };
@@ -260,8 +256,6 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
       inputSchema: {
         baselineRunId: z.string().optional().describe('The baseline run, by the run id of an earlier call.'),
         candidateRunId: z.string().optional().describe('The candidate run, by the run id of an earlier call.'),
-        runIdA: z.string().optional().describe(`Same as baselineRunId. ${deprecationNote('compare_runs input', 'runIdA')}`),
-        runIdB: z.string().optional().describe(`Same as candidateRunId. ${deprecationNote('compare_runs input', 'runIdB')}`),
         sourceA: sourceSchema.optional(), sourceB: sourceSchema.optional(),
         redact: z.boolean().optional(),
         include: z.array(z.enum(['stagePairs'])).optional()
@@ -282,14 +276,14 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
       },
       outputSchema: compareRunsOutput,
       cli: { twin: 'sparkforensics-analyze <log> --baseline <log>' },
-      handler: ({ baselineRunId, candidateRunId, runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, executorRatio, unmatchedShare, taskCountChange, format }) => toolResultWithMarkdown(
-        compareRuns({ runId: baselineRunId ?? runIdA, source: sourceA }, { runId: candidateRunId ?? runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange }, include, generator }),
+      handler: ({ baselineRunId, candidateRunId, sourceA, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, executorRatio, unmatchedShare, taskCountChange, format }) => toolResultWithMarkdown(
+        compareRuns({ runId: baselineRunId, source: sourceA }, { runId: candidateRunId, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange }, include, generator }),
       ),
     }),
 
     tool({
       name: 'evaluate_budgets',
-      description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. The candidateRunId in the result names the run the budgets judged; the deprecated runId names the baseline (the first run) when two runs are given. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
+      description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. The candidateRunId in the result names the run the budgets were evaluated on; baselineRunId is present when two runs are given. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
       inputSchema: {
         source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
         runId: runRefSchema.runId.describe('Same as `source`, referencing an already-resolved run by id.'),

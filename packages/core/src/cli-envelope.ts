@@ -32,15 +32,3 @@ export function cliEnvelope(
 ): CliEnvelope {
   return { schemaVersion: CLI_ENVELOPE_SCHEMA_VERSION, run, ...(comparison ? { comparison } : {}), budgets };
 }
-
-/** The single-run JSON of `--legacy-json`: the run's report alone, or the run and its comparison
- * under `candidate` and `comparison`, and no budgets. */
-export function legacyCliJson({ run, comparison }: CliEnvelope): CliRunReport | { candidate: CliRunReport; comparison: ComparisonOutput } {
-  return comparison ? { candidate: run, comparison } : run;
-}
-
-/** The members of a `--legacy-json` NDJSON line that the envelope names differently: the run is
- * `candidate`, and the envelope's `schemaVersion` is left out. */
-export function legacyCliLine({ run, comparison, budgets }: CliEnvelope): { budgets: BudgetResult[]; candidate: CliRunReport; comparison: ComparisonOutput | undefined } {
-  return { budgets, candidate: run, comparison };
-}

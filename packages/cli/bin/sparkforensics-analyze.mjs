@@ -30,7 +30,7 @@ const {
   parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
   parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced,
   tunedDetectors, runOutputBlocks, buildEffectiveConf, CLI_SUBCOMMANDS, subcommandUsageLines,
-  CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport, legacyCliJson, legacyCliLine, deprecationNote,
+  CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport,
 } = /** @type {typeof import('../../core/src/node.ts')} */ (core);
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
@@ -44,9 +44,6 @@ Options:
   --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
                                     logs). ndjson requires --baseline, see "Several candidates".
   --out <path>                    Write output to a file instead of stdout.
-  --legacy-json                    Write the JSON without the envelope: the run's report alone, or { candidate,
-                                    comparison } with --baseline, with no budget results in it.
-                                    ${deprecationNote('usage', '--legacy-json')}
   --export-html <dir>              Write a self-contained HTML dashboard for this run into <dir>
                                     (must not exist or be empty). Open <dir>/index.html directly, no
                                     server required. Can be combined with --format/--out, which write
@@ -191,7 +188,6 @@ function parseCliArgs(argv) {
     allowPositionals: true,
     options: {
       out: { type: 'string' },
-      'legacy-json': { type: 'boolean' },
       format: { type: 'string' },
       'max-runtime': { type: 'string' },
       'max-spill': { type: 'string' },
@@ -324,7 +320,7 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
 // loadBaseline() and each candidate's load() resolve to { appModel }, the parsed log from a local file or a History Server.
 async function runMultiLog({
-  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds, legacyJson,
+  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds,
 }) {
   let baselineRun;
   try {
@@ -367,7 +363,7 @@ async function runMultiLog({
         status: violated ? 'violation' : inconclusive ? 'inconclusive' : 'pass',
         exitCode,
         error: null,
-        ...(legacyJson ? legacyCliLine(envelope) : envelope),
+        ...envelope,
       };
     } catch (e) {
       const exitCode = e.exitCode ?? EXIT.INTERNAL;
@@ -375,7 +371,7 @@ async function runMultiLog({
       process.stderr.write(`${log}: [error] ${error}\n`);
       line = {
         log, status: 'error', exitCode, error,
-        ...(legacyJson ? { budgets: [], candidate: null, comparison: null } : { schemaVersion: CLI_ENVELOPE_SCHEMA_VERSION, run: null, comparison: null, budgets: [] }),
+        schemaVersion: CLI_ENVELOPE_SCHEMA_VERSION, run: null, comparison: null, budgets: [],
       };
     }
     emit(line);
@@ -703,7 +699,6 @@ async function runCli(argv, { fetchImpl } = {}) {
       candidates, loadBaseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
       confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath, ignoreConf, noiseBand, caveatThresholds,
-      legacyJson: values['legacy-json'],
     });
   }
 
@@ -797,7 +792,7 @@ async function runCli(argv, { fetchImpl } = {}) {
       generator: generatorInfo(),
     });
     const envelope = cliEnvelope({ run: cliRunReport({ json, notesHidden }, machineReadable), comparison: comparisonJson, budgets: results });
-    output = `${JSON.stringify(values['legacy-json'] ? legacyCliJson(envelope) : envelope, null, 2)}\n`;
+    output = `${JSON.stringify(envelope, null, 2)}\n`;
   }
   if (values.out) writeFileSync(values.out, output);
   else process.stdout.write(output);

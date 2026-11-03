@@ -30,5 +30,4 @@ export { runOutputBlocks } from './run-output.ts';
 export { buildEffectiveConf } from './effective-conf.ts';
 
 export const loadMcpServerFactory = () => import('./mcp-server-factory.ts');
-export { DEPRECATIONS, deprecationNote, type Deprecation } from './deprecations.ts';
-export { CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport, legacyCliJson, legacyCliLine, type CliEnvelope, type CliRunReport } from './cli-envelope.ts';
+export { CLI_ENVELOPE_SCHEMA_VERSION, cliEnvelope, cliRunReport, type CliEnvelope, type CliRunReport } from './cli-envelope.ts';
