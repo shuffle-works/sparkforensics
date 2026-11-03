@@ -75,8 +75,8 @@ These detectors set `impactBand` in `detectors.ts`, and nothing overwrites it. E
 - `stageShape`: info only. PRatio fires under `pRatioMax` tasks per core on a stage at least `lowParallelismFloorPct` of the run; OIRatio over `oiRatioMax` output per input byte; TaskStageSkew when the longest task spans over `stageShareMin` of the stage and runs over `skewWarn` times the median, on a multi-task stage at least `taskStageSkewFloorPct` of the run. The median gate is needed because on a single wave of even tasks the longest task spans the whole stage too.
 - `utilization`: always warning under `minUtil` busy over allocated core time.
 - `memoryUtilization`: idle cores warning above `idleCoreWarn`; the memory band is an info over-provisioning note under `bandTooHigh`. It has no near-capacity band, since heap used counts uncollected garbage.
-- `rightSizing`: always warning and low confidence; silent when the model error at the peak exceeds `maxModelErrorPct`.
-- `cachingOpportunity`: a single info tier.
+- `rightSizing`: always warning and low confidence. It needs a run peak of at least `minBaselineCores` cores, and fires when the smallest core count whose modeled stage time stays within `tolerancePct` of the observed one is at most `maxCoreShare` of that peak. It stays silent when the model error at the peak exceeds `maxModelErrorPct`.
+- `cachingOpportunity`: a single info tier. It fires when the same input relation, or join or union subtree, is scanned by at least `minExecutions` SQL executions in one run.
 - `configAudit`: `spark.executor.memoryOverhead` below the larger of the minimum and the factor times executor memory is info. The minimum is `spark.executor.minMemoryOverhead` on Spark 4+, else `floorMB`; the factor is `spark.executor.memoryOverheadFactor` on Spark 3.3+, else `floorPct`.
 
 ### Fixed fallback bands
