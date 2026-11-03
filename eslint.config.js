@@ -81,6 +81,14 @@ export default [
     },
   },
   {
+    // Each detectors/ module stays small enough to review: split a growing one by family or helper.
+    // max-lines counts raw text, so it works with the no-op parser above.
+    files: ['packages/core/src/detectors/**/*.ts'],
+    rules: {
+      'max-lines': ['error', { max: 1200, skipBlankLines: false, skipComments: false }],
+    },
+  },
+  {
     // `.ts`/`.tsx` are NOT linted: typescript-eslint crashes at import time
     // against TypeScript 7 (`ts.Extension.Cjs` gone), and no released version
     // supports it. `tsc --noEmit` is the only type/syntax check on the view

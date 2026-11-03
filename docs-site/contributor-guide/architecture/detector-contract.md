@@ -170,8 +170,8 @@ the render order, see [Widget rendering](./widget-rendering.md#widget-rendering-
 Only `analyzer.ts` and `detector-catalog.ts` import `detectors.ts` by value. Any other module
 reads `DETECTORS`, `ENTRY_BY_TYPE` and `detectorCatalog()` from `detector-catalog.ts`, takes
 helpers from the `detectors/` modules, and imports types from `detectors.ts` with `import type`.
-`packages/core/test/source-guards.test.js` fails on any other value import, and on a `detectors/`
-module over 1200 lines. The helpers import no entry, so a module in `detectors/` never depends on
+The `no-detectors-value-import` rule of `npm run lint:structure` fails on any other value import,
+and `npm run lint` fails on a `detectors/` module over 1200 lines. The helpers import no entry, so a module in `detectors/` never depends on
 the list built from them.
 
 ## Confidence disclosure

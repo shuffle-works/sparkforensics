@@ -126,8 +126,8 @@ npm run docs:preview   # serves the built docs site locally
   it warns on stderr and runs the source. `load-node-core.js` is the one module
   a bin locates by hand (`vendor-core/load-node-core.js` in a packed install).
   It loads `packages/core/src/node.ts` once, and the bin reads every core name
-  it uses from that module, so `packages/core/test/node-entry.test.js` fails
-  when a bin names something `node.ts` does not export.
+  it uses from that module. `packages/core/test/node-entry.test.js` runs each
+  bin with `--help` and fails when it does not start.
 - The CLI's `export-template/` has no such check. Without it,
   `--export-html` from source uses the repo-root `dist-export/` from
   `npm run build:export` (not produced by `npm run build`); a leftover
@@ -156,7 +156,7 @@ in `packages/core/src/`:
 - `node`: every name the CLI and MCP bins read.
 
 `src/` imports core through `analysis`, `browser`, `export`, `types` and
-`view-model` only (`packages/core/test/source-guards.test.js`). The export
+`view-model` only (the `core-entry-points-only` rule of `npm run lint:structure`). The export
 build reaches `view-model` and `export`, so they re-export only modules on
 `ALLOWED_EXPORT_CORE_MODULES` in `scripts/export-analysis-guard.mjs`; a new
 analysis import for the export goes through `interpretRun`, not through a new

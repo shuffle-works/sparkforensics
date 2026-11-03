@@ -14,19 +14,20 @@ import {
 import { getThresholdSummary } from './threshold-summary.ts';
 import type { FindingType, FixEffort } from './types.ts';
 
-/** The CLI budget flag that gates a finding type directly. A type with no entry is gated through
- * `--fail-on-introduced` against a baseline, or not at all. */
+/** The CLI budget flag and the Airflow operator parameter that gate a finding type directly. A
+ * type with no entry is gated through `--fail-on-introduced` against a baseline, or not at all. */
 export interface BudgetGate {
   cliFlag: string;
+  airflowParam: string;
 }
 
 // Keyed by finding type, so renaming a type breaks the build here. The flags are checked against
 // the CLI's --help text in detector-catalog.test.js.
 const BUDGET_GATES: { readonly [T in FindingType]?: BudgetGate } = {
-  skew: { cliFlag: '--max-skew' },
-  spill: { cliFlag: '--max-spill' },
-  utilization: { cliFlag: '--min-efficiency' },
-  failures: { cliFlag: '--max-failed-task-rate' },
+  skew: { cliFlag: '--max-skew', airflowParam: 'max_skew_ratio' },
+  spill: { cliFlag: '--max-spill', airflowParam: 'max_spill_gb' },
+  utilization: { cliFlag: '--min-efficiency', airflowParam: 'min_efficiency_pct' },
+  failures: { cliFlag: '--max-failed-task-rate', airflowParam: 'max_failed_task_rate_pct' },
 };
 
 /** Where a type's tuning documentation lives: its own bottleneck page, a bottleneck page it

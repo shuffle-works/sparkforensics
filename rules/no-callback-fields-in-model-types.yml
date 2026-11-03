@@ -1,0 +1,17 @@
+id: no-callback-fields-in-model-types
+language: tsx
+severity: error
+message: A core model type declares a function-typed field.
+note: |
+  types.ts holds the plain model the analysis and every surface share. A callback field belongs to
+  a view's own node or props type, next to the view that calls it.
+rule:
+  any:
+    - kind: method_signature
+    - kind: property_signature
+      has:
+        kind: type_annotation
+        has:
+          kind: function_type
+files:
+  - packages/core/src/types.ts

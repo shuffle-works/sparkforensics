@@ -1,0 +1,14 @@
+id: no-frame-document-access
+language: tsx
+severity: error
+message: The site reads the document of a frame or of its host page.
+note: |
+  The docs site and the app's frames talk through the typed messages in
+  src/docs-widget/frame-messages.ts. Reading the other side's document couples each side to the
+  other's markup. Post a frame message instead.
+rule:
+  any:
+    - pattern: $OWNER.parent.document
+    - pattern: $FRAME.contentDocument
+files:
+  - src/**

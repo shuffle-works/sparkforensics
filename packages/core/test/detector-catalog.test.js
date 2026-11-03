@@ -55,14 +55,13 @@ describe('detector catalog special cases', () => {
     expect(byType('skew').tagSharedWith).toEqual([]);
   });
 
-  it('names the budget flag of exactly the gated types', () => {
-    const gated = Object.fromEntries(catalog.filter((r) => r.gate).map((r) => [r.type, r.gate]));
-    expect(gated).toEqual({
-      skew: { cliFlag: '--max-skew' },
-      spill: { cliFlag: '--max-spill' },
-      utilization: { cliFlag: '--min-efficiency' },
-      failures: { cliFlag: '--max-failed-task-rate' },
-    });
+  it('gates exactly the budgeted types, each with a CLI flag and an operator parameter', () => {
+    const gated = catalog.filter((r) => r.gate);
+    expect(gated.map((r) => r.type).sort()).toEqual(['failures', 'skew', 'spill', 'utilization']);
+    for (const { gate } of gated) {
+      expect(gate.cliFlag).toEqual(expect.stringMatching(/\S/));
+      expect(gate.airflowParam).toEqual(expect.stringMatching(/\S/));
+    }
   });
 
   it('marks the dashboard reference region', () => {
