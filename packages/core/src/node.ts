@@ -19,6 +19,7 @@ export { analyzeRun } from './analyzed-run.ts';
 export { buildEvidenceReport, toFindingsFilter } from './evidence-report.ts';
 export { renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND } from './run-comparison.ts';
 export { buildComparisonOutput } from './comparison-output.ts';
+export { comparedFindings } from './compared-run.ts';
 export { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
 export { compileConfIgnorePatterns } from './comparability.ts';
 export { buildHtmlExportData, encodeRunPayload } from './html-export.ts';

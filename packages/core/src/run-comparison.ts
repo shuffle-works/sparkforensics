@@ -11,8 +11,8 @@ import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator
 import { cyrb53 } from './string-hash.ts';
 import { compareImpactBand } from './impact-band-order.ts';
 import { formatBytes, formatRawWaste, fmtMs } from './units.ts';
-import type { Stage, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
-import type { ComparedRun } from './compared-run.ts';
+import type { Stage, SparkAppInfo, Finding, TunedThresholds } from './types.ts';
+import type { ComparedRun, ComparedRunInput } from './compared-run.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
 import { stageDisplayLabel } from './stage-label.ts';
@@ -479,8 +479,8 @@ export interface CompareOptions {
 
 // Operand-building shared by the CLI's --baseline path and mcp-tools.ts's compareRuns tool.
 export function buildComparison(
-  baseline: { label: string; appModel: AppModel; catalog: Finding[] },
-  candidate: { label: string; appModel: AppModel; catalog: Finding[] },
+  baseline: { label: string } & ComparedRunInput,
+  candidate: { label: string } & ComparedRunInput,
   options?: CompareOptions,
 ): CompareRunsResult {
   return compareRuns(

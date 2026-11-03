@@ -24,7 +24,7 @@ const { core, buildId: coreBuildId } = await loadNodeCore(pkgDir);
 const {
   collectRun, collectRunPair, resolveFromShs, validateShsRequest, analyzeRun,
   buildEvidenceReport, toFindingsFilter, evaluateBudgets,
-  renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput,
+  renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput, comparedFindings,
   compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS, compileConfIgnorePatterns,
   buildHtmlExportData, encodeRunPayload, runPayloadScript, loadThresholdOverrides,
   parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
@@ -342,14 +342,15 @@ async function runMultiLog({
     let line;
     try {
       const { appModel: parsed } = await unreadable(load(), EXIT.CANDIDATE_UNREADABLE);
-      const { appModel, catalog } = analyzeRun(parsed, { thresholds });
+      const candidateRun = analyzeRun(parsed, { thresholds });
+      const { appModel } = candidateRun;
       const { comparison, output } = buildComparisonOutput(
-        { label: 'baseline', appModel: baselineRun.appModel, catalog: baselineRun.catalog },
-        { label: 'candidate', appModel, catalog },
+        { label: 'baseline', ...baselineRun },
+        { label: 'candidate', ...candidateRun },
         { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, caveatThresholds, generator: generatorInfo() },
       );
       const { json, notesHidden } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
-      const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
+      const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(candidateRun), budgets, comparison, thresholds });
       for (const r of results) {
         if (r.status !== 'pass') process.stderr.write(`${log}: [${r.status === 'violation' ? 'violation' : 'inconclusive'}] ${r.name}: ${r.detail}\n`);
       }
@@ -743,7 +744,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   }
 
   const run = analyzeRun(parsedModel, { thresholds });
-  const { appModel, catalog } = run;
+  const { appModel } = run;
 
   if (exportHtmlDir !== undefined) {
     // The dashboard never tunes, so the export is the default-threshold analysis of the run.
@@ -767,8 +768,8 @@ async function runCli(argv, { fetchImpl } = {}) {
     // The builder applies --redact: stage names in the comparison carry raw Spark stage text,
     // which --redact promises to pseudonymize.
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
-      { label: 'baseline', appModel: baselineRun.appModel, catalog: baselineRun.catalog },
-      { label: 'candidate', appModel, catalog },
+      { label: 'baseline', ...baselineRun },
+      { label: 'candidate', ...run },
       { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand, caveatThresholds, generator: generatorInfo() },
     ));
   }
@@ -792,7 +793,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   if (values.out) writeFileSync(values.out, output);
   else process.stdout.write(output);
 
-  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
+  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: comparedFindings(run), budgets, comparison, thresholds });
   for (const r of results) {
     if (r.status === 'inconclusive') process.stderr.write(`[inconclusive] ${r.name}: ${r.detail}\n`);
     else if (r.status === 'violation') process.stderr.write(`[violation] ${r.name}: ${r.detail}\n`);

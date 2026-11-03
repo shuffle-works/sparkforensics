@@ -2,9 +2,10 @@ import { buildComparison, type CompareOptions, type CompareRunsResult } from './
 import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verdict.ts';
 import { redactComparison } from './redact.ts';
 import type { ReportGenerator } from './run-output.ts';
-import type { AppModel, Finding } from './types.ts';
+import type { ComparedRunInput } from './compared-run.ts';
 
-export interface ComparisonRunInput { label: string; appModel: AppModel; catalog: Finding[] }
+/** One side of a comparison: a label and the analyzed run. */
+export interface ComparisonRunInput extends ComparedRunInput { label: string }
 
 // The comparison a surface reports: the CLI's `comparison` object and the shared part of MCP
 // compare_runs. A field added here reaches every surface.

@@ -12,6 +12,7 @@ import {
 } from './evidence-report.ts';
 import { runTiming } from './run-timing.ts';
 import { renderComparisonMarkdown, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
+import { comparedFindings, type ComparedRunInput } from './compared-run.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { compileConfIgnorePatterns } from './comparability.ts';
@@ -25,7 +26,7 @@ import type { ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './finding-presentation.ts';
-import type { AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
+import type { AppModel, ImpactBand, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
@@ -490,9 +491,10 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
 // (same analyze() call shape) first.
 async function resolveAndAnalyze(
   ref: RunRef, thresholds: ThresholdOverrides | undefined,
-): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
+): Promise<{ runId: string; run: ComparedRunInput }> {
   const { runId, appModel } = await resolveOrCreateRun(ref, { thresholds });
-  return { runId, appModel, catalog: runFindings(appModel, thresholds).catalog };
+  const { catalog, config } = runFindings(appModel, thresholds);
+  return { runId, run: { appModel, catalog, configFindings: config } };
 }
 
 export async function compareRuns(
@@ -512,8 +514,8 @@ export async function compareRuns(
     throw mcpError('access-or-upstream-failure', `ignoreConf: ${(e as Error).message}`);
   }
   const [
-    { runId: runIdA, appModel: appModelA, catalog: catalogA },
-    { runId: runIdB, appModel: appModelB, catalog: catalogB },
+    { runId: runIdA, run: runA },
+    { runId: runIdB, run: runB },
   ] = await Promise.all([resolveAndAnalyze(a, opts?.thresholds), resolveAndAnalyze(b, opts?.thresholds)]);
 
   // Comparison reads findings and metrics from `catalog` and appModel.stages/sql, both fully populated,
@@ -527,8 +529,8 @@ export async function compareRuns(
     comparisonCache.set(cacheKey, { runIdA, runIdB, built });
   } else {
     built = buildComparisonOutput(
-      { label: runIdA, appModel: appModelA, catalog: catalogA },
-      { label: runIdB, appModel: appModelB, catalog: catalogB },
+      { label: runIdA, ...runA },
+      { label: runIdB, ...runB },
       { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, caveatThresholds: opts?.caveatThresholds, view, generator: opts?.generator },
     );
     // Either run can be evicted while the other one is still being read or parsed (the awaits
@@ -606,14 +608,11 @@ export async function evaluateBudgetsForRun(
   const baseline = second ? first : undefined;
   // Not redacted: no budget reads the stage text redaction rewrites (the parity suite checks it).
   const comparison: CompareRunsResult | undefined = baseline
-    ? buildComparisonOutput(
-      { label: baseline.runId, appModel: baseline.appModel, catalog: baseline.catalog },
-      { label: candidate.runId, appModel: candidate.appModel, catalog: candidate.catalog },
-    ).comparison
+    ? buildComparisonOutput({ label: baseline.runId, ...baseline.run }, { label: candidate.runId, ...candidate.run }).comparison
     : undefined;
 
   const { results, violated, inconclusive } = evaluateBudgets({
-    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison, thresholds: opts?.thresholds,
+    appModel: candidate.run.appModel, catalog: comparedFindings(candidate.run), budgets, comparison, thresholds: opts?.thresholds,
   });
 
   return { runId: first.runId, results, violated, inconclusive, ...tunedField(opts?.thresholds) };

@@ -7,7 +7,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { collectRun } from '@sparkforensics/core/cli';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
-import { analyze, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
+import { analyze, auditConfig, buildComparison, comparisonOutput } from '@sparkforensics/core/analysis';
 import { createMcpServer } from '@sparkforensics/core/mcp';
 import { corpusLog } from '../../core/test/corpus-log.js';
 
@@ -159,7 +159,7 @@ async function dashboardComparison(baselinePath, candidatePath) {
       appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
       appModel.jobs, appModel.sql, appModel.runAggregates,
     );
-    return { appModel, catalog };
+    return { appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) };
   };
   const [base, cand] = await Promise.all([prepare(baselinePath), prepare(candidatePath)]);
   return buildComparison({ label: 'baseline', ...base }, { label: 'candidate', ...cand });
