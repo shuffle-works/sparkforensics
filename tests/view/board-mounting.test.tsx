@@ -88,3 +88,19 @@ test('a board card that is open holds its body, and one that is closed does not'
   await user.click(within(first).getByRole('button', { name: 'Hide evidence' }));
   expect(within(first).queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
 });
+
+test('a Full app report card outside the grid stays collapsed across a tab switch', async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole('tab', { name: 'Findings' });
+  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
+
+  const toggle = () => screen.getByRole('button', { name: /Wall-Clock Breakdown/ });
+  expect(toggle()).toHaveAttribute('aria-expanded', 'true');
+  await user.click(toggle());
+  expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+
+  await user.click(screen.getByRole('tab', { name: 'Findings' }));
+  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
+  expect(toggle()).toHaveAttribute('aria-expanded', 'false');
+});

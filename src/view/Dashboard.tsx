@@ -45,7 +45,7 @@ import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
 import { WallClock } from '@/view/widgets/WallClock';
 import { Topbar } from '@/view/Topbar';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
-import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
+import { ReportCard, WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
 import { useIngest } from '@/store/useIngest';
 import { useTriageShortcuts } from '@/view/useTriageShortcuts';
 import { useRecentFiles } from '@/view/useRecentFiles';
@@ -77,10 +77,12 @@ function ReferenceSection({
   return (
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
-      <WallClock />
-      <Timeline appModel={appModel} catalog={catalog} />
-      <ExecutorCountChart appModel={appModel} />
-      <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
+      <ReportCard name="wall-clock"><WallClock /></ReportCard>
+      <ReportCard name="timeline"><Timeline appModel={appModel} catalog={catalog} /></ReportCard>
+      <ReportCard name="executor-count"><ExecutorCountChart appModel={appModel} /></ReportCard>
+      <ReportCard name="stage-table">
+        <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
+      </ReportCard>
       <WidgetGrid>
         {layout.reference.map((card) => (
           <WidgetGridItem key={card.key} cardId={card.key} collapsedTile>

@@ -27,13 +27,23 @@ export function useWidgetGridCard(): GridCard | null {
 }
 
 /** The disclosure of the card around the caller. A card the layout lists is open when the board
- * says so; any other card (a widget on its own) keeps its own state, starting as `initiallyOpen`. */
+ * says so; a report card (`ReportCard`) keeps it in the run's widget state, so hiding its tab loses
+ * nothing; any other card (a widget on its own) keeps its own state, starting as `initiallyOpen`. */
 export function useCardDisclosure(initiallyOpen: boolean): { open: boolean; setOpen: (open: boolean) => void } {
   const key = useWidgetGridCard()?.key ?? null;
+  const cardKey = useCardKey();
+  const stateKey = key == null && cardKey != null ? `${cardKey}:open` : null;
   const stored = useStore((s) => key != null && s.board.openCards.has(key));
+  const remembered = useStore((s) => (stateKey != null && stateKey in s.board.widgets ? s.board.widgets[stateKey] === true : initiallyOpen));
   const [local, setLocal] = useState(initiallyOpen);
   if (key != null) return { open: stored, setOpen: (open) => store.getState().setCardOpen(key, open) };
+  if (stateKey != null) return { open: remembered, setOpen: (open) => store.getState().setWidgetState(stateKey, open, initiallyOpen) };
   return { open: local, setOpen: setLocal };
+}
+
+/** A Full app report card outside the grid: `name` keys what it remembers for the run. */
+export function ReportCard({ name, children }: { name: string; children: ReactNode }) {
+  return <CardKeyContext.Provider value={`report:${name}`}>{children}</CardKeyContext.Provider>;
 }
 
 export function WidgetGrid({ children, className }: { children: ReactNode; className?: string }) {
