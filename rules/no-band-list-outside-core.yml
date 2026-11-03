@@ -1,0 +1,23 @@
+id: no-band-list-outside-core
+language: tsx
+severity: error
+message: The impact bands are listed outside core.
+note: |
+  `IMPACT_BANDS` (`packages/core/src/impact-band-order.ts`) is the one list of impact bands, most severe
+  first, with `bandRank` and `compareImpactBand` to order them. Import them instead of spelling the
+  bands out as an array.
+rule:
+  kind: array
+  all:
+    - has:
+        kind: string_fragment
+        regex: ^critical$
+        stopBy: end
+    - has:
+        kind: string_fragment
+        regex: ^warning$
+        stopBy: end
+files:
+  - src/**
+ignores:
+  - packages/core/**

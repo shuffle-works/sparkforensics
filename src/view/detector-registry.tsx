@@ -50,84 +50,53 @@ import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/c
 // Exactly one `lazy(...)` per component, one component per REGISTRY key:
 // every `finding.type` maps to its own widget now, so there is no sharing to
 // account for here.
-const Skew = lazy(() => import('./widgets/Skew').then((m) => ({ default: m.Skew })));
-const StageShape = lazy(() => import('./widgets/StageShape').then((m) => ({ default: m.StageShape })));
-const TinyTask = lazy(() => import('./widgets/TinyTask').then((m) => ({ default: m.TinyTask })));
-const ShuffleIO = lazy(() => import('./widgets/ShuffleIO').then((m) => ({ default: m.ShuffleIO })));
-const PartitionSizing = lazy(() => import('./widgets/PartitionSizing').then((m) => ({ default: m.PartitionSizing })));
-const Spill = lazy(() => import('./widgets/Spill').then((m) => ({ default: m.Spill })));
-const GcPressure = lazy(() => import('./widgets/GcPressure').then((m) => ({ default: m.GcPressure })));
-const StageFailed = lazy(() => import('./widgets/StageFailed').then((m) => ({ default: m.StageFailed })));
-const TaskFailures = lazy(() => import('./widgets/TaskFailures').then((m) => ({ default: m.TaskFailures })));
-const RetryWaste = lazy(() => import('./widgets/RetryWaste').then((m) => ({ default: m.RetryWaste })));
-const SlowHost = lazy(() => import('./widgets/SlowHost').then((m) => ({ default: m.SlowHost })));
-const StageSlowness = lazy(() => import('./widgets/StageSlowness').then((m) => ({ default: m.StageSlowness })));
-const Straggler = lazy(() => import('./widgets/Straggler').then((m) => ({ default: m.Straggler })));
-const SpeculationWaste = lazy(() => import('./widgets/SpeculationWaste').then((m) => ({ default: m.SpeculationWaste })));
-const ColdStart = lazy(() => import('./widgets/ColdStart').then((m) => ({ default: m.ColdStart })));
-const MemoryUtilization = lazy(() => import('./widgets/MemoryUtilization').then((m) => ({ default: m.MemoryUtilization })));
-const ExecutorUtilization = lazy(() => import('./widgets/ExecutorUtilization').then((m) => ({ default: m.ExecutorUtilization })));
-const RightSizing = lazy(() => import('./widgets/RightSizing').then((m) => ({ default: m.RightSizing })));
-const CachingOpportunity = lazy(() => import('./widgets/CachingOpportunity').then((m) => ({ default: m.CachingOpportunity })));
-const JobFailures = lazy(() => import('./widgets/JobFailures').then((m) => ({ default: m.JobFailures })));
-const ConfigAudit = lazy(() => import('./widgets/ConfigAudit').then((m) => ({ default: m.ConfigAudit })));
-const DuplicatePlanSubtree = lazy(() => import('./widgets/DuplicatePlanSubtree').then((m) => ({ default: m.DuplicatePlanSubtree })));
-const PythonUdf = lazy(() => import('./widgets/PythonUdf').then((m) => ({ default: m.PythonUdf })));
-const MergeRewrite = lazy(() => import('./widgets/MergeRewrite').then((m) => ({ default: m.MergeRewrite })));
-const UnprunedScan = lazy(() => import('./widgets/UnprunedScan').then((m) => ({ default: m.UnprunedScan })));
-const JoinKeyCast = lazy(() => import('./widgets/JoinKeyCast').then((m) => ({ default: m.JoinKeyCast })));
-const NestedLoopJoin = lazy(() => import('./widgets/NestedLoopJoin').then((m) => ({ default: m.NestedLoopJoin })));
-const SmallFiles = lazy(() => import('./widgets/SmallFiles').then((m) => ({ default: m.SmallFiles })));
-const UnderBroadcast = lazy(() => import('./widgets/UnderBroadcast').then((m) => ({ default: m.UnderBroadcast })));
-const OverBroadcast = lazy(() => import('./widgets/OverBroadcast').then((m) => ({ default: m.OverBroadcast })));
-const CacheUtilization = lazy(() => import('./widgets/CacheUtilization').then((m) => ({ default: m.CacheUtilization })));
-const CoreUsageArea = lazy(() => import('./widgets/CoreUsageArea').then((m) => ({ default: m.CoreUsageArea })));
-const AutoscalingChurn = lazy(() => import('./widgets/AutoscalingChurn').then((m) => ({ default: m.AutoscalingChurn })));
-const IncompleteRun = lazy(() => import('./widgets/IncompleteRun').then((m) => ({ default: m.IncompleteRun })));
-
-// `React.lazy(...)` returns a plain object with no function `.name`: set
-// `displayName` on each (matching its widget's file basename) so React
-// DevTools still resolves every widget. React supports `displayName` on a
-// `LazyExoticComponent` at runtime, but its type declaration doesn't include
-// the property, a narrow, localized cast, same class of gap as
-// Skew.tsx's `SlowHostFinding`/`StragglerFinding` bridge casts.
-function setDisplayName(component: ComponentType<never>, name: string): void {
+// `React.lazy(...)` returns a plain object with no function `.name`: `lazyWidget` sets `displayName`
+// to the widget's export name (its file basename) so React DevTools still resolves every widget.
+// React supports `displayName` on a `LazyExoticComponent` at runtime, but its type declaration
+// doesn't include the property, a narrow, localized cast, same class of gap as Skew.tsx's
+// `SlowHostFinding`/`StragglerFinding` bridge casts.
+function lazyWidget<N extends string>(
+  name: N, load: () => Promise<Record<N, ComponentType<never>>>,
+): ComponentType<WidgetProps> {
+  const component = lazy(async () => ({ default: (await load())[name] as ComponentType<WidgetProps> }));
   (component as unknown as { displayName?: string }).displayName = name;
+  return component;
 }
-setDisplayName(Skew, 'Skew');
-setDisplayName(StageShape, 'StageShape');
-setDisplayName(TinyTask, 'TinyTask');
-setDisplayName(ShuffleIO, 'ShuffleIO');
-setDisplayName(PartitionSizing, 'PartitionSizing');
-setDisplayName(Spill, 'Spill');
-setDisplayName(GcPressure, 'GcPressure');
-setDisplayName(StageFailed, 'StageFailed');
-setDisplayName(TaskFailures, 'TaskFailures');
-setDisplayName(RetryWaste, 'RetryWaste');
-setDisplayName(SlowHost, 'SlowHost');
-setDisplayName(StageSlowness, 'StageSlowness');
-setDisplayName(Straggler, 'Straggler');
-setDisplayName(SpeculationWaste, 'SpeculationWaste');
-setDisplayName(ColdStart, 'ColdStart');
-setDisplayName(MemoryUtilization, 'MemoryUtilization');
-setDisplayName(ExecutorUtilization, 'ExecutorUtilization');
-setDisplayName(RightSizing, 'RightSizing');
-setDisplayName(CachingOpportunity, 'CachingOpportunity');
-setDisplayName(JobFailures, 'JobFailures');
-setDisplayName(ConfigAudit, 'ConfigAudit');
-setDisplayName(DuplicatePlanSubtree, 'DuplicatePlanSubtree');
-setDisplayName(PythonUdf, 'PythonUdf');
-setDisplayName(SmallFiles, 'SmallFiles');
-setDisplayName(MergeRewrite, 'MergeRewrite');
-setDisplayName(UnprunedScan, 'UnprunedScan');
-setDisplayName(NestedLoopJoin, 'NestedLoopJoin');
-setDisplayName(JoinKeyCast, 'JoinKeyCast');
-setDisplayName(UnderBroadcast, 'UnderBroadcast');
-setDisplayName(OverBroadcast, 'OverBroadcast');
-setDisplayName(CacheUtilization, 'CacheUtilization');
-setDisplayName(CoreUsageArea, 'CoreUsageArea');
-setDisplayName(AutoscalingChurn, 'AutoscalingChurn');
-setDisplayName(IncompleteRun, 'IncompleteRun');
+
+const Skew = lazyWidget('Skew', () => import('./widgets/Skew'));
+const StageShape = lazyWidget('StageShape', () => import('./widgets/StageShape'));
+const TinyTask = lazyWidget('TinyTask', () => import('./widgets/TinyTask'));
+const ShuffleIO = lazyWidget('ShuffleIO', () => import('./widgets/ShuffleIO'));
+const PartitionSizing = lazyWidget('PartitionSizing', () => import('./widgets/PartitionSizing'));
+const Spill = lazyWidget('Spill', () => import('./widgets/Spill'));
+const GcPressure = lazyWidget('GcPressure', () => import('./widgets/GcPressure'));
+const StageFailed = lazyWidget('StageFailed', () => import('./widgets/StageFailed'));
+const TaskFailures = lazyWidget('TaskFailures', () => import('./widgets/TaskFailures'));
+const RetryWaste = lazyWidget('RetryWaste', () => import('./widgets/RetryWaste'));
+const SlowHost = lazyWidget('SlowHost', () => import('./widgets/SlowHost'));
+const StageSlowness = lazyWidget('StageSlowness', () => import('./widgets/StageSlowness'));
+const Straggler = lazyWidget('Straggler', () => import('./widgets/Straggler'));
+const SpeculationWaste = lazyWidget('SpeculationWaste', () => import('./widgets/SpeculationWaste'));
+const ColdStart = lazyWidget('ColdStart', () => import('./widgets/ColdStart'));
+const MemoryUtilization = lazyWidget('MemoryUtilization', () => import('./widgets/MemoryUtilization'));
+const ExecutorUtilization = lazyWidget('ExecutorUtilization', () => import('./widgets/ExecutorUtilization'));
+const RightSizing = lazyWidget('RightSizing', () => import('./widgets/RightSizing'));
+const CachingOpportunity = lazyWidget('CachingOpportunity', () => import('./widgets/CachingOpportunity'));
+const JobFailures = lazyWidget('JobFailures', () => import('./widgets/JobFailures'));
+const ConfigAudit = lazyWidget('ConfigAudit', () => import('./widgets/ConfigAudit'));
+const DuplicatePlanSubtree = lazyWidget('DuplicatePlanSubtree', () => import('./widgets/DuplicatePlanSubtree'));
+const PythonUdf = lazyWidget('PythonUdf', () => import('./widgets/PythonUdf'));
+const MergeRewrite = lazyWidget('MergeRewrite', () => import('./widgets/MergeRewrite'));
+const UnprunedScan = lazyWidget('UnprunedScan', () => import('./widgets/UnprunedScan'));
+const JoinKeyCast = lazyWidget('JoinKeyCast', () => import('./widgets/JoinKeyCast'));
+const NestedLoopJoin = lazyWidget('NestedLoopJoin', () => import('./widgets/NestedLoopJoin'));
+const SmallFiles = lazyWidget('SmallFiles', () => import('./widgets/SmallFiles'));
+const UnderBroadcast = lazyWidget('UnderBroadcast', () => import('./widgets/UnderBroadcast'));
+const OverBroadcast = lazyWidget('OverBroadcast', () => import('./widgets/OverBroadcast'));
+const CacheUtilization = lazyWidget('CacheUtilization', () => import('./widgets/CacheUtilization'));
+const CoreUsageArea = lazyWidget('CoreUsageArea', () => import('./widgets/CoreUsageArea'));
+const AutoscalingChurn = lazyWidget('AutoscalingChurn', () => import('./widgets/AutoscalingChurn'));
+const IncompleteRun = lazyWidget('IncompleteRun', () => import('./widgets/IncompleteRun'));
 
 /** Starts loading every widget chunk, so a dashboard opened after a parse shows its widgets without
  * a Suspense fallback (see `warmLazy`). */
@@ -285,19 +254,12 @@ export function registryTypes(): string[] {
   return Object.keys(REGISTRY);
 }
 
-// The one single-purpose reference widget that always mounts from
-// `appModel`, independent of finding state, in the Full app report tab (Core
-// Usage by Locality; see docs-site's widget-rendering/reference-section.md). `region:
-// 'reference'` marks the candidate set; `cacheUtilization`,
-// `memoryUtilization`, and `utilization` are `reference` too (same
-// single-purpose shape) but are excluded by product decision: a clean run
-// on any of them isn't evidence worth surfacing unconditionally, so each
-// collapses to a `CleanCheckRow` like an ordinary action-region type instead.
-const ALWAYS_MOUNTED_EXCEPTIONS = new Set(['cacheUtilization', 'memoryUtilization', 'utilization']);
-
+// The widget that always mounts from `appModel`, independent of finding state, in the Full app
+// report tab (Core Usage by Locality; see docs-site's widget-rendering/reference-section.md): the
+// widget's model says so with `alwaysMounted`. The other reference-region widgets collapse to a
+// `CleanCheckRow` on a clean run like an ordinary action-region type.
 export function isAlwaysMountedType(type: string): boolean {
-  const entry = REGISTRY[type];
-  return entry !== undefined && entry.region === 'reference' && !ALWAYS_MOUNTED_EXCEPTIONS.has(type);
+  return REGISTRY[type]?.model.alwaysMounted === true;
 }
 
 export interface AlwaysMountedWidget {

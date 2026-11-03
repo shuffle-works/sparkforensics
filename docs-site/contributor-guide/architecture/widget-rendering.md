@@ -154,10 +154,10 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    Basic view adds a collapsed "New to Spark tuning?" primer. An idle-capacity step (`utilization`, or
    `memoryUtilization`'s `idleCores` variant only, never its heap variants)
    titles the verdict only when it ranks first; otherwise an idle share of
-   at least `IDLE_NOTABLE_PCT` (40%) adds one summary sentence. The
-   idle share (`verdictIdlePct`) is the figure that idle-capacity step itself
-   reports, falling back to the Scorecard's Unused core time figure only when no step
-   carries one, so the title and the step never disagree. Each step's
+   at least the notable idle share adds one summary sentence. That threshold comes from
+   `idleGrading` (`packages/core/src/idle-grading.ts`), which derives it from the `utilization`
+   detector's `minUtil`, so a `--thresholds` override moves the finding, the verdict note and
+   the Scorecard flag together. The idle share is the efficiency model's `wastagePct`. Each step's
    savings figure is followed by what it counts (`savingsMeaning` in
    `packages/core/src/impact-format.ts`: run time for a wall-clock figure, otherwise the
    resource its `rawWaste` unit measures), and **Copy next steps** copies the

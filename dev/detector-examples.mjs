@@ -23,6 +23,7 @@ import { analyzeRun } from '../packages/core/src/analyzed-run.ts';
 import { encodeCollections } from '../packages/core/src/export-data.ts';
 import { buildHtmlExportData } from '../packages/core/src/html-export.ts';
 import { interpretRun } from '../packages/core/src/run-interpretation.ts';
+import { bandRank, IMPACT_BANDS } from '../packages/core/src/impact-band-order.ts';
 import { gzipSync, strToU8 } from '../packages/core/src/vendor/fflate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -34,7 +35,6 @@ export const SNAPSHOT_FILE = join(HERE, 'corpus-snapshot.json');
 export const EXAMPLES_FILE = join(HERE, 'detector-examples.json');
 export const RUNS_FILE = join(HERE, 'detector-example-runs.json');
 
-const BAND_RANK = { critical: 0, warning: 1, info: 2 };
 const CONFIDENCE_RANK = { high: 0, medium: 1, low: 2 };
 // What a docs page needs to find the example finding in its run; everything else in the CLI
 // output is dropped.
@@ -62,7 +62,7 @@ function sizeOf(path) {
 // redacted: the docs widgets show the names and values the dashboard shows for the same log.
 function analyze(path) {
   const r = spawnSync(process.execPath, [
-    CLI, path, '--impact', 'critical,warning,info', '--format', 'json',
+    CLI, path, '--impact', IMPACT_BANDS.join(','), '--format', 'json',
   ], { encoding: 'utf8', maxBuffer: 1 << 30 });
   // Exit 3 is an inconclusive run (no ApplicationEnd): the report is still complete.
   if (r.status !== 0 && r.status !== 3) return null;
@@ -70,7 +70,7 @@ function analyze(path) {
 }
 
 function better(a, b) {
-  const key = (c) => [BAND_RANK[c.finding.impactBand] ?? 9, CONFIDENCE_RANK[c.finding.confidence] ?? 9, c.bytes, c.log];
+  const key = (c) => [bandRank(c.finding.impactBand), CONFIDENCE_RANK[c.finding.confidence] ?? 9, c.bytes, c.log];
   const ka = key(a); const kb = key(b);
   for (let i = 0; i < ka.length; i++) {
     if (ka[i] < kb[i]) return true;

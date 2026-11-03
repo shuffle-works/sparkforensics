@@ -9,9 +9,8 @@ import type { ThresholdOverrides } from './detectors.ts';
 import { totalExecutorCpuMs, totalOutputRows, withEarlierAttempts, type AttemptRow } from './run-totals.ts';
 import { isPythonStage } from './python-stage.ts';
 import { stageIdentity } from './run-comparison.ts';
-import { hasCompleteApplicationInterval } from './scorecard-estimates.ts';
+import { runTiming } from './run-timing.ts';
 import { effectiveThresholds } from './threshold-overrides.ts';
-import { computeWallClock } from './wall-clock.ts';
 import type { AppModel, Stage } from './types.ts';
 
 export const METRICS_SCHEMA_VERSION = 1;
@@ -168,11 +167,12 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
   }
 
   const attempts = stageAttempts(stageList);
+  const timing = runTiming(appModel.app, appModel.stages);
   return {
     schemaVersion: METRICS_SCHEMA_VERSION,
-    runComplete: appModel.app?.endTime != null,
+    runComplete: !timing.incomplete,
     time: {
-      wallClockMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
+      wallClockMs: timing.durationMs,
       executorCpuTimeMs: all.executorCpuTimeMs,
       executorRunTimeMs: all.executorRunTimeMs,
       gcTimeMs: all.gcTimeMs,

@@ -2,18 +2,20 @@
 // stage task time or idle core time, then potential savings (failures first on a failed run). Shared by the dashboard's
 // verdict card and the CLI/MCP evidence report, so both paths name the same first step in the same words.
 import { ENTRY_BY_TYPE } from './detector-catalog.ts';
+import type { ThresholdOverrides } from './detectors.ts';
+import { computeEfficiencyModel } from './efficiency-model.ts';
+import { idleGrading } from './idle-grading.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
-import { recommendationText } from './finding-names.ts';
+import { recommendationText, trimmedRecommendation } from './finding-names.ts';
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
-import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { compareImpactBand } from './impact-band-order.ts';
 import { formatDuration, formatRawWaste, readsAsZero } from './units.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { isEligible, rankCostMs } from './recommendation-rollup.ts';
+import { isActionable, isEligible, rankCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
-import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
-import { computeWallClock } from './wall-clock.ts';
+import { runTiming } from './run-timing.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import type { AppModel, Finding } from './types.ts';
 
@@ -52,8 +54,13 @@ function potentialSavingsMs(finding: Finding): number | null {
 
 /** True for a finding the verdict can route to: a known display type with a recommendation. */
 export function isRankable(finding: Finding): boolean {
-  const recommendation = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
-  return DISPLAY_INDEX.has(finding.type) && recommendation.length > 0;
+  return DISPLAY_INDEX.has(finding.type) && trimmedRecommendation(finding).length > 0;
+}
+
+/** The tie-break every ranking ends with: impact band, then widget display order. */
+export function compareFindingRank(left: Finding, right: Finding): number {
+  return compareImpactBand(left.impactBand, right.impactBand)
+    || (DISPLAY_INDEX.get(left.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.type) ?? Number.MAX_SAFE_INTEGER);
 }
 
 /** Every rankable finding, best first. By cluster time (`rankCostMs`: the task time of the finding's stage, or the
@@ -71,11 +78,7 @@ export function rankBySavings(findings: Finding[]): Finding[] {
     const rightSavings = potentialSavingsMs(right.finding);
     if (leftSavings !== null && rightSavings !== null && leftSavings !== rightSavings) return rightSavings - leftSavings;
     if ((leftSavings !== null) !== (rightSavings !== null)) return leftSavings !== null ? -1 : 1;
-    return (
-      (IMPACT_BAND_ORDER[left.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.finding.impactBand] ?? 9)
-      || (DISPLAY_INDEX.get(left.finding.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.finding.type) ?? Number.MAX_SAFE_INTEGER)
-      || left.index - right.index
-    );
+    return compareFindingRank(left.finding, right.finding) || left.index - right.index;
   });
   return candidates.map(({ finding }) => finding);
 }
@@ -99,10 +102,7 @@ export function buildCostLane(findings: Finding[]): CostLaneEntry[] {
     .filter((entry): entry is { finding: Finding; index: number; coreTimeMs: number } =>
       isRankable(entry.finding) && typeof entry.coreTimeMs === 'number' && Number.isFinite(entry.coreTimeMs) && entry.coreTimeMs > 0);
   entries.sort((left, right) => (
-    right.coreTimeMs - left.coreTimeMs
-    || (IMPACT_BAND_ORDER[left.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.finding.impactBand] ?? 9)
-    || (DISPLAY_INDEX.get(left.finding.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.finding.type) ?? Number.MAX_SAFE_INTEGER)
-    || left.index - right.index
+    right.coreTimeMs - left.coreTimeMs || compareFindingRank(left.finding, right.finding) || left.index - right.index
   ));
   return entries
     .map(({ finding, coreTimeMs }) => ({ finding, coreTimeMs, figure: formatRawWaste({ value: coreTimeMs, unit: 'coreMs' }) }))
@@ -196,29 +196,8 @@ function isIdleCapacityFinding(finding: Finding): boolean {
   return finding.type === 'utilization' || (finding.type === 'memoryUtilization' && finding.variant === 'idleCores');
 }
 
-/** Idle share at which the verdict notes, in its summary, that the cluster
- * may be larger than the job needs. It never reorders the steps. */
-export const IDLE_NOTABLE_PCT = 40;
-
 export function isIdleCapacityStep(step: NextStep): boolean {
   return isIdleCapacityFinding(step.lead);
-}
-
-/** The idle share an idle-capacity finding itself reports: idleCores carries
- * the idle rate, utilization the busy rate. Null for any other finding. */
-function reportedIdlePct(finding: Finding): number | null {
-  if (typeof finding.value !== 'number') return null;
-  if (finding.type === 'memoryUtilization' && finding.variant === 'idleCores') return finding.value;
-  if (finding.type === 'utilization') return 100 - finding.value;
-  return null;
-}
-
-/** The run's idle share as the verdict states it: the figure the top-ranked
- * idle-capacity step reports, so the verdict never disagrees with that step,
- * or `fallbackPct` (the Scorecard's Unused core time) when no step reports one. */
-export function verdictIdlePct(steps: NextStep[], fallbackPct: number | null): number | null {
-  const idleStep = steps.find(isIdleCapacityStep);
-  return (idleStep ? reportedIdlePct(idleStep.lead) : null) ?? fallbackPct;
 }
 
 function plural(count: number, noun: string): string {
@@ -229,10 +208,16 @@ function plural(count: number, noun: string): string {
 export interface RunFacts {
   /** Wall-clock of the whole run, or null with no complete timing interval. */
   runMs: number | null;
-  /** Allocated executor capacity that ran no task (`verdictIdlePct`). */
+  /** Allocated executor capacity that ran no task: the efficiency model's idle share, the figure
+   * the idle-capacity findings and the Scorecard state. */
   idlePct: number | null;
+  /** Idle percentage from which the verdict notes that the cluster may be larger than the job
+   * needs (`idleGrading`). It never reorders the steps. */
+  idleNotablePct: number;
   /** The log has no end-of-run record, so it covers only part of the run. */
   incomplete: boolean;
+  /** Info findings: context the verdict never counts as something to act on. */
+  infoNotes: number;
   /** No finding at all, ranked or not, no failed job, and nothing the log
    * lacked to run a check: the only state the verdict calls clean. */
   clean: boolean;
@@ -301,7 +286,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
   }
   if (eligible.length === 0) {
     if (failedJobs > 0) return sentences;
-    if (facts.clean) sentences.push('Every check passed for this run.');
+    if (facts.clean && facts.infoNotes === 0) sentences.push('Every check passed for this run.');
   } else if (steps.length === 0) {
     sentences.push('They are listed by impact under Findings.');
   } else {
@@ -319,7 +304,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
     sentences.push('The log has no end-of-run record, so these figures cover only the part of the run it captured.');
   }
   const leadIsIdle = steps.length > 0 && isIdleCapacityStep(steps[0]);
-  if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= IDLE_NOTABLE_PCT) {
+  if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= facts.idleNotablePct) {
     sentences.push(
       steps.some(isIdleCapacityStep)
         ? `${facts.idlePct}% of the executor capacity sat idle, so the cluster may be larger than this job needs.`
@@ -381,7 +366,8 @@ export function stepCopyRecommendation(step: NextStep, outcome: RunOutcome): str
 }
 
 /** Everything the verdict card shows, computed once for a run. `eligible` is what the verdict
- * counts and ranks: the rollup-eligible findings of a known display type. */
+ * counts and ranks: the rollup-eligible, non-info findings of a known display type. The cost lane
+ * also lists info-band findings that carry a measured core-time cost. */
 export interface RunVerdictModel {
   eligible: Finding[];
   outcome: RunOutcome;
@@ -400,18 +386,29 @@ export interface RunVerdictModel {
   idle: RunIdleLine | null;
 }
 
-export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): RunVerdictModel {
-  const eligible = allFindings.filter((finding) => isEligible(finding) && DISPLAY_INDEX.has(finding.type));
+export function buildRunVerdict(appModel: AppModel, allFindings: Finding[], thresholds?: ThresholdOverrides): RunVerdictModel {
+  const rankable = allFindings.filter((finding) => isEligible(finding) && DISPLAY_INDEX.has(finding.type));
+  // Info notes are context, never something to act on: no step, count or lead comes from one.
+  const eligible = rankable.filter(isActionable);
+  const notes = allFindings.filter((finding) => isEligible(finding) && finding.impactBand === 'info');
   const outcome = summarizeRunOutcome(appModel.jobs, allFindings);
   const steps = buildNextSteps(eligible, outcome.failedJobs > 0 ? { failedJobStageIds: outcome.failedJobStageIds } : {});
+  const timing = runTiming(appModel.app, appModel.stages);
   const facts: RunFacts = {
-    runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
-    idlePct: verdictIdlePct(steps, getScorecardEstimates(appModel).wastage.value),
-    incomplete: allFindings.some((finding) => finding.type === 'incompleteRun'),
-    clean: isCleanRun(appModel, allFindings),
+    runMs: timing.durationMs,
+    idlePct: appModel.runAggregates
+      ? computeEfficiencyModel({
+        app: appModel.app, stages: appModel.stages, executorsAdded: appModel.executors.added,
+        executorsRemoved: appModel.executors.removed, runAggregates: appModel.runAggregates,
+      }).wastagePct
+      : null,
+    idleNotablePct: idleGrading(thresholds).notablePct,
+    incomplete: timing.incomplete,
+    clean: isCleanRun(appModel, allFindings.filter((finding) => !notes.includes(finding))),
+    infoNotes: notes.length,
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),
-    uncounted: allFindings.length - eligible.length,
+    uncounted: allFindings.length - notes.length - eligible.length,
   };
   const title = verdictTitle(eligible, steps, facts);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
@@ -426,7 +423,7 @@ export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): Run
     : null;
   return {
     eligible, outcome, steps, facts, title, summary: verdictSummary(eligible, steps, facts), shown, remaining, copyText,
-    costLane: buildCostLane(eligible).slice(0, COST_LANE_LIMIT),
+    costLane: buildCostLane(rankable).slice(0, COST_LANE_LIMIT),
     idle: buildRunIdleLine(appModel),
   };
 }

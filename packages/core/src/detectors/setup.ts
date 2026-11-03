@@ -1,4 +1,5 @@
 import { noWasteModel } from '../impact-model.ts';
+import { runTiming } from '../run-timing.ts';
 import { increaseConf, setConf } from '../remediation.ts';
 import { effectiveSparkConf } from '../spark-conf.ts';
 import type { Finding } from '../types.ts';
@@ -14,11 +15,11 @@ const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an Applicat
 export const incompleteRunDetector = defineAppDetector({
   // No docAnchor: the upstream spark-tuning-reference docs have no section for this
   // tool-specific "capture stopped early" signal.
-  type: 'incompleteRun', order: 5, fixEffort: 'code', version: 1,
+  type: 'incompleteRun', order: 5, bandPolicy: 'own', fixEffort: 'code', version: 1,
   emits: ['incompleteRun'],
   thresholds: {},
   detect(ctx): Finding | null {
-    if (!ctx.app || ctx.app.startTime == null || ctx.app.endTime != null) return null;
+    if (!runTiming(ctx.app).incomplete) return null;
     return {
       type: 'incompleteRun', stageId: null, impactBand: 'warning',
       metric: 'applicationEnd', valueText: 'missing',
@@ -29,7 +30,7 @@ export const incompleteRunDetector = defineAppDetector({
 });
 
 export const configAuditAutoscaleBoundsDetector = defineConfigDetector({
-  type: 'configAudit', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
+  type: 'configAudit', order: 121, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
   emits: ['configAudit'],
   docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
   detect(target): Finding | null {
@@ -53,7 +54,7 @@ export const configAuditAutoscaleBoundsDetector = defineConfigDetector({
 });
 
 export const configAuditSerializerDetector = defineConfigDetector({
-  type: 'configAudit', order: 122, fixEffort: 'config', version: 1, inScorecard: false,
+  type: 'configAudit', order: 122, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
   emits: ['configAudit'],
   docAnchor: '#config-serializer', thresholds: {}, property: 'spark.serializer',
   detect(target): Finding | null {
@@ -79,7 +80,7 @@ export const configAuditSerializerDetector = defineConfigDetector({
 });
 
 export const configAuditMemoryOverheadDetector = defineConfigDetector({
-  type: 'configAudit', order: 123, fixEffort: 'config', version: 1, inScorecard: false,
+  type: 'configAudit', order: 123, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
   emits: ['configAudit'],
   docAnchor: '#config-memory-overhead', thresholds: { floorMB: 384, floorPct: 0.1 }, property: 'spark.executor.memoryOverhead',
   detect(target, thresholds): Finding | null {

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
+import { MCP_TOOL_NAMES } from '../../core/src/mcp-server-factory.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -37,9 +38,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
-    ]);
+    expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort());
   }, 30000);
 
   it('reports its package version in the handshake and as the generator of a diagnosis', async () => {

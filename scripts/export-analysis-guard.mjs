@@ -18,7 +18,7 @@ export const ALLOWED_EXPORT_CORE_MODULES = [
     'finding-names', 'finding-presentation', 'finding-tag-help', 'findings-of-type',
     'impact-band-order', 'intervals', 'plan-dot', 'plan-duration-attribution', 'plan-graph-model', 'plan-node-detail',
     'plan-summary', 'plan-tree-walk',
-    'recommendation-rollup', 'run-payload', 'run-serialization', 'scaling-sim', 'sql-stages', 'task-failure',
+    'recommendation-rollup', 'run-payload', 'run-serialization', 'run-timing', 'scaling-sim', 'sql-stages', 'task-failure',
     'text-format', 'units', 'view-model',
   ].map((name) => `packages/core/src/${name}.ts`),
   'packages/core/src/vendor/fflate.js',

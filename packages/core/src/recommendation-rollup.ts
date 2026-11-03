@@ -1,7 +1,7 @@
 // Explicit .ts extensions: plain Node's ESM resolver (the runtime CLI/MCP path
 // runs under) requires the exact specifier, unlike a bundler.
 import { mergeIntervals } from './intervals.ts';
-import { worstImpactBand, IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { worstImpactBand, compareImpactBand } from './impact-band-order.ts';
 import { asCoreTime, formatRawWaste, formatWallClockRange, readsAsZero } from './units.ts';
 import type { Finding, RawWasteUnit, ImpactBand } from './types.ts';
 
@@ -131,9 +131,7 @@ export function buildRecommendationRollup(
     if (a.kind === 'time' && b.kind === 'time') return b.recoverableMsHigh - a.recoverableMsHigh;
     // resource/count groups carry no shared magnitude to rank by (comparing
     // incompatible units is forbidden); break ties by worst impact band instead.
-    const aImpactBand = IMPACT_BAND_ORDER[worstImpactBand(a.findings) ?? 'info'] ?? 9;
-    const bImpactBand = IMPACT_BAND_ORDER[worstImpactBand(b.findings) ?? 'info'] ?? 9;
-    return aImpactBand - bImpactBand;
+    return compareImpactBand(worstImpactBand(a.findings), worstImpactBand(b.findings));
   });
 }
 
@@ -191,6 +189,12 @@ export function isEligible(finding: Finding): boolean {
   return !isCaveat(finding);
 }
 
+/** Something to act on: eligible, and not an info note. Info notes are context, never counted as
+ * work by the verdict, the report summary or the CLI. */
+export function isActionable(finding: Finding): boolean {
+  return isEligible(finding) && finding.impactBand !== 'info';
+}
+
 /** Ranking tier for a single finding: time-based findings (a real `wallClock`
  * claim) are the only ones whose magnitudes share a unit, so they are the
  * only ones ranked numerically. `resourceOnly` findings carry `rawWaste` in
@@ -222,12 +226,12 @@ export function rankFindings(findings: Finding[]): Finding[] {
     const tierDelta = tierOf(a) - tierOf(b);
     if (tierDelta !== 0) return tierDelta;
     if (tierOf(a) === TIER_TIME) {
-      // Same unit (ms) on both sides. Rank on .high, matching deriveImpactBand
+      // Same unit (ms) on both sides. Rank on .high, matching gradeFinding
       // and triage-target.ts, so ordering, badge color, and the "click to
       // investigate" target all agree on the same figure.
       return b.impactEstimate!.wallClock!.high - a.impactEstimate!.wallClock!.high;
     }
-    return (IMPACT_BAND_ORDER[a.impactBand] ?? 9) - (IMPACT_BAND_ORDER[b.impactBand] ?? 9);
+    return compareImpactBand(a.impactBand, b.impactBand);
   });
 }
 

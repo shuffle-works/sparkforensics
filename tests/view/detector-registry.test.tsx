@@ -2,19 +2,10 @@
 import { test, expect } from 'vitest';
 import { FINDING_DISPLAY_ORDER, REFERENCE_DISPLAY_TYPES, detectorInfoByType } from '@sparkforensics/core/analysis';
 import { REGISTRY, orderedWidgets, isAlwaysMountedType, alwaysMountedWidgets } from '../../src/view/detector-registry';
-import { FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
 
 test('registry owns stable widget identity', () => {
   expect(REGISTRY.skew).toMatchObject({ widgetId: 'skew', region: 'action', routeable: true });
   expect(REGISTRY.underBroadcast).toMatchObject({ widgetId: 'under-broadcast', region: 'action', routeable: true });
-});
-
-test('REGISTRY regions match the presentation table: reference only where it says so', () => {
-  const reference = Object.entries(FINDING_PRESENTATION).filter(([, row]) => row.region === 'reference').map(([type]) => type);
-  expect(reference.sort()).toEqual(['cacheUtilization', 'coreLocality', 'memoryUtilization', 'utilization']);
-  for (const [type, row] of Object.entries(FINDING_PRESENTATION)) {
-    expect(REGISTRY[type].region, type).toBe(row.region ?? 'action');
-  }
 });
 
 test('orderedWidgets never returns the same component twice', () => {

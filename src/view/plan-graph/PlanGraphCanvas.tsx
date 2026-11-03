@@ -15,7 +15,7 @@ import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
 import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
 import { PlanGraphStageGroupNode, PlanGraphUnmatchedStageNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
-import { formatDuration, findingStageIds } from '@sparkforensics/core/view-model';
+import { formatDuration, findingsForStage } from '@sparkforensics/core/view-model';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { orderByImpact } from '@/view/impact-sort';
 import { useInterpretation } from '@/view/interpretation';
@@ -173,10 +173,6 @@ function useResizeTick() {
 }
 
 const NO_FINDINGS: Finding[] = [];
-
-function findingsForStage(findings: Finding[], stageId: StageId): Finding[] {
-  return findings.filter((finding) => finding.stageId === stageId || findingStageIds(finding)?.includes(stageId));
-}
 
 export function PlanGraphCanvas({
   model, showMiniMap, findings = NO_FINDINGS, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage,

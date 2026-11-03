@@ -21,7 +21,7 @@ import { selectAppModel, selectCatalog, store, useStore } from '@/store/store';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
-import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER, findingStageIds, stageIdsForSqlExec } from '@sparkforensics/core/view-model';
+import { worstImpactBand, formatDuration, compareImpactBand, stagesOfFinding, stageIdsForSqlExec } from '@sparkforensics/core/view-model';
 import { cn } from '@/lib/utils';
 import type { RecentFileEntry } from '@/view/RecentList';
 import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/core/types';
@@ -49,8 +49,7 @@ function chipShare(worst: ImpactBand | undefined, inBand: Finding[], app: AppMod
 }
 
 function findingMatchesExecutionStage(finding: Finding, stageIds: readonly StageId[]): boolean {
-  if (finding.stageId != null && stageIds.includes(finding.stageId)) return true;
-  return findingStageIds(finding)?.some((stageId) => stageIds.includes(stageId)) ?? false;
+  return stagesOfFinding(finding).some((stageId) => stageIds.includes(stageId));
 }
 
 /** Every SQL execution eligible for the Topbar's "open the graph view
@@ -91,10 +90,7 @@ function eligibleGraphExecutions(appModel: AppModel, catalog: Finding[]): GraphV
   // first, so a long list doesn't bury a critical finding below unflagged
   // ones. Unflagged entries (impact band null) always sort last.
   out.sort((a, b) => {
-    const rankA = a.impactBand ? IMPACT_BAND_ORDER[a.impactBand] : Infinity;
-    const rankB = b.impactBand ? IMPACT_BAND_ORDER[b.impactBand] : Infinity;
-    if (rankA !== rankB) return rankA - rankB;
-    return a.executionId - b.executionId;
+    return compareImpactBand(a.impactBand, b.impactBand) || a.executionId - b.executionId;
   });
   return out;
 }

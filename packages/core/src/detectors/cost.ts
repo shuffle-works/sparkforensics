@@ -1,6 +1,8 @@
 import { formatBytes, formatDuration, MS_PER_CORE_HOUR } from '../units.ts';
 import { shareLabel } from '../finding-presentation.ts';
-import { allocatedCoreMs, computeAllocation } from '../allocation.ts';
+import { computeAllocation } from '../allocation.ts';
+import { computeEfficiencyModel } from '../efficiency-model.ts';
+import { runTiming } from '../run-timing.ts';
 import { executorHeapPeaks } from '../executor-peaks.ts';
 import { computePeakConcurrentCores } from '../core-count.ts';
 import { smallestCoresWithinTolerance } from '../scaling-sim.ts';
@@ -88,30 +90,30 @@ const LOCALITY_WAIT_KEY = 'spark.locality.wait';
 const LOCAL_TIERS = new Set(['PROCESS_LOCAL', 'NODE_LOCAL']);
 
 export const utilizationDetector = defineAppDetector({
-  type: 'utilization', order: 100, fixEffort: 'config', version: 1,
+  type: 'utilization', order: 100, bandPolicy: 'own', fixEffort: 'config', version: 1,
   emits: ['utilization'],
   docAnchor: '#bottleneck-utilization',
-  thresholds: { minUtil: 0.60 },
+  // Idle share grades: the finding fires under `minUtil` busy; the verdict note and the Scorecard
+  // flag read idle at `1 - minUtil` as notable and at `1 - criticalUtil` as critical.
+  thresholds: { minUtil: 0.60, criticalUtil: 0.30 },
   detect(ctx, thresholds): Finding | null {
     const { app, executorsAdded, executorsRemoved, runAggregates } = ctx;
-    if (!app || executorsAdded.length === 0 || app.startTime == null || app.endTime == null) return null;
-    const appDuration = app.endTime - app.startTime;
-    if (appDuration <= 0) return null;
+    const appDuration = runTiming(app).durationMs;
+    if (!app || executorsAdded.length === 0 || appDuration == null) return null;
     // Capacity is what the run was allocated (cores x time alive, the figure behind
     // metrics.allocation.coreHours), not peak concurrent cores x the whole run: under dynamic
     // allocation or late-joining executors that is more than was ever held, and the idle figure
     // would exceed the allocation. Null without executor cores.
-    const capacityCoreMs = allocatedCoreMs({ app, stages: ctx.stages, executors: { added: executorsAdded, removed: executorsRemoved } });
-    if (capacityCoreMs == null) return null;
+    const { allocatedCoreMs: capacityCoreMs, utilization } = computeEfficiencyModel({
+      app, stages: ctx.stages, executorsAdded, executorsRemoved, runAggregates,
+    });
+    if (capacityCoreMs == null || utilization == null) return null;
     // Peak concurrent cores (not computeTotalCores, a cumulative sum that double-counts a
     // churned-through executor against its replacement): the cluster size the finding reports.
     const totalCores = computePeakConcurrentCores(app, executorsAdded, executorsRemoved);
-    // Busy core-time (from the whole-run core-time-series, same signal memoryUtilization's
-    // idleCores variant already uses), not executor lifetime: an executor that exists for the
-    // whole run but sits fully idle must not score as 100% used. Missing runAggregates (older
-    // callers, synthetic fixtures) reads as 0 busy time.
-    const busyCoreMs = runAggregates?.busyCoreMs ?? 0;
-    const utilization = busyCoreMs / capacityCoreMs;
+    // Utilization is busy core-time (from the whole-run core-time-series) over the allocation, not
+    // executor lifetime: an executor that exists for the whole run but sits fully idle must not
+    // score as 100% used. Missing runAggregates (older callers, synthetic fixtures) reads as 0 busy time.
     if (utilization >= thresholds.minUtil) return null;
 
     // CPU-time-based utilization: metric only, no threshold.
@@ -155,14 +157,14 @@ export const rightSizingDetector = defineAppDetector({
   // modeled stage time stays within tolerance of the observed one. `utilization` measures idle
   // allocation; this names the size the stages' own parallelism needs. The model is idealized, so
   // the finding is always low confidence and silent when the model misses the observed run.
-  type: 'rightSizing', order: 101, fixEffort: 'config', version: 1,
+  type: 'rightSizing', order: 101, bandPolicy: 'own', fixEffort: 'config', version: 1,
   emits: ['rightSizing'],
   docAnchor: '#bottleneck-utilization',
   thresholds: { tolerancePct: 10, maxCoreShare: 0.75, minBaselineCores: 8, maxModelErrorPct: 20 },
   detect(ctx, thresholds): Finding | null {
     const { app, executorsAdded, executorsRemoved, runAggregates, stages } = ctx;
     const perStage = runAggregates?.perStage;
-    if (!app || !perStage || app.startTime == null || app.endTime == null) return null;
+    if (!app || !perStage || !runTiming(app).complete) return null;
     const observedCores = computePeakConcurrentCores(app, executorsAdded, executorsRemoved);
     if (observedCores < thresholds.minBaselineCores) return null;
     const observedActiveMs = computeWallClock(app, stages).stagesActive;
@@ -186,7 +188,7 @@ export const rightSizingDetector = defineAppDetector({
 });
 
 export const memoryUtilizationDetector = defineAppDetector({
-  type: 'memoryUtilization', order: 102, fixEffort: 'config', version: 1,
+  type: 'memoryUtilization', order: 102, bandPolicy: 'own', fixEffort: 'config', version: 1,
   emits: ['memoryUtilization'],
   docAnchor: '#bottleneck-memory-utilization',
   thresholds: {
@@ -197,19 +199,15 @@ export const memoryUtilizationDetector = defineAppDetector({
   detect(ctx, thresholds): Finding[] {
     const { app, executorsAdded, executorsRemoved, runAggregates, stages } = ctx;
     const out: Finding[] = [];
-    if (app?.startTime == null || app?.endTime == null) return out;
-    const appDurationMs = app.endTime - app.startTime;
-    if (appDurationMs <= 0) return out;
+    const appDurationMs = runTiming(app).durationMs;
+    if (app == null || appDurationMs == null) return out;
 
     const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
-    // Idle-cores rate.
-    const busyCoreMs = runAggregates?.busyCoreMs;
-    // Allocated core-time, as for `utilization`, so the two findings of one idle condition agree.
+    // Idle-cores rate: the same idle share `utilization` reads, so the two findings of one idle condition agree.
     const allocationInput = { app, stages, executors: { added: executorsAdded, removed: executorsRemoved } };
-    const capacityCoreMs = allocatedCoreMs(allocationInput);
-    if (busyCoreMs != null && capacityCoreMs != null) {
-      const idleRate = 1 - (busyCoreMs / capacityCoreMs);
+    const { idleShare: idleRate } = computeEfficiencyModel({ app, stages, executorsAdded, executorsRemoved, runAggregates });
+    if (runAggregates?.busyCoreMs != null && idleRate != null) {
       if (idleRate > thresholds.idleCoreWarn) {
         const value = Math.round(idleRate * 100);
         const { memoryGbHours } = computeAllocation(allocationInput);
@@ -338,7 +336,7 @@ export const cacheUtilizationDetector = defineAppDetector({
   // sizes come from SparkListenerBlockUpdated when the log has it, else from StageSubmitted's
   // RDD Info (0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); with neither, on
   // Spark 2.3+ with logBlockUpdates off, a storageUnobserved caveat replaces them.
-  type: 'cacheUtilization', order: 103, fixEffort: 'code', version: 2,
+  type: 'cacheUtilization', order: 103, bandPolicy: 'own', fixEffort: 'code', version: 2,
   emits: ['cacheUtilization'],
   docAnchor: '#bottleneck-cache-utilization',
   thresholds: {
@@ -409,7 +407,7 @@ export const coreLocalityDetector = defineAppDetector({
   // Non-local task ratio across stage.localityStats (RACK_LOCAL + ANY vs all tasks), the other
   // half of the "Wasted Cores Ratio" (idle-core half is memoryUtilization's idleCores).
   // NO_PREF stays in the denominator only: shuffle-read stages legitimately report it.
-  type: 'coreLocality', order: 103, fixEffort: 'config', version: 1,
+  type: 'coreLocality', order: 103, bandPolicy: 'own', fixEffort: 'config', version: 1,
   emits: ['coreLocality'],
   docAnchor: '#bottleneck-core-locality',
   thresholds: { minTasks: 50, warnRatio: 0.15, critRatio: 0.35 },
@@ -456,13 +454,13 @@ export const autoscalingChurnDetector = defineAppDetector({
   // Short-lived executors: stood up and torn down before doing useful work (wasteful
   // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
   // measures lifetime against a threshold instead of aggregate active-time.
-  type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 2,
+  type: 'autoscalingChurn', order: 103, bandPolicy: 'own', fixEffort: 'config', version: 2,
   emits: ['autoscalingChurn'],
   docAnchor: '#bottleneck-autoscaling-churn',
   thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
   detect(ctx, thresholds): Finding | null {
     const { app, executorsAdded, executorsRemoved } = ctx;
-    if (!app || executorsAdded.length === 0 || app.endTime == null) return null;
+    if (!app || executorsAdded.length === 0 || !runTiming(app).complete) return null;
 
     const removedAt = new Map<string, number>();
     for (const ev of executorsRemoved) removedAt.set(ev.executorId, ev.timestamp);
@@ -514,7 +512,7 @@ export const autoscalingChurnDetector = defineAppDetector({
 export const cachingOpportunityDetector = defineAppDetector({
   // Cross-execution relation reuse: flags an input relation scanned by two or more SQL
   // executions in one run, firing on real relation names (parquet:..., jdbc:...).
-  type: 'cachingOpportunity', order: 105, fixEffort: 'code', version: 1,
+  type: 'cachingOpportunity', order: 105, bandPolicy: 'own', fixEffort: 'code', version: 1,
   emits: ['cachingOpportunity'],
   docAnchor: '#bottleneck-caching-opportunity',
   thresholds: { minExecutions: 2 },

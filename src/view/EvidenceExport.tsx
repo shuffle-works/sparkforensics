@@ -12,8 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { selectAppModel, useStore } from '@/store/store';
-import { buildEvidenceReport } from '@sparkforensics/core/analysis';
-import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/analysis';
+import { buildEvidenceReport, buildHtmlExportData, encodeRunPayload, toFindingsFilter } from '@sparkforensics/core/analysis';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
 import { CORE_BUILD_ID, WEB_PRODUCER } from '@/build-info';
 
@@ -79,7 +78,7 @@ export function useEvidenceExport() {
 
   const downloadReport = (format: Exclude<ExportFormat, 'html'>) => {
     try {
-      const { markdown, json } = buildEvidenceReport(appModel, { redact });
+      const { markdown, json } = buildEvidenceReport(appModel, { redact, findingsFilter: toFindingsFilter() });
       const appId = (json as { summary?: { app?: { id?: string | null } } }).summary?.app?.id ?? null;
       const filename = reportFilename(appId, format, redact);
       if (format === 'json') {

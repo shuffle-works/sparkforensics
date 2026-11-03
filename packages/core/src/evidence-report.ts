@@ -8,16 +8,16 @@ import {
 } from './threshold-overrides.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import { typeTag } from './finding-presentation.ts';
-import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { bandRank, compareImpactBand } from './impact-band-order.ts';
 import { formatBytes, formatCores, formatDuration, formatWallClockRange } from './units.ts';
-import { findingName, titleCase } from './finding-names.ts';
+import { findingName, LANE_LABELS, titleCase } from './finding-names.ts';
 import { mdInline } from './markdown-inline.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { findingKeyer } from './run-comparison.ts';
-import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isCaveat, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
+import { countHiddenNotes, DEFAULT_MIN_BAND, matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
+import { buildRecommendationRollup, isActionable, isCaveat, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
@@ -308,7 +308,7 @@ function findingRow(f: Finding, key: string): FindingRow {
 // always serializes byte-for-byte identically.
 function sortFindings(rows: FindingRow[]): FindingRow[] {
   return [...rows].sort((a, b) => {
-    const s = (IMPACT_BAND_ORDER[a.impactBand] ?? 9) - (IMPACT_BAND_ORDER[b.impactBand] ?? 9);
+    const s = compareImpactBand(a.impactBand, b.impactBand);
     if (s !== 0) return s;
     if (a.type !== b.type) return a.type < b.type ? -1 : 1;
     const sa = a.stageId ?? -1;
@@ -506,11 +506,11 @@ function buildJson(
   if (unfiguredWrites) notRunChecks.push(unfiguredWrites);
   const tuned = tunedDetectors(thresholds);
   // Notes (info) are context, not work: they stay out of the count a reader acts on.
-  const actionable = allFindings.filter((f) => isEligible(f) && f.impactBand !== 'info');
+  const actionable = allFindings.filter(isActionable);
   const fullModel: AppModel = {
     ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
   };
-  const runVerdict = buildRunVerdict(fullModel, allFindings);
+  const runVerdict = buildRunVerdict(fullModel, allFindings, thresholds);
   const runOutcome = runVerdict.outcome;
 
   const result: EvidenceReportJson = {
@@ -628,7 +628,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
   if (verdict.summary.length > 0) lines.push('', mdInline(verdict.summary.join(' ')));
   if (verdict.idle) lines.push('', mdInline(verdict.idle.text));
   if (verdict.steps.length > 0) {
-    lines.push('', 'By cluster time (task-hours):', '');
+    lines.push('', `${LANE_LABELS.time}:`, '');
     verdict.steps.forEach((step, i) => {
       lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.text)}`);
       if (step.relatedTypes.length > 0) {
@@ -642,7 +642,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
     }
   }
   if (verdict.costSteps.length > 0) {
-    lines.push('', 'By core time (busy core time a fix removes):', '');
+    lines.push('', `${LANE_LABELS.cost} (busy core time a fix removes):`, '');
     verdict.costSteps.forEach((step, i) => {
       const where = step.stageId != null ? ` in Stage ${step.stageId}` : '';
       lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.actionLabel)}${where}: ${step.coreTime} of core time.`);
@@ -827,7 +827,7 @@ function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean
   // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column: it matches
   // the one stage it touches, as the dashboard's Stage details lists it.
   const stageIds = 'stageIds' in row.evidence ? row.evidence.stageIds : null;
-  if (filter.minBand && (IMPACT_BAND_ORDER[row.impactBand] ?? 9) > IMPACT_BAND_ORDER[filter.minBand]) return false;
+  if (filter.minBand && bandRank(row.impactBand) > bandRank(filter.minBand)) return false;
   return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 
@@ -836,7 +836,7 @@ function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean
 export function toFindingsFilter(
   impactBand?: string[], type?: string[], stageId?: number, minBand?: ImpactBand, maxFindings?: number,
 ): FindingsFilter {
-  return { impactBand, type, stageId, minBand: impactBand || minBand ? minBand : 'warning', maxFindings };
+  return { impactBand, type, stageId, minBand: impactBand || minBand ? minBand : DEFAULT_MIN_BAND, maxFindings };
 }
 
 /**
@@ -863,9 +863,7 @@ export function buildEvidenceReport(
   let notesHidden = 0;
   if (findingsFilter) {
     const kept = json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter));
-    notesHidden = json.findings.filter((row) => (
-      row.impactBand === 'info' && !matchesFindingsFilter(row, findingsFilter) && matchesFindingsFilter({ ...row, impactBand: 'warning' }, findingsFilter)
-    )).length;
+    notesHidden = countHiddenNotes(json.findings, (row) => matchesFindingsFilter(row, findingsFilter));
     findingsMatched = kept.length;
     json = { ...json, findings: findingsFilter.maxFindings !== undefined ? kept.slice(0, findingsFilter.maxFindings) : kept };
   }

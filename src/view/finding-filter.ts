@@ -1,8 +1,5 @@
 import type { Finding, ImpactBand } from '@sparkforensics/core/types';
-import { matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/view-model';
-
-/** Fixed impact-band vocabulary, in triage order. */
-export const IMPACT_BANDS: readonly ImpactBand[] = ['critical', 'warning', 'info'];
+import { DEFAULT_IMPACT_BANDS, IMPACT_BANDS, matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/view-model';
 
 export interface FilterSelection {
   impactBands: Set<ImpactBand>;
@@ -10,10 +7,6 @@ export interface FilterSelection {
   types: Set<string>;
   stages: Set<number>;
 }
-
-/** The bands a selection that names none lists. Info findings are notes: the selection lists them
- * once it names the info band. */
-const DEFAULT_IMPACT_BANDS: ReadonlySet<ImpactBand> = new Set<ImpactBand>(['critical', 'warning']);
 
 export function emptySelection(): FilterSelection {
   return { impactBands: new Set(), types: new Set(), stages: new Set() };
@@ -35,7 +28,7 @@ export function isEmptySelection(sel: FilterSelection): boolean {
  */
 export function matchesFilter(finding: Finding, sel: FilterSelection): boolean {
   return matchesFindingFilterCriteria({ ...finding, stageId: singleStageId(finding) }, {
-    impactBand: sel.impactBands.size > 0 ? sel.impactBands : DEFAULT_IMPACT_BANDS,
+    impactBand: sel.impactBands.size > 0 ? sel.impactBands : new Set(DEFAULT_IMPACT_BANDS),
     type: sel.types,
     stageId: sel.stages,
   });

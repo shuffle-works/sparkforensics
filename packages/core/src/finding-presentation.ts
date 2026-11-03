@@ -33,8 +33,8 @@ export interface FindingPresentation<T extends FindingType> {
    * the catalog's cards and pages. */
   pitch: string;
   /** Set for the types the dashboard shows in its reference region, below the action widgets
-   * (kept in step with REGISTRY in src/view/detector-registry.tsx by a test). Every other type
-   * renders in the action region. */
+   * (`REGISTRY` in src/view/detector-registry.tsx reads it). Every other type renders in the
+   * action region. */
   region?: 'reference';
   /** The criterion a clean check was measured against, from the emitting entry's own thresholds. */
   thresholdSummary(thresholds: ThresholdsOf<T>): string;
@@ -174,8 +174,9 @@ const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   },
 };
 
-/** One row per emitted finding type: the mapped type makes a missing or stray row a compile error. */
-export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresentation<T> } = {
+/** One row per emitted finding type: the mapped type makes a missing or stray row a compile error.
+ * `as const` keeps each row's `tag` a literal, which `FindingTag` reads. */
+const PRESENTATION_ROWS = {
   incompleteRun: {
     name: 'incomplete run',
     tag: 'INCMP',
@@ -628,7 +629,12 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Automatic broadcast is already disabled, so remove the broadcast() hint that forced it.'
       : `Check for a misapplied broadcast hint or a misconfigured ${broadcastThresholdKeyOf(f)}.`),
   },
-};
+} as const satisfies { readonly [T in FindingType]: FindingPresentation<T> };
+
+/** A finding tag the presentation table declares: `TAG_HELP` has exactly one entry for each. */
+export type FindingTag = (typeof PRESENTATION_ROWS)[FindingType]['tag'];
+
+export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresentation<T> } = PRESENTATION_ROWS;
 
 /** The presentation row for a free-form type string (report JSON, a filter, a test double). */
 export function presentationOf(type: string): FindingPresentation<FindingType> | undefined {

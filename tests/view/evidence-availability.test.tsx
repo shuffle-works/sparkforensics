@@ -137,7 +137,7 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
     // carries no evidence pill of its own (it would be circular, its
     // whole content IS the "evidence unavailable" note).
     ...runState({ appModel: readyModel(), catalog: [testFinding({
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '3', impactBand: 'info',
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '3', impactBand: 'warning',
       // The measurements behind the figure, which the panel keeps beside the line that states it.
       heap: 200 * 1024 ** 2, allocatedBytes: 1024 ** 3, executorCount: 4,
       recommendation: 'Executor 3 used only 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
@@ -180,7 +180,7 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   });
   store.setState({
     ...store.getState(),
-    ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app) }),
+    ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app).map((finding) => ({ ...finding, impactBand: 'warning' as const })) }),
   });
   renderDashboard();
 
@@ -243,7 +243,7 @@ test('Config Audit finding opens Spark-configuration evidence', async () => {
   });
   store.setState({
     ...store.getState(),
-    ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app) }),
+    ...runState({ appModel: { ...readyModel(), app }, configFindings: auditConfig(app).map((finding) => ({ ...finding, impactBand: 'warning' as const })) }),
   });
   renderDashboard();
 

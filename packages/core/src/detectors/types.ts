@@ -1,3 +1,4 @@
+import type { BandPolicy } from '../impact-band.ts';
 import type { EstimateCtx } from '../impact-model.ts';
 import type { ExecutionsByRoot } from '../delta-targets.ts';
 import type {
@@ -116,6 +117,11 @@ export interface DetectorSpec<
   // cross-detector suppression is the explicit `suppressedBy` below.
   order: number;
   fixEffort: FixEffort;
+  // How this entry's finding bands are set (impact-band.ts): required, so a detector author's
+  // choice of band is never replaced by omission.
+  bandPolicy: BandPolicy;
+  // A finding of this entry that grades under another policy than `bandPolicy`.
+  gradeAs?(finding: FindingOf<TEmits[number]>): BandPolicy;
   version: number;
   docAnchor?: string;
   thresholds: T;

@@ -226,7 +226,7 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
 }
 
 export const skewDetector = defineStageDetector({
-  type: 'skew', order: 30, fixEffort: 'code', version: 1,
+  type: 'skew', order: 30, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['skew'],
   docAnchor: '#bottleneck-skew',
   // dataShareMin: the share of the slow tasks' extra time that run time proportional to their data
@@ -266,7 +266,7 @@ export const skewDetector = defineStageDetector({
 });
 
 export const slowHostDetector = defineStageDetector({
-  type: 'slowHost', order: 60, fixEffort: 'config', version: 2,
+  type: 'slowHost', order: 60, bandPolicy: 'derived', fixEffort: 'config', version: 2,
   emits: ['slowHost'],
   docAnchor: '#bottleneck-slow-host',
   thresholds: {
@@ -403,7 +403,7 @@ export const slowHostDetector = defineStageDetector({
 });
 
 export const stragglerDetector = defineStageDetector({
-  type: 'straggler', order: 70, fixEffort: 'code', version: 1,
+  type: 'straggler', order: 70, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['straggler'],
   docAnchor: '#bottleneck-straggler',
   // floorPctWarn/floorPctCrit default to impact-band.ts's run-wide noise floor, so a tail this
@@ -453,7 +453,7 @@ export const stragglerDetector = defineStageDetector({
 });
 
 export const speculationWasteDetector = defineStageDetector({
-  type: 'speculationWaste', order: 71, fixEffort: 'config', version: 1,
+  type: 'speculationWaste', order: 71, bandPolicy: 'derived', fixEffort: 'config', version: 1,
   emits: ['speculationWaste'],
   docAnchor: '#bottleneck-speculation-waste',
   thresholds: { minWasted: 5, minWasteMs: 60000 },

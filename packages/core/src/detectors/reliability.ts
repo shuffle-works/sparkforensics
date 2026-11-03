@@ -18,7 +18,7 @@ function dominantFailureGroup(stage: { failureReasons?: DetectorFailureReason[];
 }
 
 export const stageFailedDetector = defineStageDetector({
-  type: 'stageFailed', order: 42, fixEffort: 'code', version: 1,
+  type: 'stageFailed', order: 42, bandPolicy: 'failure', fixEffort: 'code', version: 1,
   emits: ['stageFailed'],
   docAnchor: '#bottleneck-failures',
   thresholds: {},
@@ -44,7 +44,7 @@ export const stageFailedDetector = defineStageDetector({
 });
 
 export const failuresDetector = defineStageDetector({
-  type: 'failures', order: 40, fixEffort: 'code', version: 2,
+  type: 'failures', order: 40, bandPolicy: 'own', fixEffort: 'code', version: 2,
   emits: ['failures'],
   docAnchor: '#bottleneck-failures',
   thresholds: { minTasks: 10, warnRate: 0.05, critRate: 0.20 },
@@ -80,7 +80,7 @@ export const failuresDetector = defineStageDetector({
 });
 
 export const retryWasteDetector = defineStageDetector({
-  type: 'retryWaste', order: 45, fixEffort: 'code', version: 1,
+  type: 'retryWaste', order: 45, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['retryWaste'],
   docAnchor: '#bottleneck-retry-waste',
   thresholds: { minWasted: 3, minWasteMs: 30000 },
@@ -115,7 +115,7 @@ export const retryWasteDetector = defineStageDetector({
 });
 
 export const jobFailureRateDetector = defineAppDetector({
-  type: 'jobFailureRate', order: 110, fixEffort: 'code', version: 1,
+  type: 'jobFailureRate', order: 110, bandPolicy: 'failure', fixEffort: 'code', version: 1,
   emits: ['jobFailureRate'],
   docAnchor: '#bottleneck-job-failure-rate',
   thresholds: { infoRate: 0.10, warnRate: 0.30, critRate: 0.50 },

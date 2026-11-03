@@ -66,7 +66,7 @@ test('download JSON writes parseable JSON to a run-named file', async () => {
   await userEvent.click(screen.getByRole('button', { name: /export evidence/i }));
   await userEvent.click(await screen.findByRole('menuitem', { name: /download json/i }));
 
-  expect(spy).toHaveBeenCalledWith(expect.anything(), { redact: false });
+  expect(spy).toHaveBeenCalledWith(expect.anything(), { redact: false, findingsFilter: reportBuilder.toFindingsFilter() });
   expect(lastDownloadName).toBe('evidence-application_123.json');
   const parsed = JSON.parse(await blobText(lastBlob));
   expect(parsed.summary.app.id).toBe('application_123');
@@ -94,7 +94,7 @@ test('the redact toggle flips the builder option and marks the filename', async 
   await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: /redact identifiers/i }));
   await userEvent.click(await screen.findByRole('menuitem', { name: /download markdown/i }));
 
-  expect(spy).toHaveBeenCalledWith(expect.anything(), { redact: true });
+  expect(spy).toHaveBeenCalledWith(expect.anything(), { redact: true, findingsFilter: reportBuilder.toFindingsFilter() });
   // Redacted export: real app id never appears in the name; -redacted marker on.
   expect(lastDownloadName).toBe('evidence-app-1-redacted.md');
   expect(lastDownloadName).not.toContain('application_123');

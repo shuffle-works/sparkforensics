@@ -16,7 +16,7 @@ import { FINDING_TYPES } from './cli/flag-values.ts';
 import { listDetectors } from './detector-listing.ts';
 
 // z.enum wants a non-empty tuple; these lists are never empty.
-const nonEmpty = (values: readonly string[]) => values as [string, ...string[]];
+const nonEmpty = <T extends string>(values: readonly T[]) => values as [T, ...T[]];
 const impactBandSchema = z.enum(nonEmpty(IMPACT_BANDS));
 const findingTypeSchema = z.enum(nonEmpty(FINDING_TYPES));
 const comparisonMetricSchema = z.enum(nonEmpty(COMPARISON_METRIC_KEYS));
@@ -115,6 +115,13 @@ const UNKNOWN_VERSION = '0.0.0';
 // Shared by every tool that returns a run handle.
 const RUN_ID_NOTE = 'runId is a handle for the run this server process has cached. It differs per tool by design (compare_runs returns runIdA and runIdB, evaluate_budgets the runId of its first run) and per server process, so match runs by app.id and app.attemptId, not by runId.';
 
+/** The tools the server registers, by name. `createMcpServer` throws when what it registers differs
+ * from this list, so a tool cannot be added or dropped without it. */
+export const MCP_TOOL_NAMES = [
+  'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence',
+  'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
+] as const;
+
 /** `thresholds`: the bin's --thresholds overrides, applied to every analyzing tool for the life
  * of the server. Omitted, every tool runs the specification defaults.
  * `defaultShsBaseUrl`: the History Server a `source` or `list_runs` call without `shsBaseUrl` uses.
@@ -127,13 +134,18 @@ export function createMcpServer(
   const runRefSchema = { source: sourceSchema.optional(), runId: z.string().optional() };
   const secondRunRefSchema = { sourceB: sourceSchema.optional(), runIdB: z.string().optional() };
   const server = new McpServer({ name: 'sparkforensics', version: generator?.version ?? UNKNOWN_VERSION });
+  const registered = new Set<string>();
+  const registerTool: McpServer['registerTool'] = (name, config, handler) => {
+    registered.add(name);
+    return server.registerTool(name, config, handler);
+  };
 
-  server.registerTool('list_runs', {
+  registerTool('list_runs', {
     description: 'List candidate Spark event-log runs from a local directory or a Spark History Server, before diagnosing one with the other tools.',
     inputSchema: listRunsInputSchema,
   }, (params) => toolResult(listRuns({ ...params, shsBaseUrl: params.shsBaseUrl ?? (params.dir ? undefined : defaultShsBaseUrl) })));
 
-  server.registerTool('diagnose_run', {
+  registerTool('diagnose_run', {
     description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by stage task time or idle core time, then potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding and leaves out the clean-check and not-checked lists; view "full" returns every finding with its remediation text and evidence, and those lists. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown, and structuredContent holds it as markdown next to a few headline fields. A JSON result longer than ' + DEFAULT_PAGE_CHARS + ' characters comes in pages: pass pagination.nextCursor as cursor, with the other arguments unchanged, for the next one. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
@@ -141,7 +153,7 @@ export function createMcpServer(
         .describe('compact (default): one short row per finding. full: the CLI report\'s rows, clean checks and not-checked checks.'),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
       impactBand: z.array(impactBandSchema).optional(), type: z.array(findingTypeSchema).optional(), stageId: z.number().int().nonnegative().optional(),
-      minBand: z.enum(['critical', 'warning', 'info']).optional()
+      minBand: impactBandSchema.optional()
         .describe('List only findings at this band or a more severe one. Without minBand or impactBand, info findings are left out and notesHidden counts them; "info" lists all.'),
       maxFindings: z.number().int().nonnegative().optional()
         .describe('List at most this many findings, most severe first. findingsOmitted counts the ones left out; each verdict step still carries its lead finding.'),
@@ -156,14 +168,14 @@ export function createMcpServer(
     )),
   ));
 
-  server.registerTool('get_run_summary', {
+  registerTool('get_run_summary', {
     description: 'App/stage/job/sql counts, duration, and how the run ended (failed/total jobs and Spark\'s first-line failure reason) for a run, no findings.',
     inputSchema: { ...runRefSchema, redact: z.boolean().optional() },
   }, ({ source, runId, redact }) => toolResult(
     resolveOrCreateRun({ source, runId }, { thresholds }).then(({ runId: id }) => getRunSummary(id, { redact, thresholds })),
   ));
 
-  server.registerTool('compare_runs', {
+  registerTool('compare_runs', {
     description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings), the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage), and comparability: the configuration differences, plan equality, data volume, executor capacity and the factors that bridge the wall-clock difference. confidence is ok, low or insufficient. metricDeltas and findingsDelta repeat metrics and findings under their earlier names and will be removed. The result names both Spark applications (baselineApp, candidateApp) and the build that wrote it (generator). Each findings row lists its stage names in stages and the same names without call-site directories in stageLabels. ' + RUN_ID_NOTE,
     inputSchema: {
       runIdA: z.string().optional(), sourceA: sourceSchema.optional(),
@@ -189,7 +201,7 @@ export function createMcpServer(
     compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange }, include, generator }),
   ));
 
-  server.registerTool('evaluate_budgets', {
+  registerTool('evaluate_budgets', {
     description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
     inputSchema: {
       source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
@@ -218,7 +230,7 @@ export function createMcpServer(
     { thresholds },
   )));
 
-  server.registerTool('get_finding_evidence', {
+  registerTool('get_finding_evidence', {
     description: 'Raw evidence bundle backing one finding, for drill-down after diagnose_run. Pass the runId of the diagnosis. When the runId is not cached (after a server restart), pass the source of the run, as for diagnose_run, and optionally its appId: the run is analysed again and the findingId stays the same.',
     inputSchema: {
       runId: z.string().optional(), source: sourceSchema.optional(),
@@ -229,7 +241,7 @@ export function createMcpServer(
     resolveFindingEvidence({ runId, source, appId }, findingId, { redact, thresholds }),
   ));
 
-  server.registerTool('get_finding_documentation', {
+  registerTool('get_finding_documentation', {
     description: 'Detection and tuning reference documentation for one finding type (not tied to a specific run), so a client without browser access can read the same background material the web view links to.',
     inputSchema: { type: z.string() },
   }, ({ type }) => toolResult(
@@ -237,12 +249,12 @@ export function createMcpServer(
     docToolErrorResult,
   ));
 
-  server.registerTool('list_detectors', {
+  registerTool('list_detectors', {
     description: 'Every finding type SparkForensics can report, with no run needed: its tag, outcome family, scope, fix effort, one-sentence pitch, default thresholds, docs paths, and the budget flag that gates it, when it has one. Pass a type for that one record. Docs paths are relative to the published site root.',
     inputSchema: { type: findingTypeSchema.optional() },
   }, ({ type }) => toolResult(Promise.resolve().then(() => listDetectors(type))));
 
-  server.registerTool('get_reference_doc', {
+  registerTool('get_reference_doc', {
     description: 'Full tuning-reference chapter or bottleneck markdown by doc anchor (e.g. "#joins", "#bottleneck-skew", "#metric-task-duration"), so a client without browser access can read the same reference the web view shows.',
     inputSchema: { anchor: z.string() },
   }, ({ anchor }) => toolResult(
@@ -250,5 +262,9 @@ export function createMcpServer(
     docToolErrorResult,
   ));
 
+  const expected = new Set<string>(MCP_TOOL_NAMES);
+  if (registered.size !== expected.size || [...registered].some((name) => !expected.has(name))) {
+    throw new Error(`createMcpServer registers [${[...registered].sort()}] but MCP_TOOL_NAMES lists [${[...expected].sort()}].`);
+  }
   return server;
 }

@@ -6,34 +6,32 @@ The threshold tables for every bottleneck detector, and where each finding's imp
 
 Every change to a detector entry under `packages/core/src/detectors/` should reference this table.
 
-Every finding's `impactBand` comes from one of two places. For any finding
-whose `impactEstimate` carries a `wallClock` estimate (the common case for
-most rules below), `analyzer.ts` calls `deriveImpactBand()`
-(`packages/core/src/impact-band.ts`) immediately after `estimateImpact()`, which sets
-`.impactBand` purely from `wallClock.high` as a fraction of the app's total
-duration (`>= 2%` critical, `>= 0.5%` warning, else info: `IMPACT_FLOOR_PCT_CRIT`/
-`IMPACT_FLOOR_PCT_WARN`, which `skew`'s `floorPctWarn` and `straggler`'s
-`floorPctWarn`/`floorPctCrit` default to, so a tail those gates admit grades
-at least warning; a tuned `skew` or `straggler` floor also grades that
-entry's own findings, see [Tuning thresholds](../detector-contract.md#tuning-thresholds)). For those rules, the table below documents their firing
-gate plus their fixed fallback constant, which surfaces only when this run's
-finding of that type didn't get a wallClock estimate (a stage excluded from
-the occupancy sweep). For rules whose finding type never gets
-a wallClock estimate (`resourceOnly`/`informational` basis, e.g.
-`configAudit`, or a rule that keeps its own ratio-tiered classification,
-e.g. `failures`), the tiers in
-[Findings that are never wallClock-derived](#findings-that-are-never-wallclock-derived) are
-the real, displayed classification: the detector entry sets `impactBand`
-directly and nothing overwrites it. `partitionSizing`'s `maxPartitionTooBig`
-rule is a third case: it does carry a `wallClock` estimate but is explicitly
-exempted in `deriveImpactBand()` because it's a hardcoded-critical OOM/crash-risk
-safety signal, not a time-recovery one, so the detector's own classification
-stands regardless of how small that estimate is relative to the run.
+Every detector entry declares a required `bandPolicy`, and `analyzer.ts` calls `gradeFinding()`
+(`packages/core/src/impact-band.ts`) once per finding after `estimateImpact()`:
 
-`analyzer.ts` then calls `capCriticalByTaskTime()` (`impact-band.ts`). It caps a `critical`
-finding at `warning` when its stage carries under `CRITICAL_MIN_TASK_TIME_SHARE` = 2% of the run's
-task time, whoever set the band. Failures (`stageFailed`, `jobFailureRate`), `maxPartitionTooBig`, a
-finding on no single stage and anything without recorded task time keep `critical`.
+- `derived`: when the finding's `impactEstimate` carries a `wallClock` estimate, `.impactBand` is set
+  purely from `wallClock.high` as a fraction of the app's total duration (`>= 2%` critical,
+  `>= 0.5%` warning, else info: `IMPACT_FLOOR_PCT_CRIT`/`IMPACT_FLOOR_PCT_WARN`, which `skew`'s
+  `floorPctWarn` and `straggler`'s `floorPctWarn`/`floorPctCrit` default to, so a tail those gates admit
+  grades at least warning; a tuned `skew` or `straggler` floor also grades that entry's own findings,
+  see [Tuning thresholds](../detector-contract.md#tuning-thresholds)). For these rules, the table
+  below documents their firing gate plus their fixed fallback constant, which surfaces only when this
+  run's finding of that type didn't get a wallClock estimate (a stage excluded from the occupancy sweep).
+- `own`: the detector's own band stands (`resourceOnly`/`informational` basis, e.g. `configAudit`, or a
+  rule that keeps its own ratio-tiered classification, e.g. `failures`). The tiers in
+  [Findings that are never wallClock-derived](#findings-that-are-never-wallclock-derived) are the real,
+  displayed classification.
+- `failure`: the detector's own band stands whatever the stage costs (`stageFailed`, `jobFailureRate`).
+  `FAILURE_TYPES` is the set of types whose entry declares it.
+
+An entry can grade one finding under another policy with `gradeAs`: `partitionSizing`'s
+`maxPartitionTooBig` rule carries a `wallClock` estimate but is a hardcoded-critical OOM/crash-risk
+safety signal, not a time-recovery one, so it grades as `failure` and stays critical however small
+that estimate is relative to the run.
+
+`gradeFinding()` then caps a `critical` finding at `warning`, under every policy but `failure`, when
+its stage carries under `CRITICAL_MIN_TASK_TIME_SHARE` = 2% of the run's task time. A finding on no
+single stage and anything without recorded task time keep `critical`.
 
 ### Default thresholds
 
@@ -61,7 +59,7 @@ The multi-dimensional rule compares each executor with the median on task time, 
 
 The task-time dimension also has to pass a chance test, because the slowest of many executors always tops the median. On the log scale of task duration, the executor's mean minus the median executor's mean, over the stage's task spread divided by the root of the executor's task count, must reach √(2 ln(executors ÷ (2 × `outlierAlpha`))). An executor with fewer tasks, or a stage with more executors, needs a larger gap. The spread is rebuilt from each executor's `logDurationSum` and `logDurationM2`. A stage with under two tasks, no spread, or an executor missing either field flags no executor on task time. Of the executors that pass, the one with the largest mean is reported.
 
-The task-time dimension carries a wallClock estimate, so its band is the fixed fallback below until `deriveImpactBand` replaces it. The byte dimensions never get one and keep their ratio tier.
+The task-time dimension carries a wallClock estimate, so its band is the fixed fallback below until `gradeFinding` replaces it. The byte dimensions never get one and keep their ratio tier.
 
 #### Findings that are never wallClock-derived
 
@@ -74,7 +72,7 @@ These detector entries set `impactBand` themselves, and nothing overwrites it. E
 - `coreLocality`: warning from `warnRatio`, critical from `critRatio`, with at least `minTasks` tasks.
 - `cacheUtilization`: partial caching is info under `cachedRatioInfo` and warning under `cachedRatioWarn`; disk spillover (`MEMORY_AND_DISK*` only) is info over `diskRatioInfo` and warning over `diskRatioWarn`. Storage unobserved is a single info caveat for persisted RDDs with no block-update evidence.
 - `stageShape`: info only. PRatio fires under `pRatioMax` tasks per core on a stage at least `lowParallelismFloorPct` of the run; OIRatio over `oiRatioMax` output per input byte; TaskStageSkew when the longest task spans over `stageShareMin` of the stage and runs over `skewWarn` times the median, on a multi-task stage at least `taskStageSkewFloorPct` of the run. The median gate is needed because on a single wave of even tasks the longest task spans the whole stage too.
-- `utilization`: always warning under `minUtil` busy over allocated core time.
+- `utilization`: always warning under `minUtil` busy over allocated core time. The verdict's idle note and the Scorecard's Unused core time flag read the same idle share: notable from `1 - minUtil` idle, critical from `1 - criticalUtil` idle.
 - `memoryUtilization`: idle cores warning above `idleCoreWarn`; the memory band is an info over-provisioning note under `bandTooHigh`. It has no near-capacity band, since heap used counts uncollected garbage.
 - `rightSizing`: always warning and low confidence. It needs a run peak of at least `minBaselineCores` cores, and fires when the smallest core count whose modeled stage time stays within `tolerancePct` of the observed one is at most `maxCoreShare` of that peak. It stays silent when the model error at the peak exceeds `maxModelErrorPct`.
 - `cachingOpportunity`: a single info tier. It fires when the same input relation, or join or union subtree, is scanned by at least `minExecutions` SQL executions in one run.
@@ -82,7 +80,7 @@ These detector entries set `impactBand` themselves, and nothing overwrites it. E
 
 ### Fixed fallback bands
 
-These rules have no *band* tiers in `packages/core/src/detectors/` (`deriveImpactBand` sets the band whenever a wallClock estimate is available); the band in the table is only a floor-case fallback. A straggler share has no critical tier of its own.
+These rules have no *band* tiers in `packages/core/src/detectors/` (`gradeFinding` sets a `derived` entry's band whenever a wallClock estimate is available); the band in the table is only a floor-case fallback. A straggler share has no critical tier of its own.
 
 | Rule | Fallback band |
 |---|---|

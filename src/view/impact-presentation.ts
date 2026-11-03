@@ -1,14 +1,13 @@
+import { runTiming } from '@sparkforensics/core/view-model';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 /** The share of the run a finding's wall-clock saving could recover (the same
  * optimistic figure the impact band grades), or null when the finding has no
  * wall-clock estimate or the run has no duration. */
 export function shareOfRun(finding: Finding, app: AppModel['app']): number | null {
-  // The same duration the band grades against (core's appDurationMs, which the
-  // export bundle may not import).
-  const durationMs = app?.startTime != null && app?.endTime != null ? app.endTime - app.startTime : null;
+  const { durationMs } = runTiming(app);
   const recoverableMs = finding.impactEstimate?.wallClock?.high;
-  if (durationMs == null || durationMs <= 0 || recoverableMs == null) return null;
+  if (durationMs == null || recoverableMs == null) return null;
   return recoverableMs / durationMs;
 }
 

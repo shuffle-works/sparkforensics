@@ -19,6 +19,7 @@ export * from './plan-graph-model.ts';
 export * from './plan-node-detail.ts';
 export * from './plan-summary.ts';
 export * from './recommendation-rollup.ts';
+export * from './run-timing.ts';
 export * from './scaling-sim.ts';
 export * from './sql-stages.ts';
 export * from './task-failure.ts';

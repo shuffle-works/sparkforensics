@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings, verdictIdlePct,
+  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, compareFindingRank, FINDING_DISPLAY_ORDER, isRankable, locationKey, rankBySavings,
 } from '../src/run-verdict.ts';
+import { compareImpactBand, IMPACT_BANDS } from '../src/impact-band-order.ts';
+import { trimmedRecommendation } from '../src/finding-names.ts';
+import { isActionable } from '../src/recommendation-rollup.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
 function timed(type, stageId, highSeconds, extra = {}) {
@@ -108,12 +111,16 @@ describe('idle capacity in the next steps', () => {
     expect(both[0].lead.type).toBe('skew');
   });
 
-  it('states the idle share the idle-capacity step itself reports, falling back to the Scorecard figure', () => {
-    expect(verdictIdlePct(steps(), 80)).toBe(80);
-    expect(verdictIdlePct(buildNextSteps([timedMs('skew', 0, 64), { ...idleCores, value: 55 }]), 80)).toBe(55);
-    const utilization = { type: 'utilization', stageId: null, impactBand: 'info', value: 30, recommendation: 'x' };
-    expect(verdictIdlePct(buildNextSteps([utilization]), 80)).toBe(70);
-    expect(verdictIdlePct(buildNextSteps([timedMs('skew', 0, 64)]), 80)).toBe(80);
+  it('states the efficiency model idle share and notes it from the utilization thresholds', () => {
+    const idleModel = appModel({
+      app: { id: 'a', name: 'n', startTime: 0, endTime: 10_000 },
+      executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+      runAggregates: { busyCoreMs: 8_000, perStage: {} },
+    });
+    const note = "80% of the run's core time went unused, so the cluster may be larger than this job needs.";
+    expect(buildRunVerdict(idleModel, [timedMs('skew', 1, 64)]).summary).toContain(note);
+    // minUtil 0.1 puts the notable idle share at 90%, above this run's 80%.
+    expect(buildRunVerdict(idleModel, [timedMs('skew', 1, 64)], { utilization: { minUtil: 0.1 } }).summary).not.toContain(note);
   });
 });
 
@@ -179,11 +186,22 @@ describe('buildCostLane', () => {
     expect(buildCostLane([idle, bytes, nulled, cored('gc', 6, 0)])).toEqual([]);
   });
 
-  it('keeps the wall-clock steps in their own order', () => {
+  it('keeps an info finding with a measured cost in the lane, never as a step', () => {
     const findings = [timed('skew', 1, 60), cored('gc', 2, 3_600_000)];
     const verdict = buildRunVerdict(appModel(), findings);
-    expect(verdict.shown.map((step) => step.lead.type)).toEqual(['skew', 'gc']);
+    expect(verdict.shown.map((step) => step.lead.type)).toEqual(['skew']);
     expect(verdict.costLane.map((entry) => entry.finding.type)).toEqual(['gc']);
+  });
+
+  it('counts no info note as something to act on', () => {
+    const notes = [cored('gc', 2, 1_000), { type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    const verdict = buildRunVerdict(appModel(), notes);
+    expect(verdict.eligible).toEqual([]);
+    expect(verdict.steps).toEqual([]);
+    expect(verdict.title).toBe('No findings to fix right now.');
+    expect(verdict.summary.join(' ')).not.toMatch(/findings? in|Every check passed/);
+    // The report summary's "Findings to act on" counts the same set.
+    expect(notes.filter(isActionable)).toEqual([]);
   });
 });
 
@@ -203,5 +221,28 @@ describe('buildRunIdleLine', () => {
   it('is null without an allocation or with none idle', () => {
     expect(buildRunIdleLine(appModel())).toBeNull();
     expect(buildRunIdleLine(model(3_600_000 * 4))).toBeNull();
+  });
+});
+
+describe('the shared ranking vocabulary', () => {
+  it('orders bands most severe first and an unknown band last', () => {
+    expect(IMPACT_BANDS).toEqual(['critical', 'warning', 'info']);
+    expect(['info', 'unknown', 'critical', null, 'warning'].sort(compareImpactBand)).toEqual(['critical', 'warning', 'info', 'unknown', null]);
+  });
+
+  it('ties break by band, then widget display order', () => {
+    const skewInfo = { type: 'skew', impactBand: 'info' };
+    const spillWarning = { type: 'spill', impactBand: 'warning' };
+    const gcWarning = { type: 'gc', impactBand: 'warning' };
+    const ordered = [skewInfo, gcWarning, spillWarning].sort(compareFindingRank).map((f) => f.type);
+    expect(ordered[2]).toBe('skew');
+    expect(ordered.slice(0, 2)).toEqual(['spill', 'gc'].sort((a, b) => FINDING_DISPLAY_ORDER.indexOf(a) - FINDING_DISPLAY_ORDER.indexOf(b)));
+  });
+
+  it('reads a recommendation of only whitespace as none', () => {
+    expect(trimmedRecommendation({ type: 'skew', recommendation: '  fix it  ' })).toBe('fix it');
+    expect(trimmedRecommendation({ type: 'skew', recommendation: '   ' })).toBe('');
+    expect(trimmedRecommendation({ type: 'skew' })).toBe('');
+    expect(isRankable({ type: 'skew', impactBand: 'warning', recommendation: '   ' })).toBe(false);
   });
 });

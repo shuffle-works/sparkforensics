@@ -4,8 +4,8 @@
 import { hasFinishedStage } from './check-coverage.ts';
 import { buildLocalityChart } from './core-usage-locality.ts';
 import { attributeEtlPhases } from './etl-phases.ts';
-import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
-import { computeWallClock } from './wall-clock.ts';
+import { runTiming } from './run-timing.ts';
+import { getScorecardEstimates } from './scorecard-estimates.ts';
 import type { AppModel } from './types.ts';
 
 export interface RunShape {
@@ -26,12 +26,12 @@ export interface RunShape {
 }
 
 export function computeRunShape(appModel: AppModel): RunShape {
-  const timed = hasCompleteApplicationInterval(appModel.app);
+  const timing = runTiming(appModel.app, appModel.stages);
   const estimates = getScorecardEstimates(appModel);
   const phases = attributeEtlPhases(appModel.stages);
   const chart = buildLocalityChart([...appModel.stages.values()], appModel.app);
   return {
-    wallClockMs: timed ? computeWallClock(appModel.app, appModel.stages).total : null,
+    wallClockMs: timing.durationMs,
     efficiencyPct: hasFinishedStage(appModel.stages) ? estimates.efficiency.value : null,
     unusedCoreTimePct: estimates.wastage.value,
     etlPhasesMs: phases.extract + phases.transform + phases.load > 0 ? phases : null,

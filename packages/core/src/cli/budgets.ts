@@ -2,6 +2,7 @@ import { maxOf } from '../array-extremes.ts';
 import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { ENTRY_BY_TYPE } from '../detector-catalog.ts';
 import { computeSkewRatio } from '../detectors/tail.ts';
+import { runTiming } from '../run-timing.ts';
 import type { ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { withEarlierAttempts } from '../run-totals.ts';
@@ -49,11 +50,10 @@ function taskDataTrusted(appModel: AppModel): boolean {
 }
 
 function checkRuntime(appModel: AppModel, maxRuntimeMs: number): BudgetResult {
-  const { startTime, endTime } = appModel.app ?? {};
-  if (startTime == null || endTime == null) {
+  const runtimeMs = runTiming(appModel.app).durationMs;
+  if (runtimeMs == null) {
     return { name: 'max-runtime', status: 'inconclusive', detail: 'App start/end time not observed (run may not have finished).' };
   }
-  const runtimeMs = endTime - startTime;
   return runtimeMs > maxRuntimeMs
     ? { name: 'max-runtime', status: 'violation', detail: `Runtime ${runtimeMs}ms exceeds budget ${maxRuntimeMs}ms.` }
     : { name: 'max-runtime', status: 'pass', detail: `Runtime ${runtimeMs}ms within budget ${maxRuntimeMs}ms.` };

@@ -38,6 +38,7 @@ import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, wors
 import { Chip, TagBadge } from '@/view/ImpactBadge';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
+import { findingsForStage } from '@sparkforensics/core/view-model';
 import { savingsOf, stepCodes, useInterpretation } from '@/view/interpretation';
 import { StepCode } from '@/view/StepCode';
 import { WidgetCard } from '@/view/WidgetCard';
@@ -139,15 +140,12 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
 
   const { catalogByStage, flaggedStageIds } = useMemo(() => {
     const byStage = new Map<number, Finding[]>();
-    const flagged = new Set<number>();
-    for (const b of catalog) {
-      if (b.stageId == null) continue;
-      flagged.add(b.stageId as number);
-      if (!byStage.has(b.stageId as number)) byStage.set(b.stageId as number, []);
-      byStage.get(b.stageId as number)!.push(b);
+    for (const stage of appModel.stages.values()) {
+      const findings = findingsForStage(catalog, stage.id);
+      if (findings.length > 0) byStage.set(stage.id, findings);
     }
-    return { catalogByStage: byStage, flaggedStageIds: flagged };
-  }, [catalog]);
+    return { catalogByStage: byStage, flaggedStageIds: new Set(byStage.keys()) };
+  }, [catalog, appModel.stages]);
 
   const rows: Row[] = useMemo(() => {
     const stages = [...appModel.stages.values()];

@@ -93,8 +93,7 @@ recommendation clamped to one line, then the figure in the third column.
 The store's `board.expandedGroup` (`src/store/board.ts`) holds which single
 group is expanded; a `TypeGroupRow` owns only its page.
 
-Each impact band (`ImpactBoard.tsx`'s own `ImpactGroup`, one call per
-entry of `IMPACT_BAND_ORDER_LIST = ['critical', 'warning', 'info']`) is a
+Each impact band (one per entry of core's `IMPACT_BANDS`, which `buildBoardLayout` walks) is a
 `<section aria-labelledby>` pointing at its
 `<h2 id="impact-band-<band>-heading" tabIndex={-1}>` (Critical, Warning,
 Info; the top bar's count chip focuses it; an `<h3>` under "More

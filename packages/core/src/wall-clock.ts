@@ -1,4 +1,5 @@
 import { mergeIntervals } from './intervals.ts';
+import { runTiming } from './run-timing.ts';
 
 /** The union of the stages' [submittedAt, completedAt) windows, sorted: where stages were active. */
 export function stageWindows(stages: Map<number, {submittedAt?: number; completedAt?: number}>): Array<[number, number]> {
@@ -12,8 +13,8 @@ export function computeWallClock(app: {startTime?: number | null; endTime?: numb
   const start = app?.startTime ?? 0;
   const stageList = [...stages.values()].filter(s => s.submittedAt != null && s.completedAt != null);
   const intervals = stageList.map(s => [s.submittedAt as number, s.completedAt as number]);
-  const explicitEnd = app?.endTime ?? null;
-  const end = explicitEnd ?? (intervals.length > 0 ? intervals.reduce((m, i) => Math.max(m, i[1]), -Infinity) : start);
+  // Without an application end the clock stops at the last stage end: a truncated log still gets a span.
+  const end = app?.endTime ?? runTiming(app, stages).fallbackEndMs ?? start;
   const total = Math.max(0, end - start);
 
   if (intervals.length === 0) {

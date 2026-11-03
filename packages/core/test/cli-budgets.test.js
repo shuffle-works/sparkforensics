@@ -257,14 +257,13 @@ describe('evaluateBudgets', () => {
   });
 
   it('flags an efficiency violation via computeEfficiencyModel', () => {
-    // Empty `stages` makes computeWallClock treat the whole 10s as idle, so
-    // efficiency is 0% regardless of busyCoreMs, below any minEfficiencyPct.
+    // 30s of busy time over 40 allocated core-seconds is 75%, below the 90% budget.
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel(), catalog: [], budgets: { minEfficiencyPct: 90 },
     });
     expect(violated).toBe(true);
     // Worded as busy core time, so it never reads as the dashboard's Efficiency tile.
-    expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'violation', detail: 'Busy core time 0% below budget 90%.' });
+    expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'violation', detail: 'Busy core time 75% below budget 90%.' });
   });
 
   it('measures busy core time against peak concurrent cores when an executor was replaced', () => {

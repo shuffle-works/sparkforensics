@@ -9,9 +9,9 @@ import { mdInline } from './markdown-inline.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator } from './finding-identity.ts';
 import { cyrb53 } from './string-hash.ts';
-import { IMPACT_BAND_ORDER } from './impact-band-order.ts';
+import { compareImpactBand } from './impact-band-order.ts';
 import { formatBytes, formatRawWaste, fmtMs } from './units.ts';
-import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
+import type { Stage, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
 import type { ComparedRun } from './compared-run.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
@@ -51,8 +51,7 @@ export interface FindingsChangedRow {
 }
 /** True when a changed finding moved to a more severe band (an unknown band ranks least severe). */
 export function isEscalation(row: Pick<FindingsChangedRow, 'baseImpactBand' | 'candImpactBand'>): boolean {
-  const rank = (band: string) => IMPACT_BAND_ORDER[band as ImpactBand] ?? 9;
-  return rank(row.candImpactBand) < rank(row.baseImpactBand);
+  return compareImpactBand(row.candImpactBand, row.baseImpactBand) < 0;
 }
 export interface FindingsDelta {
   introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[]; changed: FindingsChangedRow[];

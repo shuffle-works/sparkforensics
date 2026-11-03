@@ -1,4 +1,4 @@
-import { findingName } from '@sparkforensics/core/view-model';
+import { findingName, trimmedRecommendation } from '@sparkforensics/core/view-model';
 import type { Finding } from '@sparkforensics/core/types';
 import type { InterpretationState } from '@/view/interpretation';
 import { REGISTRY } from './detector-registry';
@@ -18,7 +18,7 @@ export interface TriageTarget {
  * finding has no recommendation. */
 export function triageTargetFor(finding: Finding): TriageTarget | null {
   const entry = REGISTRY[finding.type];
-  const recommendation = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
+  const recommendation = trimmedRecommendation(finding);
 
   if (!entry?.routeable || !recommendation) return null;
 

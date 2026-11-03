@@ -316,7 +316,7 @@ and in `summary.tunedThresholds`; see
 [Portable evidence report](./worker-protocol/evidence-report.md#portable-evidence-report).
 
 A tuned `floorPctWarn`/`floorPctCrit` on `skew` or `straggler` also grades
-that entry's own findings in `deriveImpactBand` (`impact-band.ts`); every
+that entry's own findings in `gradeFinding` (`impact-band.ts`); every
 other finding keeps the run-wide default floors. `--max-skew` recomputes the
 ratio with the run's effective `minTasksForP95`, so the budget measures the
 same ratio the skew finding reports. Caveat text that names a threshold

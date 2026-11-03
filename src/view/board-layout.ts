@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 
+import { IMPACT_BANDS } from '@sparkforensics/core/view-model';
 import type { InterpretedStep } from '@sparkforensics/core/analysis';
 import type { AppModel, EvidenceKey, Finding } from '@sparkforensics/core/types';
 import type { BoardTab, ResolvedRoute } from '@/store/board';
@@ -26,7 +27,6 @@ import { findingsFor } from '@/view/finding-widget';
 export type ImpactBand = Finding['impactBand'];
 
 const NOTHING_STATED: readonly Finding[] = [];
-const IMPACT_BAND_ORDER: readonly ImpactBand[] = ['critical', 'warning', 'info'];
 
 /** The evidence a verdict step shows in place of its widget's card. A `panel` step has evidence to
  * show and offers the control for it. A `bare` step has nothing beyond the step line: no control,
@@ -280,7 +280,7 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
   }
 
   const bands: BandLayout[] = [];
-  for (const band of IMPACT_BAND_ORDER) {
+  for (const band of IMPACT_BANDS) {
     const rows = bandRows.get(band) ?? [];
     const bandWidgetCards = bandCards.get(band) ?? [];
     if (rows.length === 0 && bandWidgetCards.length === 0) continue;
@@ -336,7 +336,7 @@ export function resolveRoute(target: RouteTarget, layout: BoardLayout): Resolved
   if (target.id === VERDICT_LANDMARK) return { tab: null, openCards: [], cardKey: null, rowKey: landmarkRowKey(VERDICT_LANDMARK) };
   if (target.id === FILTERS_LANDMARK) return { tab: null, openCards: [], cardKey: null, rowKey: landmarkRowKey(FILTERS_LANDMARK) };
   if (target.id === BOARD_LANDMARK) return { tab: 'findings', openCards: [], cardKey: null, rowKey: landmarkRowKey(BOARD_LANDMARK) };
-  const band = IMPACT_BAND_ORDER.find((candidate) => bandLandmark(candidate) === target.id);
+  const band = IMPACT_BANDS.find((candidate) => bandLandmark(candidate) === target.id);
   if (band && layout.bands.some((entry) => entry.band === band && entry.listed)) return { tab: 'findings', openCards: [], cardKey: null, rowKey: landmarkRowKey(target.id) };
   return null;
 }

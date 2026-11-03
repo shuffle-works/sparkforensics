@@ -57,7 +57,7 @@ test.each(
   });
 
   // The run has verdict steps or board rows to look under, so an empty dashboard cannot pass.
-  expect(document.querySelectorAll('[data-testid="run-verdict"] li, [data-testid="fix-these-first-row"]').length).toBeGreaterThan(0);
+  expect(document.querySelectorAll('[data-testid="run-verdict"] li, [data-testid="fix-these-first-row"], [data-testid="fix-these-first-group-row"]').length).toBeGreaterThan(0);
   expect(screen.queryAllByRole('button', { name: 'Hide evidence' })).toEqual([]);
   expect(panelRenders).toEqual([]);
 }, 60_000);

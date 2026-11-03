@@ -1,2 +1,2 @@
 // TAG_HELP lives in core (the comparison verdict reads it on the CLI/MCP path too).
-export { TAG_HELP } from '@sparkforensics/core/view-model';
+export { tagHelp } from '@sparkforensics/core/view-model';

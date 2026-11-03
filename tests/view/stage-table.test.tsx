@@ -9,7 +9,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { StageTable } from '@/view/widgets/StageTable';
-import { SPILL_CLASS_SHORT } from '@sparkforensics/core/view-model';
+import { SPILL_CLASS_SHORT, FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
@@ -190,6 +190,29 @@ describe('StageTable', () => {
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
 
     expect(screen.getByRole('heading', { name: 'Stage Summary' })).toBeInTheDocument();
+  });
+
+  it('shows a chip on every stage a finding is about, so each verdict lead stage has one', () => {
+    const appModel = buildAppModel([[1, makeStage(1)], [2, makeStage(2)], [3, makeStage(3)]]);
+    const catalog: Finding[] = [
+      testFinding({ type: 'spill', stageId: 1, impactBand: 'critical' }),
+      testFinding({ type: 'smallFiles', stageId: null, stageIds: [2], impactBand: 'critical' }),
+      testFinding({ type: 'joinKeyCast', stageId: null, stageIds: [2, 3], impactBand: 'warning' }),
+    ];
+    const interpretation = installInterpretation(catalog, appModel);
+
+    render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
+
+    const rows = screen.getAllByRole('row').slice(1);
+    const rowOf = (stageId: number) => rows.find((row) => within(row).queryByLabelText(`Open Stage ${stageId} details`))!;
+    for (const step of interpretation.data.verdict.steps) {
+      if (step.stageId == null) continue;
+      const lead = catalog.find((finding) => finding.id === step.leadId)!;
+      expect(within(rowOf(step.stageId)).getAllByText(new RegExp(FINDING_PRESENTATION[lead.type].tag, 'i')).length).toBeGreaterThan(0);
+    }
+    // A finding about two stages is listed on both rows.
+    expect(within(rowOf(2)).getAllByText(new RegExp(FINDING_PRESENTATION.joinKeyCast.tag, 'i'))).toHaveLength(2);
+    expect(within(rowOf(3)).getAllByText(new RegExp(FINDING_PRESENTATION.joinKeyCast.tag, 'i'))).toHaveLength(1);
   });
 
   it('deduplicates same-type tags per stage, keeping the worst impact band', async () => {

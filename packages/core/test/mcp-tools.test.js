@@ -724,6 +724,31 @@ describe('getRunSummary', () => {
     }
   });
 
+  it('reports runComplete exactly when the run has no incompleteRun finding', async () => {
+    const start = '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":0}\n';
+    const end = '{"Event":"SparkListenerApplicationEnd","Timestamp":1000}\n';
+    const logs = {
+      complete: start + end,
+      truncated: start,
+      // An application start with no timestamp: nothing says the capture was cut short.
+      noStartTime: '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t"}\n',
+    };
+    for (const [name, content] of Object.entries(logs)) {
+      const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+      const path = join(dir, 'eventlog');
+      writeFileSync(path, content);
+      try {
+        const { runId } = await resolveOrCreateRun({ source: { path } });
+        const diagnosis = diagnoseRun(runId);
+        const hasFinding = diagnosis.findings.some((f) => f.type === 'incompleteRun');
+        expect(diagnosis.runComplete, name).toBe(!hasFinding);
+        expect(getRunSummary(runId).runComplete, name).toBe(!hasFinding);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('pseudonymizes app.id with { redact: true }, leaves it as-is otherwise', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
     const path = join(dir, 'eventlog');

@@ -155,7 +155,7 @@ function effectiveBroadcastThreshold(app: DetectorApp | null, key: string): numb
 }
 
 export const duplicatePlanSubtreeDetector = defineSqlDetector({
-  type: 'duplicatePlanSubtree', order: 130, fixEffort: 'code', version: 2,
+  type: 'duplicatePlanSubtree', order: 130, bandPolicy: 'derived', fixEffort: 'code', version: 2,
   emits: ['duplicatePlanSubtree'],
   docAnchor: '#bottleneck-duplicate-plan-subtree',
   // stageFloorPct: the 0.5% runtime floor. The claim counts at most each linked stage's own
@@ -250,7 +250,7 @@ export const duplicatePlanSubtreeDetector = defineSqlDetector({
 });
 
 export const smallFilesDetector = defineSqlDetector({
-  type: 'smallFiles', order: 131, fixEffort: 'config', version: 2,
+  type: 'smallFiles', order: 131, bandPolicy: 'derived', fixEffort: 'config', version: 2,
   emits: ['smallFiles'],
   docAnchor: '#bottleneck-small-files',
   thresholds: { minFiles: 100, maxAvgFileSizeMB: 3 },
@@ -309,7 +309,7 @@ export const broadcastSizingDetector = defineSqlDetector({
   // Entry-level type is an identifier only; it never appears on an emitted finding. Findings
   // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
   // opposite-direction rules.
-  type: 'broadcastSizing', order: 132, fixEffort: 'config', version: 3,
+  type: 'broadcastSizing', order: 132, bandPolicy: 'derived', fixEffort: 'config', version: 3,
   // Listed over-first: the two share order 132, and this list order is their display tie-break.
   emits: ['overBroadcast', 'underBroadcast'],
   docAnchor: '#bottleneck-broadcast-sizing',
@@ -417,7 +417,7 @@ export const broadcastSizingDetector = defineSqlDetector({
 });
 
 export const pythonUdfDetector = defineSqlDetector({
-  type: 'pythonUdf', order: 134, fixEffort: 'code', version: 1,
+  type: 'pythonUdf', order: 134, bandPolicy: 'own', fixEffort: 'code', version: 1,
   emits: ['pythonUdf'],
   docAnchor: '#pyspark',
   // Unvalidated against a real workload (no corpus or private log runs a Python UDF): set high so
@@ -465,7 +465,7 @@ export const pythonUdfDetector = defineSqlDetector({
 });
 
 export const nestedLoopJoinDetector = defineSqlDetector({
-  type: 'nestedLoopJoin', order: 133, fixEffort: 'code', version: 1,
+  type: 'nestedLoopJoin', order: 133, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['nestedLoopJoin'],
   docAnchor: '#joins',
   // minOutputRows: below it the join is cheap whatever its shape. minExpansion: a
@@ -542,7 +542,7 @@ export const nestedLoopJoinDetector = defineSqlDetector({
 });
 
 export const mergeRewriteDetector = defineSqlDetector({
-  type: 'mergeRewrite', order: 135, fixEffort: 'code', version: 1,
+  type: 'mergeRewrite', order: 135, bandPolicy: 'own', fixEffort: 'code', version: 1,
   emits: ['mergeRewrite'],
   docAnchor: '#table-formats',
   // rewrittenRows: unmodified rows rewritten (at least minCopiedRows, and minCopiedToChangedRatio
@@ -597,7 +597,7 @@ export const mergeRewriteDetector = defineSqlDetector({
 });
 
 export const unprunedScanDetector = defineSqlDetector({
-  type: 'unprunedScan', order: 137, fixEffort: 'code', version: 1,
+  type: 'unprunedScan', order: 137, bandPolicy: 'own', fixEffort: 'code', version: 1,
   emits: ['unprunedScan'],
   docAnchor: '#table-formats',
   // A scan of a partitioned table (it reports "number of partitions read") that reads at least
@@ -644,7 +644,7 @@ export const unprunedScanDetector = defineSqlDetector({
 });
 
 export const joinKeyCastDetector = defineSqlDetector({
-  type: 'joinKeyCast', order: 136, fixEffort: 'code', version: 1,
+  type: 'joinKeyCast', order: 136, bandPolicy: 'own', fixEffort: 'code', version: 1,
   emits: ['joinKeyCast'],
   docAnchor: '#joins',
   thresholds: {},

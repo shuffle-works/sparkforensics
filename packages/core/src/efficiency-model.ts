@@ -1,20 +1,28 @@
 // Efficiency/wastage model: decomposes available compute-hours into driver-bound vs executor-bound
 // waste, plus the zero-skew makespan floor.
 import { stageWindows } from './wall-clock.ts';
-import { allocatedCoreMs, allocatedCoreMsWithin } from './allocation.ts';
+import { allocatedCoreMs, allocatedCoreMsWithin, type AllocationInput } from './allocation.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
-import type { ExecutorEvent, RunAggregates, SparkAppInfo } from './types.ts';
+import type { RunAggregates } from './types.ts';
 
+// Structural inputs, so a detector's narrower event and app shapes qualify too.
 export function computeEfficiencyModel({ app, stages, executorsAdded, executorsRemoved, runAggregates }: {
-  app: SparkAppInfo | null;
+  app: (AllocationInput['app'] & { resources?: { executor?: { cores?: number | null } } }) | null;
   stages: Map<number, { submittedAt?: number; completedAt?: number }>;
-  executorsAdded: ExecutorEvent[];
-  executorsRemoved: ExecutorEvent[];
-  runAggregates: RunAggregates | null;
+  executorsAdded: AllocationInput['executors']['added'];
+  executorsRemoved: AllocationInput['executors']['removed'];
+  runAggregates: Pick<RunAggregates, 'busyCoreMs' | 'perStage'> | null | undefined;
 }): {
   availableComputeHours: number;
   driverWasteHours: number;
   executorWasteHours: number;
+  /** Allocated core time (cores x time alive), or null without executor cores. */
+  allocatedCoreMs: number | null;
+  /** Busy core time over allocated core time, or null without allocated capacity. */
+  utilization: number | null;
+  /** `1 - utilization`: the one idle figure the utilization and idle-cores findings, the verdict
+   * and the Scorecard all state. */
+  idleShare: number | null;
   wastagePct: number | null;
   floorZeroSkewMs: number;
   dominantWaste: 'driver' | 'executor' | null;
@@ -41,8 +49,9 @@ export function computeEfficiencyModel({ app, stages, executorsAdded, executorsR
   const busyCoreMs = runAggregates?.busyCoreMs ?? 0;
   const executorWasteHours = Math.max(0, allocatedActiveCoreMs - busyCoreMs) / 3600000;
 
-  const wastageHours = driverWasteHours + executorWasteHours;
-  const wastagePct = availableComputeHours > 0 ? Math.round(wastageHours / availableComputeHours * 100) : null;
+  const utilization = allocatedMs != null && allocatedMs > 0 ? busyCoreMs / allocatedMs : null;
+  const idleShare = utilization == null ? null : 1 - utilization;
+  const wastagePct = idleShare == null ? null : Math.round(Math.max(0, idleShare) * 100);
 
   let totalTaskMs = 0;
   const perStage = runAggregates?.perStage ?? {};
@@ -60,7 +69,8 @@ export function computeEfficiencyModel({ app, stages, executorsAdded, executorsR
   }
 
   return {
-    availableComputeHours, driverWasteHours, executorWasteHours, wastagePct,
+    allocatedCoreMs: allocatedMs, availableComputeHours, driverWasteHours, executorWasteHours,
+    utilization, idleShare, wastagePct,
     floorZeroSkewMs, dominantWaste,
   };
 }

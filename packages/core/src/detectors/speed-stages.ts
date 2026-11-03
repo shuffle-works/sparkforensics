@@ -140,7 +140,7 @@ function gcValidation(minRunTimeMs: number): string {
 }
 
 export const stageShapeDetector = defineStageDetector({
-  type: 'stageShape', order: 35, fixEffort: 'code', version: 2,
+  type: 'stageShape', order: 35, bandPolicy: 'own', fixEffort: 'code', version: 2,
   emits: ['stageShape'],
   docAnchor: '#bottleneck-stage-shape',
   // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
@@ -239,7 +239,7 @@ export const stageShapeDetector = defineStageDetector({
 });
 
 export const shuffleDetector = defineStageDetector({
-  type: 'shuffle', order: 20, fixEffort: 'config', version: 1,
+  type: 'shuffle', order: 20, bandPolicy: 'derived', fixEffort: 'config', version: 1,
   emits: ['shuffle'],
   docAnchor: '#bottleneck-shuffle',
   // stageFloorPct: the 0.5% runtime floor. The shuffle claim is clipped to the stage, so on a
@@ -286,7 +286,10 @@ export const shuffleDetector = defineStageDetector({
 });
 
 export const partitionSizingDetector = defineStageDetector({
-  type: 'partitionSizing', order: 22, fixEffort: 'config', version: 1,
+  type: 'partitionSizing', order: 22, bandPolicy: 'derived', fixEffort: 'config', version: 1,
+  // maxPartitionTooBig is an OOM/crash-risk safety signal, not a time-recovery one: it stays critical
+  // however little wall-clock fixing it saves.
+  gradeAs: (finding) => (finding.rule === 'maxPartitionTooBig' ? 'failure' : 'derived'),
   emits: ['partitionSizing'],
   docAnchor: '#bottleneck-partition-sizing',
   thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, singleKeyShare: 0.9, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
@@ -323,10 +326,10 @@ export const partitionSizingDetector = defineStageDetector({
       });
     }
     if (max >= thresholds.maxPartBytes) {
-      // Fixed 'critical': an OOM/crash-risk safety signal, not a time-waste one. Exempted in
-      // impact-band.ts's deriveImpactBand from the wall-clock-based overwrite every other
-      // finding here gets, so a long-running job can't demote an active crash risk to 'info'
-      // just because the modeled time savings are a small fraction of total runtime.
+      // Fixed 'critical': an OOM/crash-risk safety signal, not a time-waste one. This entry's
+      // `gradeAs` keeps it out of the wall-clock grading every other finding here gets, so a
+      // long-running job can't demote an active crash risk to 'info' just because the modeled
+      // time savings are a small fraction of total runtime.
       out.push({
         type: 'partitionSizing', stageId: stage.id, impactBand: 'critical',
         rule: 'maxPartitionTooBig', metric: 'shuffleReadMax', value: max,
@@ -375,7 +378,7 @@ export const partitionSizingDetector = defineStageDetector({
 });
 
 export const spillDetector = defineStageDetector({
-  type: 'spill', order: 10, fixEffort: 'code', version: 1,
+  type: 'spill', order: 10, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['spill'],
   docAnchor: '#bottleneck-spill',
   // stageFloorPct: the 0.5% runtime floor, as for shuffle.
@@ -448,7 +451,7 @@ export const spillDetector = defineStageDetector({
 });
 
 export const gcDetector = defineStageDetector({
-  type: 'gc', order: 50, fixEffort: 'config', version: 1,
+  type: 'gc', order: 50, bandPolicy: 'derived', fixEffort: 'config', version: 1,
   emits: ['gc'],
   docAnchor: '#bottleneck-gc',
   thresholds: {
@@ -523,7 +526,7 @@ export const gcDetector = defineStageDetector({
 });
 
 export const stageSlownessDetector = defineStageDetector({
-  type: 'stageSlowness', order: 65, fixEffort: 'code', version: 2,
+  type: 'stageSlowness', order: 65, bandPolicy: 'derived', fixEffort: 'code', version: 2,
   emits: ['stageSlowness'],
   docAnchor: '#bottleneck-stage-slowness',
   thresholds: { infoMin: 15 },
@@ -580,7 +583,7 @@ export const stageSlownessDetector = defineStageDetector({
 });
 
 export const tinyTaskDetector = defineStageDetector({
-  type: 'tinyTask', order: 80, fixEffort: 'code', version: 1,
+  type: 'tinyTask', order: 80, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['tinyTask'],
   docAnchor: '#bottleneck-tiny-tasks',
   // stageFloorPct: the tiered detectors' 0.5% runtime floor. Coalescing can't save more than the
@@ -620,7 +623,7 @@ export const tinyTaskDetector = defineStageDetector({
 });
 
 export const coldStartDetector = defineAppDetector({
-  type: 'coldStart', order: 90, fixEffort: 'code', version: 1,
+  type: 'coldStart', order: 90, bandPolicy: 'derived', fixEffort: 'code', version: 1,
   emits: ['coldStart'],
   docAnchor: '#bottleneck-cold-start',
   thresholds: { gapSeconds: 30 },

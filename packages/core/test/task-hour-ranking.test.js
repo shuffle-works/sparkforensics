@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
-import { capCriticalByTaskTime, CRITICAL_MIN_TASK_TIME_SHARE } from '../src/impact-band.ts';
+import { bandRun, CRITICAL_MIN_TASK_TIME_SHARE, gradeFinding } from '../src/impact-band.ts';
+import { ENTRY_BY_TYPE } from '../src/detectors.ts';
 import { rankedRollup, rankCostMs } from '../src/recommendation-rollup.ts';
 import { buildNextSteps } from '../src/run-verdict.ts';
 import { analyze } from '../src/analyzer.js';
@@ -92,7 +93,14 @@ describe('task-hour ranking: a heavy spill stage against a cheap critical findin
   });
 });
 
-describe('capCriticalByTaskTime', () => {
+// Grades each finding under its detector entry's policy on a run with no application timing,
+// so only the task-time cap applies.
+function capCriticalByTaskTime(findings, stages) {
+  const run = bandRun(null, stages);
+  for (const finding of findings) gradeFinding(finding, ENTRY_BY_TYPE.get(finding.type), run);
+}
+
+describe('the critical cap by task time', () => {
   // 2,513 task-hours over the run; the stage under test carries 0.4 of them.
   const stages = new Map([[1, stage(1, 0.4)], [2, stage(2, 2512.6)]]);
   const slowHost = (stageId) => ({ ...finding('slowHost', stageId, 'critical', 0), impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } });

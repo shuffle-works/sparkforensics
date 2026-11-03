@@ -5,6 +5,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createServer, startServer, serverStartupGuidance, parseServerArgs, startupErrorMessage } from '../index.js';
+import { MCP_TOOL_NAMES } from '../../core/src/mcp-server-factory.ts';
 
 const SAMPLE_LOG = fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url));
 
@@ -112,9 +113,7 @@ describe('/mcp route', () => {
     const client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_detectors', 'list_runs',
-    ]);
+    expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort());
     await client.close();
   });
 

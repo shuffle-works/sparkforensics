@@ -1,0 +1,43 @@
+id: no-app-timing-outside-run-timing
+language: tsx
+severity: error
+message: The application's start and end are read outside `runTiming`.
+note: |
+  `runTiming(app, stages)` (`packages/core/src/run-timing.ts`) is the one place that says whether a
+  run's interval is complete, how long it ran, where a clock ends without an application end and
+  whether the log is cut short. Read `complete`, `durationMs`, `fallbackEndMs` or `incomplete`
+  from it instead of testing `endTime` against null or subtracting `startTime` from `endTime`.
+  A different clock (a SQL execution's end) is the exception: suppress the line with
+  `// ast-grep-ignore: no-app-timing-outside-run-timing` and the reason on the line below.
+rule:
+  kind: binary_expression
+  all:
+    - has:
+        field: left
+        kind: member_expression
+        has:
+          field: property
+          regex: ^endTime$
+    - any:
+        - all:
+            - has:
+                field: operator
+                regex: ^(!=|==|!==|===)$
+            - has:
+                field: right
+                kind: 'null'
+        - all:
+            - has:
+                field: operator
+                regex: ^-$
+            - has:
+                field: right
+                kind: member_expression
+                has:
+                  field: property
+                  regex: ^startTime$
+files:
+  - packages/*/src/**
+  - src/**
+ignores:
+  - packages/core/src/run-timing.ts

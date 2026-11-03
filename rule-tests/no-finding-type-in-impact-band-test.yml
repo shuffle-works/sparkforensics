@@ -1,0 +1,9 @@
+id: no-finding-type-in-impact-band
+valid:
+  - "finding.impactBand = pct >= critPct ? 'critical' : 'warning';"
+  - "const policy = entry.gradeAs?.(finding) ?? entry.bandPolicy;"
+  - "import type { Finding } from './types.ts';"
+invalid:
+  - "if (finding.type === 'partitionSizing') return;"
+  - "if (finding.rule === 'maxPartitionTooBig') return;"
+  - "const exempt = new Set(['stageFailed', 'jobFailureRate']);"

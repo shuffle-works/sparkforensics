@@ -10,7 +10,7 @@ import { ComparabilityCard } from '@/view/ComparabilityCard';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration, typeTag } from '@sparkforensics/core/view-model';
+import { formatBytes, formatDuration, IMPACT_BANDS, typeTag } from '@sparkforensics/core/view-model';
 import type { ImpactBand } from '@sparkforensics/core/types';
 import type { ReplannedGroup, StageAlignment, StagePair, Comparability } from '@sparkforensics/core/analysis';
 
@@ -117,8 +117,7 @@ function MetricRow({ m }: { m: MetricDelta }) {
 
 // CategoryDelta.impactBand is a plain string ('unknown' is possible); TagBadge
 // only accepts the ImpactBand union. Map anything outside it to a muted default.
-const IMPACT_BANDS: readonly ImpactBand[] = ['critical', 'warning', 'info'];
-const toImpactBand = (s: string): ImpactBand => (IMPACT_BANDS.includes(s as ImpactBand) ? (s as ImpactBand) : 'info');
+const toImpactBand = (s: string): ImpactBand => ((IMPACT_BANDS as readonly string[]).includes(s) ? (s as ImpactBand) : 'info');
 
 function StageChips({ stages }: { stages: string[] }) {
   if (stages.length === 0) return null;

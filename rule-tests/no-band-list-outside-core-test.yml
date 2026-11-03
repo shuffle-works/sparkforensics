@@ -1,0 +1,9 @@
+id: no-band-list-outside-core
+valid:
+  - "const bands = IMPACT_BANDS;"
+  - "const states = ['open', 'closed'];"
+  - "const band = pct > 2 ? 'critical' : 'warning';"
+invalid:
+  - "const BANDS = ['critical', 'warning', 'info'];"
+  - "const shown = new Set(['critical', 'warning']);"
+  - "const order: ImpactBand[] = ['warning', 'critical'];"

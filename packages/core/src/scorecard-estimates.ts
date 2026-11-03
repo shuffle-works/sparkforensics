@@ -1,4 +1,5 @@
 import { computeEfficiencyModel } from './efficiency-model.ts';
+import { runTiming } from './run-timing.ts';
 import { computeWallClock } from './wall-clock.ts';
 import type { AppModel } from './types.ts';
 
@@ -12,19 +13,11 @@ type WastageEstimate = {
   unavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
 };
 
-export function hasCompleteApplicationInterval(app: AppModel['app']): boolean {
-  return typeof app?.startTime === 'number'
-    && Number.isFinite(app.startTime)
-    && typeof app?.endTime === 'number'
-    && Number.isFinite(app.endTime)
-    && app.endTime > app.startTime;
-}
-
 export function getScorecardEstimates(appModel: AppModel): {
   efficiency: EfficiencyEstimate;
   wastage: WastageEstimate;
 } {
-  if (!hasCompleteApplicationInterval(appModel.app)) {
+  if (!runTiming(appModel.app).complete) {
     return {
       efficiency: { value: null, unavailableReason: 'application-timing' },
       wastage: { value: null, unavailableReason: 'application-timing' },

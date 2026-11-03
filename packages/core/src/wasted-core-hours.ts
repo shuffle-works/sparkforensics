@@ -4,6 +4,7 @@
 
 import { allocatedCoreMs } from './allocation.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
+import { runTiming } from './run-timing.ts';
 import { MS_PER_CORE_HOUR } from './units.ts';
 
 const TOP_N = 5;
@@ -40,9 +41,8 @@ export function computeWastedCoreHours(
   runAggregates: RunAggregates | null,
   executorsRemoved: Array<{ executorId: string; timestamp: number }> = [],
 ): WastedCoreHoursResult {
-  if (!runAggregates || app?.startTime == null || app?.endTime == null) return EMPTY;
-  const appDurationMs = app.endTime - app.startTime;
-  if (appDurationMs <= 0) return EMPTY;
+  const appDurationMs = runTiming(app).durationMs;
+  if (!runAggregates || !app || appDurationMs == null) return EMPTY;
 
   // Capacity is the run's allocation (cores x time alive), the same as the idle findings. The
   // application end is set here, so the allocation never needs the stages to find where a log stops.

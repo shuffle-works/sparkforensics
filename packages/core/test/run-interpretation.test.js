@@ -32,6 +32,27 @@ const failedJob = (id, stageIds) => ({
   id, submissionTime: 0, stageIds, sqlExecutionId: null, result: 'JobFailed', succeeded: false, exception: null, completionTime: 1,
 });
 
+describe('idle share grading', () => {
+  // 4 cores for 20s hold 80s of core time and 16s of it ran tasks: 80% idle.
+  const idleModel = () => appModel({
+    executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+    runAggregates: { busyCoreMs: 16_000, perStage: {} },
+  });
+  const note = "80% of the run's core time went unused, so the cluster may be larger than this job needs.";
+
+  it('flags the Scorecard tile and notes the verdict from the utilization thresholds', () => {
+    const interpretation = interpretRun(idleModel(), [], []);
+    expect(interpretation.runShape).toMatchObject({ unusedCoreTimePct: 80, unusedCoreTimeFlag: 'critical' });
+    expect(interpretation.verdict.summary).toContain(note);
+  });
+
+  it('moves the tile flag and the verdict note together under a --thresholds override', () => {
+    const interpretation = interpretRun(idleModel(), [], [], { utilization: { minUtil: 0.1, criticalUtil: 0.05 } });
+    expect(interpretation.runShape.unusedCoreTimeFlag).toBeNull();
+    expect(interpretation.verdict.summary).not.toContain(note);
+  });
+});
+
 describe('interpretRun', () => {
   it('refers to findings by id, with savings keyed by id', () => {
     const catalog = [timed('spill', 3, 1_000), timed('skew', 7, 2_400)];
@@ -48,7 +69,8 @@ describe('interpretRun', () => {
       provenance: expect.stringContaining('point estimate'),
     });
     expect(interpretation.savings['config-serializer'].figure).toBeNull();
-    expect(interpretation.verdict.steps.map((step) => byId.get(step.leadId))).toEqual([catalog[1], catalog[0], config[0]]);
+    // The info config note stays out of the steps: it is context, never something to act on.
+    expect(interpretation.verdict.steps.map((step) => byId.get(step.leadId))).toEqual([catalog[1], catalog[0]]);
     expect(interpretation.savingsRank.map((id) => byId.get(id))).toEqual([catalog[1], catalog[0], config[0]]);
   });
 
