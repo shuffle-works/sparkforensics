@@ -185,7 +185,7 @@ const compareRunsOutput = {
 const evaluateBudgetsOutput = {
   baselineRunId: z.string().optional().describe('Present with two runs: the regression baseline.'),
   candidateRunId: outputRunId,
-  runId: z.string().optional().describe(`The first run's id. ${deprecationNote('evaluate_budgets result', 'runId')}`),
+  runId: z.string().optional().describe(`The first run's id: the baseline when two runs are given, so read candidateRunId for the run the budgets judged. ${deprecationNote('evaluate_budgets result', 'runId')}`),
   results: z.array(z.unknown()), violated: z.boolean(), inconclusive: z.boolean(),
   tunedThresholds: z.unknown().optional(),
 };
@@ -289,7 +289,7 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
 
     tool({
       name: 'evaluate_budgets',
-      description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
+      description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. The result's candidateRunId names the run the budgets judged; the deprecated runId names the baseline (the first run) when two runs are given. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
       inputSchema: {
         source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
         runId: runRefSchema.runId.describe('Same as `source`, referencing an already-resolved run by id.'),

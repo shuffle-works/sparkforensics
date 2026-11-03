@@ -82,8 +82,8 @@ Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-stage-regression`, `fail-on-introduced`, `run-complete` and
 `parse-incomplete`. A
 `max-regression` or `max-stage-regression` result also carries `metric`, the
-key it checked. The returned `runId` is the first
-run's (the baseline, when two runs are given).
+key it checked. The deprecated `runId` is the first
+run's (the baseline, when two runs are given); read `candidateRunId` for the run the budgets judged.
 
 Example call:
 
@@ -100,8 +100,9 @@ Example call:
 ```
 
 The response names the runs it covers: `candidateRunId` is the run the budgets were evaluated on,
-and `baselineRunId` is present with two runs. `runId` is the id of the first run, the baseline with
-two runs. It is deprecated and removed in 0.13.0.
+and `baselineRunId` is present with two runs. `runId` is the id of the first run: with two runs it names
+the baseline, not the run the budgets judged. Read `candidateRunId` for that run. `runId` is
+deprecated and removed in 0.13.0.
 
 Example response:
 

@@ -569,7 +569,7 @@ export async function evaluateBudgetsForRun(
   baselineRunId?: string;
   /** The run the budgets were evaluated on. */
   candidateRunId: string;
-  /** @deprecated The first run's id, the baseline with two runs; see `DEPRECATIONS`. */
+  /** @deprecated The first run's id, the baseline with two runs; read candidateRunId for the run judged; see `DEPRECATIONS`. */
   runId: string;
   results: BudgetResult[]; violated: boolean; inconclusive: boolean;
   tunedThresholds?: Record<string, TunedThresholds>;

@@ -17,7 +17,7 @@ export const DEPRECATIONS: readonly Deprecation[] = [
   { surface: 'mcp', where: 'compare_runs result', item: 'runIdA', replacement: 'baselineRunId', removeIn: '0.13.0' },
   { surface: 'mcp', where: 'compare_runs result', item: 'runIdB', replacement: 'candidateRunId', removeIn: '0.13.0' },
   { surface: 'cli', where: 'usage', item: '--legacy-json', replacement: 'the { schemaVersion, run, comparison, budgets } JSON the CLI writes by default', removeIn: '0.13.0' },
-  { surface: 'mcp', where: 'evaluate_budgets result', item: 'runId', replacement: 'baselineRunId and candidateRunId', removeIn: '0.13.0' },
+  { surface: 'mcp', where: 'evaluate_budgets result', item: 'runId', replacement: 'candidateRunId, the run the budgets judged (runId names the baseline, the first run, when two runs are given)', removeIn: '0.13.0' },
 ];
 
 /** The sentence a tool description or help text gives for one deprecated item. */
