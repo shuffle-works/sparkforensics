@@ -91,7 +91,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const runSummary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path } } });
     expect(runSummary.structuredContent).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
     expect(runSummary.structuredContent.runShape).toEqual({
-      wallClockMs: null, efficiencyPct: null, unusedCoreTimePct: null, etlPhasesMs: null, peakBusyCores: null,
+      wallClockMs: null, efficiencyPct: null, unusedCoreTimePct: null, efficiencyFlag: null, unusedCoreTimeFlag: null, etlPhasesMs: null, peakBusyCores: null,
     });
   }, 30000);
 

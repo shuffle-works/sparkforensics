@@ -166,8 +166,8 @@ describe('interpretRun', () => {
     expect(interpretation.verdict.summary).toEqual(json.verdict.summary);
     expect(interpretation.verdict.copyText).toBe(json.verdict.copyText);
     expect(interpretation.verdict.clean).toBe(json.summary.clean);
-    const { wallClockMs, efficiencyPct, unusedCoreTimePct } = json.summary.runShape;
-    expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct });
+    const { wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag } = json.summary.runShape;
+    expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag });
     // The Findings board lists the report's "Fix these first" groups, members in the same order.
     const eligible = catalog.filter((f) => interpretation.rollup.eligibleIds.includes(f.id));
     expect(rankedRollup(eligible, model.stages).map((group) => ({ type: group.type, ids: group.members.map((f) => f.id) })))

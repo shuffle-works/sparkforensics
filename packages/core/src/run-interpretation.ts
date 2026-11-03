@@ -17,9 +17,8 @@ import {
 } from './impact-format.ts';
 import { isEligible } from './recommendation-rollup.ts';
 import { quotesReasonOf } from './run-outcome.ts';
-import { computeRunShape, type RunShape } from './run-shape.ts';
+import { computeRunShape, type RunShape, type ScorecardFlag } from './run-shape.ts';
 import { findingsOfType } from './findings-of-type.ts';
-import { gradeIdlePct, idleGrading } from './idle-grading.ts';
 import { runTiming, type RunTiming } from './run-timing.ts';
 import {
   buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, quotedReasonText, rankBySavings, stepCopyText,
@@ -98,17 +97,15 @@ export interface CoverageData {
   gaps: string[];
 }
 
-export type ScorecardFlag = 'critical' | 'warning' | null;
+export type { ScorecardFlag };
 
 /** The Scorecard's three headline figures (the ones the report's runShape also states) and how
  * each is graded. `wallClockMs` is null without a complete application timing interval. */
-export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct'> {
+export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct' | 'efficiencyFlag' | 'unusedCoreTimeFlag'> {
   /** What the log's application start and end say about the run (`runTiming`). */
   timing: RunTiming;
   /** The cold-start finding's seconds, read from the whole catalog so a board filter never changes it. */
   coldStartSeconds: number | null;
-  efficiencyFlag: ScorecardFlag;
-  unusedCoreTimeFlag: ScorecardFlag;
   unusedCoreTimeUnavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
 }
 
@@ -176,14 +173,8 @@ export function findingSavings(finding: Finding): FindingSavings {
   };
 }
 
-// The Scorecard's severity rule: a tile is flagged only when the figure is bad enough to act on.
-function efficiencyFlag(pct: number | null): ScorecardFlag {
-  if (pct == null) return null;
-  return pct < 75 ? 'critical' : pct < 90 ? 'warning' : null;
-}
-
 function interpretRunShape(appModel: AppModel, catalog: Finding[], thresholds: ThresholdOverrides | undefined): RunShapeData {
-  const { wallClockMs, efficiencyPct, unusedCoreTimePct } = computeRunShape(appModel);
+  const { wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag } = computeRunShape(appModel, thresholds);
   const estimates = getScorecardEstimates(appModel);
   return {
     timing: runTiming(appModel.app, appModel.stages),
@@ -191,8 +182,8 @@ function interpretRunShape(appModel: AppModel, catalog: Finding[], thresholds: T
     wallClockMs,
     efficiencyPct,
     unusedCoreTimePct,
-    efficiencyFlag: efficiencyFlag(efficiencyPct),
-    unusedCoreTimeFlag: gradeIdlePct(unusedCoreTimePct, idleGrading(thresholds)),
+    efficiencyFlag,
+    unusedCoreTimeFlag,
     unusedCoreTimeUnavailableReason: estimates.wastage.unavailableReason,
   };
 }

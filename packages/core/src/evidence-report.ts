@@ -536,7 +536,7 @@ function buildJson(
         failureReason: runOutcome.reason,
         failureReasonStageId: runOutcome.reason != null ? runOutcome.reasonStageId : null,
       },
-      runShape: computeRunShape(fullModel),
+      runShape: computeRunShape(fullModel, thresholds),
       ...(tuned ? { tunedThresholds: tuned } : {}),
     },
     verdict: verdictJson(runVerdict),

@@ -556,7 +556,7 @@ describe('buildEvidenceReport', () => {
     it('carries the run-shape figures and prints each with what it measures', () => {
       const { json, markdown } = buildEvidenceReport(fixture());
       const shape = json.summary.runShape;
-      expect(Object.keys(shape)).toEqual(['wallClockMs', 'efficiencyPct', 'unusedCoreTimePct', 'etlPhasesMs', 'peakBusyCores']);
+      expect(Object.keys(shape)).toEqual(['wallClockMs', 'efficiencyPct', 'unusedCoreTimePct', 'efficiencyFlag', 'unusedCoreTimeFlag', 'etlPhasesMs', 'peakBusyCores']);
       expect(shape.wallClockMs).toBe(5000);
       expect(typeof shape.efficiencyPct).toBe('number');
       expect(typeof shape.peakBusyCores).toBe('number');
