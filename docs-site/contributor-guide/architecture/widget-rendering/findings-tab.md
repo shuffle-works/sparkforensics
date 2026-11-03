@@ -4,20 +4,20 @@ How the Findings tab renders recommendation rows and active widget cards in one 
 
 Rendered by `FilteredBoard`'s `TabsContent value="findings"`
 (`src/view/widgets/ImpactBoard.tsx`): recommendation rows and active
-widget cards in one impact-ranked board. The recommendation-rollup logic lives in
-`src/view/widgets/FixTheseFirst.tsx` (its own file with directly-testable
-exports, not rendered as a standalone page section by `Dashboard.tsx`) and
+widget cards in one impact-ranked board. The recommendation rows render from
+`src/view/widgets/FixTheseFirst.tsx` (`FindingRow`, `TypeGroupRow`; not
+rendered as a standalone page section by `Dashboard.tsx`) and
 the active-widget logic lives in `src/view/widgets/Alerts.tsx` (same: not
 rendered standalone).
-`ImpactBoard` calls `FixTheseFirst.tsx`'s exported `useFixTheseFirstData`
-(eligible findings, rollup groups, the top triage target) and
+`ImpactBoard` renders the bands of the board layout that `buildBoardLayout`
+(`src/view/board-layout.ts`) builds from the rollup groups and
 `Alerts.tsx`'s exported `computeActiveWidgets` (the ranked active-`REGISTRY`
 list). The rollup and its ranking are computed in core by `interpretRun`
 (`rankedRollup`/`rankFindings`, `packages/core/src/recommendation-rollup.ts`);
-`useFixTheseFirstData` reads it through `boardRollup`
+`buildBoardLayout` reads it through `boardRollup`
 (`src/view/interpretation.ts`: the interpretation's carried groups when
 unfiltered, core `rankedRollup` recomputed over the kept findings under a
-filter). `ImpactBoard` then buckets rows by each group's `band` (its worst
+filter). The layout then buckets rows by each group's `band` (its worst
 member's impact band, which the group row's badge also shows, while
 `rankFindings` orders the members by stage task time) and cards by each
 active widget's own `worstImpactBand`. The verdict's step leads
