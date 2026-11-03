@@ -26,11 +26,11 @@ import {
   type FilterOptions,
   type FilterSelection,
 } from '@/view/finding-filter';
-import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
-import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
-import { EtlPhases } from '@/view/widgets/EtlPhases';
+import { CoreUsageHistogram, hasCoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
+import { EfficiencyModel, hasEfficiencyModel } from '@/view/widgets/EfficiencyModel';
+import { EtlPhases, hasEtlPhases } from '@/view/widgets/EtlPhases';
 import { ExecutorCountChart } from '@/view/widgets/ExecutorCountChart';
-import { ScalingSim } from '@/view/widgets/ScalingSim';
+import { ScalingSim, hasScalingSim } from '@/view/widgets/ScalingSim';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import { SampleRunNotice } from '@/view/SampleRunNotice';
 import { Scorecard } from '@/view/widgets/Scorecard';
@@ -82,6 +82,8 @@ function ReferenceSection({
   activeFileId,
   onRoute,
 }: WidgetProps & { onRoute: (target: TriageTarget) => void }) {
+  // The data decides which reference tiles exist, so a tile with nothing to show leaves no blank grid cell.
+  const interpretation = useInterpretation();
   return (
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
@@ -101,10 +103,10 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-evidence-availability" collapsedTile>
           <EvidenceAvailability ledger={appModel.evidenceAvailability} />
         </WidgetGridItem>
-        <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
+        {hasEtlPhases(interpretation) && <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>}
+        {hasScalingSim(appModel, interpretation) && <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>}
+        {hasEfficiencyModel(interpretation) && <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>}
+        {hasCoreUsageHistogram(appModel) && <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>}
       </WidgetGrid>
     </div>
   );

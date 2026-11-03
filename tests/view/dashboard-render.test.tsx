@@ -440,3 +440,25 @@ test('the top bar count chip lands on the verdict when the verdict holds every f
   await user.click(screen.getByRole('button', { name: '1 warning: show them in Findings' }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('run-verdict')));
 });
+
+test('Full app report mounts no reference tile for a lens with no data, so the grid has no blank cell', async () => {
+  // No stage reads, shuffles or writes bytes, so ETL Phase Attribution has nothing to attribute.
+  const appModel = readyAppModel() as any;
+  for (const stage of appModel.stages.values()) {
+    Object.assign(stage, { inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, outputBytes: 0 });
+  }
+  store.setState({ status: 'ready', appModel, catalog: [] });
+
+  render(<App />);
+  await waitForDashboard();
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Full app report' }));
+  const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
+  await within(reportPanel).findByRole('heading', { name: 'Core Locality' });
+
+  expect(within(reportPanel).queryByRole('heading', { name: 'ETL Phase Attribution' })).not.toBeInTheDocument();
+  expect(within(reportPanel).queryByTestId('widget-grid-item-reference-etl-phases')).not.toBeInTheDocument();
+  const emptyItems = within(reportPanel).queryAllByTestId(/^widget-grid-item-reference-/)
+    .filter((item) => item.childElementCount === 0)
+    .map((item) => item.dataset.testid);
+  expect(emptyItems).toEqual([]);
+});
