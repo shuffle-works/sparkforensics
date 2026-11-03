@@ -2,7 +2,6 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { StageDetailProvider } from '@/view/StageDetailContext';
@@ -105,18 +104,6 @@ test('shows a confidence caveat when the straggler finding carries one', () => {
   expect(caveat).toBeInTheDocument();
   expect(caveat.getAttribute('title')).toBe(catalog[0].validationRequired);
   store.getState().setWidgetDensity('basic');
-});
-
-test('paginates the issue list 6-at-a-time', async () => {
-  const user = userEvent.setup();
-  const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => ({
-    type: 'straggler', stageId: i + 1, impactBand: 'warning', metric: 'stragglerShare', value: 10, unit: 'pct', recommendation: `r${i}`,
-  } as Finding));
-  const appModel: AppModel = { ...emptyAppModel(), stages: new Map(catalog.map((f) => [f.stageId as number, { id: f.stageId }])) as unknown as AppModel['stages'] };
-  renderStraggler(appModel, catalog, false);
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 });
 
 test('names the measured cause of the slow tail', () => {

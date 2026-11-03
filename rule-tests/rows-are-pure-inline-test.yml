@@ -1,0 +1,20 @@
+id: rows-are-pure-inline
+valid:
+  # A widget may use React, the store and the DOM outside a rows function.
+  - |
+    import { useState } from 'react';
+    import { useStore } from '@/store/store';
+    export function Widget() { const [open] = useState(false); return open ? document.title : null; }
+  - |
+    import { useStore } from '@/store/store';
+    export const retryWasteRows: RowsOf<'retryWaste', Row> = ({ findings, density }) => (density === 'advanced' ? findings : []);
+    export function RetryWaste() { return useStore((state) => state.density); }
+invalid:
+  # A rows function typed in a widget file.
+  - "export const rows: RowsOf<'retryWaste', Row> = ({ findings }) => (useWidgetDensity() === 'advanced' ? findings : []);"
+  - "export const rows: RowsOf<'retryWaste', Row> = ({ findings }) => (document.body.dataset.density === 'advanced' ? findings : []);"
+  - "export const rows: RowsOf<'retryWaste', Row> = ({ findings }) => (Math.random() > 0.5 ? findings : []);"
+  - "export const rows: RowsOf<'retryWaste', Row> = ({ findings }) => (Date.now() % 2 ? findings : []);"
+  - "export const rows: RowsOf<'retryWaste', Row> = ({ findings }) => (new Date().getDay() === 0 ? findings : []);"
+  - "export const rows = (({ findings }) => (window.innerWidth > 0 ? findings : [])) satisfies RowsOf<'retryWaste', Row>;"
+  - "export const rows = (({ findings }) => (window.innerWidth > 0 ? findings : [])) as RowsOf<'retryWaste', Row>;"

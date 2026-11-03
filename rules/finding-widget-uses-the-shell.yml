@@ -1,0 +1,32 @@
+id: finding-widget-uses-the-shell
+language: tsx
+severity: error
+message: A finding widget file does what the shell does.
+note: |
+  A file that builds its widget with `defineFindingWidget` renders one row and nothing else.
+  `finding-widget.tsx` owns the card frame, the tag, sort, paging, route index and row anchors, and
+  the widget's `.rows.ts` owns what a row shows, in both densities, stated or not. Leave out
+  `WidgetCard`, `TagBadge`, `RowPagination`, `SortModeToggle` and `AdvancedOnly`, and do not call
+  `useSortMode`, `usePagedRows`, `useAnchoredRow`, `useFindingAnchor`, `useActiveRouteTarget`,
+  `useWidgetDensity` or `useInlineEvidence`. Put the fact the row needs in the row.
+rule:
+  any:
+    - any:
+        - kind: jsx_opening_element
+        - kind: jsx_self_closing_element
+      has:
+        field: name
+        regex: ^(WidgetCard|TagBadge|RowPagination|SortModeToggle|AdvancedOnly)$
+    - kind: call_expression
+      has:
+        field: function
+        kind: identifier
+        regex: ^(useSortMode|usePagedRows|useAnchoredRow|useFindingAnchor|useActiveRouteTarget|useWidgetDensity|useInlineEvidence|useStatedAbove|useAnyStatedAbove)$
+  inside:
+    stopBy: end
+    kind: program
+    has:
+      stopBy: end
+      pattern: defineFindingWidget($$$)
+files:
+  - src/view/widgets/*.tsx

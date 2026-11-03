@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Inbox } from 'lucide-react';
 import {
   type ColumnDef,
@@ -66,65 +66,38 @@ function truncate(str: string, n: number): string {
   return str.length > n ? `${str.slice(0, n)}…` : str;
 }
 
-function retriedCell(failed: number) {
-  if (failed <= 0) return <>0</>;
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {failed} <Chip label="RETRY" impactBand="critical" />
-    </span>
-  );
+/** A cell's number, with a chip only when a detector flagged the stage for it: the chip takes the
+ * finding's own impact band, so the table never grades a number itself. */
+function flaggedCell(value: ReactNode, chip: ReactNode) {
+  return chip ? <span className="inline-flex items-center gap-1.5">{value} {chip}</span> : <>{value}</>;
 }
 
-/** Basic density keeps the duration and the colored flag chip but drops the
- * precise percentage: a raw ratio number that needs the same Spark-internals
- * context as I/O Ratio, GC%, and Skew P95/median. */
-function fetchWaitCell(fetchWait: number, runTime: number, density: 'basic' | 'advanced') {
-  if (fetchWait <= 0) return <>{'—'}</>;
-  const formatted = formatDuration(fetchWait);
-  if (runTime <= 0) return <>{formatted}</>;
-  const ratio = fetchWait / runTime;
-  if (ratio > 0.3) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        {formatted} <Chip label={density === 'advanced' ? `${Math.round(ratio * 100)}%` : 'High'} impactBand="critical" />
-      </span>
-    );
-  }
-  if (ratio > 0.15) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        {formatted} <Chip label={density === 'advanced' ? `${Math.round(ratio * 100)}%` : 'Elevated'} impactBand="info" />
-      </span>
-    );
-  }
-  return <>{formatted}</>;
+function retriedCell(failed: number, flag: Finding | undefined) {
+  return flaggedCell(failed, flag ? <Chip label="RETRY" impactBand={flag.impactBand} /> : null);
+}
+
+function fetchWaitCell(fetchWait: number) {
+  return <>{fetchWait ? formatDuration(fetchWait) : '—'}</>;
+}
+
+function formatIoRatio(ratio: number): string {
+  return ratio < 0.01 ? `${ratio.toExponential(1)}×` : `${ratio.toFixed(2)}×`;
 }
 
 function ioRatioCell(inputBytes: number, outputBytes: number) {
-  if (!inputBytes || inputBytes <= 0) return <>{'—'}</>;
-  if (!outputBytes || outputBytes <= 0) return <>{'—'}</>;
-  const ratio = outputBytes / inputBytes;
-  const formatted = ratio < 0.01 ? `${ratio.toExponential(1)}×` : `${ratio.toFixed(2)}×`;
-  if (ratio > 2.0 || ratio < 0.1) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        {formatted} <Chip label="extreme" impactBand="info" />
-      </span>
-    );
-  }
-  return <>{formatted}</>;
+  return <>{inputBytes && outputBytes ? formatIoRatio(outputBytes / inputBytes) : '—'}</>;
 }
 
-function spillCell(memoryBytesSpilled: number, classification: Stage['spillClassification']) {
-  if (memoryBytesSpilled <= 0) return <>{'—'}</>;
+function spillCell(memoryBytesSpilled: number, flag: Finding | undefined, classification: Stage['spillClassification']) {
+  if (!memoryBytesSpilled) return <>{'—'}</>;
   const cls = classification ?? 'unclassified';
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      {formatBytes(memoryBytesSpilled)}{' '}
-      <Chip label={SPILL_CLASS_SHORT[cls]} impactBand="warning" title={SPILL_CLASS_TITLE[cls]} />
-    </span>
+  return flaggedCell(
+    formatBytes(memoryBytesSpilled),
+    flag ? <Chip label={SPILL_CLASS_SHORT[cls]} impactBand={flag.impactBand} title={SPILL_CLASS_TITLE[cls]} /> : null,
   );
 }
+
+const flagOf = (row: Row, type: Finding['type']): Finding | undefined => row.tags.find((tag) => tag.type === type);
 
 function ratioValue(p50: number | undefined, p95: number | undefined): number {
   if (!p50 || p50 <= 0) return 0;
@@ -303,7 +276,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         id: 'retried',
         header: 'Retried',
         accessorFn: (r) => r.stage.failedTasks ?? 0,
-        cell: ({ getValue }) => retriedCell(getValue<number>()),
+        cell: ({ row }) => retriedCell(row.original.stage.failedTasks ?? 0, flagOf(row.original, 'retryWaste')),
       },
       {
         id: 'shuffleRead',
@@ -315,7 +288,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         id: 'fetchWait',
         header: 'Fetch Wait',
         accessorFn: (r) => r.stage.fetchWaitTime ?? 0,
-        cell: ({ row }) => fetchWaitCell(row.original.stage.fetchWaitTime ?? 0, row.original.stage.executorRunTime ?? 0, density),
+        cell: ({ row }) => fetchWaitCell(row.original.stage.fetchWaitTime ?? 0),
       },
       // I/O Ratio, GC%, and Skew P95/median are raw statistical ratios that
       // need Spark-internals knowledge to interpret and mostly duplicate
@@ -335,7 +308,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         id: 'spill',
         header: 'Spill (mem)',
         accessorFn: (r) => r.stage.memoryBytesSpilled ?? 0,
-        cell: ({ row }) => spillCell(row.original.stage.memoryBytesSpilled ?? 0, row.original.stage.spillClassification),
+        cell: ({ row }) => spillCell(row.original.stage.memoryBytesSpilled ?? 0, flagOf(row.original, 'spill'), row.original.stage.spillClassification),
       },
       ...(density === 'advanced'
         ? ([

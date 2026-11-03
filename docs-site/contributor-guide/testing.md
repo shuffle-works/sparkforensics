@@ -41,20 +41,27 @@ rendered output and correct it afterwards:
 - `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
   `innerText`, `innerHTML`, `outerHTML`, `getComputedStyle` in `src/view/`.
 - `no-hidden-after-render`: `hidden={flag}`, `display: none` and
-  `visibility: hidden` styles, a `.hidden` or `.style.display` assignment and
-  `has-[...]:hidden` in `src/`. A conditional `hidden` or `invisible` class
-  string is not matched by this rule: the behaviour tests in
+  `visibility: hidden` styles, a `.hidden` or `.style.display` assignment,
+  `has-[...]:hidden` and `empty:hidden` in `src/`. A conditional `hidden` or
+  `invisible` class string is not matched by this rule: the behaviour tests in
   [row-expand-contract](./architecture/widget-rendering/row-expand-contract.md)
   count that output as not shown.
 - `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
   widgets, `WidgetCard`, `WidgetGrid`, `InlineEvidence`, `detector-registry.tsx`
   and `evidence-panel.ts`.
-- `content-check-is-pure`: a content check that imports React, the store or a
-  context, calls a hook, or reads a global, the clock or randomness. It covers
-  all of every `*.content.ts` file and `evidence-panel.ts`.
-- `content-check-is-pure-inline`: the same reads elsewhere in `src/`, inside a
-  `ContentCheck`-typed value or a registry entry's `content`. Both rules share
-  their list of reads in `rule-utils/`.
+- `rows-are-pure`: a widget's rows that import React, the store, a context or a
+  hook module, call a hook, or read a global, the clock or randomness. It covers
+  all of every `*.rows.ts` file and `evidence-panel.ts`.
+- `rows-are-pure-inline`: the same reads elsewhere in `src/`, inside a
+  `RowsOf`-typed value. Both rules share their list of reads in `rule-utils/`.
+- `finding-widget-uses-the-shell`: a file that builds its widget with
+  `defineFindingWidget` and also renders `WidgetCard`, `TagBadge`,
+  `RowPagination`, `SortModeToggle` or `AdvancedOnly`, or calls the sort, paging,
+  anchor, route, density or inline-evidence hooks. The shell owns those; the
+  widget file renders one row. Files in `src/view/widgets/`.
+- `no-numeric-severity-in-cell`: a `*Cell` function in `src/view/widgets/` that
+  compares a number. A cell shows the raw number, plus a chip only when a detector flagged
+  the stage, in that finding's impact band.
 - `no-panel-forgery`: an `EvidencePanel` made by a cast, a `type`/`rows` literal
   or a direct `evidencePanel(...)` call outside `evidence-panel.ts` and
   `detector-registry.tsx`.
@@ -335,15 +342,18 @@ load average next to the numbers.
 Widget and detector test files collect copy-pasted boilerplate fast.
 Before adding a widget test file, or a per-widget or per-detector test:
 
-- Cross-cutting widget behavior (impact/stage sort-toggle default and flip,
-  density-gated visibility, 6-at-a-time pagination) belongs in a shared
-  helper under `tests/view/_shared/`, called from each widget's test file.
-  It holds `testFinding` (`finding.ts`), `installInterpretation` and
-  the sort-order helpers (`sort-order-toggle.ts`); add a density or
-  pagination helper there the first time two widget tests would share one.
-  Extract into it only when a test body is identical to an existing one apart
-  from the widget name, fixture or label. A widget with a real difference
-  (a `React.lazy`-loaded chunk, a custom row finder) keeps its own test.
+- A finding widget's title, tag, sort toggle, 6-at-a-time paging, route index
+  and row anchors come from the one shell, `defineFindingWidget`
+  (`src/view/finding-widget.tsx`). `tests/view/finding-widget.test.tsx` tests
+  them once, with a stub row model. A widget's own test file covers only its
+  rows: it calls the `rows` function (or renders the `Row`) and asserts what a
+  row decides, stated or not, in both densities. Do not repeat a sort, paging or
+  anchor test in a widget's file.
+- `tests/view/_shared/` holds `testFinding` (`finding.ts`) and
+  `installInterpretation` (`interpretation.ts`), plus helpers for evidence
+  panels and the detector examples. Reuse them before pasting boilerplate. A
+  widget with a real difference (a `React.lazy`-loaded chunk, a custom row
+  finder) keeps its own test.
 - `packages/core/test/fixtures/` holds the shared stage and app fixture
   factories (`makeStage`/`makeApp`). Import them instead of pasting a local
   copy into a new core test file.

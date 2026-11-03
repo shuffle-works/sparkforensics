@@ -42,8 +42,8 @@ contract; cross-session consumers (exports, URL-restored state) use
 the core `Finding.id` instead (see [Finding identity](../worker-protocol/evidence-report.md#finding-identity)).
 
 `Dashboard` owns disclosure and navigation. Every routeable `REGISTRY`
-widget lives in the Findings tab except the always-mounted Core Usage by
-Locality, which lives in Full app report (see "Render order" above), so
+widget lives in the Findings tab except the always-mounted Core Locality,
+which lives in Full app report (see "Render order" above), so
 `requestRoute` (`DashboardContent`, `src/view/Dashboard.tsx`) starts by
 switching to the tab holding the target's widget
 (`isAlwaysMountedType(target.finding.type)` picks Full app report), whether
@@ -58,13 +58,13 @@ commit (a child `WidgetCard` reports its own open state before its parent
 `WidgetGridItem`'s registration effect runs on a fresh mount, so treating
 "not registered yet" as "stale" would drop the route before the parent even
 gets a chance to register it); and a paginated widget that must reveal a
-routed row passes its `routeIndex` into `usePagedRows`
-(`src/view/usePagedRows.ts`), which computes the page
+routed row gets that from the shell, which passes the row's `routeIndex` into
+`usePagedRows` (`src/view/usePagedRows.ts`), which computes the page
 jump during render, not only in a post-commit effect, so the row exists in
 the DOM in time for this same commit's anchor lookup instead of one commit
 later.
 
-After the target card commits open, an anchored row (`useFindingAnchor`) is
+After the target card commits open, an anchored row (the shell anchors every row it renders) is
 scrolled to center and focused, then flashed for 2 s; without one, the card
 wrapper scrolls with a top margin below the fixed header and its disclosure
 button receives visible, temporary route focus (using instant scrolling for

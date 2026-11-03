@@ -81,10 +81,12 @@ from the carried per-group numbers); and the Scaling Simulator's
 widget with findings as props installs an interpretation first with
 `tests/view/_shared/interpretation.ts`.
 
-Some view judgments sit outside the rule. StageTable's RETRY, fetch-wait,
-spill and I/O-ratio chips, PlanView's cross-join, long-filter and exchange-count
-warnings, and the plan graph's duration-share heat colours use thresholds in
-the view code, with no finding behind them. Do not copy that pattern.
+Some view judgments sit outside the rule. PlanView's cross-join, long-filter
+and exchange-count warnings and the plan graph's duration-share heat colours use
+thresholds in the view code, with no finding behind them. Do not copy that
+pattern. StageTable follows the rule: a Retried or Spill cell gets a chip only
+when the `retryWaste` or `spill` detector flagged the stage, in that finding's
+impact band, and Fetch Wait and I/O Ratio show raw numbers.
 
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and

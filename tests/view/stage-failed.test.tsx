@@ -44,8 +44,8 @@ describe('StageFailed', () => {
       stageFailedFinding(3, 'ExecutorLostFailure', 'Inspect the driver log for the failure reason.'),
     ];
     render_(catalog);
-    expect(screen.getByRole('heading', { name: 'Failed Stages' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^failed stages$/i }));
+    expect(screen.getByRole('heading', { name: 'Failed Stage' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^failed stage$/i }));
     expect(screen.getByRole('button', { name: /open details for stage 3/i })).toBeInTheDocument();
     expect(screen.getByText(/ExecutorLostFailure/)).toBeInTheDocument();
   });
@@ -68,7 +68,7 @@ describe('StageFailed', () => {
       stageFailedFinding(3, 'FetchFailed', 'r3'),
     ];
     render_(catalog);
-    await user.click(screen.getByRole('button', { name: /^failed stages$/i }));
+    await user.click(screen.getByRole('button', { name: /^failed stage$/i }));
     expect(screen.getByRole('button', { name: /open details for stage 1/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open details for stage 3/i })).toBeInTheDocument();
   });
@@ -85,23 +85,10 @@ describe('StageFailed', () => {
   it('defaults the card collapsed, with a lead summary counting failed stages', () => {
     const catalog = [stageFailedFinding(3, 'ExecutorLostFailure', 'r')];
     render_(catalog);
-    const cardButton = screen.getByRole('button', { name: 'Failed Stages' });
+    const cardButton = screen.getByRole('button', { name: 'Failed Stage' });
     expect(cardButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('stage failed outright')).toBeInTheDocument();
-  });
-
-  it('paginates the stage list 6-at-a-time', async () => {
-    const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) =>
-      stageFailedFinding(i + 1, 'ExecutorLostFailure', `r${i}`),
-    );
-    const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
-    render_(catalog, makeAppModel(stageNames));
-    await user.click(screen.getByRole('button', { name: 'Failed Stages' }));
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^next$/i }));
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
   });
 
   it('paginates the stage list 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
@@ -112,7 +99,7 @@ describe('StageFailed', () => {
     const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
     const { rerender } = render_(catalog, makeAppModel(stageNames));
 
-    await user.click(screen.getByRole('button', { name: 'Failed Stages' }));
+    await user.click(screen.getByRole('button', { name: 'Failed Stage' }));
     expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^next$/i }));
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();

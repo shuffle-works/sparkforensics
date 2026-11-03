@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { test, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { store } from '@/store/store';
+import { emptyAppModel, store } from '@/store/store';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
@@ -43,7 +43,7 @@ function renderWidget(catalog: Finding[]) {
   return render(
     <DocsProvider>
       <EvidenceAvailabilityProvider>
-        <MergeRewrite catalog={catalog} defaultCollapsed={false} />
+        <MergeRewrite appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
       </EvidenceAvailabilityProvider>
     </DocsProvider>,
   );
@@ -58,7 +58,7 @@ test('renders nothing when no mergeRewrite finding is present', () => {
 
 test('names a row by its query and target, and shows the counts instead of the advice line', () => {
   renderWidget([finding({ executionId: 4, target: 'sales.orders' })]);
-  expect(screen.getByRole('heading', { name: 'MERGE rewrites' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'MERGE Rewrite' })).toBeInTheDocument();
   expect(screen.getAllByText('PLAN').length).toBeGreaterThan(0);
   const [row] = rows();
   expect(row).toContain('MERGE query 4 on sales.orders');

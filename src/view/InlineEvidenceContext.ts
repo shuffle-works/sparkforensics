@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { ImpactBand } from '@sparkforensics/core/types.ts';
 
 /** What a finding's in-place evidence panel knows about the line above it. */
 export interface InlineEvidenceState {
@@ -23,18 +23,4 @@ export const EvidenceInitiallyOpenContext = createContext(false);
  * Full app report, the stage dialog), where widgets render in full. */
 export function useInlineEvidence(): InlineEvidenceState | null {
   return useContext(InlineEvidenceContext);
-}
-
-/** True when the line above the evidence panel already states this finding, so
- * the panel leaves out the stage chip, the savings figure and any figure that
- * line repeats. Always false outside an evidence panel. */
-export function useStatedAbove(finding: Finding): boolean {
-  const state = useInlineEvidence();
-  return finding.id != null && (state?.stated.has(finding.id) ?? false);
-}
-
-/** `useStatedAbove` for a stage's findings: true when the line above states any of them. */
-export function useAnyStatedAbove(findings: readonly Finding[]): boolean {
-  const state = useInlineEvidence();
-  return findings.some((finding) => finding.id != null && (state?.stated.has(finding.id) ?? false));
 }

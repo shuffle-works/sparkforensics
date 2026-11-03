@@ -5,7 +5,13 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { DESIGN_SPIKE_DISCLAIMER } from '@/view/design-spike-disclaimer';
 import { useInterpretation } from '@/view/interpretation';
+import type { InterpretationState } from '@/store/store';
 import { formatDuration, MS_PER_CORE_HOUR } from '@sparkforensics/core/format-utils.ts';
+
+/** Whether the run has allocated compute to measure; the grid mounts the tile only then. */
+export function hasEfficiencyModel(interpretation: InterpretationState | null): boolean {
+  return (interpretation?.data.efficiency?.availableComputeHours ?? 0) > 0;
+}
 
 const formatCoreHours = (h: number): string => `${Math.round(h * 100) / 100} core-h`;
 
@@ -14,9 +20,10 @@ const formatCoreHours = (h: number): string => `${Math.round(h * 100) / 100} cor
 // waste isn't attributable here because concurrent stages share allocated capacity.
 // Framed as an estimate. The right-sizing block is a pure copy branch on dominantWaste.
 export function EfficiencyModel() {
-  const interpretation = useInterpretation()?.data;
+  const state = useInterpretation();
+  const interpretation = state?.data;
   const m = interpretation?.efficiency;
-  if (!interpretation || !m || m.availableComputeHours <= 0) return null;
+  if (!interpretation || !m || !hasEfficiencyModel(state)) return null;
   const { usefulCoreHours, totalCores, topStages } = interpretation.wastedCoreHours;
 
   let rightSizing = null;

@@ -168,18 +168,12 @@ export function rollupGroupStat(group: RollupGroup): { stat: string; statTitle: 
   };
 }
 
-/** True when a finding is real evidence of an issue, as opposed to a mere
- * evidence-unavailable caveat. Shared by `isEligible` below and by anything
- * else that decides whether a REGISTRY type has "something to show" (an
- * active widget card vs. a Clean-checks line): memoryUtilization's
- * memoryBand/dataUnavailable variant reports a missing-evidence caveat
- * (the log carries no executor heap peaks: Spark before 3.0 or local mode), not an
- * optimization or a clean bill of health; the exact same fact already lives
- * in the Evidence availability ledger's own `executorMetrics` entry
- * (evidence-availability.ts), so it belongs there, not as its own card. */
-export function isRealFinding(finding: Finding): boolean {
-  if (finding.type === 'memoryUtilization' && finding.variant === 'memoryBand' && finding.dataUnavailable) return false;
-  return true;
+/** A finding emitted only to say that its detector lacked the evidence it
+ * needs. The detector type and variant are the discriminant; callers do not
+ * infer caveats from an optional field that other finding variants may use. */
+export function isCaveat(finding: Finding): boolean {
+  return (finding.type === 'memoryUtilization' && finding.variant === 'memoryBand' && finding.dataUnavailable === true)
+    || (finding.type === 'cacheUtilization' && finding.variant === 'storageUnobserved' && finding.dataUnavailable === true);
 }
 
 /** True when a finding is a candidate for the "fix these first" ranking.
@@ -191,16 +185,9 @@ export function isRealFinding(finding: Finding): boolean {
  * in a `.tsx` file, not importable from this core module, so FixTheseFirst.tsx
  * layers that extra check on top of this one. */
 export function isEligible(finding: Finding): boolean {
-  // incompleteRun is a pipeline-completeness signal, not an addressable fix:
-  // hardcoded here by type, not read from Detector.fixEffort. Unlike
-  // `isRealFinding`, this exclusion doesn't apply beyond the rollup: an
-  // incompleteRun finding still backs its own ordinary active widget card.
+  // incompleteRun is a pipeline-completeness signal, not an addressable fix.
   if (finding.type === 'incompleteRun') return false;
-  // A missing-evidence caveat (memoryUtilization's is already excluded by isRealFinding;
-  // cacheUtilization's storageUnobserved keeps its widget card, so a run with no block updates
-  // never lists Cache Storage as a passed check) is never a fix to rank.
-  if ('dataUnavailable' in finding && finding.dataUnavailable) return false;
-  return isRealFinding(finding);
+  return !isCaveat(finding);
 }
 
 /** Ranking tier for a single finding: time-based findings (a real `wallClock`

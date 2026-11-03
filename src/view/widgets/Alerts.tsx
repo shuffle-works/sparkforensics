@@ -4,16 +4,18 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { CoverageData } from '@sparkforensics/core/run-interpretation.ts';
 import { findingName } from '@sparkforensics/core/finding-names.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { findingsFor } from '@/view/finding-widget';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
 export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
+
+const NOTHING_STATED: ReadonlySet<string> = new Set();
 
 /** Detector-scope taxonomy for grouping the "Clean checks" disclosure, read
  * off each type's `DetectorInfo.scope` (the emitting `DETECTORS` entry's own
@@ -42,7 +44,7 @@ const SCOPE_LABEL: Record<CleanCheckScope, string> = {
  * impact band, shown when at least one of its types has a finding in
  * `catalog` ∪ `configFindings`. A collapsed "Clean checks" disclosure: every
  * remaining `REGISTRY` type (not component) with zero findings gets its own
- * `CleanCheckRow`. The always-mounted reference widget (Core Usage by
+ * `CleanCheckRow`. The always-mounted reference widget (Core
  * Locality) lives in the Full app report tab instead, so it never collapses
  * to a clean-check line either. `configFindings` is a separate
  * stream from `catalog`, so the impact-band ranking must look at both.
@@ -57,41 +59,41 @@ export interface ActiveWidget {
   type: string;
 }
 
-/** Every `REGISTRY` component except the always-mounted one(s), ranked by
- * worst impact band then widget order, for any component with at least one
- * finding in `catalog` ∪ `configFindings`. */
+/** Every `REGISTRY` widget except the always-mounted one(s) whose rows are not empty, ranked by
+ * worst impact band then widget order. The widget's own `rows` decide whether it mounts, so a mounted
+ * widget always renders its card. */
 export function computeActiveWidgets(
   catalog: Finding[],
   configFindings: Finding[],
   detectors: Record<string, DetectorInfo>,
+  appModel: AppModel,
+  density: 'basic' | 'advanced',
 ): ActiveWidget[] {
-  // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
-  // dataUnavailable variant) isn't grounds for an active widget card of its own.
-  const combined = [...catalog, ...configFindings].filter(isRealFinding);
-
-  const componentWidgets = orderedWidgets(detectors)
+  return orderedWidgets(detectors)
     .filter(({ type }) => !isAlwaysMountedType(type))
-    .map(({ component, widgetId, type }, index) => {
-      const findings = combined.filter((finding) => finding.type === type);
-      return { component, widgetId, type, index, findings, impactBand: worstImpactBand(findings) };
-    });
-
-  return componentWidgets
-    .filter((widget): widget is ActiveWidget => widget.impactBand !== undefined)
+    .flatMap(({ component, widgetId, type }, index) => {
+      const { model } = REGISTRY[type];
+      const rows = model.rows({
+        findings: findingsFor(model, { catalog, configFindings }),
+        stated: NOTHING_STATED,
+        density,
+        appModel,
+        catalog,
+      });
+      const findings = [...new Set(rows.flatMap((row) => row.findings))] as Finding[];
+      const impactBand = worstImpactBand(findings);
+      return impactBand ? [{ component, widgetId, type, index, findings, impactBand }] : [];
+    })
     .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.index - b.index);
 }
 
 /** The collapsed "Clean checks" disclosure: the part of Suggested
  * Improvements that isn't the impact-band-ranked active grid. */
 export function CleanChecks({
-  catalog,
-  configFindings = [],
+  activeTypes,
   coverage,
   detectors,
-}: Pick<WidgetProps, 'catalog' | 'configFindings'> & { coverage: CoverageData; detectors: Record<string, DetectorInfo> }) {
-  // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
-  // dataUnavailable variant) doesn't keep a type out of the Clean-checks list.
-  const combined = [...catalog, ...configFindings].filter(isRealFinding);
+}: { activeTypes: ReadonlySet<string>; coverage: CoverageData; detectors: Record<string, DetectorInfo> }) {
 
   // A check the log could not run is not a pass: the same rule the verdict
   // and the CLI/MCP report use to withhold "clean" (an evidence caveat, a
@@ -102,7 +104,7 @@ export function CleanChecks({
 
   const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))
-    .filter((type) => !combined.some((finding) => finding.type === type))
+    .filter((type) => !activeTypes.has(type))
     .map((type) => ({ type, findingLabel: findingName(type) }));
   const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
   const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));

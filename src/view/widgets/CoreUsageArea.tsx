@@ -1,25 +1,21 @@
-import { memo, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Inbox } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
 import type { LocalityChartPoint } from '@sparkforensics/core/core-usage-locality.ts';
-import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { formatCores } from '@sparkforensics/core/format-utils.ts';
 import { useInterpretation } from '@/view/interpretation';
 import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
-import type { WidgetProps } from '@/view/detector-registry';
-import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { EmptyState } from '@/view/EmptyState';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { DocsLink } from '@/view/DocsContext';
-import { useAnyStatedAbove } from '@/view/InlineEvidenceContext';
+import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
-import { RowPagination } from '@/view/RowPagination';
-import { usePagedRows } from '@/view/usePagedRows';
-import { WidgetCard } from '@/view/WidgetCard';
+import { ImpactDot } from '@/view/ImpactBadge';
+import { NonLocalStageList } from './NonLocalStageList';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { chartShowsTrend, coreUsageModel, type CoreUsageRow } from './CoreUsageArea.rows';
 
 // Stacked-area cluster shape by locality tier over time (approximate).
 const HEIGHT = 240;
@@ -46,13 +42,6 @@ const TIER_COLOR: Record<string, string> = {
   idle: CHART_COLORS.muted,
 };
 
-// The chart and the non-local ratio come from the store's interpretation.
-// `catalog` is required: the `coreLocality` finding and the `memoryUtilization`
-// idleCores cross-link both read it.
-export type CoreUsageAreaProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
-
-const TITLE = 'Core Usage by Locality';
-
 type ActiveLocalityChart = { hasActivity: true; order: string[]; points: AreaPoint[]; sampled: AreaPoint[]; peakCores: number };
 type LocalityChartModel = { hasActivity: false } | ActiveLocalityChart;
 type AreaPoint = LocalityChartPoint;
@@ -63,12 +52,8 @@ export function useLocalityChartModel(): LocalityChartModel {
   return useMemo(() => (chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart), [chart]);
 }
 
-// Fewer points than this show no trend, so an evidence panel leaves the chart out.
-const MIN_PANEL_CHART_POINTS = 3;
-
 /** Whether an evidence panel embeds the chart: the run has activity and enough points for a trend. */
-export const panelShowsChart = (model: LocalityChartModel): model is ActiveLocalityChart =>
-  model.hasActivity && model.points.length >= MIN_PANEL_CHART_POINTS;
+export const panelShowsChart = (model: LocalityChartModel): model is ActiveLocalityChart => chartShowsTrend(model);
 
 /** Concurrent core usage over time, stacked by locality tier, with idle capacity. */
 export function CoreUsageChart({ model: { order, points, sampled } }: { model: ActiveLocalityChart }) {
@@ -121,99 +106,66 @@ export function CoreUsageChart({ model: { order, points, sampled } }: { model: A
   );
 }
 
-// memo: skip re-downsampling when only the finding filter changes. Always
-// mounted by `Alerts.tsx`, so the `hasActivity`/finding branches below are the
-// only gating this widget does on its own.
-export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultCollapsed = true }: CoreUsageAreaProps) {
-  const [nonLocalPage, setNonLocalPage] = useState(0);
+function Row({ row: { finding, stated, showStatus } }: FindingRowProps<CoreUsageRow>) {
+  return (
+    <>
+      {stated ? null : (
+        <p className="flex flex-wrap items-start gap-2 text-sm">
+          <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
+          <strong>{finding.value}% non-local</strong>
+        </p>
+      )}
+      {stated ? null : <ImpactEstimate finding={finding} />}
+      {showStatus ? <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} /> : null}
+    </>
+  );
+}
+
+/** The chart, and the Advanced notes around it: the attribution caveat, the stages with non-local
+ * tasks, and the pointer to Memory Utilization when idle cores are flagged. */
+const Lead: NonNullable<FindingWidgetView<CoreUsageRow>['Lead']> = ({ catalog, rows, density }) => {
   const coreLocality = useInterpretation()?.data.coreLocality;
   const chartModel = useLocalityChartModel();
-
-  // Non-local-ratio aggregate + per-stage breakdown (every stage, so the
-  // pagination below sees the whole list). Not gated on
-  // `chartModel.hasActivity`: an app with locality data but no plottable
-  // core-time window should still surface a real finding from `catalog`.
-  const topStages = coreLocality?.ratio.topStages ?? [];
-  const coreLocalityFinding = catalog.find((f) => f.type === 'coreLocality');
-  // The line above states the non-local share and the generic fix.
-  const coreLocalityStated = useAnyStatedAbove(coreLocalityFinding ? [coreLocalityFinding] : []);
-  const idleCoresFlagged = catalog.some((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
 
   // `topStages` excludes stages below minTasksPerStage even when they hold the
   // non-local tasks, so filter to rows that actually have non-local tasks rather
   // than gating on the aggregate.
-  const nonLocalStages = topStages.filter((s) => s.nonLocalTasks > 0);
-  const { totalPages: nonLocalTotalPages, effectivePage: nonLocalEffectivePage, visible: visibleNonLocalStages } =
-    usePagedRows(nonLocalStages, nonLocalPage, setNonLocalPage);
+  const nonLocalStages = (coreLocality?.ratio.topStages ?? []).filter((s) => s.nonLocalTasks > 0);
 
-  if (!chartModel.hasActivity) {
-    return (
-      <WidgetCard title={TITLE} summary={<span className="text-muted-foreground text-xs">No stage activity to plot.</span>}>
-        <EmptyState tone="neutral" icon={Inbox} title="No stage activity to plot." />
-      </WidgetCard>
-    );
-  }
-  const { peakCores } = chartModel;
+  if (!chartModel.hasActivity) return <EmptyState tone="neutral" icon={Inbox} title="No stage activity to plot." />;
+
+  const advanced = density === 'advanced';
+  const idleCoresFlagged = catalog.some((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
 
   return (
-    <WidgetCard
-      title={TITLE}
-      impactBand={coreLocalityFinding?.impactBand}
-      badges={coreLocalityFinding ? <TagBadge type="coreLocality" impactBand={coreLocalityFinding.impactBand} /> : null}
-      defaultCollapsed={defaultCollapsed}
-      summary={<WidgetLeadSummary value={`${formatCores(peakCores)} cores`} context="busy at the peak" />}
-    >
-      <div className="space-y-2">
-        <AdvancedOnly>
-          <p className="text-muted-foreground text-xs">
-            approximate: stage-level attribution
-            {!coreLocalityFinding ? (
-              <>
-                , see <DocsLink anchor="#bottleneck-utilization">how utilization is measured</DocsLink>
-              </>
-            ) : null}
-          </p>
-        </AdvancedOnly>
-        {coreLocalityFinding && !coreLocalityStated ? (
-          <p className="flex flex-wrap items-start gap-2 text-sm">
-            <ImpactDot impactBand={coreLocalityFinding.impactBand} className="mt-1.5" />
-            <span>
-              <strong>{coreLocalityFinding.value}% non-local</strong>. {coreFindingGenericRecommendation(coreLocalityFinding)}
-            </span>
-          </p>
-        ) : null}
-        {coreLocalityFinding ? <ImpactEstimate finding={coreLocalityFinding} /> : null}
-        <AdvancedOnly>
-          {coreLocalityFinding ? (
-            <RowStatusCluster confidence={coreLocalityFinding.confidence} validationRequired={coreLocalityFinding.validationRequired} />
-          ) : null}
-        </AdvancedOnly>
-        <CoreUsageChart model={chartModel} />
-        <AdvancedOnly>
-          {visibleNonLocalStages.length > 0 ? (
+    <div className="space-y-2">
+      {advanced ? (
+        <p className="text-muted-foreground text-xs">
+          approximate: stage-level attribution
+          {rows.length === 0 ? (
             <>
-              <ul className="space-y-1 text-xs text-muted-foreground">
-                {visibleNonLocalStages.map((s) => (
-                  <li key={s.stageId}>
-                    Stage {s.stageId}: {Math.round(s.ratio * 100)}% non-local ({s.nonLocalTasks}/{s.taskCount} tasks)
-                  </li>
-                ))}
-              </ul>
-              <RowPagination
-                page={nonLocalEffectivePage}
-                totalPages={nonLocalTotalPages}
-                onPrev={() => setNonLocalPage((p) => p - 1)}
-                onNext={() => setNonLocalPage((p) => p + 1)}
-              />
+              , see <DocsLink anchor="#bottleneck-utilization">how utilization is measured</DocsLink>
             </>
           ) : null}
-        </AdvancedOnly>
-        <AdvancedOnly>
-          {idleCoresFlagged ? (
-            <p className="text-xs text-muted-foreground">Idle cores also flagged → see Memory Utilization widget</p>
-          ) : null}
-        </AdvancedOnly>
-      </div>
-    </WidgetCard>
+        </p>
+      ) : null}
+      <CoreUsageChart model={chartModel} />
+      {advanced ? <NonLocalStageList stages={nonLocalStages} /> : null}
+      {advanced && idleCoresFlagged ? (
+        <p className="text-xs text-muted-foreground">Idle cores also flagged → see Memory Utilization widget</p>
+      ) : null}
+    </div>
   );
-});
+};
+
+// Reads the interpretation's chart directly: the chart model's downsampling belongs to the `Lead`, once.
+const Summary: NonNullable<FindingWidgetView<CoreUsageRow>['Summary']> = () => {
+  const chart = useInterpretation()?.data.coreLocality?.chart;
+  return chart?.hasActivity
+    ? <WidgetLeadSummary value={`${formatCores(chart.peakCores)} cores`} context="busy at the peak" />
+    : <span className="text-muted-foreground text-xs">No stage activity to plot.</span>;
+};
+
+/** Core usage over time by locality tier. Always mounted on the Full app report (see
+ * `isAlwaysMountedType`): the chart is the tile, and the `coreLocality` finding adds its row. */
+export const CoreUsageArea = defineFindingWidget(coreUsageModel, { Row, Lead, Summary });

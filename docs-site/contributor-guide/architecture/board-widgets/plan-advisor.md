@@ -48,10 +48,10 @@ alongside `utilization`/`memoryUtilization`, is `action`, not `reference`
 `region` decides one thing (see
 [Widget rendering order](../widget-rendering.md#widget-rendering-order)):
 whether a widget always mounts. `isAlwaysMountedType()` flags exactly one
-of the four `reference`-region types: Core Usage by Locality. That one
+of the four `reference`-region types: Core Locality. That one
 mounts unconditionally from `appModel` at the head of the Full app report
 tab's reference grid, regardless of finding state. Memory Utilization, Executor
-Utilization, and Cache Storage are `reference` too, but all three are
+Utilization, and Cache Utilization are `reference` too, but all three are
 excluded by product decision, not a component-sharing constraint
 (`ALWAYS_MOUNTED_EXCEPTIONS` in `src/view/detector-registry.tsx` carries
 `cacheUtilization`, `memoryUtilization`, and `utilization`): a clean run on
@@ -62,8 +62,8 @@ as either an active card or a clean-check line, and `region`, then detector
 order, breaks ties between cards of the same impact band
 (`computeActiveWidgets` ranks by worst impact band first; `ImpactBoard`
 groups cards Critical, Warning, Info). The Full app report tab reads no other
-`REGISTRY` entry. So Core Usage by Locality, the one widget tagged
+`REGISTRY` entry. So Core Locality, the one widget tagged
 `region: 'reference'` and exempt from `ALWAYS_MOUNTED_EXCEPTIONS`, renders
 in the Full app report beside the other run-wide reference views, and a
 route to a `coreLocality` finding switches to that tab (Memory Utilization, Executor Utilization, and
-Cache Storage all render through the ordinary active/clean paths instead):
+Cache Utilization all render through the ordinary active/clean paths instead):

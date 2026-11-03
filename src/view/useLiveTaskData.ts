@@ -12,7 +12,7 @@ export interface LiveTaskData {
 
 /** Gates a widget's `getTaskData` prop on `exportMode` in one place, for the
  * widgets that fetch per-task detail on demand (CoreUsageHistogram,
- * StageDetailDialog, StageFindingGroup). */
+ * StageDetailDialog, StageTaskSpread). */
 export function useLiveTaskData(
   getTaskData: (id: number) => Promise<TaskData>,
 ): LiveTaskData {

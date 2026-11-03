@@ -9,7 +9,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { PartitionSizing } from '@/view/widgets/PartitionSizing';
 import { emptyAppModel, store } from '@/store/store';
-import { expectImpactThenStageOrderByArray } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
@@ -78,10 +77,10 @@ test('renders no domain/company strings and no bytes-formatting bug for a task-c
   expect(screen.queryByText('4 B')).not.toBeInTheDocument();
 });
 
-test('renders a muted empty-state card when the catalog has no partitionSizing findings', () => {
-  const appModel = buildAppModel({ 1: { taskCount: 10 } });
-  render(<PartitionSizing appModel={appModel} catalog={[]} />);
-  expect(screen.getByText(/no partition-sizing issues detected/i)).toBeInTheDocument();
+test('renders nothing when the catalog has no partitionSizing findings', () => {
+  const appModel = buildAppModel({ 1: { taskCount: 10 }, 2: { taskCount: 20 } });
+  const { container } = render(<PartitionSizing appModel={appModel} catalog={[]} />);
+  expect(container).toBeEmptyDOMElement();
 });
 
 test('embeds PlanExplorer output for a stage with a linked SQL plan tree, at Advanced tier only', async () => {
@@ -102,37 +101,6 @@ test('embeds PlanExplorer output for a stage with a linked SQL plan tree, at Adv
   await user.click(screen.getByRole('tab', { name: 'Summary' }));
   expect(screen.getByText(/events/)).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
-});
-
-test('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
-  const user = userEvent.setup();
-  store.getState().setWidgetDensity('advanced');
-  const appModel = buildAppModel({ 1: { taskCount: 4 }, 2: { taskCount: 3 } });
-  const catalog: Finding[] = [
-    {
-      type: 'partitionSizing', stageId: 1, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 4, recommendation: 'r1',
-      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
-    },
-    {
-      type: 'partitionSizing', stageId: 2, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 3, recommendation: 'r2',
-      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
-    },
-  ];
-  installInterpretation(catalog);
-  render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
-
-  const names = () => screen.getAllByRole('button', { name: /open details for stage \d/i }).map((b) => b.getAttribute('aria-label'));
-  await expectImpactThenStageOrderByArray(user, names, 'Open details for Stage 1', 'Open details for Stage 2');
-  store.getState().setWidgetDensity('basic');
-});
-
-test('card defaults to collapsed with lead summary on the empty-state branch', () => {
-  const appModel = buildAppModel({ 1: { taskCount: 10 }, 2: { taskCount: 20 } });
-  render(<PartitionSizing appModel={appModel} catalog={[]} />);
-
-  // Lead summary renders even while the card is collapsed by default.
-  expect(screen.getByText('No issues')).toBeInTheDocument();
-  expect(screen.getByText(/partition sizing checked across 2 stages/i)).toBeInTheDocument();
 });
 
 test('card defaults to collapsed with lead summary on the populated branch', () => {

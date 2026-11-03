@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ComponentType } from 'react';
-import type { Finding, FindingType } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType } from '@sparkforensics/core/types.ts';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
@@ -23,7 +23,7 @@ import { installInterpretation } from './_shared/interpretation';
 import { keptRows } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';
 
-type CatalogWidget = ComponentType<{ catalog: Finding[]; defaultCollapsed?: boolean }>;
+type CatalogWidget = ComponentType<{ appModel: AppModel; catalog: Finding[]; defaultCollapsed?: boolean }>;
 
 function renderIn(ui: React.ReactNode, stated: string[] | null) {
   const body = (
@@ -72,7 +72,7 @@ describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra 
   it.skipIf(UNSTATED.has(type))('drops the stage pills and the sentence of the stated finding only', () => {
     const [a, b] = [make('a', 11), make('b', 22)];
     installInterpretation([a, b]);
-    renderIn(<Widget catalog={[a, b]} defaultCollapsed={false} />, ['a']);
+    renderIn(<Widget appModel={emptyAppModel()} catalog={[a, b]} defaultCollapsed={false} />, ['a']);
     expect(screen.queryByRole('button', { name: 'Open details for Stage 11' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open details for Stage 22' })).toBeInTheDocument();
     if (!extra) {
@@ -86,7 +86,7 @@ describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra 
   it('keeps every row when the line above states none of them', () => {
     const [a, b] = [make('a', 11), make('b', 22)];
     installInterpretation([a, b]);
-    renderIn(<Widget catalog={[a, b]} defaultCollapsed={false} />, []);
+    renderIn(<Widget appModel={emptyAppModel()} catalog={[a, b]} defaultCollapsed={false} />, []);
     expect(screen.getByRole('button', { name: 'Open details for Stage 11' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open details for Stage 22' })).toBeInTheDocument();
   });
@@ -94,7 +94,7 @@ describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra 
   it('is unchanged outside a panel, even for a finding that would be stated', () => {
     const a = make('a', 11);
     installInterpretation([a]);
-    renderIn(<Widget catalog={[a]} defaultCollapsed={false} />, null);
+    renderIn(<Widget appModel={emptyAppModel()} catalog={[a]} defaultCollapsed={false} />, null);
     expect(screen.getByRole('button', { name: 'Open details for Stage 11' })).toBeInTheDocument();
   });
 });
@@ -109,14 +109,14 @@ describe('NestedLoopJoin join measurement', () => {
   it('shows the join for the stated finding in a panel', () => {
     const [a, b] = [make('a', 11), make('b', 22)];
     installInterpretation([a, b]);
-    renderIn(<NestedLoopJoin catalog={[a, b]} defaultCollapsed={false} />, ['a']);
+    renderIn(<NestedLoopJoin appModel={emptyAppModel()} catalog={[a, b]} defaultCollapsed={false} />, ['a']);
     expect(screen.getAllByText('CartesianProduct (Inner), no join condition. Input rows: 3,000 left, 3,000 right.')).toHaveLength(1);
   });
 
   it('is absent outside a panel', () => {
     const a = make('a', 11);
     installInterpretation([a]);
-    renderIn(<NestedLoopJoin catalog={[a]} defaultCollapsed={false} />, null);
+    renderIn(<NestedLoopJoin appModel={emptyAppModel()} catalog={[a]} defaultCollapsed={false} />, null);
     expect(screen.queryByText(/no join condition/)).not.toBeInTheDocument();
   });
 });
@@ -131,14 +131,14 @@ describe('SmallFiles average file size', () => {
   it('shows only for the stated finding in a panel', () => {
     const [a, b] = [make('a', 11), make('b', 22)];
     installInterpretation([a, b]);
-    renderIn(<SmallFiles catalog={[a, b]} defaultCollapsed={false} />, ['a']);
+    renderIn(<SmallFiles appModel={emptyAppModel()} catalog={[a, b]} defaultCollapsed={false} />, ['a']);
     expect(screen.getAllByText(/Average file size/)).toHaveLength(1);
   });
 
   it('is absent outside a panel', () => {
     const a = make('a', 11);
     installInterpretation([a]);
-    renderIn(<SmallFiles catalog={[a]} defaultCollapsed={false} />, null);
+    renderIn(<SmallFiles appModel={emptyAppModel()} catalog={[a]} defaultCollapsed={false} />, null);
     expect(screen.queryByText(/Average file size/)).not.toBeInTheDocument();
   });
 });

@@ -1,101 +1,22 @@
-import { memo, useState } from 'react';
-
-import { formatDuration, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
-import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
+import { ImpactDot } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
-import { WidgetCard } from '@/view/WidgetCard';
-import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
-import { useAnchoredRow } from '@/view/finding-anchor';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { SortModeToggle } from '@/view/SortModeToggle';
-import { useSortMode } from '@/view/useSortMode';
-import { RowPagination } from '@/view/RowPagination';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
-import { usePagedRows } from '@/view/usePagedRows';
+import { metricLabel, speculationWasteModel, type SpeculationWasteRow } from './SpeculationWaste.rows';
 
-export type SpeculationWasteProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
-
-function metricLabel(f: Finding): string {
-  return formatDuration(numericValue(f));
-}
-
-function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetProps['appModel'] }) {
-  const anchor = useAnchoredRow([finding]);
-  const stated = useStatedAbove(finding);
-  const stage = finding.stageId != null ? appModel.stages.get(finding.stageId) : undefined;
+function Row({ row: { finding, stated, note }, appModel }: FindingRowProps<SpeculationWasteRow>) {
   return (
-    <li
-      ref={anchor.ref}
-      tabIndex={anchor.tabIndex}
-      data-flashed={anchor.dataFlashed}
-      className={`space-y-1 text-sm transition-colors ${anchor.flashClassName}`}
-    >
+    <>
       <div className="flex flex-wrap items-center gap-2">
         <ImpactDot impactBand={finding.impactBand} />
         {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} stated={stated} /> : null}
         {stated ? null : <strong>{metricLabel(finding)}</strong>}
       </div>
-      {stated && stage?.taskCount ? (
-        <p className="text-xs text-muted-foreground">
-          {String(stage.speculativeTasks ?? 0)} of {stage.taskCount} tasks ran speculatively; {String(stage.speculationWastedAttempts ?? 0)} attempts were discarded.
-        </p>
-      ) : null}
-      <ImpactEstimate finding={finding} />
-    </li>
+      {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
+      {stated ? null : <ImpactEstimate finding={finding} />}
+    </>
   );
 }
 
-/** Board section for `speculationWaste` findings: executor time spent on
- * speculative task attempts that were ultimately discarded. */
-export const SpeculationWaste = memo(function SpeculationWaste({ appModel, catalog, defaultCollapsed = true }: SpeculationWasteProps) {
-  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
-  const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
-  const [page, setPage] = useState(0);
-
-  const issues = catalog
-    .filter((f) => f.type === 'speculationWaste')
-    .slice()
-    .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
-
-  const orderedIssues = orderBy(issues, (f) => [f], (f) => f.stageId ?? null);
-  const activeRouteTarget = useActiveRouteTarget();
-  const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
-  const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
-
-  if (issues.length === 0) return null;
-
-  return (
-    <WidgetCard
-      title="Speculation Waste"
-      fixFor={issues}
-      impactBand={issues[0].impactBand}
-      badges={
-        <>
-          <TagBadge type="speculationWaste" impactBand={issues[0].impactBand} />
-          {canToggleSort(issues, (f) => [f], (f) => f.stageId ?? null, cardOpen) ? (
-            <SortModeToggle mode={sortMode} onChange={setSortMode} />
-          ) : null}
-        </>
-      }
-      open={cardOpen}
-      onOpenChange={setCardOpen}
-      summary={
-        <WidgetLeadSummary
-          value={metricLabel(issues[0])}
-          context={findingCount(issues.length)}
-        />
-      }
-    >
-      <ul className="space-y-2">{visible.map((f) => <IssueRow key={f.id} finding={f} appModel={appModel} />)}</ul>
-      <RowPagination
-        page={effectivePage}
-        totalPages={totalPages}
-        onPrev={() => setPage((p) => p - 1)}
-        onNext={() => setPage((p) => p + 1)}
-      />
-    </WidgetCard>
-  );
-});
+/** Executor time spent on speculative task attempts that were ultimately discarded. */
+export const SpeculationWaste = defineFindingWidget(speculationWasteModel, { Row });

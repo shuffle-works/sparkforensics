@@ -7,6 +7,7 @@ vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
 }));
 
+import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { PythonUdf } from '@/view/widgets/PythonUdf';
@@ -29,7 +30,7 @@ function renderWidget(catalog: Finding[]) {
   return render(
     <DocsProvider>
       <EvidenceAvailabilityProvider>
-        <PythonUdf catalog={catalog} defaultCollapsed={false} />
+        <PythonUdf appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
       </EvidenceAvailabilityProvider>
     </DocsProvider>,
   );
@@ -43,7 +44,7 @@ test('renders nothing when no pythonUdf finding is present', () => {
 
 test('renders the card with the PLAN tag, the recommendation and the stage pill', () => {
   renderWidget([finding()]);
-  expect(screen.getByRole('heading', { name: 'Row-at-a-time Python UDFs' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Row-At-A-Time Python UDF' })).toBeInTheDocument();
   expect(screen.getAllByText('PLAN').length).toBeGreaterThan(0);
   expect(screen.getByText(/sent 210 MB to Python workers over 1m 0s of stage time/)).toBeInTheDocument();
   cleanup();

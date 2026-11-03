@@ -210,6 +210,7 @@ function duplicatePlanSubtreeFinding(
 function cachingFinding(relation: string, totalReadBytes: number, value = 2): Finding {
   return {
     type: 'cachingOpportunity',
+    id: `cachingOpportunity:${relation}`,
     stageId: null,
     impactBand: 'info',
     metric: 'executionReuse',
@@ -544,7 +545,7 @@ test('a core-locality target switches to Full app report, where its always-mount
 
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
-  const heading = await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' });
+  const heading = await within(reportPanel).findByRole('heading', { name: 'Core Locality' });
   const card = heading.closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
   expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
@@ -772,32 +773,6 @@ test('each step of a type opens its own evidence panel without routing, and both
   expect(stageButtons(0)).toEqual(['Open details for Stage 2']);
   expect(stageButtons(1)).toEqual(['Open details for Stage 9']);
   expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
-});
-
-test('a route to a finding no step or row holds opens its type\'s full card, without reordering it', async () => {
-  const user = userEvent.setup();
-  const lead: Finding = {
-    ...skewFinding(2, 'critical'),
-    impactEstimate: { basis: 'serial', wallClock: { low: 60_000, high: 60_000 }, estimateMethod: 'measured' },
-  };
-  // Evidence-unavailable findings are not rolled up, so no step or row holds this one.
-  const unlisted = { ...skewFinding(5, 'warning'), dataUnavailable: true } as Finding;
-  renderReady([skewFinding(9, 'warning'), lead, unlisted], [9, 2, 5]);
-  await waitForDashboard();
-  // Task Skew is the real Skew widget; open a step's panel first so its lazy chunk resolves.
-  await user.click(stepEvidenceButton(0));
-  await screen.findByRole('heading', { name: 'Task Skew' });
-  await user.click(stepEvidenceButton(0));
-  expect(screen.queryByRole('heading', { name: 'Task Skew' })).not.toBeInTheDocument();
-
-  await routeFromStageSummary('Investigate task skew in Stage 5');
-
-  const trigger = await screen.findByRole('heading', { name: 'Task Skew' });
-  const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
-  expect(within(card).getAllByRole('button', { name: /open details for stage/i }).map((button) => button.getAttribute('aria-label')))
-    .toEqual(['Open details for Stage 2', 'Open details for Stage 9', 'Open details for Stage 5']);
-  const row = within(card).getByRole('button', { name: 'Open details for Stage 5' }).closest('[data-flashed]');
-  await waitFor(() => expect(document.activeElement).toBe(row));
 });
 
 test('an anchored row is scrolled to center and focused instead of the disclosure title, and is flagged as flashed', async () => {
@@ -1244,13 +1219,14 @@ test('CachingOpportunity.tsx (widget-ui-unification Task 11) jumps its own pagin
   // usePagedRows's page size is VISIBLE_LIMIT (6, packages/core/src/format-utils.ts). The
   // `cachingOpportunity` detector always emits `impactBand: 'info'`
   // (packages/core/src/detectors.ts). The lead takes the verdict's step and the other
-  // eight findings form a group whose panel paginates. Giving `target` the smallest
-  // `totalReadBytes` makes the widget's own descending-bytes sort push it to the *last*
+  // eight findings form a group whose panel paginates. The findings tie on impact, so the
+  // board keeps the catalog order: `target` comes last and the smallest `totalReadBytes`
+  // keeps it last in the widget's own descending-bytes order too. It sits on the *last*
   // rendered position (page 2), so this only passes if the page jump actually fires,
   // not merely if the target happens to already be visible on page 1.
   const target = cachingFinding('rel-target', 1);
   const others = Array.from({ length: 7 }, (_, i) => cachingFinding(`rel-${i}`, (i + 1) * 1_000));
-  renderReady([asLead(cachingFinding('lead', 1)), target, ...others]);
+  renderReady([asLead(cachingFinding('lead', 1)), ...others, target]);
   await waitForDashboard();
   await openGroupEvidence('cachingOpportunity');
   expect(await screen.findByText('Page 1 of 2')).toBeInTheDocument();
@@ -1332,7 +1308,7 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
   renderReady([...stepLeads(), first, target], [7, 41, 42, 43]);
   await waitForDashboard();
   await openGroupEvidence('duplicatePlanSubtree');
-  await screen.findByRole('heading', { name: 'Redundant Plan Subtree' });
+  await screen.findByRole('heading', { name: 'Duplicate Plan Subtree' });
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
@@ -1349,7 +1325,7 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
       screen.getByRole('button', { name: 'Investigate duplicate plan subtree in Stage 7' }).click();
     });
 
-    const trigger = screen.getByRole('heading', { name: 'Redundant Plan Subtree' });
+    const trigger = screen.getByRole('heading', { name: 'Duplicate Plan Subtree' });
 
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
     const rows = within(card).getAllByRole('listitem');
@@ -1484,10 +1460,10 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
   await waitForDashboard();
   // Three other findings take the verdict's steps; the eight duplicates form a group whose panel paginates.
   await openGroupEvidence('duplicatePlanSubtree');
-  await screen.findByRole('heading', { name: 'Redundant Plan Subtree' });
+  await screen.findByRole('heading', { name: 'Duplicate Plan Subtree' });
 
   const card = screen
-    .getByRole('heading', { name: 'Redundant Plan Subtree' })
+    .getByRole('heading', { name: 'Duplicate Plan Subtree' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   expect(within(card).queryByText(/Consolidate subtree target\./)).not.toBeInTheDocument();
   expect(within(card).getByText('Page 1 of 2')).toBeInTheDocument();
@@ -1505,7 +1481,7 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
   });
 
   const cardAfter = screen
-    .getByRole('heading', { name: 'Redundant Plan Subtree' })
+    .getByRole('heading', { name: 'Duplicate Plan Subtree' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   expect(within(cardAfter).getByText('Page 2 of 2')).toBeInTheDocument();
   const rows = within(cardAfter).getAllByRole('listitem');
@@ -1572,7 +1548,7 @@ test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash la
   renderReadyWithRdd([asLead(cacheUtilizationFinding(0)), cacheUtilizationFinding(1), cacheUtilizationFinding(2)], rddInfo);
   await waitForDashboard();
   await openGroupEvidence('cacheUtilization');
-  await screen.findByRole('heading', { name: 'Cache Storage' });
+  await screen.findByRole('heading', { name: 'Cache Utilization' });
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
@@ -1580,7 +1556,7 @@ test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash la
       boardRowRoute('cacheUtilization', 0, 'rdd-1').click();
     });
 
-    const trigger = screen.getByRole('heading', { name: 'Cache Storage' });
+    const trigger = screen.getByRole('heading', { name: 'Cache Utilization' });
     const row = screen.getByText('rdd-1').closest('[data-flashed]') as HTMLElement;
     expect(row).not.toBeNull();
     expect(document.activeElement).toBe(row);
@@ -1631,7 +1607,7 @@ test('CacheUtilization.tsx jumps its own findings-list pagination to the page co
   });
 
   const card = screen
-    .getByRole('heading', { name: 'Cache Storage' })
+    .getByRole('heading', { name: 'Cache Utilization' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   expect(within(card).getByText('Page 2 of 2')).toBeInTheDocument();
 });

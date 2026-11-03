@@ -6,6 +6,7 @@ import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
+import { FINDING_PRESENTATION } from './finding-presentation.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible, rankCostMs } from './recommendation-rollup.ts';
@@ -21,11 +22,13 @@ export const NEXT_STEP_LIMIT = 3;
 /** How many cost-lane entries the verdict lists. */
 export const COST_LANE_LIMIT = 3;
 
-/** Finding types whose widget sits in the board's reference region (listed after every action
- * widget). The dashboard's registry must agree: tests/view/detector-registry.test.tsx checks it. */
-export const REFERENCE_DISPLAY_TYPES: ReadonlySet<string> = new Set([
-  'memoryUtilization', 'utilization', 'coreLocality', 'cacheUtilization',
-]);
+/** Finding types whose widget sits in the board's reference region, declared with the rest of
+ * each finding's presentation. */
+export const REFERENCE_DISPLAY_TYPES: ReadonlySet<string> = new Set(
+  Object.entries(FINDING_PRESENTATION)
+    .filter(([, presentation]) => presentation.region === 'reference')
+    .map(([type]) => type),
+);
 
 /** Every emitted finding type in the board's widget display order: action region before
  * reference region, then ascending order of the type's `ENTRY_BY_TYPE` entry.

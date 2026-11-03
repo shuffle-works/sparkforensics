@@ -135,7 +135,7 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
   expect(document.activeElement).toHaveClass('focus:ring-2');
 });
 
-test('Redundant Plan Subtree finding opens SQL-plan evidence with keyboard activation', async () => {
+test('Duplicate Plan Subtree finding opens SQL-plan evidence with keyboard activation', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   store.setState({
@@ -147,7 +147,7 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence with keyboard activ
   });
   renderDashboard();
 
-  await openVerdictEvidence(user, /^redundant plan subtree$/i);
+  await openVerdictEvidence(user, /^duplicate plan subtree$/i);
   const link = screen.getByRole('button', { name: /^evidence: sql plan$/i });
   link.focus();
   await user.keyboard('{Enter}');
@@ -182,7 +182,7 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sparkConfiguration'));
 });
 
-test('Redundant Plan Subtree finding opens SQL-plan evidence', async () => {
+test('Duplicate Plan Subtree finding opens SQL-plan evidence', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   store.setState({
@@ -194,7 +194,7 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence', async () => {
   });
   renderDashboard();
 
-  await openVerdictEvidence(user, /^redundant plan subtree$/i);
+  await openVerdictEvidence(user, /^duplicate plan subtree$/i);
   await user.click(screen.getByRole('button', { name: /^evidence: sql plan$/i }));
 
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sqlPlan'));
@@ -212,7 +212,7 @@ test('a second evidence click after returning to Findings switches tabs again', 
   });
   renderDashboard();
 
-  await openVerdictEvidence(user, /^redundant plan subtree$/i);
+  await openVerdictEvidence(user, /^duplicate plan subtree$/i);
   const evidence = screen.getByRole('button', { name: /^evidence: sql plan$/i });
   await user.click(evidence);
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');

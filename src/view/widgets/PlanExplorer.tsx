@@ -3,7 +3,8 @@ import { useRef, useState } from 'react';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { AppModel, StageId } from '@sparkforensics/core/types.ts';
-import { PlanView, resolvePlanTree } from '@/view/widgets/PlanView';
+import { resolvePlanTree } from '@/view/plan-tree';
+import { PlanView } from '@/view/widgets/PlanView';
 
 export interface PlanExplorerProps {
   stageId: StageId;

@@ -1,0 +1,10 @@
+id: no-numeric-severity-in-cell
+valid:
+  - "function retriedCell(failed, flag) { return flag ? <Chip impactBand={flag.impactBand} /> : <>{failed}</>; }"
+  - "function spillCell(bytes) { return <>{bytes ? formatBytes(bytes) : '-'}</>; }"
+  # A comparison outside a cell function is not a cell's grade.
+  - "function formatIoRatio(ratio) { return ratio < 0.01 ? ratio.toExponential(1) : ratio.toFixed(2); }"
+invalid:
+  - "function fetchWaitCell(fetchWait, runTime) { return fetchWait / runTime > 0.3 ? <Chip impactBand=\"critical\" /> : <>{fetchWait}</>; }"
+  - "function ioRatioCell(ratio) { return ratio < 0.1 ? <Chip impactBand=\"info\" /> : <>{ratio}</>; }"
+  - "function spillCell(bytes) { if (bytes > 0) return <Chip impactBand=\"warning\" />; return null; }"

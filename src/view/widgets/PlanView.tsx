@@ -18,6 +18,7 @@ import type { AppModel, PlanNode, SqlExecution, StageId } from '@sparkforensics/
 import { Section, type Row } from '@/view/Section';
 import { TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
+import { resolvePlanTree } from '@/view/plan-tree';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
@@ -112,16 +113,6 @@ function safeBuildDurationMap(
   } catch {
     return null;
   }
-}
-
-/** Resolves the SQL plan tree linked to a stage, or null if the stage has no
- * SQL execution or that execution has no plan tree. Shared by PlanView (to
- * decide what to render) and its callers (to decide whether to render their
- * own wrapper, a Collapsible toggle or a static section heading, at all). */
-export function resolvePlanTree(stageId: StageId, appModel: AppModel): PlanNode | null {
-  const stage = appModel.stages.get(stageId);
-  const linkedSql = stage?.sqlExecutionId != null ? appModel.sql.get(stage.sqlExecutionId) : null;
-  return linkedSql?.planTree ?? null;
 }
 
 /** The full structured fields for one node, attached to the operator it

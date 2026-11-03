@@ -3,7 +3,8 @@ import { expect, test } from 'vitest';
 import { analyze } from '@sparkforensics/core/analyzer.ts';
 import type { Finding, Stage } from '@sparkforensics/core/types.ts';
 import { makeApp, makeStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
-import { byStageAsc, canToggleSort, orderByImpact, stageIdOf } from '../../src/view/impact-sort';
+import { stageIdOf } from '@sparkforensics/core/findings-of-type.ts';
+import { byStageAsc, canToggleSort, orderByImpact } from '../../src/view/impact-sort';
 import { installInterpretation } from './_shared/interpretation';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {

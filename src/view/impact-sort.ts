@@ -1,5 +1,4 @@
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import type { InterpretationState } from '@/store/store';
 import { rankedBySavings } from './interpretation';
 
@@ -38,17 +37,6 @@ export function orderByImpact<T>(
     key: Math.min(Number.MAX_SAFE_INTEGER, ...getFindings(item).map((f) => place.get(f) ?? Number.MAX_SAFE_INTEGER)),
   }));
   return keyed.sort((a, b) => a.key - b.key).map(({ item }) => item);
-}
-
-/** A finding's own stage number: `stageId` for a per-stage detector, or the
- * lowest id in `stageIds` for a sql-scope finding that spans several stages
- * (duplicatePlanSubtree, smallFiles, nestedLoopJoin, pythonUdf, underBroadcast, overBroadcast). `null`
- * for an app-level finding with neither field set. */
-export function stageIdOf(finding: Finding): number | null {
-  if (finding.stageId != null) return finding.stageId;
-  const stageIds = findingStageIds(finding);
-  if (stageIds && stageIds.length > 0) return Math.min(...stageIds);
-  return null;
 }
 
 /** Comparator: ascending stage number, items with no stage number sink to

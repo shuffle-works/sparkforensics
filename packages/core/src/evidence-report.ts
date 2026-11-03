@@ -17,7 +17,7 @@ import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure
 import { findingActionLabel } from './finding-action-label.ts';
 import { findingKeyer } from './run-comparison.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
+import { buildRecommendationRollup, isCaveat, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
@@ -384,9 +384,7 @@ function buildRecommendations(
 function buildCheckLists(
   findings: Finding[], stages: AppModel['stages'], thresholds: ThresholdOverrides | undefined,
 ): { cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[] } {
-  // isRealFinding: a type whose only finding is an evidence caveat (memoryUtilization's
-  // dataUnavailable variant) had nothing to check, so it lands in notRunChecks.
-  const firedTypes = new Set<string>(findings.filter(isRealFinding).map((f) => f.type));
+  const firedTypes = new Set<string>(findings.filter((finding) => !isCaveat(finding)).map((finding) => finding.type));
   const coverage = checkCoverage(stages, findings);
   const cleanChecks: CleanCheckEntry[] = [];
   const notRunChecks: NotRunCheckEntry[] = [];

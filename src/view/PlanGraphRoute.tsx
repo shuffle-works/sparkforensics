@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { resolvePlanTree } from '@/view/widgets/PlanView';
+import { resolvePlanTree } from '@/view/plan-tree';
 import { buildPlanGraphModel } from '@sparkforensics/core/plan-graph-model.ts';
 import { store } from '@/store/store';
 import { PlanGraphCanvas, type CenterRequest } from '@/view/plan-graph/PlanGraphCanvas';

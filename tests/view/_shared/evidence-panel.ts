@@ -1,20 +1,21 @@
-import { allRows, evidencePanel, type ContentCheck, type EvidencePanel } from '@/view/evidence-panel';
+import { evidencePanel, type EvidencePanel, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import { evidencePanelFor } from '@/view/detector-registry';
 import { emptyAppModel } from '@/store/store';
 import type { AppModel, Finding, FindingOf, FindingType } from '@sparkforensics/core/types.ts';
 
-/** A panel for `findings` that keeps every row, for a test of the panel itself (not of a widget's
- * content check). */
+const everyFinding = <T extends FindingType>({ findings }: { findings: readonly FindingOf<T>[] }): WidgetRow<T>[] => findings.map((finding) => ({ findings: [finding] }));
+
+/** A panel for `findings` with one row each, for a test of the panel itself (not of a widget's rows). */
 export function allRowsPanel<T extends FindingType>(type: T, findings: FindingOf<T>[]): EvidencePanel<T> {
-  const panel = evidencePanel(type, allRows, { findings, stated: new Set(), density: 'basic', appModel: emptyAppModel() });
+  const panel = evidencePanel(type, everyFinding, { findings, stated: new Set(), density: 'basic', appModel: emptyAppModel() });
   if (!panel) throw new Error('a test panel needs at least one finding');
   return panel;
 }
 
-/** A content check for one finding type, for the type tests. */
-export const coldStartContent: ContentCheck<'coldStart'> = ({ findings }) => findings;
+/** The rows of one finding type, for the type tests. */
+export const coldStartRows: RowsOf<'coldStart', WidgetRow<'coldStart'>> = everyFinding;
 
-/** The rows a widget's content check keeps for `findings` when the line above states `stated`. */
+/** The findings the rows of a widget stand for, when the line above states `stated`. */
 export function keptRows(
   type: FindingType,
   findings: Finding[],

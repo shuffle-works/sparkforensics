@@ -2,7 +2,7 @@
 // and the CLI/MCP evidence report, so a check the log lacked the data for never reads as passed on
 // one path and "not checked" on another.
 import { detectorCatalog } from './detectors.ts';
-import { isRealFinding } from './recommendation-rollup.ts';
+import { isCaveat } from './recommendation-rollup.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
 import type { AppModel, Finding } from './types.ts';
 
@@ -19,9 +19,6 @@ export function hasFinishedStage(stages: AppModel['stages']): boolean {
 /** A finding that reports a check could not run for lack of evidence (cache
  * storage without block updates, memory without executor metrics), rather
  * than a problem found. Its recommendation names the setting to turn on. */
-export function isEvidenceCaveat(finding: Finding): boolean {
-  return ('dataUnavailable' in finding && finding.dataUnavailable === true) || !isRealFinding(finding);
-}
 
 /** App-level checks measured over the run's full span, which a log with no
  * ApplicationEnd (an `incompleteRun` finding) cannot give them. */
@@ -43,7 +40,7 @@ export function verdictGaps(allFindings: Finding[], noFinishedStages: boolean): 
   if (noFinishedStages) gaps.add(NO_FINISHED_STAGE_GAP);
   if (isIncompleteRun(allFindings)) gaps.add(INCOMPLETE_RUN_GAP);
   for (const finding of allFindings) {
-    if (isEvidenceCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
+    if (isCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
   }
   return [...gaps];
 }
@@ -53,7 +50,7 @@ export function verdictGaps(allFindings: Finding[], noFinishedStages: boolean): 
  * log lacked to run a check. */
 export function isCleanRun(appModel: Pick<AppModel, 'jobs' | 'stages'>, allFindings: Finding[]): boolean {
   if (summarizeRunOutcome(appModel.jobs, allFindings).failedJobs > 0) return false;
-  if (allFindings.some(isRealFinding)) return false;
+  if (allFindings.some((finding) => !isCaveat(finding))) return false;
   return verdictGaps(allFindings, !hasFinishedStage(appModel.stages)).length === 0;
 }
 
@@ -73,7 +70,7 @@ export function checkCoverage(stages: AppModel['stages'], allFindings: Finding[]
   const incomplete = isIncompleteRun(allFindings);
   const caveatReasons = new Map<string, string | null>();
   for (const finding of allFindings) {
-    if (!isEvidenceCaveat(finding)) continue;
+    if (!isCaveat(finding)) continue;
     if (!caveatReasons.get(finding.type)) caveatReasons.set(finding.type, finding.recommendation ?? null);
   }
   const notRunReason = (type: string): string | null => {

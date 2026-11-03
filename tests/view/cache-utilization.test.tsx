@@ -52,16 +52,18 @@ test('renders the widget heading and cached-RDD rows', () => {
     [1, rdd(1)],
     [2, rdd(2, { numCachedPartitions: 4, memorySize: 2e8, diskSize: 1e8, storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 2 } })],
   ]);
-  renderWidget(buildAppModel(rddInfo));
+  renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 1, rddName: 'flagged' })]);
 
-  expect(screen.getByRole('heading', { name: /cache storage/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /cache utilization/i })).toBeInTheDocument();
   expect(screen.getByText('rdd1')).toBeInTheDocument();
   expect(screen.getByText('4 / 10')).toBeInTheDocument();
 });
 
-test('renders a doc link pointing at the memory-model anchor', () => {
+test('renders a doc link pointing at the memory-model anchor', async () => {
+  const user = userEvent.setup();
   const rddInfo = new Map([[1, rdd(1)]]);
-  renderWidget(buildAppModel(rddInfo));
+  renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 1 })]);
+  await user.click(screen.getByRole('button', { name: /cache utilization/i }));
 
   const link = screen.getByRole('link', { name: /how spark accounts cached memory/i });
   expect(link.getAttribute('href')).toContain('#memory-model');
@@ -71,7 +73,7 @@ test('excludes RDDs that are neither memory- nor disk-cached', () => {
   const rddInfo = new Map([
     [1, rdd(1, { storageLevel: { useMemory: false, useDisk: false, deserialized: false, replication: 1 } })],
   ]);
-  const { container } = render(<CacheUtilization appModel={buildAppModel(rddInfo)} catalog={[]} />);
+  const { container } = render(<CacheUtilization appModel={buildAppModel(rddInfo)} catalog={[cacheUtilizationFinding({ rddId: 1 })]} />);
   expect(container.querySelector('[data-widget="cache-utilization"]')).toBeNull();
 });
 
@@ -80,7 +82,7 @@ test('excludes RDDs with persist intent but zero actually-cached partitions', ()
     [1, rdd(1, { numCachedPartitions: 0, memorySize: 0, diskSize: 0 })],
     [2, rdd(2)],
   ]);
-  renderWidget(buildAppModel(rddInfo));
+  renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 2, rddName: 'flagged' })]);
   expect(screen.queryByText('rdd1')).not.toBeInTheDocument();
   expect(screen.getByText('rdd2')).toBeInTheDocument();
 });
@@ -93,7 +95,7 @@ test('renders nothing when rddInfo is absent', () => {
 test('shows a path-like RDD name as its basename with the full path in a tooltip', () => {
   const rddInfo = new Map([[1, rdd(1, { name: 'hdfs://host:8020/data/warehouse/sales/_delta_log' })]]);
   store.getState().setWidgetDensity('advanced');
-  renderWidget(buildAppModel(rddInfo));
+  renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 1 })]);
   const cell = screen.getByText('_delta_log');
   expect(cell.getAttribute('title')).toBe('hdfs://host:8020/data/warehouse/sales/_delta_log');
   store.getState().setWidgetDensity('basic');
@@ -104,7 +106,7 @@ test('truncates a long non-path RDD name and keeps the full text in a tooltip', 
     '*(1) Project [STORE_ID#58, STORE_NAME#59, STORE_SEGMENT#89] +- Scan JDBCRelation((SELECT * FROM sales) SPARK_GEN_SUBQ_0) [numPartitions=8]';
   const rddInfo = new Map([[1, rdd(1, { name: longName })]]);
   store.getState().setWidgetDensity('advanced');
-  const { container } = renderWidget(buildAppModel(rddInfo));
+  const { container } = renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 1 })]);
   const cell = container.querySelector('td');
   expect(cell?.textContent?.length).toBe(71); // 70 chars + ellipsis
   expect(cell?.textContent?.endsWith('…')).toBe(true);
@@ -112,9 +114,9 @@ test('truncates a long non-path RDD name and keeps the full text in a tooltip', 
   store.getState().setWidgetDensity('basic');
 });
 
-test('tags its root element with data-widget for instrumentation', () => {
+test('tags the card content with data-widget for instrumentation', () => {
   const rddInfo = new Map([[1, rdd(1)]]);
-  const { container } = renderWidget(buildAppModel(rddInfo));
+  const { container } = renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 1 })]);
   expect(container.querySelector('[data-widget="cache-utilization"]')).not.toBeNull();
 });
 
@@ -146,7 +148,7 @@ test('shows the CSTOR tag once, in the header, and keeps a per-row impact dot fo
   // Present once, in the header, while the widget is still collapsed.
   expect(screen.getByText('CSTOR')).toBeInTheDocument();
   // Expand the collapsed widget to reach the table rows.
-  await user.click(screen.getByRole('button', { name: /cache storage/i }));
+  await user.click(screen.getByRole('button', { name: /cache utilization/i }));
   const rows = screen.getAllByRole('row');
   // header + 2 data rows; row for rdd1 (data row 1) carries an impact dot, row for rdd2 does not.
   expect(rows[1].querySelectorAll('.size-2.rounded-full')).toHaveLength(1);
@@ -231,7 +233,7 @@ test('a flagged row does not leak another RDD\'s findings (per-row catalog filte
   renderWidget(buildAppModel(rddInfo), catalog);
 
   // Expand the collapsed widget to reach the table rows.
-  await user.click(screen.getByRole('button', { name: /cache storage/i }));
+  await user.click(screen.getByRole('button', { name: /cache utilization/i }));
   const rows = screen.getAllByRole('row');
   expect(rows).toHaveLength(4); // header + 3 data rows
   const rdd1Row = rows.find((r) => r.textContent?.includes('rdd1'));
@@ -259,19 +261,6 @@ test('passes the worst impact band across all findings to WidgetCard for the hea
   expect(container.querySelector('.border-warning')).not.toBeNull();
 });
 
-test('paginates the RDD table 6-at-a-time with Previous/Next controls', async () => {
-  const user = userEvent.setup();
-  const rddInfo = new Map(
-    Array.from({ length: 7 }, (_, i) => [i + 1, rdd(i + 1, { name: `rdd${i + 1}` })]),
-  );
-  renderWidget(buildAppModel(rddInfo));
-
-  // Expand the collapsed widget to reach the table rows.
-  await user.click(screen.getByRole('button', { name: /cache storage/i }));
-  expect(screen.getAllByRole('row')).toHaveLength(1 + 6); // header + 6 data rows
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-});
-
 test('paginates the recommendation list 6-at-a-time, independent of the RDD table pagination', async () => {
   const rddInfo = new Map(
     Array.from({ length: 7 }, (_, i) => [i + 1, rdd(i + 1, { name: `rdd${i + 1}`, numCachedPartitions: 4 })]),
@@ -296,7 +285,7 @@ test('shows the card\'s fix unconditionally, with no per-row toggle', async () =
   renderWidget(buildAppModel(rddInfo), catalog);
 
   // Expand the collapsed widget to reach the recommendation rows.
-  await user.click(screen.getByRole('button', { name: /cache storage/i }));
+  await user.click(screen.getByRole('button', { name: /cache utilization/i }));
 
   expect(screen.getByText('Increase executor memory or reduce the cached dataset size so more of it stays cached.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /hide recommendation for rdd1/i })).not.toBeInTheDocument();
@@ -307,7 +296,7 @@ test('the RDD storage table always renders; finding-detail list shows recommenda
   const rddInfo = new Map([[1, rdd(1)]]);
   const appModel = buildAppModel(rddInfo);
 
-  renderWidget(appModel);
+  renderWidget(appModel, [cacheUtilizationFinding({ rddId: 1 })]);
   expect(screen.getByText(/storage level/i)).toBeInTheDocument();
 });
 
@@ -316,7 +305,7 @@ test('the total cached-bytes figure stays visible at Basic, even with the RDD ta
     [1, rdd(1, { memorySize: 3e8, diskSize: 0 })],
     [2, rdd(2, { memorySize: 2e8, diskSize: 1e8 })],
   ]);
-  renderWidget(buildAppModel(rddInfo));
+  renderWidget(buildAppModel(rddInfo), [cacheUtilizationFinding({ rddId: 1 })]);
   expect(screen.getByText('600 MB')).toBeInTheDocument();
   expect(screen.getByText('cached across memory + disk')).toBeInTheDocument();
 });
@@ -330,7 +319,7 @@ test('renders the storageUnobserved caveat when persisted RDDs have no storage e
   } as unknown as Finding;
   renderWidget(buildAppModel(rddInfo), [caveat]);
 
-  expect(screen.getByRole('heading', { name: /cache storage/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /cache utilization/i })).toBeInTheDocument();
   expect(screen.getByText('Cache storage not logged')).toBeInTheDocument();
   expect(screen.getByText(/spark\.eventLog\.logBlockUpdates\.enabled=true/)).toBeInTheDocument();
   expect(screen.queryByRole('table')).toBeNull();

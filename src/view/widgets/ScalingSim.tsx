@@ -6,6 +6,7 @@ import { hasUsableRunAggregates } from '@sparkforensics/core/evidence-availabili
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { useInterpretation } from '@/view/interpretation';
+import type { InterpretationState } from '@/store/store';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
 import { DocsLink } from '../DocsContext';
@@ -88,11 +89,20 @@ function scalePhrase(pct: number): string {
   return `with ${Number.isInteger(multiple) ? multiple : multiple.toFixed(1)}× the executors`;
 }
 
+function hasTaskCoreTime(appModel: AppModel): boolean {
+  const taskCoreTime = taskCoreTimeEntry(appModel);
+  return hasUsableRunAggregates(appModel.runAggregates) && (taskCoreTime == null || taskCoreTime.state === 'present');
+}
+
+/** Whether the tile renders anything: the what-if, or why it is unavailable. The grid mounts it only then. */
+export function hasScalingSim(appModel: AppModel, interpretation: InterpretationState | null): boolean {
+  return !hasTaskCoreTime(appModel) || interpretation != null;
+}
+
 export function ScalingSim({ appModel }: ScalingSimProps) {
   const interpretation = useInterpretation()?.data;
   const taskCoreTime = taskCoreTimeEntry(appModel);
-  const hasTaskCoreTime = hasUsableRunAggregates(appModel.runAggregates) && (taskCoreTime == null || taskCoreTime.state === 'present');
-  if (!hasTaskCoreTime) {
+  if (!hasTaskCoreTime(appModel)) {
     return <Unavailable reason={taskCoreTime?.summary ?? 'No usable task and core-time evidence in this log.'} evidence="taskCoreTime" />;
   }
 

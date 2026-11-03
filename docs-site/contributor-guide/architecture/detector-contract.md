@@ -96,7 +96,8 @@ a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
 `valueText` instead. So a new detector type needs an `emits` entry, an
 `estimate()` on that entry that covers it, a `finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
 entry in `analyzer.ts`, a `FINDING_PRESENTATION` row and a view `REGISTRY`
-entry. The compiler
+entry with its row model (see
+[Finding widget shell](./widget-rendering/finding-widget-shell.md)). The compiler
 reports each one that is missing. Tests and process, not the compiler, cover
 the rest: a new board tag goes in AGENTS.md's tag list
 (`packages/core/test/tag-vocabulary.test.js` fails otherwise), an intended

@@ -24,14 +24,14 @@ function renderWidget(catalog: Finding[]) {
   installInterpretation(catalog, appModel);
   return render(
     <DocsProvider>
-      <RightSizing catalog={catalog} />
+      <RightSizing appModel={appModel} catalog={catalog} />
     </DocsProvider>,
   );
 }
 
 test('summarizes the modeled core count against the cores held at peak, with the UTIL tag', () => {
   renderWidget([finding()]);
-  expect(screen.getByRole('heading', { name: 'Right-sized Cluster' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Right-Sized Cluster' })).toBeInTheDocument();
   expect(screen.getAllByText('8 of 16 cores').length).toBeGreaterThan(0);
   expect(screen.getByText('UTIL')).toBeInTheDocument();
 });
@@ -41,7 +41,7 @@ test('states the observed and predicted stage time once expanded, and the model 
   store.getState().setWidgetDensity('advanced');
   renderWidget([finding()]);
 
-  await user.click(screen.getByRole('button', { name: 'Right-sized Cluster' }));
+  await user.click(screen.getByRole('button', { name: 'Right-Sized Cluster' }));
 
   expect(screen.getByText(/would be enough/)).toBeInTheDocument();
   expect(screen.getByText(/The stages took 10.0s on 16 cores. The model predicts 10.5s on 8./)).toBeInTheDocument();
@@ -53,7 +53,7 @@ test('hides the model error at Basic density', async () => {
   const user = userEvent.setup();
   renderWidget([finding()]);
 
-  await user.click(screen.getByRole('button', { name: 'Right-sized Cluster' }));
+  await user.click(screen.getByRole('button', { name: 'Right-Sized Cluster' }));
 
   expect(screen.getByText(/would be enough/)).toBeInTheDocument();
   expect(screen.queryByText(/Model error/)).not.toBeInTheDocument();

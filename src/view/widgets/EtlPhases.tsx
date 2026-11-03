@@ -2,7 +2,14 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { useInterpretation } from '@/view/interpretation';
+import type { InterpretationState } from '@/store/store';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
+
+/** Whether the run has attributable time in any phase; the grid mounts the tile only then. */
+export function hasEtlPhases(interpretation: InterpretationState | null): boolean {
+  const phases = interpretation?.data.etlPhases;
+  return !!phases && phases.extract + phases.transform + phases.load > 0;
+}
 
 const PHASES: { label: string; key: 'extract' | 'transform' | 'load' }[] = [
   { label: 'Extract', key: 'extract' },
@@ -15,10 +22,9 @@ const PHASES: { label: string; key: 'extract' | 'transform' | 'load' }[] = [
  * counts in both Transform and Load), so buckets need not sum to wall-clock.
  * Renders nothing when the run has no attributable time in any phase. */
 export function EtlPhases() {
-  const phases = useInterpretation()?.data.etlPhases;
-  if (!phases) return null;
-  const total = phases.extract + phases.transform + phases.load;
-  if (total === 0) return null;
+  const interpretation = useInterpretation();
+  const phases = interpretation?.data.etlPhases;
+  if (!phases || !hasEtlPhases(interpretation)) return null;
 
   const dominant = PHASES.reduce((acc, phase) => (phases[phase.key] > phases[acc.key] ? phase : acc));
 

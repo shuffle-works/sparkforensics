@@ -30,11 +30,14 @@ count toward N and still render under their own titles below it.
 
 Eligible findings for the rollup are `catalog` ∪ `configFindings` that pass
 core `isEligible` (`packages/core/src/recommendation-rollup.ts`) and have a
-display type (`FINDING_DISPLAY_ORDER`): `incompleteRun` (a
-pipeline-completeness caveat, not an addressable fix) and every `dataUnavailable` evidence caveat (e.g.
-`memoryUtilization`'s `memoryBand` variant, already covered by Evidence
-availability's own `executorMetrics` entry,
-`packages/core/src/evidence-availability.ts`) are excluded. Findings are grouped strictly by `finding.type` via
+display type (`FINDING_DISPLAY_ORDER`). `isEligible` leaves out `incompleteRun`
+(a pipeline-completeness note, not an addressable fix) and every caveat. One
+predicate, `isCaveat`, names the caveats: a finding emitted only to say its
+detector lacked the evidence it needs, which is a `memoryUtilization`
+`memoryBand` or a `cacheUtilization` `storageUnobserved` finding with
+`dataUnavailable` set. The `memoryBand` caveat is already covered by Evidence
+availability's own `executorMetrics` entry
+(`packages/core/src/evidence-availability.ts`). Findings are grouped strictly by `finding.type` via
 `buildRecommendationRollup` (`packages/core/src/recommendation-rollup.ts`, further split
 within a type by impact kind and, for `resource`, unit: never merged across
 types); each resulting group becomes one row: a type with exactly one
@@ -73,7 +76,7 @@ wrapping rather than truncating, then one **Show evidence** button); and a right
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
 `formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). The
 **Show evidence** button (`EvidenceButton`), not the row, is the click
-target. A row whose content check keeps no row has no button (see
+target. A row whose widget has no rows to show beyond the line above has no button (see
 [row-expand-contract](./row-expand-contract.md#in-place-evidence-panel)). Every other row opens its own evidence in place as a table row below
 (`EvidencePanelRow`, `InlineEvidence`), scoped to the row's findings: the
 widget renders without its other findings of the same type. The panel starts
@@ -102,8 +105,10 @@ first as the headerless `Table` described above, followed by the band's
 active `REGISTRY` widget cards that no verdict step or row shows (`computeActiveWidgets`'s ranked list,
 filtered to this impact band) in their own `WidgetGrid`: every one of
 `orderedWidgets()`'s `REGISTRY` components *except* the one
-always-mounted one below, with at least one finding in `catalog` ∪
-`configFindings`. Within a band, active widgets keep `orderedWidgets()`'s
+always-mounted one below, whose `rows(...)` for the run, the density and
+nothing stated is not empty (`computeActiveWidgets(catalog, configFindings,
+detectors, appModel, density)`). A widget mounts exactly when it has a row, so
+a mounted card is never empty. Within a band, active widgets keep `orderedWidgets()`'s
 own order: the interpretation's `DetectorInfo` sorted by region
 (`action` first), then ascending detector `order`. Those cards
 render collapsed (`defaultCollapsed`) in both Basic and Advanced view. A route
@@ -112,11 +117,11 @@ the rollup leaves out) adds its type's card to this grid, whatever else shows
 that type (`fullCardWidgetIds`, `Dashboard.tsx`).
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
-Storage, Memory Utilization, or Executor Utilization card with an active
+Utilization, Memory Utilization, or Executor Utilization card with an active
 finding surfaces in its own impact band like any other active widget.
 
-Below the impact bands, `Alerts.tsx`'s exported `CleanChecks` renders a
-collapsed "Clean checks" disclosure
+Below the impact bands, `Alerts.tsx`'s exported `CleanChecks` (it takes `activeTypes`, the types
+`computeActiveWidgets` mounted) renders a collapsed "Clean checks" disclosure
 of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: the type's
 tag chip and label, plus in Advanced view the threshold it was held to, the
 interpretation's `detectors[type].thresholdSummary` from
@@ -124,7 +129,7 @@ interpretation's `detectors[type].thresholdSummary` from
 detector *type* (every `REGISTRY` key
 except that one always-mounted key), under one "Every check below passed."
 line (or "No check could run on this log." when none did) and grouped by detector scope (Per-stage, App-level,
-SQL plan, Config checks). Types the log could not check (an `isEvidenceCaveat`
+SQL plan, Config checks). Types the log could not check (an `isCaveat`
 finding of that type, every per-stage type when no stage finished, or the
 run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same
 rule that keeps the verdict from calling the run clean) render first under
@@ -134,11 +139,11 @@ neutral rather than clean green, after the interpretation's `coverage.gaps`
 and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
 action-region type. Caching Opportunities, Config Audit, and the nine
-Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files,
-Nested Loop Join, Join Key Casts, MERGE rewrites, Unpruned Partitioned Scan, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
+Plan Advisor widgets (Duplicate Plan Subtree, Small Files,
+Nested Loop Join, Cast On A Join Key, MERGE Rewrite, Unpruned Partitioned Scan, Row-At-A-Time Python UDF, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
 [App- and plan-level widgets](../board-widgets.md#board-widgets-app-and-plan-widgets)).
-Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is
+Core Locality (`coreLocality`, resolving to `CoreUsageArea`) is
 not in the Findings tab at all: it mounts unconditionally from `appModel`
 at the head of the Full app report's reference grid
 (`alwaysMountedWidgets()`/`isAlwaysMountedType()`), carrying its own

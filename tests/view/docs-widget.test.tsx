@@ -10,6 +10,9 @@ import { HEIGHT_MESSAGE, followHostTheme, hostTheme, reportHeight } from '@/docs
 import { loadExportPayload } from '@/export/hydrate-store';
 import { store } from '@/store/store';
 import { eligibleFindings, findingAt } from '@/view/interpretation';
+import { evidencePlacement } from '@/view/evidence-placement';
+import { verdictEvidenceOwners } from '@/view/verdict-evidence';
+import { computeActiveWidgets } from '@/view/widgets/Alerts';
 import { keptRows, showsEvidence } from './_shared/evidence-panel';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS): the example app is built from
@@ -63,7 +66,10 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   const { appModel, interpretation, widgetDensity } = store.getState();
   const isLine = eligibleFindings(interpretation).includes(finding)
     || interpretation!.data.verdict.steps.some((step) => findingAt(interpretation!, step.leadIndex) === finding);
-  const kept = keptRows(finding.type, [finding], isLine ? [example.finding.id] : [], { density: widgetDensity, appModel });
+  // A type the dashboard mounts no card for (the always-mounted reference tile) has no panel here either.
+  const hasWidget = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity)
+    .some((widget) => widget.type === finding.type);
+  const kept = hasWidget ? keptRows(finding.type, [finding], isLine ? [example.finding.id] : [], { density: widgetDensity, appModel }) : [];
   expect(screen.queryByRole('button', { name: /show evidence/i })).toBeNull();
   const controls = screen.queryAllByRole('button', { name: /hide evidence/i });
   let panel: HTMLElement | null = container;
@@ -78,6 +84,41 @@ test.each(Object.entries(examples))('%s: shows its example finding from the comm
   }
   await within(panel!).findByRole('heading', { level: 3 }, { timeout: 10_000 });
   expect(showsEvidence(panel!)).toBe(true);
+});
+
+// The page shows an example only where the dashboard places its finding: a verdict step, a Findings
+// row or a card. A placement of none would leave the page with an empty frame.
+test.each(Object.entries(examples))('%s: the dashboard places its example finding', (_type, example) => {
+  expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
+  const { appModel, catalog, configFindings, interpretation, widgetDensity } = store.getState();
+  const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
+  const widgets = computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity);
+
+  const placement = evidencePlacement(interpretation!, finding, new Set(widgets.map((widget) => widget.widgetId)));
+
+  expect(placement.kind).not.toBe('none');
+});
+
+// The always-mounted Core Locality tile has no card on the Findings board, so a verdict step it
+// leads has no panel: the dashboard routes to the tile, and the page, with nowhere to route, offers
+// no control at all.
+test('a step led by a finding with no board card offers no evidence control', async () => {
+  const example = examples.coreLocality;
+  expect(loadExportPayload(runs[`${example.source}/${example.log}`])).toBeNull();
+  const { appModel, catalog, configFindings, interpretation, widgetDensity } = store.getState();
+  const finding = [...catalog, ...configFindings].find((f) => f.id === example.finding.id)!;
+  const available = new Set(
+    computeActiveWidgets(catalog, configFindings, interpretation!.data.detectors, appModel, widgetDensity).map((widget) => widget.widgetId),
+  );
+  const placement = evidencePlacement(interpretation!, finding, available);
+  expect(placement).toMatchObject({ kind: 'step', widgetId: null });
+  if (placement.kind !== 'step') return;
+  expect(verdictEvidenceOwners(interpretation!, available).has(placement.index)).toBe(false);
+
+  render(<DocsWidgetApp findingId={example.finding.id} />);
+
+  expect(await screen.findByTestId('next-step', {}, { timeout: 10_000 })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /evidence/i })).toBeNull();
 });
 
 test('says so when the run has no such finding', () => {

@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { test, expect, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { store } from '@/store/store';
+import { emptyAppModel, store } from '@/store/store';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
@@ -37,7 +37,7 @@ function renderWidget(catalog: Finding[]) {
   return render(
     <DocsProvider>
       <EvidenceAvailabilityProvider>
-        <UnprunedScan catalog={catalog} defaultCollapsed={false} />
+        <UnprunedScan appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
       </EvidenceAvailabilityProvider>
     </DocsProvider>,
   );

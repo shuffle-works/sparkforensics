@@ -3,7 +3,7 @@
 import { test, expect, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { store } from '@/store/store';
+import { emptyAppModel, store } from '@/store/store';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
@@ -12,7 +12,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { SmallFiles } from '@/view/widgets/SmallFiles';
-import { expectImpactThenStageOrderByText } from './_shared/sort-order-toggle';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
@@ -35,7 +34,7 @@ function renderWidget(catalog: Finding[], { defaultCollapsed = false }: { defaul
   return render(
     <DocsProvider>
       <EvidenceAvailabilityProvider>
-        <SmallFiles catalog={catalog} defaultCollapsed={defaultCollapsed} />
+        <SmallFiles appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={defaultCollapsed} />
       </EvidenceAvailabilityProvider>
     </DocsProvider>,
   );
@@ -49,7 +48,7 @@ test('renders nothing when no smallFiles finding is present', () => {
 test('renders a WidgetCard heading with the PLAN tag', async () => {
   store.getState().setWidgetDensity('advanced');
   renderWidget([finding()]);
-  expect(screen.getByRole('heading', { name: 'Excessive Small Files' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Small Files' })).toBeInTheDocument();
   expect(screen.getAllByText('PLAN').length).toBeGreaterThan(0);
   expect(screen.getByRole('button', { name: /^evidence: sql plan$/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
@@ -93,38 +92,12 @@ test('takes the worst impact band for the widget accent', () => {
   expect(container.querySelector('.border-critical')).not.toBeNull();
 });
 
-test('defaults to impact order (highest potential savings first), and a toggle flips it back at advanced density', async () => {
-  const user = userEvent.setup();
-  store.getState().setWidgetDensity('advanced');
-  renderWidget([
-    finding({ stageIds: [1], recommendation: 'Coalesce stage 1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } }),
-    finding({ stageIds: [2], recommendation: 'Coalesce stage 2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } }),
-  ]);
-
-  const listItems = () => screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
-  await expectImpactThenStageOrderByText(user, listItems, /Coalesce stage 1/, /Coalesce stage 2/);
-  store.getState().setWidgetDensity('basic');
-});
-
 test('hides the sort toggle at basic density', () => {
   renderWidget([
     finding({ stageIds: [1], recommendation: 'Coalesce stage 1' }),
     finding({ stageIds: [2], recommendation: 'Coalesce stage 2' }),
   ]);
   expect(screen.queryByRole('group', { name: /sort order/i })).not.toBeInTheDocument();
-});
-
-test('paginates 6-at-a-time with Previous/Next controls', async () => {
-  const user = userEvent.setup();
-  const findings = Array.from({ length: 7 }, (_, i) => finding({ stageIds: [i], recommendation: `Coalesce stage ${i}` }));
-  renderWidget(findings);
-
-  expect(screen.getAllByRole('listitem')).toHaveLength(6);
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-
-  await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getAllByRole('listitem')).toHaveLength(1);
-  expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 });
 
 test('the per-widget evidence and confidence markers are Advanced-only', () => {
@@ -153,10 +126,10 @@ test('card defaults collapsed and shows a finding-count summary', async () => {
     ],
     { defaultCollapsed: true },
   );
-  // Lead value is the distinct stage count, not a repeat of the "Excessive Small Files" title.
+  // Lead value is the distinct stage count, not a repeat of the "Small Files" title.
   expect(screen.getByText('2 stages')).toBeInTheDocument();
   expect(screen.getByText('2 findings')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Excessive Small Files' }));
+  await user.click(screen.getByRole('button', { name: 'Small Files' }));
   expect(screen.getByRole('button', { name: 'Stage' })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
@@ -168,7 +141,7 @@ test('confidence and evidence markers stay out of the summary view until the car
   expect(screen.queryByText(/medium confidence/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /evidence:/i })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: 'Excessive Small Files' }));
+  await user.click(screen.getByRole('button', { name: 'Small Files' }));
   expect(screen.getByText(/medium confidence/i)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /evidence:/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');

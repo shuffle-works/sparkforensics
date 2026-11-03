@@ -26,11 +26,11 @@ import {
   type FilterOptions,
   type FilterSelection,
 } from '@/view/finding-filter';
-import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
-import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
-import { EtlPhases } from '@/view/widgets/EtlPhases';
+import { CoreUsageHistogram, hasCoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
+import { EfficiencyModel, hasEfficiencyModel } from '@/view/widgets/EfficiencyModel';
+import { EtlPhases, hasEtlPhases } from '@/view/widgets/EtlPhases';
 import { ExecutorCountChart } from '@/view/widgets/ExecutorCountChart';
-import { ScalingSim } from '@/view/widgets/ScalingSim';
+import { ScalingSim, hasScalingSim } from '@/view/widgets/ScalingSim';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import { SampleRunNotice } from '@/view/SampleRunNotice';
 import { Scorecard } from '@/view/widgets/Scorecard';
@@ -69,7 +69,7 @@ interface RouteRequest {
  * fixed-order tail of non-detector report lenses ("Widget rendering order" in
  * docs-site/contributor-guide/architecture/widget-rendering.md).
  * `REGISTRY` widgets render inside the Findings tab's `ImpactBoard`, not
- * here, except the always-mounted Core Usage by Locality chart
+ * here, except the always-mounted Core Locality chart
  * (`alwaysMountedWidgets`), a run-wide reference view that sits beside the
  * executor timeline. Selecting the tab is itself the disclosure. The
  * Scorecard lives in its own strip above the tabs, shared by both.
@@ -82,6 +82,8 @@ function ReferenceSection({
   activeFileId,
   onRoute,
 }: WidgetProps & { onRoute: (target: TriageTarget) => void }) {
+  // The data decides which reference tiles exist, so a tile with nothing to show leaves no blank grid cell.
+  const interpretation = useInterpretation();
   return (
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
@@ -101,10 +103,10 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-evidence-availability" collapsedTile>
           <EvidenceAvailability ledger={appModel.evidenceAvailability} />
         </WidgetGridItem>
-        <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
+        {hasEtlPhases(interpretation) && <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>}
+        {hasScalingSim(appModel, interpretation) && <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>}
+        {hasEfficiencyModel(interpretation) && <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>}
+        {hasCoreUsageHistogram(appModel) && <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram key={activeFileId} appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>}
       </WidgetGrid>
     </div>
   );
@@ -149,9 +151,10 @@ function FilteredBoard({
   // lists the rest. Cards come from the unfiltered catalog, like the verdict.
   const detectors = interpretation?.data.detectors;
   const evidenceWidgets = useMemo(
-    () => (detectors ? computeActiveWidgets(catalog, configFindings ?? [], detectors) : []),
-    [catalog, configFindings, detectors],
+    () => (detectors ? computeActiveWidgets(catalog, configFindings ?? [], detectors, appModel, density) : []),
+    [catalog, configFindings, detectors, appModel, density],
   );
+  const evidenceTypes = useMemo(() => new Set(evidenceWidgets.map((widget) => widget.type)), [evidenceWidgets]);
   const verdictLeads = useMemo(
     () => new Set<Finding>(interpretation ? verdictLeadFindings(interpretation) : []),
     [interpretation],
@@ -170,8 +173,8 @@ function FilteredBoard({
   const verdictPanel = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
     const scope = verdictScopes.get(lead) ?? [lead];
-    return evidencePanelOf(widget, appModel, scope, scope, density);
-  }, [evidenceWidgets, verdictScopes, appModel, density]);
+    return evidencePanelOf(widget, appModel, scope, scope, density, interpretation?.data.coreLocality?.chart);
+  }, [evidenceWidgets, verdictScopes, appModel, density, interpretation]);
   const renderVerdictEvidence = useCallback((panel: AnyEvidencePanel) => {
     const widget = evidenceWidgets.find((candidate) => candidate.type === panel.type);
     return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={panel.rows} panel={panel} /> : null;
@@ -321,6 +324,7 @@ function FilteredBoard({
             <ImpactBoard
               verdictLeads={verdictLeads}
               verdictWidgetIds={verdictWidgetIds}
+              evidenceTypes={evidenceTypes}
               fullCardWidgetIds={fullCardWidgetIds}
               appModel={appModel}
               catalog={filteredCatalog}

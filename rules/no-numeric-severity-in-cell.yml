@@ -1,0 +1,26 @@
+id: no-numeric-severity-in-cell
+language: tsx
+severity: error
+message: A table cell function compares a number.
+note: |
+  A `*Cell` function renders one value of a table row. It shows the raw number, plus a chip only
+  when a detector flagged the stage: the finding's own impact band colours the chip. A comparison
+  such as `ratio > 0.3` grades the number in the view, where core, `--thresholds`, the CLI and the
+  MCP tools never see it. Put the threshold in a detector, and have the cell read its finding.
+rule:
+  kind: binary_expression
+  has:
+    field: operator
+    regex: ^(<|>|<=|>=)$
+  all:
+    - has:
+        stopBy: end
+        kind: number
+  inside:
+    stopBy: end
+    kind: function_declaration
+    has:
+      field: name
+      regex: Cell$
+files:
+  - src/view/widgets/*.tsx

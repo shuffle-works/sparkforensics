@@ -111,7 +111,6 @@ export function WidgetGridItem({
         ref={wrapperRef}
         data-testid={`widget-grid-item-${cardId}`}
         className={cn(
-          'empty:hidden',
           widgetId && 'scroll-mt-20',
           open && 'col-span-full',
           className,

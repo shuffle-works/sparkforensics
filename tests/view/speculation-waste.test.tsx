@@ -2,7 +2,6 @@
 // @vitest-environment jsdom
 import { test, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { emptyAppModel } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 
@@ -65,16 +64,4 @@ test('renders the impact estimate for a flagged finding', () => {
   installInterpretation(catalog);
   render(<SpeculationWaste appModel={appModelWithStage(7)} catalog={catalog} defaultCollapsed={false} />);
   expect(document.querySelector('.impact-estimate')).toHaveTextContent('800ms');
-});
-
-test('paginates the issue list 6-at-a-time', async () => {
-  const user = userEvent.setup();
-  const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => ({
-    type: 'speculationWaste' as const, stageId: i + 1, impactBand: 'warning' as const, value: 90000, recommendation: `r${i}`,
-  }));
-  const appModel: AppModel = { ...emptyAppModel(), stages: new Map(catalog.map((f) => [f.stageId as number, { id: f.stageId }])) as unknown as AppModel['stages'] };
-  render(<SpeculationWaste appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'Next' }));
-  expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 });

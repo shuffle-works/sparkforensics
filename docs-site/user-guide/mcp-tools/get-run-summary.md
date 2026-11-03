@@ -15,7 +15,7 @@ job's exception).
 Efficiency), `unusedCoreTimePct` (the share of executor core time that ran no task,
 against the run's allocation, cores times the time each executor was alive; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
 (`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
-and `peakBusyCores` (busy cores at the peak of Core Usage by Locality,
+and `peakBusyCores` (busy cores at the peak of the Core Locality chart,
 averaged over one chart bucket, so it can be fractional). Each is `null` where the
 dashboard shows "Not measured" or "Unavailable".
 

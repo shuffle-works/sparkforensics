@@ -1,6 +1,7 @@
 import { Suspense, useMemo, useState } from 'react';
 
 import { Table, TableBody } from '@/components/ui/table';
+import { useWidgetDensity } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useInterpretation, type BoardGroup } from '@/view/interpretation';
@@ -27,6 +28,9 @@ export interface ImpactBoardProps extends WidgetProps {
   verdictLeads?: ReadonlySet<Finding>;
   /** Widgets whose evidence card the verdict shows in place; they stay out of the grid. */
   verdictWidgetIds?: ReadonlySet<string>;
+  /** The finding types with a widget over the unfiltered run: every other type is a clean check.
+   * Defaults to the types of the board's own widgets. */
+  evidenceTypes?: ReadonlySet<string>;
   /** Widgets whose full card is shown because a route targeted a finding no row or step holds. */
   fullCardWidgetIds?: ReadonlySet<string>;
 }
@@ -148,8 +152,10 @@ export function ImpactBoard({
   onRoute,
   verdictLeads,
   verdictWidgetIds,
+  evidenceTypes,
   fullCardWidgetIds,
 }: ImpactBoardProps) {
+  const density = useWidgetDensity();
   // Recompute the rollup/active-widget ranking only when the underlying findings
   // (or stages) change, not on every `setExpandedGroupKey` re-render.
   const interpretation = useInterpretation();
@@ -161,9 +167,9 @@ export function ImpactBoard({
   const detectors = interpretation?.data.detectors;
   const activeWidgets = useMemo(
     () => (detectors
-      ? computeActiveWidgets(catalog, configFindings, detectors)
+      ? computeActiveWidgets(catalog, configFindings, detectors, appModel, density)
       : []),
-    [catalog, configFindings, detectors],
+    [catalog, configFindings, detectors, appModel, density],
   );
   // A widget is claimed when a verdict step or any board row shows it in place.
   const claimedWidgetIds = useMemo(() => {
@@ -227,7 +233,7 @@ export function ImpactBoard({
           subheading={hasVerdictLeads}
         />
       ))}
-      {interpretation ? <CleanChecks catalog={interpretation.findings} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
+      {interpretation ? <CleanChecks activeTypes={evidenceTypes ?? new Set(activeWidgets.map((widget) => widget.type))} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   checkCoverage, hasFinishedStage, INCOMPLETE_RUN_GAP, isCleanRun, NO_FINISHED_STAGE_GAP,
   PER_STAGE_CHECK_TYPES, verdictGaps,
 } from '../src/check-coverage.ts';
+import { isCaveat } from '../src/recommendation-rollup.ts';
 import { makeStage } from './fixtures/stage-app-fixtures.js';
 
 const unfinished = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
@@ -13,6 +14,11 @@ const memoryCaveat = {
 };
 
 describe('check coverage', () => {
+  it('identifies evidence caveats from the finding variant', () => {
+    expect(isCaveat(memoryCaveat)).toBe(true);
+    expect(isCaveat({ type: 'memoryUtilization', variant: 'memoryBand', impactBand: 'warning' })).toBe(false);
+  });
+
   it('reads the per-stage set from the detector catalog', () => {
     expect([...PER_STAGE_CHECK_TYPES].sort()).toEqual([
       'failures', 'gc', 'partitionSizing', 'retryWaste', 'shuffle', 'skew', 'slowHost', 'speculationWaste',

@@ -10,7 +10,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { GcPressure } from '../../src/view/widgets/GcPressure';
 import { emptyAppModel, store } from '../../src/store/store';
-import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
@@ -172,28 +171,6 @@ describe('GcPressure', () => {
     installInterpretation([finding]);
     render(<GcPressure catalog={[finding]} appModel={buildAppModel()} />);
     expect(screen.getByText('92ms-2.2s')).toBeInTheDocument();
-  });
-
-  it('defaults to impact order (highest potential savings first), and a toggle flips it back to stage order at advanced density', async () => {
-    const user = userEvent.setup();
-    store.getState().setWidgetDensity('advanced');
-    const catalog: Finding[] = [
-      {
-        type: 'gc', stageId: 1, impactBand: 'warning', value: 40, recommendation: 'r',
-        impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
-      },
-      {
-        type: 'gc', stageId: 2, impactBand: 'warning', value: 20, recommendation: 'r',
-        impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
-      },
-    ];
-    installInterpretation(catalog);
-    render(<GcPressure catalog={catalog} appModel={buildAppModel()} defaultCollapsed={false} />);
-
-    const stagePills = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
-    // Stage 2 has lower GC% (20 vs 40) but higher savings (5000 vs 100ms), so impact order puts it first.
-    await expectImpactThenStageOrderByAccessibleName(user, stagePills, /stage 1/i, /stage 2/i);
-    store.getState().setWidgetDensity('basic');
   });
 
   it('hides the sort toggle at basic density even with a wall-clock estimate, and stays in impact order', () => {

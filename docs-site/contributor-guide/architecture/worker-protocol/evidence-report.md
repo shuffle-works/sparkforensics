@@ -27,7 +27,7 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   `summarizeRunOutcome` (`packages/core/src/run-outcome.ts`), the job results the dashboard
   verdict leads with; the Markdown prints it as an `- Outcome:` header line. `runShape`
   (`computeRunShape`, `packages/core/src/run-shape.ts`) is the Scorecard's wall-clock,
-  Efficiency and Unused core time, the ETL phases' summed stage time and Core Usage by
+  Efficiency and Unused core time, the ETL phases' summed stage time and Core
   Locality's peak busy cores, each `null` where the dashboard shows none; MCP
   `get_run_summary` returns it too.
 - `verdict` is the dashboard's run verdict from `buildRunVerdict`

@@ -24,6 +24,11 @@ export interface CoreUsageHistogramProps {
   getTaskData: (id: number) => Promise<TaskData>;
 }
 
+/** Whether the run has stages to chart; the grid mounts the tile only then. */
+export function hasCoreUsageHistogram(appModel: AppModel): boolean {
+  return appModel.stages.size > 0;
+}
+
 export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogramProps) {
   const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const [histogram, setHistogram] = useState<number[] | null>(null);
@@ -31,7 +36,7 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
   // Controlled disclosure so the task-data fetch below can be gated on the card
   // actually being open.
   const [open, setOpen] = useState(false);
-  const hasStages = appModel.stages.size > 0;
+  const hasStages = hasCoreUsageHistogram(appModel);
 
   useEffect(() => {
     if (!hasStages || !open || histogram !== null || !liveGetTaskData) return;

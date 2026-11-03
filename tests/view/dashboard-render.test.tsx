@@ -32,14 +32,19 @@ function CleanAlert() {
 // typesByComponent map looks up findings by that exact object identity.
 vi.mock('@/view/detector-registry', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/view/detector-registry')>();
+  // A double has one row per finding of its type.
+  const model = (type: string) => ({
+    type, rows: ({ findings }: { findings: readonly unknown[] }) => findings.map((finding) => ({ findings: [finding] })),
+    stageOf: () => null, summary: () => ({ value: '' }),
+  });
   return {
     ...actual,
     REGISTRY: {
       ...actual.REGISTRY,
-      criticalAlert: { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', routeable: false },
-      warningAlert: { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', routeable: false },
-      infoAlert: { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', routeable: false },
-      cleanAlert: { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', routeable: false },
+      criticalAlert: { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', routeable: false, model: model('criticalAlert') },
+      warningAlert: { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', routeable: false, model: model('warningAlert') },
+      infoAlert: { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', routeable: false, model: model('infoAlert') },
+      cleanAlert: { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', routeable: false, model: model('cleanAlert') },
     },
     orderedWidgets: () => [
       { component: actual.REGISTRY.spill.component, region: 'action' as const, widgetId: 'spill', type: 'spill' },
@@ -143,9 +148,9 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
   expect(within(reportPanel).getByRole('heading', { name: 'Stage Summary' })).toBeInTheDocument();
   // REGISTRY widgets mount in ImpactBoard (Findings tab), except the
-  // always-mounted Core Usage by Locality, which lives in Full app report.
-  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
-  expect(within(findingsPanel).queryByRole('heading', { name: 'Core Usage by Locality' })).not.toBeInTheDocument();
+  // always-mounted Core Locality, which lives in Full app report.
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Locality' })).toBeInTheDocument();
+  expect(within(findingsPanel).queryByRole('heading', { name: 'Core Locality' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Memory Utilization' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
 });
@@ -164,8 +169,8 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  // Memory/Executor Utilization and Cache Storage are not always-mounted, so
-  // they're absent from this catalog-less run; Core Usage by Locality lives
+  // Memory/Executor Utilization and Cache Utilization are not always-mounted, so
+  // they're absent from this catalog-less run; Core Locality lives
   // in Full app report.
   await within(findingsPanel).findByRole('heading', { name: 'Info alert' });
   expect(within(findingsPanel).getAllByRole('heading').map((node) => node.textContent))
@@ -178,7 +183,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
     ]);
   // Clean widgets render a CleanCheckRow, not their real component, so there is no "Clean alert" heading.
   expect(within(findingsPanel).queryByRole('heading', { name: 'Clean alert' })).not.toBeInTheDocument();
-  expect(within(findingsPanel).queryByRole('heading', { name: 'Cache Storage' })).not.toBeInTheDocument();
+  expect(within(findingsPanel).queryByRole('heading', { name: 'Cache Utilization' })).not.toBeInTheDocument();
   expect(within(findingsPanel).queryByRole('heading', { name: 'Memory Utilization' })).not.toBeInTheDocument();
   expect(within(findingsPanel).queryByRole('heading', { name: 'Executor Utilization' })).not.toBeInTheDocument();
   expect(screen.queryByText('clean alert')).not.toBeInTheDocument();
@@ -187,7 +192,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   expect(screen.queryByRole('heading', { name: 'Clean alert' })).not.toBeInTheDocument();
   // A test-double type has no presentation row, so its row is labeled with the raw type.
   expect(screen.getByText('CleanAlert')).toBeInTheDocument();
-  // Cache Storage, Memory Utilization, and Executor Utilization all have no
+  // Cache Utilization, Memory Utilization, and Executor Utilization all have no
   // finding here, so each shows as an ordinary Clean-checks row (the row
   // label itself still comes from the finding-type name).
   expect(screen.getByText('Cache utilization')).toBeInTheDocument();
@@ -225,7 +230,7 @@ test('empty catalog shows the "no findings to fix" empty state alongside the Ful
   // The empty state is additive: Full app report and its always-mounted chart remain available.
   await userEvent.setup().click(screen.getByRole('tab', { name: 'Full app report' }));
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
-  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Locality' })).toBeInTheDocument();
 });
 
 test('shows real Config Audit findings as a row in All recommendations without adding them to the catalog', async () => {
@@ -434,4 +439,26 @@ test('the top bar count chip lands on the verdict when the verdict holds every f
 
   await user.click(screen.getByRole('button', { name: '1 warning: show them in Findings' }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('run-verdict')));
+});
+
+test('Full app report mounts no reference tile for a lens with no data, so the grid has no blank cell', async () => {
+  // No stage reads, shuffles or writes bytes, so ETL Phase Attribution has nothing to attribute.
+  const appModel = readyAppModel() as any;
+  for (const stage of appModel.stages.values()) {
+    Object.assign(stage, { inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, outputBytes: 0 });
+  }
+  store.setState({ status: 'ready', appModel, catalog: [] });
+
+  render(<App />);
+  await waitForDashboard();
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Full app report' }));
+  const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
+  await within(reportPanel).findByRole('heading', { name: 'Core Locality' });
+
+  expect(within(reportPanel).queryByRole('heading', { name: 'ETL Phase Attribution' })).not.toBeInTheDocument();
+  expect(within(reportPanel).queryByTestId('widget-grid-item-reference-etl-phases')).not.toBeInTheDocument();
+  const emptyItems = within(reportPanel).queryAllByTestId(/^widget-grid-item-reference-/)
+    .filter((item) => item.childElementCount === 0)
+    .map((item) => item.dataset.testid);
+  expect(emptyItems).toEqual([]);
 });

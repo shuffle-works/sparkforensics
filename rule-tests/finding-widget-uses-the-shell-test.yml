@@ -1,0 +1,27 @@
+id: finding-widget-uses-the-shell
+valid:
+  - |
+    export function Row({ row }) { return <p>{row.finding.value}</p>; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  # A widget that is not built with the shell may use the card.
+  - |
+    export function Scorecard() { return <WidgetCard title="Scorecard"><p /></WidgetCard>; }
+invalid:
+  - |
+    export function Row() { return <WidgetCard title="x"><p /></WidgetCard>; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { return <TagBadge type="skew" impactBand="info" />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { return <AdvancedOnly><p /></AdvancedOnly>; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { const stated = useStatedAbove(finding); return <p />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { const anchor = useAnchoredRow([finding]); return <p />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { const density = useWidgetDensity(); return <p />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });

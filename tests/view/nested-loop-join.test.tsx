@@ -7,6 +7,7 @@ vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
 }));
 
+import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { NestedLoopJoin } from '@/view/widgets/NestedLoopJoin';
@@ -32,7 +33,7 @@ function renderWidget(catalog: Finding[]) {
   return render(
     <DocsProvider>
       <EvidenceAvailabilityProvider>
-        <NestedLoopJoin catalog={catalog} defaultCollapsed={false} />
+        <NestedLoopJoin appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
       </EvidenceAvailabilityProvider>
     </DocsProvider>,
   );
@@ -48,7 +49,7 @@ test('renders the PLAN card with each join, its recommendation and its stage pil
     finding({ stageIds: [5], recommendation: 'join rec A' }),
     finding({ stageIds: [6], recommendation: 'join rec B' }),
   ]);
-  expect(screen.getByRole('heading', { name: 'Nested Loop Joins' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Nested Loop Join' })).toBeInTheDocument();
   expect(screen.getAllByText('PLAN').length).toBeGreaterThan(0);
   expect(screen.getByText(/join rec A/)).toBeInTheDocument();
   expect(screen.getByText(/join rec B/)).toBeInTheDocument();

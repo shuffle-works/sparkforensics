@@ -255,7 +255,7 @@ describe('ExecutorUtilization', () => {
   it('drops the stated average but keeps the core-time breakdown; the other finding keeps its figure', () => {
     const findings = catalog();
     installInterpretation(findings);
-    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    renderPanel(<ExecutorUtilization appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['u-1']);
     expect(screen.queryByText('30%')).not.toBeInTheDocument();
     expect(screen.getByText(/2 cores at peak over 10\.0s: 100\.0 core-s allocated, 30\.0 core-s busy, 70\.0 core-s idle\. CPU time was 12% of the allocation\./)).toBeInTheDocument();
     expect(screen.getByText('55%')).toBeInTheDocument();
@@ -264,7 +264,7 @@ describe('ExecutorUtilization', () => {
   it('leaves the core usage chart out of the panel when it has fewer than 3 points', () => {
     const findings = catalog();
     installInterpretation(findings, busyRun(60_000));
-    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    renderPanel(<ExecutorUtilization appModel={busyRun(60_000)} catalog={findings} defaultCollapsed={false} />, ['u-1']);
     expect(coreChart()).not.toBeInTheDocument();
     expect(screen.getByText(/2 cores at peak over 10\.0s/)).toBeInTheDocument();
   });
@@ -272,14 +272,14 @@ describe('ExecutorUtilization', () => {
   it('keeps the core usage chart in the panel when it has 3 points', () => {
     const findings = catalog();
     installInterpretation(findings, busyRun(180_000));
-    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    renderPanel(<ExecutorUtilization appModel={busyRun(180_000)} catalog={findings} defaultCollapsed={false} />, ['u-1']);
     expect(coreChart()).toBeInTheDocument();
   });
 
   it('is unchanged outside the panel', () => {
     const findings = catalog();
     installInterpretation(findings);
-    renderPlain(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />);
+    renderPlain(<ExecutorUtilization appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />);
     expect(screen.getByText('30%')).toBeInTheDocument();
     expect(screen.getByText('55%')).toBeInTheDocument();
     expect(screen.queryByText(/cores at peak/)).not.toBeInTheDocument();
@@ -297,7 +297,7 @@ describe('MemoryUtilization', () => {
     const findings = catalog();
     installInterpretation(findings);
     store.getState().setWidgetDensity('advanced');
-    const { container } = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle', 'm-band', 'm-waste']);
+    const { container } = renderPanel(<MemoryUtilization appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['m-idle', 'm-band', 'm-waste']);
     expect(screen.getByText('Executor 7')).toBeInTheDocument();
     expect(container.textContent).not.toContain('of available core-time idle');
     expect(container.textContent).not.toContain('of allocated heap used');
@@ -311,12 +311,12 @@ describe('MemoryUtilization', () => {
   it('shows the idle-cores chart only when it has 3 or more points, else the memory-time line', () => {
     const findings = catalog();
     installInterpretation(findings, busyRun(60_000));
-    const short = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle']);
+    const short = renderPanel(<MemoryUtilization appModel={busyRun(60_000)} catalog={findings} defaultCollapsed={false} />, ['m-idle']);
     expect(coreChart()).not.toBeInTheDocument();
     expect(short.container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
     short.unmount();
     installInterpretation(findings, busyRun(180_000));
-    const long = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle']);
+    const long = renderPanel(<MemoryUtilization appModel={busyRun(180_000)} catalog={findings} defaultCollapsed={false} />, ['m-idle']);
     expect(coreChart()).toBeInTheDocument();
     expect(long.container.textContent).not.toContain('40,000 MB-s of executor memory-time allocated.');
   });
@@ -324,7 +324,7 @@ describe('MemoryUtilization', () => {
   it('keeps every figure of a finding the line above does not state', () => {
     const findings = catalog();
     installInterpretation(findings);
-    const { container } = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-band']);
+    const { container } = renderPanel(<MemoryUtilization appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['m-band']);
     expect(container.textContent).toContain('Idle cores');
     expect(container.textContent).toContain('75% of available core-time idle');
     expect(container.textContent).toContain('Memory waste');
@@ -335,7 +335,7 @@ describe('MemoryUtilization', () => {
   it('is unchanged outside the panel', () => {
     const findings = catalog();
     installInterpretation(findings);
-    const { container } = renderPlain(<MemoryUtilization catalog={findings} defaultCollapsed={false} />);
+    const { container } = renderPlain(<MemoryUtilization appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />);
     expect(container.textContent).toContain('20% of allocated heap used: over-provisioned');
     expect(container.textContent).toContain('75% of available core-time idle');
   });
@@ -349,12 +349,12 @@ describe('RightSizing', () => {
   it('renders no row for a stated finding at Basic, and only the model error at Advanced', () => {
     const findings = catalog();
     installInterpretation(findings);
-    const basic = renderPanel(<RightSizing catalog={findings} defaultCollapsed={false} />, ['rs']);
+    const basic = renderPanel(<RightSizing appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['rs']);
     expect(basic.container.textContent).not.toContain('would be enough');
     expect(basic.container.textContent).not.toContain('Model error');
     basic.unmount();
     store.getState().setWidgetDensity('advanced');
-    const advanced = renderPanel(<RightSizing catalog={findings} defaultCollapsed={false} />, ['rs']);
+    const advanced = renderPanel(<RightSizing appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['rs']);
     expect(advanced.container.textContent).toContain('Model error at 32 cores: 4%.');
     expect(advanced.container.textContent).not.toContain('would be enough');
     expect(advanced.container.textContent).not.toContain('The model predicts');
@@ -363,10 +363,10 @@ describe('RightSizing', () => {
   it('keeps the headline and durations when not stated, and outside the panel', () => {
     const findings = catalog();
     installInterpretation(findings);
-    const panel = renderPanel(<RightSizing catalog={findings} defaultCollapsed={false} />, []);
+    const panel = renderPanel(<RightSizing appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, []);
     expect(panel.container.textContent).toContain('8 of 32 cores would be enough');
     panel.unmount();
-    const plain = renderPlain(<RightSizing catalog={findings} defaultCollapsed={false} />);
+    const plain = renderPlain(<RightSizing appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />);
     expect(plain.container.textContent).toContain('8 of 32 cores would be enough');
     expect(plain.container.textContent).toContain('The model predicts');
   });
@@ -387,7 +387,7 @@ describe('CoreUsageArea', () => {
   it('drops the non-local line and generic fix for a stated finding but keeps the chart', () => {
     const findings = catalog();
     installInterpretation(findings, appModel());
-    const { container } = renderPanel(<CoreUsageArea catalog={findings} defaultCollapsed={false} />, ['cl']);
+    const { container } = renderPanel(<CoreUsageArea appModel={appModel()} catalog={findings} defaultCollapsed={false} />, ['cl']);
     expect(container.textContent).not.toContain('40% non-local');
     expect(screen.getByRole('img', { name: /concurrent core usage/i })).toBeInTheDocument();
   });
@@ -395,10 +395,10 @@ describe('CoreUsageArea', () => {
   it('keeps the non-local line when not stated, and outside the panel', () => {
     const findings = catalog();
     installInterpretation(findings, appModel());
-    const panel = renderPanel(<CoreUsageArea catalog={findings} defaultCollapsed={false} />, []);
+    const panel = renderPanel(<CoreUsageArea appModel={appModel()} catalog={findings} defaultCollapsed={false} />, []);
     expect(panel.container.textContent).toContain('40% non-local');
     panel.unmount();
-    const plain = renderPlain(<CoreUsageArea catalog={findings} defaultCollapsed={false} />);
+    const plain = renderPlain(<CoreUsageArea appModel={appModel()} catalog={findings} defaultCollapsed={false} />);
     expect(plain.container.textContent).toContain('40% non-local');
   });
 });

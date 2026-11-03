@@ -9,8 +9,11 @@ import { installInterpretation } from './_shared/interpretation';
 
 const getTaskData = async (): Promise<TaskData> => ({ metrics: [], fieldNames: [] });
 
-function renderCachingOpportunity(catalog: Finding[], defaultCollapsed = false) {
-  installInterpretation(catalog);
+// With an interpretation the shell orders rows by the run's savings rank; without one, a row keeps the
+// widget's own order, which is what the order tests read.
+function renderCachingOpportunity(catalog: Finding[], defaultCollapsed = false, interpreted = true) {
+  if (interpreted) installInterpretation(catalog);
+  else store.getState().setInterpretation(null);
   return render(
     <StageDetailProvider>
       <CachingOpportunity appModel={emptyAppModel()} catalog={catalog} getTaskData={getTaskData} defaultCollapsed={defaultCollapsed} />
@@ -55,7 +58,7 @@ test('renders the widget heading, CACHE badge, and a row for every relation (not
     finding({ relation: 'sales', value: 3, totalReadBytes: 5_000_000 }),
     finding({ relation: 'dw.dim_store', format: 'jdbc', value: 6, totalReadBytes: 900_000_000 }),
   ];
-  renderCachingOpportunity(catalog);
+  renderCachingOpportunity(catalog, false, false);
 
   expect(screen.getByRole('heading', { name: /caching opportunities/i })).toBeInTheDocument();
   expect(screen.getByText('CACHE')).toBeInTheDocument();
@@ -77,7 +80,7 @@ test('sorts by totalReadBytes desc, then reuse count desc', async () => {
     finding({ relation: 'bigA', value: 2, totalReadBytes: 800_000_000 }),
     finding({ relation: 'bigB', value: 5, totalReadBytes: 800_000_000 }),
   ];
-  renderCachingOpportunity(catalog);
+  renderCachingOpportunity(catalog, false, false);
   const rows = screen.getAllByRole('row').slice(1);
   expect(rows[0]).toHaveTextContent('bigB'); // same bytes as bigA, higher reuse count
   expect(rows[1]).toHaveTextContent('bigA');
