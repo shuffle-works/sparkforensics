@@ -121,22 +121,22 @@ evaluation order (first match wins, `null` when nothing matches):
 
 | Condition | Magnitude |
 |---|---|
-| Single-task stage: `spillDiskMax ≥ singleTaskDiskGiB` = 1 GiB **or** `spillMemMax ≥ singleTaskMemGiB` = 4 GiB | `severe` |
-| Multi-task stage: `spillDiskMax ≥ highDiskGiB` = 1 GiB, **or** `spillDiskMax / taskCount ≥ highTaskDiskMB` = 512 MiB (per-task proxy), **or** `spillMemMax ≥ highMemGiB` = 4 GiB | `high` |
-| Multi-task stage: `spillDiskMax ≥ medDiskMB` = 256 MiB **or** `spillMemMax ≥ medMemGiB` = 1 GiB | `medium` |
-| Skew (`taskCount ≥ skewMinTasks` = 10): `spillDiskMax / spillDiskP50 > skewRatio` = 5× **and** `spillDiskMax ≥ skewDiskFloorMB` = 128 MiB | `high` |
-| Skew (`taskCount ≥ 10`): `spillMemMax / spillMemP50 > 5×` **and** `spillMemMax ≥ skewMemFloorMB` = 256 MiB | `medium` |
+| Single-task stage: `spillDiskMax ≥ singleTaskDiskGiB` **or** `spillMemMax ≥ singleTaskMemGiB` | `severe` |
+| Multi-task stage: `spillDiskMax ≥ highDiskGiB`, **or** `spillDiskMax / taskCount ≥ highTaskDiskMB` (per-task proxy), **or** `spillMemMax ≥ highMemGiB` | `high` |
+| Multi-task stage: `spillDiskMax ≥ medDiskMB` **or** `spillMemMax ≥ medMemGiB` | `medium` |
+| Skew (`taskCount ≥ skewMinTasks`): `spillDiskMax / spillDiskP50 > skewRatio` **and** `spillDiskMax ≥ skewDiskFloorMB` | `high` |
+| Skew (`taskCount ≥ skewMinTasks`): `spillMemMax / spillMemP50 > skewRatio` **and** `spillMemMax ≥ skewMemFloorMB` | `medium` |
 
 Disk spill is weighted worse than memory spill by design: the memory
 thresholds sit well above their disk counterparts at every tier.
 
 The finding also reports `spillToInputRatio`, the memory spill over `inputBytes`
-plus `shuffleReadBytes`, and sets `wideRows` from `wideRowRatio` = 10. A stage
-with under `wideRowMinInputMB` = 64 MiB of input gets no ratio. Neither
+plus `shuffleReadBytes`, and sets `wideRows` from `wideRowRatio`. A stage
+with under `wideRowMinInputMB` of input gets no ratio. Neither
 threshold changes the band or the magnitude.
 
 A volume spill adds a `spark.executor.cores` fix when `peakExecutionMemoryMax`
-is at least `peakNearShareRatio` = 0.8 of the execution memory per task slot.
+is at least `peakNearShareRatio` of the execution memory per task slot.
 
 ### Cache and spill notes
 
