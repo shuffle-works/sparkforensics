@@ -1,0 +1,9 @@
+id: no-unknown-cast
+valid:
+  - "const stage = value as Stage;"
+  - "const ids = raw as unknown[];"
+  - "const fields: Partial<Stage> = stage;"
+invalid:
+  - "const stage = value as unknown as DetectorStage;"
+  - "const decoder = new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);"
+  - "return merged as unknown as SkewThresholds;"

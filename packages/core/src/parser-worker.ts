@@ -93,11 +93,15 @@ export async function streamFile(
   // each push so compressed codecs report bytes-read progress too, not just
   // the uncompressed branch.
   let currentPct = 0;
+  // The library's typings do not declare its streaming constructor.
+  // ast-grep-ignore: no-unknown-cast
   const gunzip = codec === 'gz' ? new (Gunzip as unknown as StreamingDecoderCtor)((inflated) => onChunk(inflated, currentPct)) : null;
   const lz4 = codec === 'lz4' ? createLz4BlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
   const onZstdChunk = (inflated: Uint8Array) => onChunk(inflated, currentPct);
   const zstd: ReturnType<ZstdDecoderFactory> | null = codec !== 'zstd' ? null
     : zstdDecoder ? zstdDecoder(onZstdChunk)
+      // The library's typings do not declare its streaming constructor.
+      // ast-grep-ignore: no-unknown-cast
       : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onZstdChunk);
   const snappy = codec === 'snappy' ? createSnappyBlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
 
@@ -276,6 +280,8 @@ if (isWorker) {
   // path (runParseFromUrl) keeps in-thread fzstd.
   const zstdDecoder = createWorkerZstdDecoders(
     () => new Worker(new URL('./zstd-worker.js', import.meta.url), { type: 'module' }),
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     (onChunk) => new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk),
     { onFallback: (reason) => console.warn(`zstd: decompressing on the parse worker: ${reason}`) },
   );

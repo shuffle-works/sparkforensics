@@ -107,5 +107,7 @@ export type ThresholdOverrides = {
 /** skew's thresholds for a run: its defaults with the user's `skew` overrides merged in. The one
  * resolution analyze() hands to both skew (through withThresholds) and straggler (DetectorCtx). */
 export function skewThresholdsFor(overrides: ThresholdOverrides | undefined): SkewThresholds {
+  // mergeThresholds returns the generic threshold record of the entry.
+  // ast-grep-ignore: no-unknown-cast
   return mergeThresholds('skew', ENTRY_BY_TYPE.get('skew')!.thresholds, overrides?.skew ?? {}) as unknown as SkewThresholds;
 }

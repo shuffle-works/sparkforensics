@@ -51,10 +51,14 @@ function openCodecSink(
     return { push(chunk, final) { lz4.push(chunk); if (final) lz4.end(); } };
   }
   if (codec === 'gz' || name.endsWith('.gz')) {
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     const gunzip = new (Gunzip as unknown as StreamingDecoderCtor)(onChunk);
     return { push: (chunk, final) => gunzip.push(chunk, final) };
   }
   if (codec === 'zstd' || name.endsWith('.zstd') || name.endsWith('.zst')) {
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     const zstd = zstdDecoder ? zstdDecoder(onChunk) : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);
     return { push: (chunk, final) => zstd.push(chunk, final), cancel: () => (zstd as { cancel?(): void }).cancel?.() };
   }

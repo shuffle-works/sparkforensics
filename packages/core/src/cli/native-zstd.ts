@@ -195,6 +195,8 @@ export function createNativeZstdDecoder(
   const splitter = new FrameSplitter(maxFrameBytes);
   let fallback: StreamingDecoder | null = null;
   const toFallback = (bytes: Uint8Array, final: boolean): void => {
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     fallback ??= new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);
     fallback.push(bytes, final);
   };
@@ -315,6 +317,8 @@ export function createThreadedZstdDecoder(
   };
   const toFallback = async (bytes: Uint8Array, final: boolean): Promise<void> => {
     await deliverAll();
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     fallback ??= new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);
     fallback.push(bytes, final);
   };

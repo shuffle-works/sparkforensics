@@ -70,6 +70,8 @@ export function createZstdWorkerHandler(
     if (msg.type === 'start') {
       streamId = msg.id;
       batchUsed = 0;
+      // The library's typings do not declare its streaming constructor.
+      // ast-grep-ignore: no-unknown-cast
       decoder = new (ZstdDecompress as unknown as StreamingDecoderCtor)(collect);
       return;
     }
@@ -96,6 +98,8 @@ export function createZstdWorkerHandler(
 const isWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
 
 if (isWorker) {
+  // The worker global is typed as a window under the DOM lib.
+  // ast-grep-ignore: no-unknown-cast
   const scope = self as unknown as DedicatedWorkerGlobalScope;
   const handle = createZstdWorkerHandler((msg, transfer) => scope.postMessage(msg, transfer ?? []));
   scope.onmessage = ({ data }: MessageEvent<ZstdWorkerRequest>) => handle(data);

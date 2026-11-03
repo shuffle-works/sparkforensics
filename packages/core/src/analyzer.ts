@@ -89,6 +89,8 @@ function locationKey(f: Finding): number | string {
 }
 
 export function findingId(f: Finding): string {
+  // Reads the discriminator slots that only some finding variants carry.
+  // ast-grep-ignore: no-unknown-cast
   const fields = f as unknown as Partial<Record<DiscriminatorSlot, unknown>>;
   const listed = ID_DISCRIMINATOR_SETS.get(f.type);
   const slots = [...DISCRIMINATOR_SLOTS, ...APPENDED_SLOTS.filter((slot) => listed?.has(slot))];
