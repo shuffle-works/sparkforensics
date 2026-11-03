@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useRef, type ReactNode, type Ref } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -13,7 +13,9 @@ import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';
-import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
+import { cardLandingKey } from '@/view/board-layout';
+import { useLanding } from '@/view/route-landing';
+import { useCardDisclosure, useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 
 export interface WidgetCardProps {
   title: string;
@@ -37,8 +39,6 @@ export interface WidgetCardProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   compact?: boolean;
-  /** Temporary visible focus supplied by the route coordinator. */
-  routeFocused?: boolean;
   /** Exposes the existing disclosure trigger without changing its behavior. */
   disclosureButtonRef?: Ref<HTMLButtonElement>;
   /** The card's findings: each distinct generic fix among them is stated once above `children`,
@@ -60,7 +60,6 @@ export function WidgetCard({
   open: controlledOpen,
   onOpenChange,
   compact = false,
-  routeFocused,
   disclosureButtonRef,
   fixFor = [],
   children,
@@ -74,11 +73,10 @@ export function WidgetCard({
   // Reference-region tiles start collapsed and share a uniform collapsed height,
   // overriding each widget's own `defaultCollapsed` so the grid stays even.
   const collapsedTile = gridCard?.collapsedTile ?? false;
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(collapsedTile ? false : !defaultCollapsed);
-  const open = flat || (controlledOpen ?? uncontrolledOpen);
-  const coordinatorRouteFocused = routeFocused ?? gridCard?.routeFocused ?? false;
-  const [hasRouteFocus, setHasRouteFocus] = useState(coordinatorRouteFocused);
-  const handledOpenRequestRef = useRef(0);
+  const disclosure = useCardDisclosure(collapsedTile ? false : !defaultCollapsed);
+  const open = flat || (controlledOpen ?? disclosure.open);
+  // A route that lists no row of this card for its finding lands on the card's own title.
+  const landing = useLanding(gridCard?.key != null ? [cardLandingKey(gridCard.key)] : []);
 
   // The line above an in-place evidence panel already states the fix.
   const fixes = flat ? [] : [...new Set(fixFor.map(coreFindingGenericRecommendation).filter((fix) => fix !== undefined))];
@@ -89,40 +87,15 @@ export function WidgetCard({
     </>
   );
 
-  useLayoutEffect(() => {
-    gridCard?.reportOpen(open);
-  }, [gridCard, open]);
-
-  useLayoutEffect(() => {
-    const requestGeneration = gridCard?.openRequestGeneration ?? 0;
-    if (requestGeneration === 0 || requestGeneration === handledOpenRequestRef.current) return;
-
-    handledOpenRequestRef.current = requestGeneration;
-    if (!open) {
-      if (controlledOpen !== undefined) onOpenChange?.(true);
-      else setUncontrolledOpen(true);
-    }
-  }, [controlledOpen, gridCard?.openRequestGeneration, onOpenChange, open]);
-
-  useLayoutEffect(() => {
-    setHasRouteFocus(coordinatorRouteFocused);
-  }, [coordinatorRouteFocused]);
-
   const handleOpenChange = (nextOpen: boolean) => {
     if (controlledOpen !== undefined) onOpenChange?.(nextOpen);
-    else setUncontrolledOpen(nextOpen);
+    else disclosure.setOpen(nextOpen);
   };
 
   const setTriggerRef = (button: HTMLButtonElement | null) => {
-    gridCard?.setDisclosureButton(button);
+    landing(button);
     if (typeof disclosureButtonRef === 'function') disclosureButtonRef(button);
     else if (disclosureButtonRef) disclosureButtonRef.current = button;
-  };
-
-  const handleDisclosureBlur = (e: React.FocusEvent<HTMLElement>) => {
-    if (e.relatedTarget && cardRef.current?.contains(e.relatedTarget as Node)) return;
-    setHasRouteFocus(false);
-    gridCard?.onDisclosureBlur();
   };
 
   const header = (
@@ -137,12 +110,7 @@ export function WidgetCard({
         <CollapsibleTrigger
           ref={setTriggerRef}
           aria-expanded={String(open) as 'true' | 'false'}
-          data-route-focused={hasRouteFocus ? '' : undefined}
-          className={cn(
-            'tap-target-comfortable tap-target-comfortable--sm flex min-w-0 cursor-pointer items-center gap-2 bg-transparent text-left sm:flex-1',
-            hasRouteFocus && 'border-ring ring-[3px] ring-ring/50 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-          )}
-          onBlur={handleDisclosureBlur}
+          className="tap-target-comfortable tap-target-comfortable--sm flex min-w-0 cursor-pointer items-center gap-2 bg-transparent text-left sm:flex-1"
         >
           {/* h3: one level below the board's h2 section headers, keeping the
               document outline nested. */}
@@ -177,15 +145,7 @@ export function WidgetCard({
     return (
       <section ref={cardRef} id={id} className={cn('border-l-[3px] pl-3', ruleBand ? IMPACT_BORDER_CLASS[ruleBand] : 'border-border')}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-tight">
-          <h3
-            ref={(heading) => gridCard?.setDisclosureButton(heading)}
-            tabIndex={-1}
-            data-route-focused={hasRouteFocus ? '' : undefined}
-            className={cn('rounded-sm font-heading text-sm leading-snug font-semibold outline-none', hasRouteFocus && 'ring-[3px] ring-ring/50')}
-            onBlur={handleDisclosureBlur}
-          >
-            {title}
-          </h3>
+          <h3 className="font-heading text-sm leading-snug font-semibold">{title}</h3>
           {badges}
           {statusBadge}
         </div>

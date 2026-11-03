@@ -14,12 +14,13 @@ import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { useInterpretation } from '@/view/interpretation';
 import { RowPagination } from '@/view/RowPagination';
 import { SortModeToggle } from '@/view/SortModeToggle';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
-import type { TriageTarget } from '@/view/triage-target';
+import { useBoardLayout } from '@/view/BoardLayoutContext';
+import { useRouteRowKey } from '@/view/route-landing';
 import { usePagedRows } from '@/view/usePagedRows';
 import type { SortMode } from '@/view/impact-sort';
 import { useSortMode } from '@/view/useSortMode';
 import { WidgetCard } from '@/view/WidgetCard';
+import { useCardDisclosure } from '@/view/WidgetGrid';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
 const NOTHING_STATED: ReadonlySet<string> = new Set();
@@ -138,7 +139,6 @@ interface RowListProps<R extends AnyRow> {
   Row: ComponentType<FindingRowProps<R>>;
   appModel: AppModel;
   getTaskData: (id: number) => Promise<TaskData>;
-  routeTarget: TriageTarget | null;
   sortMode: SortMode;
   jumpLabel?: (row: R) => string;
   Frame?: ComponentType<{ children: ReactNode }>;
@@ -151,7 +151,7 @@ interface RowListProps<R extends AnyRow> {
  * remounts it through the run-keyed dashboard), and a route to one of its findings opens the page
  * that holds it. */
 function RowList<R extends AnyRow>({
-  rows, Row, appModel, getTaskData, routeTarget, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName,
+  rows, Row, appModel, getTaskData, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName,
 }: RowListProps<R>) {
   const [page, setPage] = useState(0);
   const mountedRef = useRef(false);
@@ -164,7 +164,9 @@ function RowList<R extends AnyRow>({
   }, [sortMode]);
 
   const List = LIST_ELEMENT[rowElement];
-  const routeIndex = routeTarget ? rows.findIndex((row) => row.findings.includes(routeTarget.finding)) : null;
+  const layout = useBoardLayout();
+  const routeRowKey = useRouteRowKey();
+  const routeIndex = layout && routeRowKey != null ? rows.findIndex((row) => row.findings.some((finding) => layout.keyOf(finding) === routeRowKey)) : null;
   const { totalPages, effectivePage, visible } = usePagedRows([...rows], page, setPage, routeIndex);
   const list = (
     <List className={listClassName}>
@@ -222,9 +224,8 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
     const density = useWidgetDensity();
     const inline = useInlineEvidence();
     const stated = inline?.stated ?? NOTHING_STATED;
-    const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
+    const disclosure = useCardDisclosure(!defaultCollapsed);
     const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
-    const activeRouteTarget = useActiveRouteTarget();
 
     const localityChart = useInterpretation()?.data.coreLocality?.chart;
     const findings = findingsFor(model, { catalog, configFindings });
@@ -245,7 +246,6 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
         Row={Row}
         appModel={appModel}
         getTaskData={getTaskData}
-        routeTarget={activeRouteTarget}
         sortMode={sortMode}
         jumpLabel={jumpLabel}
         Frame={Frame}
@@ -263,14 +263,14 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
         badges={
           <>
             {band ? <TagBadge type={type} impactBand={band} className={model.tagClassName} docAnchor={model.tagDocAnchor?.(rows)} /> : null}
-            {groups.some((group) => canToggleSort(group.rows, (row) => row.findings, stageOf, cardOpen)) ? (
+            {groups.some((group) => canToggleSort(group.rows, (row) => row.findings, stageOf, disclosure.open)) ? (
               <SortModeToggle mode={sortMode} onChange={setSortMode} />
             ) : null}
           </>
         }
         statusBadge={Status ? <Status rows={rows} density={density} /> : undefined}
-        open={cardOpen}
-        onOpenChange={setCardOpen}
+        open={disclosure.open}
+        onOpenChange={disclosure.setOpen}
         summary={Summary
           ? <Summary appModel={appModel} rows={rows} density={density} />
           : lead ? <WidgetLeadSummary value={lead.value} context={lead.context ?? findingCount(shown.length)} /> : undefined}

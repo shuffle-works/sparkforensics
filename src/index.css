@@ -539,6 +539,16 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .landing-compare-intro > p,
 .landing-compare > p { max-width: 62ch; margin: 0; }
 
+/* The row a route lands on: marked, then faded out by the animation itself. */
+@keyframes route-flash {
+  from { background-color: color-mix(in oklab, var(--primary) 10%, transparent); box-shadow: 0 0 0 2px var(--primary); }
+  to { background-color: transparent; box-shadow: 0 0 0 2px transparent; }
+}
+.route-flash {
+  border-radius: var(--radius-md);
+  animation: route-flash 2s ease-out forwards;
+}
+
 /* An indeterminate Progress indicator (no value) slides across its track. */
 @keyframes progress-slide {
   from { transform: translateX(-100%); }

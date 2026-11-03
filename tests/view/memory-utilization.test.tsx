@@ -3,7 +3,6 @@ import { test, expect, beforeEach } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryUtilization } from '../../src/view/widgets/MemoryUtilization';
-import { EvidenceAvailabilityProvider } from '../../src/view/EvidenceAvailabilityContext';
 import { DocsProvider } from '../../src/view/DocsContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
@@ -152,9 +151,7 @@ test('shows a muted data-unavailable note with no bold label, impact dot, or evi
 
   store.getState().setWidgetDensity('advanced');
   render(
-    <EvidenceAvailabilityProvider>
-      <MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
-    </EvidenceAvailabilityProvider>,
+    <MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />,
   );
 
   const note = screen.getByText(/logStageExecutorMetrics/);
@@ -172,12 +169,10 @@ test('shows a muted data-unavailable note with no bold label, impact dot, or evi
 test('attaches executor-metrics evidence to ordinary memory findings (uniform disclosure contract)', async () => {
   store.getState().setWidgetDensity('advanced');
   render(
-    <EvidenceAvailabilityProvider>
-      <MemoryUtilization appModel={emptyAppModel()} catalog={[{
-        type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3',
-        impactBand: 'warning', recommendation: 'Executor 3 needs more memory.',
-      }]} defaultCollapsed={false} />
-    </EvidenceAvailabilityProvider>,
+    <MemoryUtilization appModel={emptyAppModel()} catalog={[{
+      type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3',
+      impactBand: 'warning', recommendation: 'Executor 3 needs more memory.',
+    }]} defaultCollapsed={false} />,
   );
 
   // Evidence control is visible immediately; its accessible name always

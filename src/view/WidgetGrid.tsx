@@ -1,34 +1,32 @@
-import {
-  createContext,
-  useContext,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { store, useStore } from '@/store/store';
 import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
-import { useRouteFocusedCardKey, useTriageNavigation } from '@/view/TriageNavigationContext';
+import { useBoardLayout } from '@/view/BoardLayoutContext';
 
-interface GridCardState {
-  openRequestGeneration: number;
-  reportOpen: (open: boolean) => void;
-  setDisclosureButton: (button: HTMLElement | null) => void;
-  onDisclosureBlur: () => void;
-  routeFocused: boolean;
+interface GridCard {
+  /** The board card key when the card is one the layout lists; its disclosure is the board's. */
+  key: string | null;
   /** Reference-region tile: the card starts collapsed and floors its collapsed
    * height so every tile in the grid lines up regardless of summary content. */
   collapsedTile: boolean;
 }
 
-const WidgetGridCardContext = createContext<GridCardState | null>(null);
+const GridCardContext = createContext<GridCard | null>(null);
 
-export function useWidgetGridCard() {
-  return useContext(WidgetGridCardContext);
+export function useWidgetGridCard(): GridCard | null {
+  return useContext(GridCardContext);
+}
+
+/** The disclosure of the card around the caller. A card the layout lists is open when the board
+ * says so; any other card (a widget on its own) keeps its own state, starting as `initiallyOpen`. */
+export function useCardDisclosure(initiallyOpen: boolean): { open: boolean; setOpen: (open: boolean) => void } {
+  const key = useWidgetGridCard()?.key ?? null;
+  const stored = useStore((s) => key != null && s.board.openCards.has(key));
+  const [local, setLocal] = useState(initiallyOpen);
+  if (key != null) return { open: stored, setOpen: (open) => store.getState().setCardOpen(key, open) };
+  return { open: local, setOpen: setLocal };
 }
 
 export function WidgetGrid({ children, className }: { children: ReactNode; className?: string }) {
@@ -46,84 +44,35 @@ export function WidgetGrid({ children, className }: { children: ReactNode; class
 
 export function WidgetGridItem({
   cardId,
-  widgetId,
   children,
   className,
   collapsedTile = false,
-  holds,
 }: {
+  /** The card's key in the board layout. */
   cardId: string;
-  widgetId?: string;
   children: ReactNode;
   className?: string;
   collapsedTile?: boolean;
-  /** For an evidence panel scoped to some findings of the widget: which findings a route may open it for. */
-  holds?: (finding: Finding) => boolean;
 }) {
-  const navigation = useTriageNavigation();
-  const focusedCardKey = useRouteFocusedCardKey();
-  const focusKey = useId();
-  const [openRequestGeneration, setOpenRequestGeneration] = useState(0);
-  // Local mirror of the card's disclosure state, kept via `reportOpen`, so the
-  // grid item can widen itself (`col-span`) when its card is open. The card
-  // owns the actual open state, so this is the only channel to observe it.
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const disclosureButtonRef = useRef<HTMLElement | null>(null);
-  const holdsRef = useRef(holds);
-  holdsRef.current = holds;
-  const scoped = holds !== undefined;
-  const gridCard = useMemo(() => ({
-    openRequestGeneration,
-    reportOpen: (nextOpen: boolean) => {
-      setOpen(nextOpen);
-      if (widgetId) navigation?.reportWidgetOpen(widgetId, nextOpen);
-    },
-    setDisclosureButton: (button: HTMLElement | null) => {
-      disclosureButtonRef.current = button;
-    },
-    onDisclosureBlur: () => {
-      navigation?.clearRouteFocus(focusKey);
-    },
-    routeFocused: focusedCardKey === focusKey,
-    collapsedTile,
-  }), [navigation, openRequestGeneration, widgetId, focusedCardKey, focusKey, collapsedTile]);
-
-  useLayoutEffect(() => {
-    if (!navigation || !widgetId || !wrapperRef.current) return;
-
-    return navigation.registerWidget(widgetId, {
-      wrapperElement: wrapperRef.current,
-      open: () => {
-        setOpenRequestGeneration((generation) => generation + 1);
-      },
-      getDisclosureButton: () => disclosureButtonRef.current,
-      holds: scoped ? (finding) => holdsRef.current?.(finding) ?? false : undefined,
-      focusKey,
-    });
-  }, [navigation, widgetId, scoped, focusKey]);
-
+  const layout = useBoardLayout();
+  const listed = layout?.cards.has(cardId) ?? false;
+  const open = useStore((s) => listed && s.board.openCards.has(cardId));
   return (
-    <WidgetGridCardContext.Provider value={gridCard}>
+    <GridCardContext.Provider value={{ key: listed ? cardId : null, collapsedTile }}>
       <div
-        ref={wrapperRef}
         data-testid={`widget-grid-item-${cardId}`}
-        className={cn(
-          widgetId && 'scroll-mt-20',
-          open && 'col-span-full',
-          className,
-        )}
+        className={cn('scroll-mt-20', open && 'col-span-full', className)}
       >
         {/* A widget that throws on its log's data shows an error card here, not a blank page. */}
         <ErrorBoundary fallback={(error, reset) => <WidgetErrorCard error={error} onRetry={reset} />}>
           {children}
         </ErrorBoundary>
       </div>
-    </WidgetGridCardContext.Provider>
+    </GridCardContext.Provider>
   );
 }
 
 /** Prevent nested WidgetCards from inheriting their parent card's grid state. */
 export function WidgetGridCardBoundary({ children }: { children: ReactNode }) {
-  return <WidgetGridCardContext.Provider value={null}>{children}</WidgetGridCardContext.Provider>;
+  return <GridCardContext.Provider value={null}>{children}</GridCardContext.Provider>;
 }

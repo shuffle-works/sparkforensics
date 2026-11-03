@@ -9,7 +9,11 @@ import { store, emptyAppModel } from '@/store/store';
 import { Dashboard } from '@/view/Dashboard';
 import { EvidenceAvailability as EvidenceAvailabilityWidget } from '@/view/widgets/EvidenceAvailability';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider, useEvidenceAvailabilityNavigation } from '@/view/EvidenceAvailabilityContext';
+import { BoardLayoutContext, useBoardLayout } from '@/view/BoardLayoutContext';
+import { buildBoardLayout, EVIDENCE_CARD_KEY } from '@/view/board-layout';
+import { emptySelection } from '@/view/finding-filter';
+import { routeTo } from '@/view/route-landing';
+import { WidgetGridItem } from '@/view/WidgetGrid';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { testFinding } from './_shared/finding';
@@ -278,24 +282,33 @@ test('unavailable ScalingSim opens task-and-core-time evidence', async () => {
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-taskCoreTime'));
 });
 
-test('opens and focuses the evidence card when revealEvidence is triggered from a collapsed state', async () => {
+test('opens and focuses the evidence card when a route to a ledger row starts from a collapsed state', async () => {
   const user = userEvent.setup();
 
-  // Standalone caller of the shared navigation hook, mirroring how a finding
-  // widget's evidence link (RowStatusCluster) triggers revealEvidence.
+  // Standalone caller of the route, mirroring how a finding widget's evidence link (RowStatusCluster) starts one.
   function RevealButton() {
-    const { revealEvidence } = useEvidenceAvailabilityNavigation();
-    return <button onClick={() => revealEvidence('sparkConfiguration')}>Reveal</button>;
+    const layout = useBoardLayout();
+    return <button onClick={() => routeTo(layout, { kind: 'evidence', key: 'sparkConfiguration' })}>Reveal</button>;
   }
+  const layout = buildBoardLayout({
+    interpretation: null,
+    appModel: { ...emptyAppModel(), evidenceAvailability: presentLedger },
+    catalog: [],
+    configFindings: [],
+    selection: emptySelection(),
+    density: 'basic',
+  });
 
   render(
-    <EvidenceAvailabilityProvider>
+    <BoardLayoutContext.Provider value={layout}>
       <RevealButton />
-      <EvidenceAvailabilityWidget ledger={presentLedger} />
-    </EvidenceAvailabilityProvider>,
+      <WidgetGridItem cardId={EVIDENCE_CARD_KEY} collapsedTile>
+        <EvidenceAvailabilityWidget ledger={presentLedger} />
+      </WidgetGridItem>
+    </BoardLayoutContext.Provider>,
   );
 
-  // The provider starts collapsed (`evidenceCardOpen` defaults to false).
+  // The card starts collapsed.
   expect(screen.getByRole('button', { name: /evidence availability/i })).toHaveAttribute('aria-expanded', 'false');
 
   await user.click(screen.getByRole('button', { name: 'Reveal' }));

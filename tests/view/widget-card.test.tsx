@@ -25,26 +25,6 @@ test('the disclosure trigger gets the comfortable coarse-pointer hit area', () =
   expect(screen.getByRole('button', { name: 'Spill' })).toHaveClass('tap-target-comfortable');
 });
 
-test('a route-focused disclosure gets visible focus styling and clears it on blur', async () => {
-  const user = userEvent.setup();
-
-  render(
-    <>
-      <button>before</button>
-      <WidgetCard title="Spill" routeFocused>details</WidgetCard>
-    </>,
-  );
-
-  const trigger = screen.getByRole('button', { name: 'Spill' });
-  expect(trigger).toHaveAttribute('data-route-focused');
-  expect(trigger).toHaveClass('focus-visible:ring-[3px]');
-
-  trigger.focus();
-  await user.tab();
-
-  expect(trigger).not.toHaveAttribute('data-route-focused');
-});
-
 test('an open collapsible card body carries the Card gap below its header', () => {
   render(<WidgetCard title="Spill"><p>body</p></WidgetCard>);
   // The Collapsible wraps header and body in one flex child, so the Card's own gap does not reach

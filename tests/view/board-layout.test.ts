@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { store } from '@/store/store';
+import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
 import {
   bandLandmark,
   BOARD_LANDMARK,
@@ -15,13 +15,18 @@ import {
   type BoardLayout,
 } from '@/view/board-layout';
 import { emptySelection, IMPACT_BANDS } from '@/view/finding-filter';
+import { interpretationOf } from '@/view/interpretation';
 import { triageTargetFor } from '@/view/triage-target';
 import { exampleRuns, loadExampleRun } from './_shared/detector-examples';
 
 // The layout and the route resolver are pure: these tests render nothing.
 
 function layoutOfLoadedRun(density: 'basic' | 'advanced', selection = emptySelection()): { layout: BoardLayout; findings: Finding[] } {
-  const { appModel, catalog, configFindings, interpretation } = store.getState();
+  const state = store.getState();
+  const appModel = selectAppModel(state);
+  const catalog = selectCatalog(state);
+  const configFindings = selectConfigFindings(state);
+  const interpretation = state.run ? interpretationOf(state.run) : null;
   return { layout: buildBoardLayout({ interpretation, appModel, catalog, configFindings, selection, density }), findings: [...catalog, ...configFindings] };
 }
 
@@ -68,7 +73,7 @@ describe('landmarks and evidence', () => {
     const { layout } = layoutOfLoadedRun('basic');
     expect(resolveRoute({ kind: 'landmark', id: VERDICT_LANDMARK }, layout)).toMatchObject({ tab: null, rowKey: 'landmark:verdict' });
     expect(resolveRoute({ kind: 'landmark', id: BOARD_LANDMARK }, layout)).toMatchObject({ tab: 'findings' });
-    const empty = layout.bands.map((entry) => entry.band);
+    const empty = layout.bands.filter((entry) => entry.listed).map((entry) => entry.band);
     for (const band of IMPACT_BANDS) {
       expect(resolveRoute({ kind: 'landmark', id: bandLandmark(band) }, layout) !== null).toBe(empty.includes(band));
     }
@@ -77,7 +82,7 @@ describe('landmarks and evidence', () => {
   test('an evidence key opens the ledger card in the Full app report', () => {
     const log = exampleRuns().find((candidate) => {
       loadExampleRun(candidate);
-      return (store.getState().appModel.evidenceAvailability?.entries.length ?? 0) > 0;
+      return (selectAppModel(store.getState()).evidenceAvailability?.entries.length ?? 0) > 0;
     });
     expect(log).toBeDefined();
     expect(loadExampleRun(log!)).toBeNull();
@@ -100,7 +105,7 @@ describe('filter and walk order', () => {
     if (!rowFinding) return;
     const hiding = { ...emptySelection(), stages: new Set([-1]) };
     const { layout } = layoutOfLoadedRun('basic', hiding);
-    expect(layout.bands).toHaveLength(0);
+    expect(layout.bands.filter((band) => band.listed)).toHaveLength(0);
     expect(layout.holders.get(layout.keyOf(rowFinding))?.line ?? null).toBeNull();
   });
 

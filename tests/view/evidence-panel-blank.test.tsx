@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
 
+import type { Finding } from '@sparkforensics/core/types.ts';
 import { emptyAppModel, store } from '@/store/store';
+import { buildBoardLayout, resolveRoute } from '@/view/board-layout';
+import { emptySelection } from '@/view/finding-filter';
+import { interpretationOf } from '@/view/interpretation';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { TriageNavigationProvider, type WidgetRegistration } from '@/view/TriageNavigationContext';
-import { ImpactBoard } from '@/view/widgets/ImpactBoard';
-import { RunVerdict } from '@/view/widgets/RunVerdict';
 import { installInterpretation } from './_shared/interpretation';
-import { allRowsPanel } from './_shared/evidence-panel';
+import { TestImpactBoard, TestRunVerdict } from './_shared/board';
 import { testFinding } from './_shared/finding';
 
 const appModel = () => ({ ...emptyAppModel(), app: { startTime: 0, endTime: 60_000 } });
@@ -27,73 +27,49 @@ const rightSizing = testFinding({
   impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 1_800_000, unit: 'coreMs' } },
 });
 
-// Records what each evidence-less step or row registers, and what a route asks of it.
-function renderWithNavigation(ui: React.ReactNode) {
-  const registrations: Array<{ widgetId: string; registration: WidgetRegistration }> = [];
-  const reportWidgetOpen = vi.fn();
-  render(
-    <StageDetailProvider>
-      <TriageNavigationProvider
-        registerWidget={(widgetId, registration) => {
-          registrations.push({ widgetId, registration });
-          return () => {};
-        }}
-        registerFindingAnchor={() => () => {}}
-        findingKey={() => ''}
-        reportWidgetOpen={reportWidgetOpen}
-        clearRouteFocus={() => {}}
-        focusedCardKey={null}
-        activeRouteTarget={null}
-        flashedFinding={null}
-      >
-        {ui}
-      </TriageNavigationProvider>
-    </StageDetailProvider>,
-  );
-  return { registrations, reportWidgetOpen };
-}
-
 function board(catalog: Finding[]) {
   const model = appModel();
   installInterpretation(catalog, model as never);
-  return (
-    <ImpactBoard
-      appModel={model as never}
-      catalog={catalog}
-      configFindings={[]}
-      stages={model.stages as never}
-      getTaskData={async () => ({ taskEvents: [] }) as unknown as TaskData}
-      onRoute={vi.fn()}
-    />
-  );
+  return <StageDetailProvider><TestImpactBoard appModel={model as never} catalog={catalog} /></StageDetailProvider>;
 }
 
-afterEach(() => store.setState({ widgetDensity: 'basic' }));
+function verdict(catalog: Finding[]) {
+  const model = appModel();
+  const interpretation = installInterpretation(catalog, model as never);
+  return <StageDetailProvider><TestRunVerdict appModel={model as never} catalog={catalog} interpretation={interpretation} withEvidence /></StageDetailProvider>;
+}
+
+afterEach(() => {
+  store.getState().resetModel();
+  store.setState({ widgetDensity: 'basic' });
+});
 
 describe('a step or row whose widget has nothing to show beyond it', () => {
   it('a Findings row offers no evidence control, and a route to it lands on the row', () => {
-    const { registrations, reportWidgetOpen } = renderWithNavigation(board([coldStart]));
+    render(board([coldStart]));
 
     expect(screen.getByTestId('fix-these-first-row')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /evidence/i })).toBeNull();
 
-    // The row registers as the route target of its finding, in place of an evidence panel.
-    const landing = registrations.find((entry) => entry.widgetId === 'cold-start')!.registration;
-    expect(landing.holds?.(coldStart)).toBe(true);
-    expect(landing.wrapperElement).toBe(screen.getByTestId('fix-these-first-row'));
-    act(() => landing.open());
-    expect(reportWidgetOpen).toHaveBeenCalledWith('cold-start', true);
-    // The route focuses the row's label.
-    expect(landing.getDisclosureButton()).toHaveTextContent(/pre-warm/i);
+    // The route to the row's finding lands on the row's label, in place of an evidence panel.
+    const interpretation = interpretationOf(store.getState().run!);
+    const layout = buildBoardLayout({
+      interpretation: { ...interpretation, data: { ...interpretation.data, verdict: { ...interpretation.data.verdict, steps: [] } } },
+      appModel: appModel() as never, catalog: [coldStart], configFindings: [], selection: emptySelection(), density: 'basic',
+    });
+    const route = resolveRoute({ finding: coldStart } as never, layout);
+    expect(route).toMatchObject({ openCards: [], cardKey: null });
+    act(() => store.getState().startRoute(route!));
+    expect(screen.getByText(/pre-warm/i)).toHaveFocus();
   });
 
   it('follows the widget density', () => {
-    const { rerender } = render(<StageDetailProvider>{board([rightSizing])}</StageDetailProvider>);
+    const { rerender } = render(board([rightSizing]));
     expect(screen.queryByRole('button', { name: 'Show evidence' })).toBeNull();
 
     // The Advanced model error is a row of its own, so the row has evidence to show.
     act(() => store.setState({ widgetDensity: 'advanced' }));
-    rerender(<StageDetailProvider>{board([rightSizing])}</StageDetailProvider>);
+    rerender(board([rightSizing]));
     expect(screen.getByRole('button', { name: 'Show evidence' })).toBeInTheDocument();
 
     act(() => store.setState({ widgetDensity: 'basic' }));
@@ -101,40 +77,20 @@ describe('a step or row whose widget has nothing to show beyond it', () => {
   });
 
   it('a verdict step offers no evidence control, and a route to it lands on the step', () => {
-    const interpretation = installInterpretation([coldStart], appModel() as never);
-    const { registrations, reportWidgetOpen } = renderWithNavigation(
-      <RunVerdict
-        interpretation={interpretation}
-        onRoute={vi.fn()}
-        onShowMoreFindings={vi.fn()}
-        evidenceOwners={new Map([[0, 'cold-start']])}
-        evidencePanel={() => null}
-        renderEvidence={() => <p>card</p>}
-      />,
-    );
+    render(verdict([coldStart]));
 
     expect(screen.queryByRole('button', { name: /evidence/i })).toBeNull();
-    expect(screen.queryByText('card')).toBeNull();
-    const landing = registrations.find((entry) => entry.widgetId === 'cold-start')!.registration;
-    expect(landing.holds?.(coldStart)).toBe(true);
-    expect(landing.wrapperElement).toBe(screen.getByTestId('next-step'));
-    act(() => landing.open());
-    expect(reportWidgetOpen).toHaveBeenCalledWith('cold-start', true);
-    expect(landing.getDisclosureButton()).toBe(screen.getByRole('heading', { level: 3 }));
+    const layout = buildBoardLayout({ interpretation: interpretationOf(store.getState().run!), appModel: appModel() as never, catalog: [coldStart], configFindings: [], selection: emptySelection(), density: 'basic' });
+    const route = resolveRoute({ finding: coldStart } as never, layout);
+    expect(route).toMatchObject({ openCards: [], cardKey: null });
+    act(() => store.getState().startRoute(route!));
+    expect(screen.getByRole('heading', { level: 3 })).toHaveFocus();
   });
 
   it('a verdict step with evidence keeps its control', () => {
-    const interpretation = installInterpretation([coldStart], appModel() as never);
-    renderWithNavigation(
-      <RunVerdict
-        interpretation={interpretation}
-        onRoute={vi.fn()}
-        onShowMoreFindings={vi.fn()}
-        evidenceOwners={new Map([[0, 'cold-start']])}
-        evidencePanel={() => allRowsPanel('coldStart', [coldStart])}
-        renderEvidence={() => <p>card</p>}
-      />,
-    );
+    // Advanced density gives the finding a row of its own beyond the step line.
+    store.setState({ widgetDensity: 'advanced' });
+    render(verdict([rightSizing]));
     expect(screen.getByRole('button', { name: 'Show evidence' })).toBeInTheDocument();
   });
 });

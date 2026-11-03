@@ -8,6 +8,7 @@ import { computeRunEndSec, formatRunClock, runClockTicks } from '@/view/charts/r
 import { stepCodes } from '@/view/interpretation';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { FindingRow } from '@/view/widgets/FixTheseFirst';
+import { findingRowOf } from './_shared/board';
 import { StageTable } from '@/view/widgets/StageTable';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
@@ -97,12 +98,13 @@ describe('step codes on the board', () => {
     const skew = timed('skew', 7, 2_400);
     const straggler = timed('straggler', 7, 2_300);
     install([skew, straggler]);
+    const widgetProps = { appModel: run(), catalog: [skew, straggler], getTaskData: async () => ({ metrics: [], fieldNames: [] }) as never };
     render(
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <FindingRow finding={skew} allFindings={[skew, straggler]} onRoute={() => {}} />
-            <FindingRow finding={straggler} allFindings={[skew, straggler]} onRoute={() => {}} />
+            <FindingRow row={findingRowOf(skew)} widgetProps={widgetProps} />
+            <FindingRow row={findingRowOf(straggler)} widgetProps={widgetProps} />
           </TableBody>
         </Table>
         <StageTable appModel={run()} catalog={[skew, straggler]} getTaskData={async () => ({ metrics: [], fieldNames: [] })} />

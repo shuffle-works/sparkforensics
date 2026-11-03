@@ -9,7 +9,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { MergeRewrite } from '@/view/widgets/MergeRewrite';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
@@ -42,9 +41,7 @@ function renderWidget(catalog: Finding[]) {
   installInterpretation(catalog);
   return render(
     <DocsProvider>
-      <EvidenceAvailabilityProvider>
-        <MergeRewrite appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
-      </EvidenceAvailabilityProvider>
+      <MergeRewrite appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
     </DocsProvider>,
   );
 }

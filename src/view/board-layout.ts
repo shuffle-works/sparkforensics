@@ -1,11 +1,14 @@
+import type { ComponentType } from 'react';
+
 import type { InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { AppModel, EvidenceKey, Finding } from '@sparkforensics/core/types.ts';
-import type { InterpretationState } from '@/store/store';
-import { alwaysMountedWidgets, evidencePanelFor, REGISTRY } from '@/view/detector-registry';
+import type { BoardTab, ResolvedRoute } from '@/store/board';
+import type { InterpretationState } from '@/view/interpretation';
+import { alwaysMountedWidgets, evidencePanelFor, REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import type { AnyEvidencePanel } from '@/view/evidence-panel';
 import { filterFindings, type FilterSelection } from '@/view/finding-filter';
 import { runFindingKeys } from '@/view/finding-keys';
-import { boardRollup, findingAt, type BoardGroup } from '@/view/interpretation';
+import { boardRollup, findingById, type BoardGroup } from '@/view/interpretation';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 import { verdictEvidenceOwners, verdictLeadFindings } from '@/view/verdict-evidence';
 import { computeActiveWidgets, type ActiveWidget } from '@/view/widgets/Alerts';
@@ -19,7 +22,6 @@ import { findingsFor } from '@/view/finding-widget';
 // from the run's interpretation, the finding filter and the density. Views render this and routes
 // resolve against it (`resolveRoute`); nothing about the board is learned from the mounted DOM.
 
-export type BoardTab = 'findings' | 'full-report';
 export type ImpactBand = Finding['impactBand'];
 
 const NOTHING_STATED: readonly Finding[] = [];
@@ -71,8 +73,13 @@ export type BoardRowLayout = FindingRowLayout | GroupRowLayout;
 export interface BandLayout {
   band: ImpactBand;
   rows: readonly BoardRowLayout[];
-  /** Evidence cards no step or row shows in place, collapsed under the rows. */
+  /** Evidence cards under the rows, collapsed: those no step or row shows in place, and, once a
+   * route reveals them, the cards a step or row already shows in place. */
   cards: readonly BoardCard[];
+  /** The keys of the cards that appear only once a route has revealed them. */
+  routeOnlyCardKeys: ReadonlySet<string>;
+  /** Whether the band shows its heading before any route: it has a row or a card of its own. */
+  listed: boolean;
 }
 
 export interface BoardCard {
@@ -81,7 +88,7 @@ export interface BoardCard {
 }
 
 export type ReferenceCard =
-  | { key: string; kind: 'widget'; widgetId: string }
+  | { key: string; kind: 'widget'; widgetId: string; component: ComponentType<WidgetProps> }
   | { key: string; kind: 'evidence-availability' | 'etl-phases' | 'scaling-sim' | 'efficiency-model' | 'core-usage-histogram' };
 
 /** A card the board can open. A `panel` renders inside a step or row, a `grid` card under a band's
@@ -143,8 +150,13 @@ export const referenceWidgetKey = (widgetId: string) => `reference-${widgetId}`;
 export const stepLineKey = (step: InterpretedStep) => `step:${step.key}`;
 export const evidenceRowKey = (key: EvidenceKey) => `evidence:${key}`;
 export const bandLandmark = (band: ImpactBand) => `band:${band}`;
+/** The row key of the element a landmark route lands on. */
+export const landmarkRowKey = (id: string) => `landmark:${id}`;
+/** The row key of a card's own title, which a route lands on when the card lists no row for its finding. */
+export const cardLandingKey = (cardKey: string) => `card:${cardKey}`;
 
-const panelCardKey = (widget: ActiveWidget, scope: readonly Finding[]) => (scope[0]?.id ? `alert-${widget.index}-${scope[0].id}` : `alert-${widget.index}`);
+/** A panel's card key: its widget's slot and the key of the first finding it is scoped to, so two panels of one widget never share a disclosure. */
+const panelCardKey = (widget: ActiveWidget, scope: readonly Finding[], keyOf: (finding: Finding) => string) => `alert-${widget.index}-${scope[0] ? keyOf(scope[0]) : 'none'}`;
 
 /** The evidence panel `widget` shows for `scope` beyond what the line above states (`stated`), or
  * null when it has nothing to show or no widget. */
@@ -161,14 +173,15 @@ export function evidencePanelOf(
   return evidencePanelFor(widget.type, { findings: scope, stated: ids, density, appModel, localityChart: interpretation?.data.coreLocality?.chart });
 }
 
-function rowEvidence(
+export function rowEvidence(
   widget: ActiveWidget | null,
   scope: readonly Finding[],
   stated: readonly Finding[],
   input: BoardLayoutInput,
+  keyOf: (finding: Finding) => string,
 ): RowEvidence {
   const panel = evidencePanelOf(widget, input.appModel, scope, stated, input.density, input.interpretation);
-  return { widget, panel, cardKey: widget && panel ? panelCardKey(widget, scope) : null };
+  return { widget, panel, cardKey: widget && panel ? panelCardKey(widget, scope, keyOf) : null };
 }
 
 /** The board's layout for a run under `selection` and `density`. Pure: the same inputs give the same
@@ -203,14 +216,14 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
 
   const steps: StepLayout[] = [];
   interpretation?.data.verdict.steps.forEach((step, index) => {
-    const finding = findingAt(interpretation, step.leadIndex);
+    const finding = findingById(interpretation, step.leadId);
     if (!finding) return;
     const lineKey = stepLineKey(step);
     const widgetId = owners.get(index);
     const widget = widgetId ? evidenceWidgets.find((candidate) => candidate.widgetId === widgetId) : undefined;
     const panel = widgetId ? evidencePanelOf(widget, appModel, [finding], [finding], density, interpretation) : null;
     const evidence: StepEvidence | null = !widgetId ? null
-      : panel && widget ? { kind: 'panel', widgetId, panel, cardKey: panelCardKey(widget, [finding]), widget }
+      : panel && widget ? { kind: 'panel', widgetId, panel, cardKey: panelCardKey(widget, [finding], keyOf), widget }
         : { kind: 'bare', widgetId };
     steps.push({ index, step, finding, lineKey, evidence });
     lines.push({ key: lineKey, parent: null });
@@ -241,11 +254,11 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
     if (group.findings.length === 1) {
       const finding = group.findings[0];
       const lineKey = `row:${keyOf(finding)}`;
-      const evidence = rowEvidence(widget, [finding], [finding], input);
+      const evidence = rowEvidence(widget, [finding], [finding], input, keyOf);
       row = { kind: 'finding', lineKey, finding, evidence };
     } else {
       const lineKey = `group:${group.key}`;
-      const evidence = rowEvidence(widget, group.findings, NOTHING_STATED, input);
+      const evidence = rowEvidence(widget, group.findings, NOTHING_STATED, input, keyOf);
       row = { kind: 'group', lineKey, group, evidence, memberLineKeys: group.findings.map((member) => `member:${keyOf(member)}`) };
     }
     const members = row.kind === 'group' ? group.findings : [row.finding];
@@ -260,6 +273,7 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
   }
 
   const bandCards = new Map<ImpactBand, BoardCard[]>();
+  const routeOnlyKeys = new Set<string>();
   for (const widget of boardWidgets) {
     const key = `alert-${widget.index}`;
     const isClaimed = claimed.has(widget.widgetId);
@@ -267,7 +281,7 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
     const rows = model.rows({ findings: findingsFor(model, { catalog: filteredCatalog, configFindings: filteredConfig }), stated: new Set(), density, appModel, catalog: filteredCatalog });
     cards.set(key, { key, tab: 'findings', placement: isClaimed ? 'route-only' : 'grid', widgetId: widget.widgetId, rowKeys: rowKeysOf(rows.flatMap((row) => row.findings)) });
     for (const finding of widget.findings) holder(finding).card = { key, tab: 'findings' };
-    if (isClaimed) continue;
+    if (isClaimed) routeOnlyKeys.add(key);
     const list = bandCards.get(widget.impactBand) ?? [];
     list.push({ key, widget });
     bandCards.set(widget.impactBand, list);
@@ -278,22 +292,24 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
     const rows = bandRows.get(band) ?? [];
     const bandWidgetCards = bandCards.get(band) ?? [];
     if (rows.length === 0 && bandWidgetCards.length === 0) continue;
-    bands.push({ band, rows, cards: bandWidgetCards });
+    const routeOnlyCardKeys = new Set(bandWidgetCards.filter(({ key }) => routeOnlyKeys.has(key)).map(({ key }) => key));
+    bands.push({ band, rows, cards: bandWidgetCards, routeOnlyCardKeys, listed: rows.length > 0 || routeOnlyCardKeys.size < bandWidgetCards.length });
     for (const row of rows) {
-      lines.push({ key: row.lineKey, parent: null });
+      if (row.kind === 'group' || row.evidence.widget) lines.push({ key: row.lineKey, parent: null });
       if (row.kind === 'group') for (const memberKey of row.memberLineKeys) lines.push({ key: memberKey, parent: row.lineKey });
     }
   }
 
   // The Full app report: the reference widgets the data has content for.
-  const reference: ReferenceCard[] = alwaysMountedWidgets().map(({ widgetId }) => ({ key: referenceWidgetKey(widgetId), kind: 'widget', widgetId }));
+  const reference: ReferenceCard[] = alwaysMountedWidgets().map(({ widgetId, component }) => ({ key: referenceWidgetKey(widgetId), kind: 'widget', widgetId, component }));
   for (const { widgetId } of alwaysMountedWidgets()) {
     const entry = Object.values(REGISTRY).find((candidate) => candidate.widgetId === widgetId)!;
     const model = entry.model;
     const rows = model.rows({ findings: findingsFor(model, { catalog: filteredCatalog, configFindings: filteredConfig }), stated: new Set(), density, appModel, catalog: filteredCatalog });
     const key = referenceWidgetKey(widgetId);
     cards.set(key, { key, tab: 'full-report', placement: 'grid', widgetId, rowKeys: rowKeysOf(rows.flatMap((row) => row.findings)) });
-    for (const row of rows) for (const finding of row.findings) holder(finding as Finding).card = { key, tab: 'full-report' };
+    // The card is on the page whatever the filter keeps, so a route to any finding of its type lands on it.
+    for (const finding of findingsFor(model, { catalog, configFindings })) holder(finding).card = { key, tab: 'full-report' };
   }
   const evidenceKeys = new Set<EvidenceKey>(appModel.evidenceAvailability?.entries.map((entry) => entry.key) ?? []);
   reference.push({ key: EVIDENCE_CARD_KEY, kind: 'evidence-availability' });
@@ -316,19 +332,9 @@ export type RouteTarget =
   /** A heading or region the page scrolls to: the verdict, the Findings board, or an impact band. */
   | { kind: 'landmark'; id: string };
 
-export interface ResolvedRoute {
-  /** The tab to show, or null to leave the tab as it is (the verdict sits above the tabs). */
-  tab: BoardTab | null;
-  /** The cards the route opens. */
-  openCards: readonly string[];
-  /** The card the route lands in, if any. */
-  cardKey: string | null;
-  /** The element that takes focus: a row's finding key, or a line or landmark key. */
-  rowKey: string | null;
-}
-
 export const VERDICT_LANDMARK = 'verdict';
 export const BOARD_LANDMARK = 'board';
+export const FILTERS_LANDMARK = 'filters';
 
 /** Where a route to `target` lands in `layout`, or null when the layout has no place for it (a
  * finding the filter or the run does not list, an evidence key the ledger lacks). */
@@ -338,10 +344,11 @@ export function resolveRoute(target: RouteTarget, layout: BoardLayout): Resolved
     if (!layout.evidenceKeys.has(target.key)) return null;
     return { tab: 'full-report', openCards: [EVIDENCE_CARD_KEY], cardKey: EVIDENCE_CARD_KEY, rowKey: evidenceRowKey(target.key) };
   }
-  if (target.id === VERDICT_LANDMARK) return { tab: null, openCards: [], cardKey: null, rowKey: `landmark:${VERDICT_LANDMARK}` };
-  if (target.id === BOARD_LANDMARK) return { tab: 'findings', openCards: [], cardKey: null, rowKey: `landmark:${BOARD_LANDMARK}` };
+  if (target.id === VERDICT_LANDMARK) return { tab: null, openCards: [], cardKey: null, rowKey: landmarkRowKey(VERDICT_LANDMARK) };
+  if (target.id === FILTERS_LANDMARK) return { tab: null, openCards: [], cardKey: null, rowKey: landmarkRowKey(FILTERS_LANDMARK) };
+  if (target.id === BOARD_LANDMARK) return { tab: 'findings', openCards: [], cardKey: null, rowKey: landmarkRowKey(BOARD_LANDMARK) };
   const band = IMPACT_BAND_ORDER.find((candidate) => bandLandmark(candidate) === target.id);
-  if (band && layout.bands.some((entry) => entry.band === band)) return { tab: 'findings', openCards: [], cardKey: null, rowKey: `landmark:${target.id}` };
+  if (band && layout.bands.some((entry) => entry.band === band && entry.listed)) return { tab: 'findings', openCards: [], cardKey: null, rowKey: landmarkRowKey(target.id) };
   return null;
 }
 
@@ -354,7 +361,10 @@ function resolveFinding(finding: Finding, layout: BoardLayout): ResolvedRoute | 
   if (line?.cardKey) return { tab: line.tab, openCards: [line.cardKey], cardKey: line.cardKey, rowKey: key };
   // A step or row whose widget has nothing beyond it is the landing itself.
   if (line?.bare) return { tab: line.tab, openCards: [], cardKey: null, rowKey: line.key };
-  if (card) return { tab: card.tab, openCards: [card.key], cardKey: card.key, rowKey: key };
+  if (card) {
+    const listed = layout.cards.get(card.key)?.rowKeys.includes(key) ?? false;
+    return { tab: card.tab, openCards: [card.key], cardKey: card.key, rowKey: listed ? key : cardLandingKey(card.key) };
+  }
   return null;
 }
 
