@@ -11,7 +11,10 @@ export function pathBasename(str: unknown): string {
   const s = String(str);
   const m = s.match(/((?:hdfs?|s3[an]?):\/\/\S+|\/[^\s,)]+)/i);
   if (!m) return s;
-  const segs = m[1].replace(/[/,]+$/, '').split('/').filter(Boolean);
+  // Trims trailing '/' and ',' with a loop: an unanchored /[/,]+$/ is quadratic on long comma runs.
+  let end = m[1].length;
+  while (end > 0 && (m[1][end - 1] === '/' || m[1][end - 1] === ',')) end--;
+  const segs = m[1].slice(0, end).split('/').filter(Boolean);
   return segs[segs.length - 1] || s;
 }
 

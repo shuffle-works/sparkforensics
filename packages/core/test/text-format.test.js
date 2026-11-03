@@ -1,5 +1,16 @@
 import { test, expect } from 'vitest';
-import { escHtml, trimCallsite } from '../src/text-format.js';
+import { escHtml, pathBasename, trimCallsite } from '../src/text-format.js';
+
+test('pathBasename drops trailing slashes and commas before taking the basename', () => {
+  expect(pathBasename('hdfs://host/a/b,/,/')).toBe('b');
+  expect(pathBasename('read /data/orders/')).toBe('orders');
+});
+// The path text comes from the event log. A quadratic trailing-trim regex took >10s here.
+test('pathBasename stays linear on a long comma run', () => {
+  const started = Date.now();
+  expect(pathBasename('hdfs://host/a' + ','.repeat(250000) + 'x')).toBe('a' + ','.repeat(250000) + 'x');
+  expect(Date.now() - started).toBeLessThan(2000);
+});
 
 test('escHtml escapes ampersands and angle brackets', () => {
   expect(escHtml('<script>a&b</script>')).toBe('&lt;script&gt;a&amp;b&lt;/script&gt;');

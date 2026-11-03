@@ -89,7 +89,9 @@ export function scanRelationId(name: string, detail: string): string | null {
   // unrecoverable.
   const fileM = detail.match(/FileScan\s+(parquet|orc|csv|json)\b/i);
   if (fileM) {
-    const locM = detail.match(/Location:[^[]*\[([^\]]+)\]/);
+    // Anchored at the first Location: so the scan stays linear on repeated markers.
+    const locAt = detail.indexOf('Location:');
+    const locM = locAt === -1 ? null : detail.slice(locAt).match(/^Location:[^[]*\[([^\]]+)\]/);
     if (!locM) return null;
     return `${fileM[1].toLowerCase()}:${pathBasename(locM[1].split(',')[0].trim())}`;
   }
@@ -108,8 +110,11 @@ export function scanRelationId(name: string, detail: string): string | null {
 // Extracts the inner SQL text from a JDBCRelation detail string (used for both
 // the relation table name and the scan's `sql` summary field).
 function jdbcSql(detail: string): string {
-  const jdbcM = detail.match(/JDBCRelation\(([\s\S]+?)\)\s*(?:SPARK_GEN_SUBQ_\d+\)?)?\s*\[numPartitions/);
-  const sqlM = detail.match(/JDBCRelation\(\(([\s\S]+?)\)\s*SPARK_GEN_SUBQ/);
+  // Anchored at the first JDBCRelation( so the lazy scan runs once, not once per occurrence.
+  const relAt = detail.indexOf('JDBCRelation(');
+  const rel = relAt === -1 ? '' : detail.slice(relAt);
+  const jdbcM = rel.match(/^JDBCRelation\(([\s\S]+?)\)\s*(?:SPARK_GEN_SUBQ_\d+\)?\s*)?\[numPartitions/);
+  const sqlM = rel.match(/^JDBCRelation\(\(([\s\S]+?)\)\s*SPARK_GEN_SUBQ/);
   return (sqlM ? sqlM[1] : (jdbcM ? jdbcM[1] : '')).replace(/\s+/g, ' ').trim();
 }
 
