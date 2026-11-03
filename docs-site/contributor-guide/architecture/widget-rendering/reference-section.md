@@ -51,8 +51,8 @@ would have produced a finding.
 card expands it across the full row. Nested `WidgetCard`s are isolated from
 the parent grid state. A Findings-tab `FixTheseFirst` rollup row is a table
 row, not a `WidgetGrid` card, and carries no collapse/expand state of its own
-(`ImpactBoard` holds which group is expanded; a `TypeGroupRow` owns only its
-page). Full app report's non-`REGISTRY` tiles (ETL Phase Attribution,
+(the store's `board.expandedGroup` holds which group is expanded; a
+`TypeGroupRow` owns only its page). Full app report's non-`REGISTRY` tiles (ETL Phase Attribution,
 What-If Executor Scaling, Compute Efficiency, Core-Usage
 Distribution) sit in the same `WidgetGrid` as Core Locality and
 Evidence availability; only Core Locality's item carries a

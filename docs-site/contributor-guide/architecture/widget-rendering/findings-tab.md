@@ -90,8 +90,8 @@ per-finding resolver Stage Summary Table's own control uses (see "First
 investigation routing" below), and opens the group's panel. An expanded group's members (`FindingInstanceRow`) omit
 the badge and span its cell (`colSpan={2}`): the location line, then the
 recommendation clamped to one line, then the figure in the third column.
-`ImpactBoard` owns which single group is expanded (`expandedGroupKey`); a
-`TypeGroupRow` owns only its page.
+The store's `board.expandedGroup` (`src/store/board.ts`) holds which single
+group is expanded; a `TypeGroupRow` owns only its page.
 
 Each impact band (`ImpactBoard.tsx`'s own `ImpactGroup`, one call per
 entry of `IMPACT_BAND_ORDER_LIST = ['critical', 'warning', 'info']`) is a
