@@ -32,45 +32,11 @@ names, tables or paths in tracked files, commits or PR text. Use the neutral `pr
 
 ## Structure rules
 
-`npm run lint:structure` runs the ast-grep rules in `rules/` over `src/` and
-`packages/core/src/`, after their tests in `rule-tests/` (`sgconfig.yml` is the
-config). CI runs it next to
-`npm run lint`. A decision about what to render is a value computed from data
-before anything renders, so the rules ban the ways a view can read its own
-rendered output and correct it afterwards:
-
-- `no-rendered-output-probe`: `MutationObserver`, `cloneNode`, `textContent`,
-  `innerText`, `innerHTML`, `outerHTML`, `getComputedStyle` in `src/view/`.
-- `no-hidden-after-render`: `hidden={flag}`, `display: none` and
-  `visibility: hidden` styles, a `.hidden` or `.style.display` assignment,
-  `has-[...]:hidden` and `empty:hidden` in `src/`. A conditional `hidden` or
-  `invisible` class string is not matched by this rule: the behaviour tests in
-  [row-expand-contract](./architecture/widget-rendering/row-expand-contract.md)
-  count that output as not shown.
-- `no-dom-query-in-widgets`: DOM queries, measurements and observers in the
-  widgets, `WidgetCard`, `WidgetGrid`, `InlineEvidence`, `detector-registry.tsx`
-  and `evidence-panel.ts`.
-- `rows-are-pure`: a widget's rows that import React, the store, a context or a
-  hook module, call a hook, or read a global, the clock or randomness. It covers
-  all of every `*.rows.ts` file and `evidence-panel.ts`.
-- `rows-are-pure-inline`: the same reads elsewhere in `src/`, inside a
-  `RowsOf`-typed value. Both rules share their list of reads in `rule-utils/`.
-- `finding-widget-uses-the-shell`: a file that builds its widget with
-  `defineFindingWidget` and also renders `WidgetCard`, `TagBadge`,
-  `RowPagination`, `SortModeToggle` or `AdvancedOnly`, or calls the sort, paging,
-  anchor, route, density or inline-evidence hooks. The shell owns those; the
-  widget file renders one row. Files in `src/view/widgets/`.
-- `no-numeric-severity-in-cell`: a `*Cell` function in `src/view/widgets/` that
-  compares a number. A cell shows the raw number, plus a chip only when a detector flagged
-  the stage, in that finding's impact band.
-- `no-panel-forgery`: an `EvidencePanel` made by a cast, a `type`/`rows` literal
-  or a direct `evidencePanel(...)` call outside `evidence-panel.ts` and
-  `detector-registry.tsx`.
-- `no-run-reset-effect`: a `useEffect` or `useLayoutEffect` in `src/` that lists
-  `appModel` or `activeFileId` in its dependencies and calls a state setter in its
-  body. A new run remounts the dashboard, which keyed by `runKey` starts per-run
-  state fresh (see [State model](./architecture/state-and-history.md#state-model)). A
-  setter inside a callback, such as a fetch's `.then`, is not matched.
+The structure rules are ast-grep rules that ban view code from reading its own
+rendered output and keep `packages/core/src/` inside its boundaries. Each rule
+lives in `rules/` with its rule-test in `rule-tests/`. `npm run lint:structure`
+runs the rule-tests, then scans `src/` and `packages/core/src/` (`sgconfig.yml`
+is the config). CI runs it next to `npm run lint`.
 
 Each rule's message names the remedy. A legitimate use gets a suppression on the
 line above it, `// ast-grep-ignore: <rule-id>`, with the reason in the comment
