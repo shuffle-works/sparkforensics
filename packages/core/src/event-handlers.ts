@@ -30,41 +30,15 @@ import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey
 import { computeRunAggregates } from './run-aggregates.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf } from './spark-conf.ts';
+import type { ParserEmit, ParserMessage } from './parser-messages.ts';
 import { DRIVER_EXECUTOR_ID } from './executor-peaks.ts';
 import type {
-  Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
+  AppResources, Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, RddInfo, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
 } from './types';
 
 // Internal parser-state shapes: the real runtime objects the handlers build and mutate, not the
 // public AppModel types in types.ts (which describe the posted message shape after
 // finalizeStage/appMessage reshape things).
-
-interface ResourcesSummary {
-  executor: {
-    memory: string | null;
-    memoryMB: number | null;
-    memoryOverhead: string | null;
-    memoryOverheadMB: number | null;
-    cores: number | null;
-    instances: number | null;
-  };
-  driver: {
-    memory: string | null;
-    memoryMB: number | null;
-    memoryOverhead: string | null;
-    memoryOverheadMB: number | null;
-    cores: number | null;
-  };
-  dynamicAllocationEnabled: boolean | null;
-  shuffleServiceEnabled: boolean | null;
-  serializer: string | null;
-  // The run's effective spark.eventLog.logStageExecutorMetrics (off unless set); null for a log with
-  // no recorded properties. The evidence ledger reads it without importing the defaults table.
-  stageExecutorMetricsLogging: boolean | null;
-  // SparkAppInfo.resources is Record<string, unknown>: an index signature keeps this assignable
-  // there without a cast.
-  [key: string]: unknown;
-}
 
 interface RddInfoRecord {
   id: number;
@@ -93,7 +67,6 @@ interface RddBlockState {
   peakCachedPartitions: number;
 }
 
-type PostableRddInfoRecord = Omit<RddInfoRecord, 'stageIds'> & { stageIds: number[] };
 
 export interface FailedTaskSample {
   taskId: number | null;
@@ -115,7 +88,7 @@ const MAX_TASK_SAMPLES = 20;
 
 // One accumulated task-attempt record, keyed by `<stageAttemptId>:<index>` (or a unique Symbol
 // when the raw event has no Index).
-interface TaskRecord {
+export interface TaskRecord {
   duration: number;
   failed: boolean;
   taskId: number | null;
@@ -147,7 +120,7 @@ interface TaskRecord {
   outputRecords: number | null;
 }
 
-interface StageRecord {
+export interface StageRecord {
   id: number;
   name: string;
   details: string;
@@ -230,7 +203,7 @@ export interface ParserState {
   app: SparkAppInfo | null;
   pendingSparkVersion: string | null;
   pendingConfig: Record<string, string> | null;
-  pendingResources: ResourcesSummary | null;
+  pendingResources: AppResources | null;
   stages: Map<number, StageRecord>;
   taskStore: Map<number, Float64Array>;
   sqlExecutions: Map<number, SqlExecutionRecord>;
@@ -516,7 +489,7 @@ export { parseSparkMemoryMB };
 // effective conf has it (the logged value, else Spark's default for `sparkVersion`). A key with no
 // fixed default degrades to null, not a guess, and so does every key of a log that recorded no
 // Spark properties at all: there is nothing to tell a default from a missing config.
-export function extractResources(config: Record<string, string> | null | undefined, sparkVersion?: string | null): ResourcesSummary {
+export function extractResources(config: Record<string, string> | null | undefined, sparkVersion?: string | null): AppResources {
   const cfg = config ?? {};
   const recorded = Object.keys(cfg).length > 0;
   const value = (k: string): string | undefined => (recorded ? effectiveSparkConf({ sparkVersion, properties: cfg }, k)?.value : undefined);
@@ -556,8 +529,8 @@ export function extractResources(config: Record<string, string> | null | undefin
 
 // Convert the live rddInfo Map (with a mutable stageIds Set) into a postable copy with stageIds
 // as a sorted array, so the main thread never receives a live Set that could keep mutating after post.
-function snapshotRddInfo(rddInfo: Map<number, RddInfoRecord>): Map<number, PostableRddInfoRecord> {
-  const out = new Map<number, PostableRddInfoRecord>();
+function snapshotRddInfo(rddInfo: Map<number, RddInfoRecord>): Map<number, RddInfo> {
+  const out = new Map<number, RddInfo>();
   for (const [id, r] of rddInfo) {
     out.set(id, { ...r, stageIds: [...r.stageIds].sort((a, b) => a - b) });
   }
@@ -943,7 +916,6 @@ export function startApplication(event: z.infer<typeof ApplicationStartEventSche
     sparkVersion: state.pendingSparkVersion ?? event['Spark Version'] ?? null,
     config,
     resources: state.pendingResources ?? extractResources(config, state.pendingSparkVersion ?? event['Spark Version']),
-    rddInfo: state.rddInfo,
   };
   return appMessage(state);
 }
@@ -1387,7 +1359,7 @@ export function removeExecutor(event: z.infer<typeof ExecutorRemovedEventSchema>
   return { type: 'executor', data: ev };
 }
 
-export function processEvent(event: SparkEvent, state: ParserState): unknown {
+export function processEvent(event: SparkEvent, state: ParserState): ParserMessage | null {
   switch (event.Event) {
     case 'SparkListenerLogStart':
       state.pendingSparkVersion = event['Spark Version'] ?? null;
@@ -1430,13 +1402,7 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       stage.stageFailureReason = info['Failure Reason'] ?? null;
       // A duplicate StageCompleted of an already-finalized attempt is not another failed attempt.
       if (stage.stageFailureReason != null && stage.taskAttempts !== null) stage.failedStageAttempts++;
-      // finalizeStage keeps its `stage` parameter typed as a loose Record (see that module); bridge
-      // StageRecord's more precise shape across that boundary with an explicit cast.
-      return finalizeStage(
-        id,
-        stage as unknown as Record<string, unknown> & { taskAttempts: Map<unknown, Record<string, number>> | null },
-        state
-      );
+      return finalizeStage(id, stage, state);
     }
 
     case 'SparkListenerStageExecutorMetrics':
@@ -1687,7 +1653,7 @@ const MAX_EXECUTION_ID_DIGITS = 20;
 // These updates span decode slices, so `line` is a cons string: the prefix and suffix checks read
 // `joined`'s flat pieces instead, or a superseded update is copied flat only to be dropped. A piece too short to hold what is checked falls back to `line`.
 function deferAdaptiveUpdate(
-  line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
+  line: string, state: ParserState, emit: ParserEmit, joined?: JoinedLine,
 ): boolean {
   const head = joined && joined.head.length > ADAPTIVE_UPDATE_PREFIX.length + MAX_EXECUTION_ID_DIGITS
     ? joined.head : line;
@@ -1710,7 +1676,7 @@ function deferAdaptiveUpdate(
   return true;
 }
 
-function flushAdaptiveUpdate(executionId: number, state: ParserState, emit: (msg: unknown) => void): void {
+function flushAdaptiveUpdate(executionId: number, state: ParserState, emit: ParserEmit): void {
   const line = state.pendingAdaptiveUpdates.get(executionId);
   if (line === undefined) return;
   state.pendingAdaptiveUpdates.delete(executionId);
@@ -1718,7 +1684,7 @@ function flushAdaptiveUpdate(executionId: number, state: ParserState, emit: (msg
 }
 
 export function dispatchLine(
-  line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
+  line: string, state: ParserState, emit: ParserEmit, joined?: JoinedLine,
 ): void {
   if (deferAdaptiveUpdate(line, state, emit, joined)) return;
   parseAndDispatch(line, state, emit);
@@ -1742,7 +1708,7 @@ function noteUnreadableSqlStart(line: string, state: ParserState): void {
   if (id) state.unreadableSqlStarts.add(Number(id[1]));
 }
 
-function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
+function parseAndDispatch(line: string, state: ParserState, emit: ParserEmit): void {
   if (line.startsWith(BLOCK_UPDATED_PREFIX) && !line.includes(RDD_BLOCK_ID_FRAGMENT)) return;
   let parsed: unknown;
   let taskEndIds: number[] | undefined;
@@ -1771,7 +1737,7 @@ function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown)
   if (result.data.Event === 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd') {
     flushAdaptiveUpdate(result.data.executionId, state, emit);
   }
-  let msg: unknown;
+  let msg: ParserMessage | null;
   try {
     msg = taskEndIds && result.data.Event === 'SparkListenerTaskEnd'
       ? accumulateTask(result.data, state, taskEndIds)
@@ -1824,7 +1790,7 @@ export function collectLateAttemptWork(state: ParserState): Map<number, StageAtt
   return out;
 }
 
-export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
+export function emitParseCompletion(state: ParserState, emit: ParserEmit, linesProcessed: number): void {
   // Executions that never ended still apply their latest deferred AQE update.
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
@@ -1838,8 +1804,10 @@ export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => 
   emit(appMessage(state));
   emit({
     type: 'done',
-    skippedLines: state.skippedLines,
-    ...(state.unreadableSqlStarts.size > 0 ? { unreadableSqlExecutions: [...state.unreadableSqlStarts].sort((a, b) => a - b) } : {}),
+    data: {
+      skippedLines: state.skippedLines,
+      ...(state.unreadableSqlStarts.size > 0 ? { unreadableSqlExecutions: [...state.unreadableSqlStarts].sort((a, b) => a - b) } : {}),
+    },
   });
   state.accumState.clear();
   state.executorAccumState.clear();

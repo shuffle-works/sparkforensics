@@ -20,10 +20,11 @@ import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/bu
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
-import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS } from './detector-catalog.ts';
+import type { ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
-import { typeTag } from './format-utils.ts';
+import { typeTag } from './finding-presentation.ts';
 import type { AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 

@@ -1,4 +1,4 @@
-import type { TaskData } from '@sparkforensics/core/types.ts';
+import type { TaskData } from '@sparkforensics/core/types';
 import { useStore } from '@/store/store';
 
 export interface LiveTaskData {

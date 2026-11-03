@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { emptyAppModel, store } from '@/store/store';
 import { buildBoardLayout, resolveRoute } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';

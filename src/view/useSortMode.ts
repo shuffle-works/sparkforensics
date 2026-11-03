@@ -1,4 +1,4 @@
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { byStageAsc, canToggleSort, orderByImpact, type SortMode } from '@/view/impact-sort';
 import { useWidgetDensity } from '@/store/store';
 import { useInterpretation } from '@/view/interpretation';

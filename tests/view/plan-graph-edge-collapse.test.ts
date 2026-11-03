@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { collapseHiddenEdges } from '@/view/PlanGraphRoute';
-import type { PlanGraphEdge } from '@sparkforensics/core/types.ts';
+import type { PlanGraphEdge } from '@sparkforensics/core/types';
 
 describe('collapseHiddenEdges', () => {
   it('keeps an edge unchanged when both endpoints are visible', () => {

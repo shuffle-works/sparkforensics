@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { WidgetCard } from '@/view/WidgetCard';
 import { PairTable, type StageSummary } from '@/view/PinnedStageDeltas';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { PairDeltaMetric, ReplannedGroup, StageAlignment, StageDelta, StagePair } from '@sparkforensics/core/stage-alignment.ts';
+import { formatBytes, formatDuration } from '@sparkforensics/core/view-model';
+import type { PairDeltaMetric, ReplannedGroup, StageAlignment, StageDelta, StagePair } from '@sparkforensics/core/analysis';
 
 export type StageSide = 'baseline' | 'candidate';
 

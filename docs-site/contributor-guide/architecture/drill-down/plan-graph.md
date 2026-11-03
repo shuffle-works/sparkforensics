@@ -117,7 +117,7 @@ graph model until the dialog is confirmed. Dismissing the dialog closes it but
 does not lift that block, and a dismissed fallback does not reopen the dialog,
 because the stage has no ungated segment view to show instead.
 
-The Plan Advisor finding types, from `packages/core/src/detectors.ts`:
+The Plan Advisor finding types, from `packages/core/src/detectors/plan.ts`:
 
 <DetectorTypeList family="plan" />
 
@@ -171,7 +171,7 @@ Two other per-node UI features render independently of findings:
 One more identity subtlety: a split `Exchange`/`BroadcastExchange` pair
 (the write/read halves `resolvePlanTree` synthesizes, see above) counts as
 **one** node for `duplicatePlanSubtree`'s subtree-size and occurrence
-counting. `computePlanShapes` in `detectors.ts` walks straight through the
+counting. `computePlanShapes` in `detectors/plan-shape.ts` walks straight through the
 read half to the write half's real children, so every real Exchange in a
 matched subtree is counted once instead of twice.
 

@@ -3,7 +3,7 @@ import { GitMerge } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Table, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatBytes } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes } from '@sparkforensics/core/view-model';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetView } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { RowStatusCluster } from '@/view/RowStatusCluster';

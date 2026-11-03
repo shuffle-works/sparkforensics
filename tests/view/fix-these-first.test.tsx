@@ -4,10 +4,10 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { impactFigure } from '@sparkforensics/core/impact-format.ts';
+import { impactFigure } from '@sparkforensics/core/analysis';
 import { TypeGroupRow } from '../../src/view/widgets/FixTheseFirst';
-import { rankedRollup } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { AppModel, Finding, FindingOf, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
+import { rankedRollup } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding, FindingOf, FindingType, ImpactBand } from '@sparkforensics/core/types';
 import { emptyAppModel, store } from '@/store/store';
 import type { GroupRowLayout } from '@/view/board-layout';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -183,21 +183,21 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
   });
 
   it('keeps a memoryUtilization memoryBand finding when the underlying data was actually available', () => {
-    const heapOverProvisioned: Finding = {
+    const heapOverProvisioned: Finding = testFinding({
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '1',
       impactBand: 'info', metric: 'heapUsedRatio', value: 20,
       recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
-    };
+    });
     const { eligible } = boardData([heapOverProvisioned]);
     expect(eligible).toEqual([heapOverProvisioned]);
   });
 
   it('keeps a memoryUtilization finding of a different variant (idleCores), which never carries dataUnavailable at all', () => {
-    const idleCores: Finding = {
+    const idleCores: Finding = testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 80,
       recommendation: '80% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    };
+    });
     const { eligible } = boardData([idleCores]);
     expect(eligible).toEqual([idleCores]);
   });

@@ -5,13 +5,13 @@ import userEvent from '@testing-library/user-event';
 import { CleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { detectorInfoByType } from '@sparkforensics/core/analysis';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 import { makeRun } from './_shared/run';
 
 function skewFinding(stageId: number, impactBand: ImpactBand): Finding {
-  return testFinding({ type: 'skew', stageId, impactBand, metric: 'p95Median', value: 5, recommendation: `Rebalance Stage ${stageId}.` });
+  return testFinding({ type: 'skew', stageId, impactBand, metric: 'P95/median', value: 5, recommendation: `Rebalance Stage ${stageId}.` });
 }
 
 function gcFinding(stageId: number, impactBand: ImpactBand): Finding {

@@ -5,21 +5,21 @@ import type { Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
-import { analyze } from '@sparkforensics/core/analyzer.ts';
-import { computeCoreLocalityRatio } from '@sparkforensics/core/core-locality-ratio.ts';
-import { buildLocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
+import { analyze, computeCoreLocalityRatio, buildLocalityChart } from '@sparkforensics/core/analysis';
 import { downsample } from '@/view/charts/downsample';
 import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
+import { testStage } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';
 
 // Both mocks call through to the real implementation; only the large-series
 // test below overrides buildLocalityChart's return value for one call. The widget
 // reads its chart model (series, rescaling, peak) from core's buildLocalityChart.
-vi.mock('@sparkforensics/core/core-usage-locality.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@sparkforensics/core/core-usage-locality.ts')>();
+vi.mock('@sparkforensics/core/analysis', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sparkforensics/core/analysis')>();
   return { ...actual, buildLocalityChart: vi.fn(actual.buildLocalityChart) };
 });
 vi.mock('@/view/charts/downsample', async (importOriginal) => {
@@ -307,7 +307,7 @@ test('renders a per-stage non-local breakdown whenever any non-local tasks exist
 test('shows the idle-core cross-link when a memoryUtilization idleCores finding coexists in catalog', async () => {
   const catalog: Finding[] = [
     { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 20, recommendation: 'x', nonLocalTaskCount: 0 },
-    { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
+    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' }),
   ];
 
   store.getState().setWidgetDensity('advanced');
@@ -327,7 +327,7 @@ test('shows the idle-core cross-link when a memoryUtilization idleCores finding 
 // computeCoreLocalityRatio and the finding's stored value is caught here.
 test('the rendered finding value and the widget\'s own locality computation agree on the same fixture', async () => {
   // Full stage shape so analyze() runs its whole detector roster; only the locality fields are tuned.
-  const stage = {
+  const stage = testStage({
     id: 1, name: 'test', submittedAt: 0, completedAt: 60_000,
     taskCount: 100, failedTasks: 0,
     shuffleReadBytes: 0, shuffleWriteBytes: 0, fetchWaitTime: 0,
@@ -347,7 +347,7 @@ test('the rendered finding value and the widget\'s own locality computation agre
       { locality: 'PROCESS_LOCAL', count: 80 },
       { locality: 'ANY', count: 20 },
     ],
-  };
+  });
   const app = { id: 'app_1', name: 'test', startTime: 0, endTime: 60_000, sparkVersion: '3.4.0', config: {} };
   const stages = new Map([[1, stage]]);
 
@@ -424,7 +424,7 @@ test('shows a confidence caveat when the coreLocality finding carries one', asyn
 test('the approximation caption, confidence marker, and idle-core cross-link are hidden in basic mode', async () => {
   const catalog: Finding[] = [
     { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.', nonLocalTaskCount: 0 },
-    { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
+    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' }),
   ];
 
   store.getState().setWidgetDensity('basic');
@@ -445,7 +445,7 @@ test('the approximation caption, confidence marker, and idle-core cross-link are
 test('the approximation caption, confidence marker, and idle-core cross-link are visible in advanced mode', async () => {
   const catalog: Finding[] = [
     { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.', nonLocalTaskCount: 0 },
-    { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
+    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' }),
   ];
 
   store.getState().setWidgetDensity('advanced');

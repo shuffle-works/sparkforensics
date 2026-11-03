@@ -1,8 +1,8 @@
 // Savings figures as every surface prints them: the dashboard's widgets and verdict, and the
 // CLI/MCP evidence report. One formatter set, so units and rounding never drift between paths.
 // A figure that rounds to zero ("0s", "0.0 core-h") reads as a measured nothing, so every
-// formatter here shows no figure for it (see readsAsZero in format-utils.ts).
-import { asCoreTime, fmtMs, formatRawWaste, formatWallClockRange, readsAsZero } from './format-utils.ts';
+// formatter here shows no figure for it (see readsAsZero in units.ts).
+import { asCoreTime, fmtMs, formatRawWaste, formatWallClockRange, readsAsZero } from './units.ts';
 import type { Finding, ImpactEstimate, RawWasteFigure } from './types.ts';
 
 /** The raw figure as the surfaces print it: a cost-only (`resourceOnly`) task-time figure in core

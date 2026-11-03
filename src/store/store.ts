@@ -1,10 +1,9 @@
 import { createStore } from 'zustand/vanilla';
 import { useStore as useZustand } from 'zustand';
-import { serializeRun, type SerializedRun } from '@sparkforensics/core/run-serialization.ts';
-import type { AnalyzedRun } from '@sparkforensics/core/analyzed-run.ts';
-import type { ExportProvenance } from '@sparkforensics/core/export-data.ts';
+import { serializeRun, type ExportProvenance, type SerializedRun } from '@sparkforensics/core/export';
+import type { AnalyzedRun } from '@sparkforensics/core/analysis';
 import { boardActions, initialBoard, type BoardActions, type BoardState } from '@/store/board';
-import type { AppModel, Finding, TaskData, StageId } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData, StageId } from '@sparkforensics/core/types';
 
 export function emptyAppModel(): AppModel {
   return {

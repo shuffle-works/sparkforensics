@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 import { emptyAppModel } from '@/store/store';
 import { ExecutorUtilization } from '@/view/widgets/ExecutorUtilization';

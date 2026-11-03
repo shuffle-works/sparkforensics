@@ -1,11 +1,11 @@
-import { DETECTORS } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detector-catalog.ts';
 import type { Finding, FindingOf, Job } from './types.ts';
 
 /** Finding types that mean work did not finish: a stage attempt that failed
  * outright, and jobs that ended without succeeding. Failed tasks that a retry
  * recovered (`failures`) are not in this set: the run still completed. */
 export const FAILURE_TYPES: ReadonlySet<string> = new Set(
-  DETECTORS.filter((entry) => entry.bandPolicy === 'failure').flatMap((entry) => entry.emits),
+  [...ENTRY_BY_TYPE].filter(([, entry]) => entry.bandPolicy === 'failure').map(([type]) => type),
 );
 
 /** Longest failure reason the verdict quotes; Spark reasons can carry a whole

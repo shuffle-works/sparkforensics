@@ -11,7 +11,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 import { Spill } from '@/view/widgets/Spill';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 function buildAppModel(stageOverrides: Record<number, Record<string, unknown>> = {}): AppModel {

@@ -2,7 +2,8 @@
 // exchange's column count is the one its plan description gives (`inputColumns`), else the nearest
 // node below it that lists its columns. A shape this cannot read yields no figure.
 
-import { clipAtWord, describeSpillRatio, formatBytes } from './format-utils.ts';
+import { clipAtWord, describeSpillRatio } from './text-format.ts';
+import { formatBytes } from './units.ts';
 import { isExchangeNode } from './plan-node-detail.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import type { ExchangeWidth, SpillExchange, SpillOperator } from './finding-types.ts';

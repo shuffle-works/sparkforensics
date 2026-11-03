@@ -4,17 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
-import { summarizeComparison, type VerdictJobOutcome } from '@sparkforensics/core/comparison-verdict.ts';
+import { summarizeComparison, type VerdictJobOutcome, NEUTRAL_METRIC_KEYS } from '@sparkforensics/core/analysis';
 import { StageComparisonTable, type StageSide } from '@/view/StageComparisonTable';
 import { ComparabilityCard } from '@/view/ComparabilityCard';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration, IMPACT_BANDS, typeTag } from '@sparkforensics/core/format-utils.ts';
-import { NEUTRAL_METRIC_KEYS } from '@sparkforensics/core/run-comparison.ts';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
-import type { ReplannedGroup, StageAlignment, StagePair } from '@sparkforensics/core/stage-alignment.ts';
-import type { Comparability } from '@sparkforensics/core/comparability.ts';
+import { formatBytes, formatDuration, IMPACT_BANDS, typeTag } from '@sparkforensics/core/view-model';
+import type { ImpactBand } from '@sparkforensics/core/types';
+import type { ReplannedGroup, StageAlignment, StagePair, Comparability } from '@sparkforensics/core/analysis';
 
 interface MetricDelta {
   key: string; label: string;

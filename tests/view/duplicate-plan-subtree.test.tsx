@@ -10,7 +10,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { DocsProvider } from '@/view/DocsContext';
 import { DuplicatePlanSubtree } from '@/view/widgets/DuplicatePlanSubtree';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {

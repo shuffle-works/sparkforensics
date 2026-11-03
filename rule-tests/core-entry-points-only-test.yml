@@ -1,0 +1,9 @@
+id: core-entry-points-only
+valid:
+  - "import { analyze } from '@sparkforensics/core/analysis';"
+  - "import type { Stage } from '@sparkforensics/core/types';"
+  - "export { buildViewModel } from '@sparkforensics/core/view-model';"
+invalid:
+  - "import { analyze } from '@sparkforensics/core/src/analyzer.ts';"
+  - "import { loadNodeCore } from '@sparkforensics/core/node';"
+  - "const core = await import('@sparkforensics/core');"

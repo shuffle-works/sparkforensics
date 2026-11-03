@@ -1,4 +1,4 @@
-import type { EvidenceKey } from '@sparkforensics/core/types.ts';
+import type { EvidenceKey } from '@sparkforensics/core/types';
 
 // The keys a route lands on. They sit apart from the layout, which pulls in every widget, so a card or
 // a row can name its landing without importing the board.

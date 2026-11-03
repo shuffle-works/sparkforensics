@@ -4,6 +4,7 @@ import { Decompress as ZstdDecompress } from './vendor/fzstd.js';
 import { createSnappyBlockDecoder } from './snappy-block.ts';
 import { createState, dispatchLine, buildChunkDecoder, emitParseCompletion, type JoinedLine, type ParserState } from './event-handlers.ts';
 import { TASK_FIELD_NAMES } from './stage-quantiles.ts';
+import type { ParserEmit, ParserMessage } from './parser-messages.ts';
 import { runParseFromUrl, sniffCodec, parseZipArchive } from './shs-fetch.ts';
 import { isZip } from './zip-archive.ts';
 import { createWorkerZstdDecoders } from './zstd-worker-client.ts';
@@ -35,7 +36,7 @@ const MIN_PROGRESS_STEPS = 100;
 // once, so a large interval yields only a handful of progress messages per file.
 const PROGRESS_EMIT_LINES = 300;
 
-type EmitFn = (msg: unknown) => void;
+type EmitFn = ParserEmit;
 const NOT_AN_EVENT_LOG = 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.';
 
 // zstdDecoder replaces the vendored fzstd for zstd input; the Node CLI/MCP path passes
@@ -92,11 +93,15 @@ export async function streamFile(
   // each push so compressed codecs report bytes-read progress too, not just
   // the uncompressed branch.
   let currentPct = 0;
+  // The library's typings do not declare its streaming constructor.
+  // ast-grep-ignore: no-unknown-cast
   const gunzip = codec === 'gz' ? new (Gunzip as unknown as StreamingDecoderCtor)((inflated) => onChunk(inflated, currentPct)) : null;
   const lz4 = codec === 'lz4' ? createLz4BlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
   const onZstdChunk = (inflated: Uint8Array) => onChunk(inflated, currentPct);
   const zstd: ReturnType<ZstdDecoderFactory> | null = codec !== 'zstd' ? null
     : zstdDecoder ? zstdDecoder(onZstdChunk)
+      // The library's typings do not declare its streaming constructor.
+      // ast-grep-ignore: no-unknown-cast
       : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onZstdChunk);
   const snappy = codec === 'snappy' ? createSnappyBlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
 
@@ -136,7 +141,7 @@ export async function streamFile(
 export async function runParse(
   file: FileSource,
   state: ParserState,
-  { emit = (msg: unknown) => self.postMessage(msg), chunkSize = CHUNK_SIZE, zstdDecoder }: RunOpts = {},
+  { emit = (msg: ParserMessage) => self.postMessage(msg), chunkSize = CHUNK_SIZE, zstdDecoder }: RunOpts = {},
 ): Promise<void> {
   if (file.size === 0) {
     emit({ type: 'error', message: 'File is empty.' });
@@ -201,7 +206,7 @@ export async function runParse(
 export async function runParseFiles(
   files: FileSource[],
   state: ParserState,
-  { emit = (msg: unknown) => self.postMessage(msg), chunkSize = CHUNK_SIZE, zstdDecoder }: RunOpts = {},
+  { emit = (msg: ParserMessage) => self.postMessage(msg), chunkSize = CHUNK_SIZE, zstdDecoder }: RunOpts = {},
 ): Promise<void> {
   if (files.length === 0) {
     emit({ type: 'error', message: 'Rolling event-log directory contained no event files.' });
@@ -275,6 +280,8 @@ if (isWorker) {
   // path (runParseFromUrl) keeps in-thread fzstd.
   const zstdDecoder = createWorkerZstdDecoders(
     () => new Worker(new URL('./zstd-worker.js', import.meta.url), { type: 'module' }),
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     (onChunk) => new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk),
     { onFallback: (reason) => console.warn(`zstd: decompressing on the parse worker: ${reason}`) },
   );

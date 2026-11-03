@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { toFindingsFilter } from '@sparkforensics/core/evidence-report.ts';
-import { countHiddenNotes, DEFAULT_MIN_BAND } from '@sparkforensics/core/finding-filter-predicate.ts';
-import { IMPACT_BAND_ORDER, IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { toFindingsFilter } from '@sparkforensics/core/analysis';
+import { countHiddenNotes, DEFAULT_MIN_BAND, IMPACT_BAND_ORDER, IMPACT_BANDS } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
 
 const ofBand = (impactBand: Finding['impactBand']) => ({ type: 'gc', stageId: 1, impactBand }) as Finding;

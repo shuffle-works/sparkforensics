@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { JobFailures } from '@/view/widgets/JobFailures';
-import type { AppModel, Finding, FindingOf } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 

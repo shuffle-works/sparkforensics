@@ -1,0 +1,14 @@
+id: no-unknown-cast
+language: tsx
+severity: error
+message: A core value is cast through unknown.
+note: |
+  A cast through unknown bridges two shapes the compiler cannot relate, so a renamed or never-set
+  field compiles and the code that reads it goes quiet or computes NaN. Make the types meet: Pick
+  the fields you need, narrow with a guard, or type the producer. A cast that cannot go away (an
+  untyped library constructor, a global scope) carries an `ast-grep-ignore: no-unknown-cast`
+  comment on the line above it, under a comment that says why.
+rule:
+  pattern: $VALUE as unknown as $TYPE
+files:
+  - packages/core/src/**

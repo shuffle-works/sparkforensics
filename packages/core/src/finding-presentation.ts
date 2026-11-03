@@ -56,7 +56,7 @@ function groupThousands(n: number): string {
   return Number.isSafeInteger(n) ? String(n).replace(/\B(?=(\d{3})+$)/g, ',') : n.toLocaleString('en-US');
 }
 
-// Whether the detector found `key` already logged on for this run. Its switchFix (detectors.ts)
+// Whether the detector found `key` already logged on for this run. Its switchFix (detectors/fixes.ts)
 // then worded the row's own text for that case and left the property out of the remediation, so
 // a generic line reads the same decision and never recommends a switch the row says is on.
 // A finding with no remediation (older or hand-built data) keeps the property wording.
@@ -501,7 +501,7 @@ const PRESENTATION_ROWS = {
     pitch: 'A cached dataset does not fit in memory or spills to disk.',
     region: 'reference',
     thresholdSummary: () => 'cached partitions evicted or spilled to disk',
-    actionLabel: (f) => (f.dataUnavailable ? 'Enable block-update logging' : 'Increase cache memory'),
+    actionLabel: (f) => (f.variant === 'storageUnobserved' ? 'Enable block-update logging' : 'Increase cache memory'),
     genericRecommendation(f) {
       switch (f.variant) {
         case 'partialCache': return 'Increase executor memory or reduce the cached dataset size so more of it stays cached.';
@@ -640,3 +640,71 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
 export function presentationOf(type: string): FindingPresentation<FindingType> | undefined {
   return (FINDING_PRESENTATION as Readonly<Record<string, FindingPresentation<FindingType>>>)[type];
 }
+
+// The metrics findings report, declared once with the unit of each one's `value`. A detector can
+// only name a metric from this table, and the formatter reads the unit by that typed key, so a
+// metric without a unit does not compile.
+//
+// 'text' metrics carry `valueText` instead of `value`; 'none' metrics carry neither (the finding
+// says its data is unavailable). Neither has a magnitude to show.
+export type MetricUnit =
+  | 'bytes' | 'ms' | 'seconds' | 'minutes' | 'mbSeconds' | 'ratio' | 'pct' | 'pctFraction' | 'count' | 'text' | 'none';
+
+export const METRICS = {
+  // bytes
+  shuffleReadBytes: 'bytes', memoryBytesSpilled: 'bytes', shuffleReadMax: 'bytes',
+  avgFileSizeBytes: 'bytes', smallerSideBytes: 'bytes', broadcastBytes: 'bytes',
+  dataSentBytes: 'bytes', bytesRead: 'bytes', shuffleBytes: 'bytes',
+  // durations
+  speculationWasteMs: 'ms', retryWasteMs: 'ms', taskDurationP50: 'ms',
+  startupGapSeconds: 'seconds',
+  stageDurationMinutes: 'minutes',
+  wastedMBSeconds: 'mbSeconds',
+  // multiples of a median
+  'P95/median': 'ratio', 'max/median': 'ratio', pRatio: 'ratio', oiRatio: 'ratio',
+  hostMeanRatio: 'ratio', execMaxMedianRatio: 'ratio',
+  // percentages on a 0-100 scale
+  gcPct: 'pct', failureRate: 'pct', stragglerShare: 'pct', jobFailureRate: 'pct',
+  cachedRatio: 'pct', diskRatio: 'pct', avgUtilization: 'pct', idleCoreRate: 'pct',
+  heapUsedRatio: 'pct', nonLocalRatio: 'pct', shortLivedExecutorPct: 'pct',
+  // fractions on a 0-1 scale
+  hostDurationShare: 'pctFraction', taskStageSkew: 'pctFraction',
+  // counts
+  taskCount: 'count', speculativeTasks: 'count', subtreeOccurrences: 'count',
+  persistedRdds: 'count', rightSizedCores: 'count', executionReuse: 'count',
+  outputRows: 'count', rewrittenRows: 'count', filesKept: 'count',
+  // no magnitude
+  stageFailureReason: 'text', applicationEnd: 'text', config: 'text',
+  memoryBand: 'none',
+} as const satisfies Record<string, MetricUnit>;
+
+export type MetricName = keyof typeof METRICS;
+
+export function metricUnit(metric: MetricName): MetricUnit {
+  return METRICS[metric];
+}
+
+// Finding type -> ALL-CAPS board tag, derived from FINDING_PRESENTATION. Every widget that renders
+// a catalog entry's tag outside its own card (e.g. Bottleneck Alerts) reads it through typeTag.
+// Exported so doc-sync checks can enumerate every tag. Read by free-form type string.
+export const TYPE_TAG_MAP: Readonly<Record<string, string>> = Object.fromEntries(
+  (Object.keys(FINDING_PRESENTATION) as FindingType[]).map((type) => [type, FINDING_PRESENTATION[type].tag]),
+);
+
+export function typeTag(type: string): string {
+  return TYPE_TAG_MAP[type] ?? type.toUpperCase();
+}
+
+// Human-readable tooltips for the terse spill-classification badges (skew | vol | ?), surfaced via
+// title=. Kept domain-agnostic (Spark-internal terms only).
+export const SPILL_CLASS_TITLE = {
+  skew: 'Skew spill: a few heavy tasks spill while most do not; rebalance partitioning',
+  volume: 'Volume spill: most tasks spill because data exceeds memory; add partitions',
+  unclassified: 'Spill cause could not be classified',
+};
+
+// Short badge text, kept distinct from the long-form SPILL_CLASS_TITLE tooltip. Shared by
+// Spill.tsx's per-row badge and StageTable.tsx's spill-column cell.
+export const SPILL_CLASS_SHORT: Record<keyof typeof SPILL_CLASS_TITLE, string> = {
+  skew: 'skew', volume: 'vol', unclassified: '?',
+};

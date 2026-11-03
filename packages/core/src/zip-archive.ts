@@ -144,6 +144,8 @@ export async function streamZipEntry(
 
   const pending: Uint8Array[] = [];
   let inflateError: Error | null = null;
+  // The library's typings do not declare its streaming constructor.
+  // ast-grep-ignore: no-unknown-cast
   const inflater = entry.compression === 8 ? new (UnzipInflate as unknown as ZipEntryInflaterCtor)() : null;
   if (inflater) {
     inflater.ondata = (err, data) => {

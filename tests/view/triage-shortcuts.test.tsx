@@ -9,7 +9,7 @@ import { store, emptyAppModel, selectAppModel, selectCatalog, selectConfigFindin
 import { buildBoardLayout } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';
 import { interpretationOf } from '@/view/interpretation';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { runState } from './_shared/run';
 import { exampleRuns, loadExampleRun } from './_shared/detector-examples';
 

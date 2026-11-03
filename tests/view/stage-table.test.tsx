@@ -9,10 +9,9 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { StageTable } from '@/view/widgets/StageTable';
-import { SPILL_CLASS_SHORT } from '@sparkforensics/core/format-utils.ts';
-import { FINDING_PRESENTATION } from '@sparkforensics/core/finding-presentation.ts';
+import { SPILL_CLASS_SHORT, FINDING_PRESENTATION } from '@sparkforensics/core/view-model';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 
@@ -251,7 +250,7 @@ describe('StageTable', () => {
     const catalog: Finding[] = [
       { type: 'spill', stageId: 1, impactBand: 'warning' },
       { type: 'gc', stageId: 1, impactBand: 'warning' },
-      { type: 'slowHost', stageId: 1, impactBand: 'critical' },
+      testFinding({ type: 'slowHost', stageId: 1, impactBand: 'critical' }),
     ];
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);

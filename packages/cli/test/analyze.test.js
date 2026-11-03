@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync, symlinkSync, existsSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
-import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
-import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
-import { buildEvidenceReport, toFindingsFilter } from '@sparkforensics/core/evidence-report.ts';
+import { collectRun } from '@sparkforensics/core/cli';
+import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
+import { buildEvidenceReport, toFindingsFilter } from '@sparkforensics/core/analysis';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 // tests/helpers/ stays at the repo root because packages/core/test/mcp-tools.test.js
 // shares this same fixture helper.

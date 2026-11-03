@@ -3,14 +3,15 @@ import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Scorecard } from '../../src/view/widgets/Scorecard';
 import { store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
+import { testApp, testStage } from './_shared/model';
 import { makeRun } from './_shared/run';
 import { testFinding } from './_shared/finding';
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   return {
     app: { startTime: 0, endTime: 60000, sparkVersion: '3.5.3' },
-    stages: new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000 }]]),
+    stages: new Map([[0, testStage({ id: 0, submittedAt: 0, completedAt: 1000 })]]),
     executors: { added: [], removed: [] },
     sql: new Map(),
     jobs: new Map(),
@@ -83,7 +84,7 @@ test.each([
 
 test('renders an Unused core time tile driven by computeEfficiencyModel when runAggregates is present, with a tier-appropriate caption', () => {
   const appModel = makeAppModel({
-    app: { startTime: 0, endTime: 60000, sparkVersion: '3.5.3', resources: { executor: { cores: 2 } } },
+    app: testApp({ startTime: 0, endTime: 60000, sparkVersion: '3.5.3', resources: { executor: { cores: 2 } } }),
     executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 2, resourceProfileId: null }], removed: [] },
     runAggregates: { busyCoreMs: 10, perStage: { 0: { totalTaskDurationSum: 10, taskCount: 1 } } },
   });

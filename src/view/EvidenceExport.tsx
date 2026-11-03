@@ -12,8 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { selectAppModel, useStore } from '@/store/store';
-import { buildEvidenceReport, toFindingsFilter } from '@sparkforensics/core/evidence-report.ts';
-import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/html-export.ts';
+import { buildEvidenceReport, buildHtmlExportData, encodeRunPayload, toFindingsFilter } from '@sparkforensics/core/analysis';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
 import { CORE_BUILD_ID, WEB_PRODUCER } from '@/build-info';
 

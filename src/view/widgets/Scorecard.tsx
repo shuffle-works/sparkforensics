@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { RunInterpretation, ScorecardFlag } from '@sparkforensics/core/run-interpretation.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { RunInterpretation, ScorecardFlag } from '@sparkforensics/core/analysis';
 import { IMPACT_BG_CLASS, ImpactDot } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
 

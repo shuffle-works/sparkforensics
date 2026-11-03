@@ -10,7 +10,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { Skew } from '@/view/widgets/Skew';
 import { store } from '@/store/store';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';
@@ -50,7 +50,7 @@ function slowHostFinding(
   hostTaskShare: number,
   impactBand: Finding['impactBand'] = 'warning',
 ): Finding {
-  return {
+  return testFinding({
     type: 'slowHost',
     stageId,
     impactBand,
@@ -59,7 +59,7 @@ function slowHostFinding(
     host,
     hostTaskShare,
     recommendation: 'r',
-  };
+  });
 }
 
 function stragglerFinding(
@@ -202,7 +202,7 @@ describe('Skew', () => {
 
   it('renders nothing when the catalog has no skew findings', () => {
     const appModel = makeAppModel([1]);
-    const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', metric: 'bytes', value: 1 }];
+    const catalog: Finding[] = [{ type: 'shuffle', stageId: 1, impactBand: 'warning', metric: 'shuffleReadBytes', value: 1 }];
     const getTaskData = vi.fn(async () => TASK_DATA);
 
     const { container } = render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);

@@ -5,6 +5,10 @@ that the sidebar nests beneath them. Start with the two-actor overview, then
 the worker protocol, state and History Server intake, the detector contract,
 impact estimation, widget rendering, the board's widgets and the drill-downs.
 
+Core is reached through named entry points (`analysis`, `view-model`, `export`,
+`types`, `browser`, `cli`, `mcp`, `node`); see
+[Core entry points](../development-setup.md#core-entry-points).
+
 Where to start:
 
 - [Two actors](./overview.md#two-actors): the parser worker and the view, and why

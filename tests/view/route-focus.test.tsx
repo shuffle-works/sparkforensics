@@ -7,7 +7,7 @@ import { ExportApp } from '@/export/ExportApp';
 import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
 import { buildBoardLayout, resolveRoute } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';
-import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BANDS } from '@sparkforensics/core/view-model';
 import { interpretationOf } from '@/view/interpretation';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 import { examples, exampleRuns, loadExampleRun } from './_shared/detector-examples';

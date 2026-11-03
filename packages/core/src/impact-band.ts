@@ -4,7 +4,7 @@ import { runTiming } from './run-timing.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
 
 // The run-wide noise floor, as a share of the run's duration, that grades every wall-clock
-// estimate. skew and straggler default their firing floors to these same figures (detectors.ts), so
+// estimate. skew and straggler default their firing floors to these same figures (detectors/speed-tasks.ts), so
 // a finding they admit grades at least warning here. Source status: threshold-tables.md.
 export const IMPACT_FLOOR_PCT_WARN = 0.005;
 export const IMPACT_FLOOR_PCT_CRIT = 0.02;

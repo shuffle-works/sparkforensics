@@ -1,6 +1,5 @@
-import { formatBytes, formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
-import { isCaveat } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { AppModel, FindingOf } from '@sparkforensics/core/types.ts';
+import { formatBytes, formatMetricValue, IMPACT_BAND_ORDER, numericValue, isCaveat } from '@sparkforensics/core/view-model';
+import type { AppModel, FindingOf } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 
@@ -25,14 +24,7 @@ export interface RddInfoRow {
   diskSize?: number;
 }
 
-// `appModel.app` carries a runtime `rddInfo` Map not on the frozen `SparkAppInfo` type; bridged with
-// a single cast.
-interface AppWithRddInfo {
-  rddInfo?: Map<number, RddInfoRow>;
-}
-
-export const rddInfoOf = (appModel: AppModel): Map<number, RddInfoRow> | undefined =>
-  (appModel.app as unknown as AppWithRddInfo | null)?.rddInfo;
+export const rddInfoOf = (appModel: AppModel): Map<number, RddInfoRow> | undefined => appModel.app?.rddInfo;
 
 /** The RDDs with cached partitions in memory or on disk, largest first. */
 export const cachedRdds = (rddInfo: Map<number, RddInfoRow> | undefined): RddInfoRow[] => rddInfo
@@ -77,7 +69,7 @@ export const cacheRows: RowsOf<'cacheUtilization', CacheRow> = ({ findings, stat
       finding,
       caveat,
       stated: isStated(finding, stated),
-      label: caveat ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`,
+      label: finding.variant === 'storageUnobserved' ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`,
       detail,
     }];
   });

@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import { Bar, BarChart, DefaultLegendContent, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { WallClockData } from '@sparkforensics/core/run-interpretation.ts';
+import { formatDuration } from '@sparkforensics/core/view-model';
+import type { WallClockData } from '@sparkforensics/core/analysis';
 import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';

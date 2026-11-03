@@ -8,6 +8,7 @@ import { ShsProxyErrorBodySchema } from './shs-schemas.ts';
 import { naturalCompare, reassembleRollingEntries } from './rolling-log-reassembly.ts';
 import { listZipEntries, streamZipEntry, type ZipEntry, type ZipSource } from './zip-archive.ts';
 import type { ZstdDecoderFactory } from './parser-worker.ts';
+import type { ParserEmit, ParserMessage } from './parser-messages.ts';
 
 export { naturalCompare, reassembleRollingEntries };
 
@@ -50,10 +51,14 @@ function openCodecSink(
     return { push(chunk, final) { lz4.push(chunk); if (final) lz4.end(); } };
   }
   if (codec === 'gz' || name.endsWith('.gz')) {
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     const gunzip = new (Gunzip as unknown as StreamingDecoderCtor)(onChunk);
     return { push: (chunk, final) => gunzip.push(chunk, final) };
   }
   if (codec === 'zstd' || name.endsWith('.zstd') || name.endsWith('.zst')) {
+    // The library's typings do not declare its streaming constructor.
+    // ast-grep-ignore: no-unknown-cast
     const zstd = zstdDecoder ? zstdDecoder(onChunk) : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);
     return { push: (chunk, final) => zstd.push(chunk, final), cancel: () => (zstd as { cancel?(): void }).cancel?.() };
   }
@@ -100,7 +105,7 @@ function createEntryDecoder(name: string, onChunk: (chunk: Uint8Array) => void, 
   };
 }
 
-type EmitFn = (msg: unknown) => void;
+type EmitFn = ParserEmit;
 
 function emitShsError(emit: EmitFn, code: string, message?: string): void {
   emit({ type: 'error', source: 'shs', code, ...(message ? { message } : {}) });
@@ -109,7 +114,7 @@ function emitShsError(emit: EmitFn, code: string, message?: string): void {
 export async function runParseFromUrl(
   request: unknown,
   state: ParserState,
-  { fetchImpl = fetch, emit = (msg: unknown) => self.postMessage(msg) }: { fetchImpl?: typeof fetch; emit?: EmitFn } = {}
+  { fetchImpl = fetch, emit = (msg: ParserMessage) => self.postMessage(msg) }: { fetchImpl?: typeof fetch; emit?: EmitFn } = {}
 ): Promise<void> {
   // buildProxyRequestUrl is untyped JS; `request`'s real shape isn't pinned here.
   const url = buildProxyRequestUrl(request as Parameters<typeof buildProxyRequestUrl>[0]);

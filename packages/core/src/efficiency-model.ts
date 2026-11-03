@@ -7,7 +7,7 @@ import type { RunAggregates } from './types.ts';
 
 // Structural inputs, so a detector's narrower event and app shapes qualify too.
 export function computeEfficiencyModel({ app, stages, executorsAdded, executorsRemoved, runAggregates }: {
-  app: (AllocationInput['app'] & { resources?: { executor?: { cores?: number } } }) | null;
+  app: (AllocationInput['app'] & { resources?: { executor?: { cores?: number | null } } }) | null;
   stages: Map<number, { submittedAt?: number; completedAt?: number }>;
   executorsAdded: AllocationInput['executors']['added'];
   executorsRemoved: AllocationInput['executors']['removed'];

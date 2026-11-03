@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { Topbar } from '@/view/Topbar';
 import { store } from '@/store/store';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import type { SerializedRun } from '@sparkforensics/core/run-serialization.ts';
+import type { SerializedRun } from '@sparkforensics/core/export';
 
 const renderTopbar = () =>
   render(

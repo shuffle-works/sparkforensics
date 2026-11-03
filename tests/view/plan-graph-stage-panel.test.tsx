@@ -8,7 +8,7 @@ import { DocsProvider } from '@/view/DocsContext';
 import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 import { installInterpretation } from './_shared/interpretation';
 

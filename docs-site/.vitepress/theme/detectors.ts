@@ -35,9 +35,10 @@ export function siteHref(path: string): string {
 }
 
 /** The frame source for a type's example: the example app (docs-widget.html, built by
- * `npm run build:docs-widget`) reads `?type` to pick the finding and its run. */
-export function exampleFrameSrc(type: string): string {
-  return withBase(`/detector-widget/app/docs-widget.html?type=${type}`);
+ * `npm run build:docs-widget`) reads `?type` to pick the finding and its run, and `?theme` for
+ * its first theme. */
+export function exampleFrameSrc(type: string, theme: 'light' | 'dark'): string {
+  return withBase(`/detector-widget/app/docs-widget.html?type=${type}&theme=${theme}`);
 }
 
 /** The dashboard words a finding name in lowercase; headings and cards start it with a capital. */

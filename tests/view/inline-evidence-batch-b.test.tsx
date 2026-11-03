@@ -17,7 +17,7 @@ import { RetryWaste } from '@/view/widgets/RetryWaste';
 import { RightSizing } from '@/view/widgets/RightSizing';
 import { StageFailed } from '@/view/widgets/StageFailed';
 import { TaskFailures } from '@/view/widgets/TaskFailures';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { keptRows } from './_shared/evidence-panel';
 import { testFinding } from './_shared/finding';

@@ -4,9 +4,8 @@ import { NODE_WIDTH, NODE_HEIGHT } from '@/view/plan-graph/dagre-layout';
 import { ImpactDot, IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { heatBand } from '@/view/plan-graph/plan-graph-heat';
-import { typeTag } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
-import type { Finding, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import { typeTag, findingActionLabel } from '@sparkforensics/core/view-model';
+import type { Finding, PlanGraphNodeData } from '@sparkforensics/core/types';
 
 export const CATEGORY_ICON: Record<string, string> = {
   scan: '⇩', exchange: '⇄', join: '⋈', aggregate: 'Σ', sort: '↕',

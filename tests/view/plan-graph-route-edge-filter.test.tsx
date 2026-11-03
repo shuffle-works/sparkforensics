@@ -7,7 +7,7 @@ import { StageDetailProvider } from '@/view/StageDetailContext';
 import { collapseHiddenEdges, PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { emptyAppModel, store } from '@/store/store';
 import type { ReactElement } from 'react';
-import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
+import type { PlanGraphModel } from '@sparkforensics/core/types';
 
 function renderRoute(ui: ReactElement) {
   return render(

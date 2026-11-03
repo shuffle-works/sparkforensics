@@ -9,27 +9,21 @@ const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
 
 // Core loading (vendor-core/ vs core/src): docs-site/contributor-guide/development-setup.md, "Generated and vendored files".
-async function loadVendoredHelper() {
-  const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
-  const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
-  return import(pathToFileURL(helperPath).href);
-}
-
-async function loadCoreModule(moduleName) {
-  const { loadVendored } = await loadVendoredHelper();
-  return loadVendored(pkgDir, moduleName);
-}
+const srcBootstrap = join(pkgDir, '..', 'core', 'src', 'load-node-core.js');
+const bootstrapPath = existsSync(srcBootstrap) ? srcBootstrap : join(pkgDir, 'vendor-core', 'load-node-core.js');
+const { loadNodeCore } = await import(pathToFileURL(bootstrapPath).href);
+const { core, buildId: coreBuildId } = await loadNodeCore(pkgDir);
+const { loadThresholdOverrides, loadMcpServerFactory } = /** @type {typeof import('../../core/src/node.ts')} */ (core);
 
 // The provenance stamp every report carries: this package's name and version, and the build id of
 // the core it loaded (vendor-core/'s stamp or core/src's hash). It is also the handshake version.
-async function generatorInfo() {
+function generatorInfo() {
   const { name, version } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
-  const { coreBuildId } = await loadVendoredHelper();
-  return { name, version, buildId: coreBuildId(pkgDir) };
+  return { name, version, buildId: coreBuildId };
 }
 
 async function loadCreateMcpServer() {
-  return (await loadCoreModule('mcp-server-factory')).createMcpServer;
+  return (await loadMcpServerFactory()).createMcpServer;
 }
 
 // Tool names come from the server the bin actually builds, so --help can't drift
@@ -80,7 +74,7 @@ async function main() {
   if (values.thresholds !== undefined) {
     // Refuse to start rather than serve default-threshold results the user meant to change.
     try {
-      thresholds = (await loadCoreModule('cli/threshold-config')).loadThresholdOverrides(values.thresholds);
+      thresholds = loadThresholdOverrides(values.thresholds);
     } catch (e) {
       process.stderr.write(`--thresholds: ${e.message}\n`);
       process.exitCode = 2;
@@ -89,7 +83,7 @@ async function main() {
   }
   const createMcpServer = await loadCreateMcpServer();
   const defaultShsBaseUrl = values['shs-base-url'] ?? process.env.SPARKFORENSICS_SHS_BASE_URL;
-  const server = createMcpServer({ thresholds, generator: await generatorInfo(), defaultShsBaseUrl });
+  const server = createMcpServer({ thresholds, generator: generatorInfo(), defaultShsBaseUrl });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

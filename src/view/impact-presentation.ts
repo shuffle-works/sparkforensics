@@ -1,5 +1,5 @@
-import { runTiming } from '@sparkforensics/core/run-timing.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { runTiming } from '@sparkforensics/core/view-model';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 /** The share of the run a finding's wall-clock saving could recover (the same
  * optimistic figure the impact band grades), or null when the finding has no

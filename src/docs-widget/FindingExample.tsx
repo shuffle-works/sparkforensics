@@ -1,12 +1,12 @@
 import { useLayoutEffect, useMemo, type ReactNode } from 'react';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { Table, TableBody } from '@/components/ui/table';
 import { selectAppModel, selectCatalog, selectConfigFindings, store, useStore, useWidgetDensity } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { buildBoardLayout, evidencePanelOf, rowEvidence } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';
-import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BANDS } from '@sparkforensics/core/view-model';
 import { StepCodesShownContext } from '@/view/StepCode';
 import { InlineEvidence } from '@/view/InlineEvidence';
 import { evidencePlacement } from '@/view/evidence-placement';

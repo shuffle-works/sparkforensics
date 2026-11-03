@@ -3,10 +3,10 @@
 // finding type's own composition of these lives on its DETECTORS entry, next to its detect().
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, SqlExecution, Stage } from './types.ts';
 import { isPythonStage } from './python-stage.ts';
-import { nsToMs } from './format-utils.ts';
+import { nsToMs } from './units.ts';
 import {
   estimateSingleStage, estimateMultiStage,
-  type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
+  type SingleStageEstimateOptions, type StageOccupancyInfo,
 } from './occupancy.ts';
 
 /** What every estimate() is handed: built once per analyze(), and the same object detect() gates
@@ -182,7 +182,7 @@ export function singleStageImpact(
   rawWaste?: RawWasteFigure,
   opts?: SingleStageEstimateOptions,
 ): ImpactEstimate {
-  const est = estimateSingleStage(wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy, opts);
+  const est = estimateSingleStage(wasteMs, stageId, ctx.stages, ctx.occupancy, opts);
   if (est) return { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste };
   return costOnly(estimateMethod, rawWaste); // stage excluded from the sweep (duration <= 0)
 }
@@ -196,7 +196,7 @@ export function multiStageImpact(
   estimateMethod: ImpactEstimateMethod,
   rawWaste?: RawWasteFigure,
 ): ImpactEstimate | null {
-  const est = estimateMultiStage(stageIds, wasteMsByStage, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy);
+  const est = estimateMultiStage(stageIds, wasteMsByStage, ctx.stages, ctx.occupancy);
   return est ? { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste } : null;
 }
 

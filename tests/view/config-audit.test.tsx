@@ -5,11 +5,12 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { ConfigAudit } from '@/view/widgets/ConfigAudit';
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
-import type { AppModel, Stage } from '@sparkforensics/core/types.ts';
+import { auditConfig } from '@sparkforensics/core/analysis';
+import type { AppModel } from '@sparkforensics/core/types';
+import { testApp, testStage } from './_shared/model';
 
 // One stage outside any SQL execution, so the serializer check applies.
-const RDD_STAGES = new Map([[1, { id: 1 } as Stage]]);
+const RDD_STAGES = new Map([[1, testStage({ id: 1 })]]);
 
 function buildAppModel(app: AppModel['app'], ledger?: AppModel['evidenceAvailability']): AppModel {
   return { ...emptyAppModel(), app, evidenceAvailability: ledger ?? null };
@@ -32,10 +33,10 @@ test('renders the WidgetCard heading and every triggered config warning, not jus
   // Two triggered findings: unbounded maxExecutors and missing-serializer (both info).
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   expect(screen.getByRole('heading', { name: /config audit/i })).toBeInTheDocument();
 
@@ -54,10 +55,10 @@ test('renders the WidgetCard heading and every triggered config warning, not jus
 
 test('renders nothing when config was captured but nothing is misconfigured', () => {
   // Kryo configured (avoids the serializer finding); allocation/overhead checks short-circuit with no resources.
-  const model = buildAppModel({
+  const model = buildAppModel(testApp({
     config: { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
     resources: {},
-  });
+  }));
 
   const { container } = renderWidget(model.app);
 
@@ -74,7 +75,7 @@ test('renders nothing when the ledger says sparkConfiguration was not emitted', 
       summary: 'Not emitted by this event log.',
     }],
   };
-  const model = buildAppModel({
+  const model = buildAppModel(testApp({
     config: { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
     resources: {},
     evidenceInputs: {
@@ -87,7 +88,7 @@ test('renders nothing when the ledger says sparkConfiguration was not emitted', 
       executorMetricRows: 0,
       taskRecords: 0,
     },
-  }, ledger);
+  }), ledger);
 
   const basic = renderWidget(model.app, ledger);
   expect(basic.container).toBeEmptyDOMElement();
@@ -109,7 +110,7 @@ test('renders nothing when the ledger cannot trust an incomplete parse', () => {
       summary: 'Cannot determine from an incomplete parse.',
     }],
   };
-  const model = buildAppModel({
+  const model = buildAppModel(testApp({
     config: { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
     resources: {},
     evidenceInputs: {
@@ -122,7 +123,7 @@ test('renders nothing when the ledger cannot trust an incomplete parse', () => {
       executorMetricRows: 0,
       taskRecords: 0,
     },
-  }, ledger);
+  }), ledger);
 
   const basic = renderWidget(model.app, ledger);
   expect(basic.container).toBeEmptyDOMElement();
@@ -140,10 +141,10 @@ test('renders a doc link naming the property it explains, for every triggered pr
   // recommendation (and its doc link) sit behind a per-row toggle that
   // defaults to expanded, so both are visible without any click.
   const user = userEvent.setup();
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   // Expand the card to see the findings
   const collapseButton = screen.getByRole('button', { name: /config audit/i });
@@ -163,10 +164,10 @@ test('renders a doc link naming the property it explains, for every triggered pr
 
 test('each row shows what it measured and the card states its fix once, with no toggle', async () => {
   const user = userEvent.setup();
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   // Expand the card to see the findings
   const collapseButton = screen.getByRole('button', { name: /config audit/i });
@@ -182,20 +183,20 @@ test('each row shows what it measured and the card states its fix once, with no 
 });
 
 test('renders no impact-estimate element for its informational-only findings', async () => {
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   expect(screen.queryByText(/Est\./)).not.toBeInTheDocument();
   expect(document.querySelector('.impact-estimate')).not.toBeInTheDocument();
 });
 
 test('does not leak domain-specific copy', () => {
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   const text = document.body.textContent ?? '';
   expect(text).not.toMatch(/scanntech|retail|cpg/i);
@@ -203,10 +204,10 @@ test('does not leak domain-specific copy', () => {
 
 test('card defaults collapsed with summary; the current-value chip renders unconditionally', () => {
   // Two findings: unbounded maxExecutors and missing-serializer (both info)
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   // Card should default collapsed with summary showing count
   expect(screen.getByText('2')).toBeInTheDocument();
@@ -220,10 +221,10 @@ test('card defaults collapsed with summary; the current-value chip renders uncon
 test('the evidence marker stays out of the summary view until the card is expanded', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
 
   expect(screen.queryByRole('button', { name: /evidence:/i })).not.toBeInTheDocument();
 
@@ -234,17 +235,17 @@ test('the evidence marker stays out of the summary view until the card is expand
 
 test('the header CFG pill links to the sub-check section when every finding shares one', () => {
   // Kryo set, so only the unbounded-maxExecutors check fires.
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
   expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/tuning-reference/config.html#config-autoscale-bounds');
 });
 
 test('the header CFG pill falls back to the guide entry when findings span several sub-checks', () => {
-  renderWidget({
+  renderWidget(testApp({
     config: { 'spark.app.name': 'demo' },
     resources: { dynamicAllocationEnabled: true },
-  });
+  }));
   expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/user-guide/understanding-findings.html#cfg');
 });

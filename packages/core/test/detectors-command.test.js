@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDetectorCatalog } from '../src/detector-catalog.js';
+import { buildDetectorCatalog } from '../src/detector-listing.js';
 import { DETECTORS_USAGE, runDetectorsCommand } from '../src/cli/detectors-command.js';
 
 const types = (result) => JSON.parse(result.stdout).detectors.map((r) => r.type);

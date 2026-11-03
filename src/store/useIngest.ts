@@ -1,14 +1,10 @@
 import { useCallback } from 'react';
-import { createIngestClient } from '@sparkforensics/core/ingest.ts';
-import { createModelCallbacks } from '@sparkforensics/core/model-assembler.ts';
-import { analyzeRun } from '@sparkforensics/core/analyzed-run.ts';
-import { comparedRun } from '@sparkforensics/core/compared-run.ts';
-import { deserializeRun, serializeRun } from '@sparkforensics/core/run-serialization.ts';
-import { runLabel } from '@sparkforensics/core/format-utils.ts';
-import * as recentFiles from '@sparkforensics/core/recent-files.ts';
-import { isShsErrorCode } from '@sparkforensics/core/shs-request.js';
+import { createIngestClient, createModelCallbacks, analyzeRun, comparedRun, isShsErrorCode } from '@sparkforensics/core/analysis';
+import { deserializeRun, serializeRun } from '@sparkforensics/core/export';
+import { runLabel } from './run-label';
+import * as recentFiles from '@sparkforensics/core/browser';
 import { emptyAppModel, snapshotOf, store } from './store';
-import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, TaskData } from '@sparkforensics/core/types';
 
 interface Opts { makeClient?: () => ReturnType<typeof createIngestClient>; }
 
@@ -146,12 +142,12 @@ export function useIngest(opts: Opts = {}) {
     // The load owns the model it builds; the store receives the run only once it is analyzed.
     const parsed = emptyAppModel();
     return createModelCallbacks(parsed, {
-      onProgress: (p: any) =>
-        store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
+      onProgress: (p) =>
+        store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed, etaMs: null }),
       onDone: () => { void runDone(parsed, client); },
-      onError: (e: any) => {
+      onError: (e) => {
         if (onError) onError(e);
-        else store.getState().setError(String(e?.message ?? e));
+        else store.getState().setError(String(e.message ?? e));
       },
     });
   }, [make, runDone]);
@@ -319,13 +315,13 @@ export function useIngest(opts: Opts = {}) {
         }
         const parsed = emptyAppModel();
         const cb = createModelCallbacks(parsed, {
-          onProgress: (p: any) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
+          onProgress: (p) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed, etaMs: null }),
           // A throw here (snapshotting, or opening the comparison) would otherwise leave the
           // "Parsing run N of 2" screen up forever.
           onDone: () => {
             try { onDone(parsed); } catch (e) { abort(which, e); }
           },
-          onError: (e: any) => abort(which, e),
+          onError: (e) => abort(which, e),
         });
         resolved.start(cb);
       } catch (e) {

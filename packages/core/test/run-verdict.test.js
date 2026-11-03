@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, compareFindingRank, FINDING_DISPLAY_ORDER, isRankable, locationKey, rankBySavings,
 } from '../src/run-verdict.ts';
-import { compareImpactBand, IMPACT_BANDS } from '../src/format-utils.ts';
+import { compareImpactBand, IMPACT_BANDS } from '../src/impact-band-order.ts';
 import { trimmedRecommendation } from '../src/finding-names.ts';
 import { isActionable } from '../src/recommendation-rollup.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';

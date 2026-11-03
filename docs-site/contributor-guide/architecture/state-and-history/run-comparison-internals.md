@@ -18,7 +18,7 @@ already-parsed snapshots, with no worker involved.
   Exchange stages) don't collapse onto one identity; it falls back to a
   bottom-up structural fingerprint of the whole resolved `planTree`
   (`planTreeIdentity`, `normalizeDetail`-normalized: the same normalizer
-  `cachingOpportunity` uses in `packages/core/src/detectors.ts`) when a stage has no such
+  `cachingOpportunity` uses in `packages/core/src/detectors/plan-shape.ts`) when a stage has no such
   attribution.
   The stage-to-plan mapping itself is `planNodesOfStage` in
   `packages/core/src/stage-plan-nodes.ts`, shared with `isPythonStage`

@@ -2,7 +2,7 @@ import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import type { AppModel, StageId } from '@sparkforensics/core/types.ts';
+import type { AppModel, StageId } from '@sparkforensics/core/types';
 import { resolvePlanTree } from '@/view/plan-tree';
 import { PlanView } from '@/view/widgets/PlanView';
 

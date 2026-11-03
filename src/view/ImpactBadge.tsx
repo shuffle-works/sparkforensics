@@ -2,11 +2,9 @@ import { cva } from 'class-variance-authority';
 import { FileText } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { findingGuideUrl } from '@sparkforensics/core/docs-site-config.ts';
+import { docsUrl, isKnownDocAnchor, findingGuideUrl, typeTag } from '@sparkforensics/core/view-model';
 import { cn } from '@/lib/utils';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
-import { typeTag } from '@sparkforensics/core/format-utils.ts';
+import type { ImpactBand } from '@sparkforensics/core/types';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { tagHelp } from '@/view/finding-tag-help';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';

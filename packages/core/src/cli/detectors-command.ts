@@ -1,8 +1,8 @@
-// `sparkforensics-analyze detectors`: prints the detector catalog (detector-catalog.ts), the same
+// `sparkforensics-analyze detectors`: prints the detector catalog (detector-listing.ts), the same
 // records the `list_detectors` MCP tool returns. Pure: it parses the arguments and returns what the
 // bin should write, so the bin owns stdout, stderr and the exit code.
 import { parseArgs } from 'node:util';
-import { listDetectors, renderDetectorCatalogMarkdown } from '../detector-catalog.ts';
+import { listDetectors, renderDetectorCatalogMarkdown } from '../detector-listing.ts';
 import { FINDING_TYPES } from './flag-values.ts';
 
 export const DETECTORS_USAGE = `Usage: sparkforensics-analyze detectors [options]

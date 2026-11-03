@@ -3,7 +3,8 @@
 // Plan-text parsing is best-effort: unparseable fragments are silently
 // skipped, never thrown.
 
-import { pathBasename, formatBytes, formatDuration } from './format-utils.ts';
+import { pathBasename } from './text-format.ts';
+import { formatBytes, formatDuration } from './units.ts';
 import { attributeStageDurationToPlan, attributeStageDurationToPlanInclusive } from './plan-duration-attribution.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import type { PlanNode, AppModel, SqlExecution, PlanGraphDurationMode } from './types.ts';

@@ -4,7 +4,9 @@ import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+  // '@core-src' is the deep path into core for specs that mock or load one module by file
+  // (the package's exports map lists entry points only).
+  resolve: { alias: { '@': path.resolve(__dirname, 'src'), '@core-src': path.resolve(__dirname, 'packages/core/src') } },
   test: {
     environment: 'node',
     pool: 'threads',

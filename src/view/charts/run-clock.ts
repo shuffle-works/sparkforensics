@@ -1,6 +1,6 @@
 // Pure helpers for the run clock: seconds from app start on a [0, runEndSec]
 // domain, used by the verdict's stage strip.
-import { runTiming } from '@sparkforensics/core/run-timing.ts';
+import { runTiming } from '@sparkforensics/core/view-model';
 
 interface RunTimingSource {
   app?: { startTime?: number | null; endTime?: number | null } | null;

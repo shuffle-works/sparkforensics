@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel } from '@/store/store';
 import { MemoryPressure } from '@/view/widgets/MemoryPressure';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 
 // Fixture matches runtime stage shape (id, not the Stage type's stageId), cast to AppModel['stages'].
 function buildAppModel(stageOverrides: Record<number, Record<string, unknown>> = {}): AppModel {

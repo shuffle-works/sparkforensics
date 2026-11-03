@@ -5,7 +5,7 @@
 import { allocatedCoreMs } from './allocation.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { runTiming } from './run-timing.ts';
-import { MS_PER_CORE_HOUR } from './format-utils.ts';
+import { MS_PER_CORE_HOUR } from './units.ts';
 
 const TOP_N = 5;
 
@@ -36,7 +36,7 @@ interface RunAggregates {
 // pass-through type-checks; real app objects always carry it. An omitted
 // `executorsRemoved` means no executor left.
 export function computeWastedCoreHours(
-  app: { startTime?: number; endTime?: number | null; config?: Record<string, string>; resources?: { executor?: { cores?: number } } } | null,
+  app: { startTime?: number; endTime?: number | null; config?: Record<string, string>; resources?: { executor?: { cores?: number | null } } } | null,
   executorsAdded: Array<{ executorId: string; timestamp: number; totalCores?: number }> | undefined = [],
   runAggregates: RunAggregates | null,
   executorsRemoved: Array<{ executorId: string; timestamp: number }> = [],

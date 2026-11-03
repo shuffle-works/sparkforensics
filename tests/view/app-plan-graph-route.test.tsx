@@ -4,7 +4,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '@/App';
 import { store, emptyAppModel } from '@/store/store';
-import { serializeRun } from '@sparkforensics/core/run-serialization.ts';
+import { serializeRun } from '@sparkforensics/core/export';
 import { clearPlanGraphModelCache } from '@/view/PlanGraphRoute';
 import { testFinding } from './_shared/finding';
 import { makeRun, runState } from './_shared/run';
@@ -25,7 +25,7 @@ const recentFilesMock = vi.hoisted(() => ({
   touch: vi.fn(async () => {}),
 }));
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => recentFilesMock.entries),
   add: vi.fn(async () => ({})),

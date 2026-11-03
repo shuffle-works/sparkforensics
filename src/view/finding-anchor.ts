@@ -1,4 +1,4 @@
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { useBoardLayout } from '@/view/BoardLayoutContext';
 import { useLanding, useRouteFlash } from '@/view/route-landing';
 

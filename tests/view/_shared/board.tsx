@@ -1,12 +1,12 @@
 import { useMemo, type ReactNode } from 'react';
 
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { emptyAppModel, store, useWidgetDensity } from '@/store/store';
 import type { InterpretationState } from '@/view/interpretation';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import { buildBoardLayout, type BoardLayout, type FindingRowLayout, type LayoutCard } from '@/view/board-layout';
 import { emptySelection, type FilterSelection } from '@/view/finding-filter';
-import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BANDS } from '@sparkforensics/core/view-model';
 
 /** A selection that lists every band, as a board handed its findings directly does. */
 const ALL_BANDS: FilterSelection = { ...emptySelection(), impactBands: new Set(IMPACT_BANDS) };

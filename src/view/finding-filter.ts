@@ -1,6 +1,5 @@
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
-import { DEFAULT_IMPACT_BANDS, matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/finding-filter-predicate.ts';
-import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types';
+import { DEFAULT_IMPACT_BANDS, IMPACT_BANDS, matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/view-model';
 
 export interface FilterSelection {
   impactBands: Set<ImpactBand>;

@@ -1,6 +1,5 @@
-import { formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
-import { stragglerCauseSummary } from '@sparkforensics/core/finding-presentation.ts';
-import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
+import { formatMetricValue, IMPACT_BAND_ORDER, numericValue, stragglerCauseSummary } from '@sparkforensics/core/view-model';
+import type { StragglerFinding } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import type { FindingWidgetModel } from '@/view/finding-widget';
 

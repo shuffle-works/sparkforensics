@@ -1,0 +1,7 @@
+id: no-frame-document-access
+valid:
+  - "window.parent.postMessage(message, origin);"
+  - "const doc = document.documentElement;"
+invalid:
+  - "const heading = window.parent.document.querySelector('h1');"
+  - "const body = frame.contentDocument.body;"

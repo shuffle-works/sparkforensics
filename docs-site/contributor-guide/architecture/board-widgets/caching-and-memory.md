@@ -34,7 +34,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
   reused beyond the composite's executions keeps a residual leaf finding for
   just the uncovered executions. Composite identity is structural: an anchor
   plan-shape fingerprint built by `findCompositeCandidates`
-  (`packages/core/src/detectors.ts`; the same shape `computePlanShapes`
+  (`packages/core/src/detectors/plan-shape.ts`; the same shape `computePlanShapes`
   produces with `opts.includeDetail`, computed inline in one bottom-up pass)
   folds the join/union node's own
   normalized `detail` (join type, columns, literals, with expr ids,
@@ -59,7 +59,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
 
 - **Memory Utilization** (tag `MEM`): app-level card combining three
   sub-findings from the `memoryUtilization` DETECTORS entry
-  (`packages/core/src/detectors.ts`): idle-cores rate (busy-core-time from the worker's
+  (`packages/core/src/detectors/cost.ts`): idle-cores rate (busy-core-time from the worker's
   run-aggregates sweep vs. the run's allocated core time, `metrics.allocation.coreHours`), one heap band
   (the highest executor heap peak vs. allocated, from `executorHeapPeaks` in
   `packages/core/src/executor-peaks.ts`: a distinct `dataUnavailable` finding
@@ -75,7 +75,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
   `UTIL`, `ExecutorUtilization.tsx`): a `reference`-region widget in its own
   right that renders only with an active finding.
 - **Cache Utilization** (tag `CSTOR`): app-level card driven by the
-  `cacheUtilization` DETECTORS entry (`packages/core/src/detectors.ts`), evaluating two
+  `cacheUtilization` DETECTORS entry (`packages/core/src/detectors/cost.ts`), evaluating two
   per-RDD proxies over `ctx.app.rddInfo` since Spark event logs carry no
   runtime block-access/read-count data. `rddInfo`'s cache figures come from
   `SparkListenerBlockUpdated` (`recordBlockUpdate` in `event-handlers.ts`,

@@ -1,0 +1,9 @@
+id: no-detectors-value-import
+valid:
+  - "import type { DetectorEntry } from './detectors.ts';"
+  - "import { ENTRY_BY_TYPE } from './detector-catalog.ts';"
+  - "import { stageWallMs } from './detectors/shared.ts';"
+invalid:
+  - "import { DETECTORS } from './detectors.ts';"
+  - "import { ENTRY_BY_TYPE } from '../detectors.js';"
+  - "import { type DetectorEntry, DETECTORS } from './detectors';"

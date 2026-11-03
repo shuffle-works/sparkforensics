@@ -2,10 +2,10 @@ import { ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PlanGraphInspector } from '@/view/plan-graph/PlanGraphInspector';
 import { TagBadge } from '@/view/ImpactBadge';
-import { formatBytes, formatRowWidth } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
+import { formatBytes, findingActionLabel } from '@sparkforensics/core/view-model';
+import { formatRowWidth } from '../row-labels';
 import { CATEGORY_ICON } from '@/view/plan-graph/PlanGraphNode';
-import type { PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import type { PlanGraphNodeData } from '@sparkforensics/core/types';
 
 export type PlanGraphNodeDetailData = PlanGraphNodeData & { durationSharePct: number | null };
 

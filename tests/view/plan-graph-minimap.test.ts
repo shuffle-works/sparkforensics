@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Node } from '@xyflow/react';
 import { planGraphMiniMapNodeColor } from '@/view/plan-graph/plan-graph-minimap';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 const planNode = (findings: Partial<Finding>[] = []): Node =>
   ({ id: 'n', type: 'planNode', position: { x: 0, y: 0 }, data: { findings } } as unknown as Node);

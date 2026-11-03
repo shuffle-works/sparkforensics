@@ -1,8 +1,8 @@
 // Plain JS: scripts/vendor-core.mjs copies it byte-for-byte into vendor-core/, so this file exists
 // at both vendor-core/load-vendored.js (published) and core/src/load-vendored.js (dev). Each
-// package's bin bootstraps by locating this file first (the core/src copy when it exists, so the
-// staleness check below is always current code), then uses the exports below for every other core
-// module, so the resolution logic lives in one place instead of per entry point.
+// package's bin locates load-node-core.js (the core/src copy when it exists, so the staleness check
+// below is always current code), which loads node.ts through the exports below, so the resolution
+// logic lives in one place.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';

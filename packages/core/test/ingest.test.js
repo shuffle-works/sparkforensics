@@ -23,10 +23,10 @@ describe('routeMessage', () => {
     expect(pending.has('0')).toBe(true);
   });
 
-  it('passes the done message through with just its skippedLines field', () => {
+  it('passes the done summary through whole', () => {
     const onDone = vi.fn();
-    routeMessage({ type: 'done', skippedLines: 3, app: {} }, { onDone });
-    expect(onDone).toHaveBeenCalledWith({ skippedLines: 3 });
+    routeMessage({ type: 'done', data: { skippedLines: 3, unreadableSqlExecutions: [7] } }, { onDone });
+    expect(onDone).toHaveBeenCalledWith({ skippedLines: 3, unreadableSqlExecutions: [7] });
   });
 
   it('dispatches app/stage/sql handlers with the message data payload, not the envelope', () => {

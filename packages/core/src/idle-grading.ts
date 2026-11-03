@@ -1,7 +1,8 @@
 // How bad a run's idle share is, from the `utilization` detector's own thresholds: the finding
 // fires under `minUtil` busy, so the verdict note and the Scorecard flag treat the same share as
 // notable, and `criticalUtil` busy as critical. A `--thresholds` override moves all three together.
-import { ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detector-catalog.ts';
+import type { ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds } from './threshold-overrides.ts';
 
 export type IdleGrade = 'critical' | 'warning' | null;

@@ -1,7 +1,7 @@
 // Which checks a log could actually run. Shared by the dashboard (verdict, top bar, Clean checks)
 // and the CLI/MCP evidence report, so a check the log lacked the data for never reads as passed on
 // one path and "not checked" on another.
-import { detectorCatalog } from './detectors.ts';
+import { detectorCatalog } from './detector-catalog.ts';
 import { isCaveat } from './recommendation-rollup.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
 import type { AppModel, Finding } from './types.ts';

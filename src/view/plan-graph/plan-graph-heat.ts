@@ -1,4 +1,4 @@
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import type { ImpactBand } from '@sparkforensics/core/types';
 
 // Heat-bar thresholds, deliberately NOT impact-band.ts's IMPACT_FLOOR_PCT_CRIT/_WARN:
 // those grade a finding's recoverable time against the whole app's duration;

@@ -4,6 +4,7 @@ import { createState, runParse, runParseFiles, reassembleRollingEntries } from '
 import { nodeParseCodecs } from './native-zstd.ts';
 import { createModelCallbacks } from '../model-assembler.ts';
 import { routeMessage, type IngestHandlers } from '../ingest.ts';
+import type { ParserEmit, ParserMessage, ParserMessageOf } from '../parser-messages.ts';
 import type { AppModel } from '../types.ts';
 import { mcpError } from '../mcp-error.ts';
 
@@ -107,8 +108,8 @@ export function nodeLazyPeekableFromPath(path: string): {
 // routeMessage is the single source of truth for worker-message -> handler wiring, shared by
 // the browser Worker and this Node CLI path. No pendingTaskRequests: the CLI never sends
 // 'getTaskData', so never receives 'taskData' back.
-export function dispatch(msg: unknown, handlers: IngestHandlers): void {
-  routeMessage(msg as { type: string; [k: string]: unknown }, handlers);
+export function dispatch(msg: ParserMessage, handlers: IngestHandlers): void {
+  routeMessage(msg, handlers);
 }
 
 export function isRollingLogDirectory(dirPath: string): boolean {
@@ -120,8 +121,8 @@ export function isRollingLogDirectory(dirPath: string): boolean {
 // local file/dir, shs-load.ts's collectShsAppModel over fetched bytes): each caller supplies
 // its own decode step and error type via onDecodeError.
 export function collectViaDispatch(
-  run: (state: ReturnType<typeof createState>, emit: (msg: unknown) => void, reject: (reason?: unknown) => void) => void,
-  onDecodeError: (msg: unknown) => Error,
+  run: (state: ReturnType<typeof createState>, emit: ParserEmit, reject: (reason?: unknown) => void) => void,
+  onDecodeError: (msg: ParserMessageOf<'error'>) => Error,
 ): Promise<{ appModel: AppModel; skippedLines: number }> {
   const appModel = emptyAppModel();
   const cb = createModelCallbacks(appModel, { onProgress() {}, onDone() {}, onError() {} });
@@ -129,13 +130,13 @@ export function collectViaDispatch(
   return new Promise((resolve, reject) => {
     const handlers: IngestHandlers = {
       ...cb,
-      onDone: (msg: unknown) => {
-        cb.onDone(msg); // records the parse gaps on the model, as the dashboard's ingest does
-        resolve({ appModel, skippedLines: (msg as { skippedLines?: number })?.skippedLines ?? 0 });
+      onDone: (summary) => {
+        cb.onDone(summary); // records the parse gaps on the model, as the dashboard's ingest does
+        resolve({ appModel, skippedLines: summary.skippedLines });
       },
-      onError: (msg: unknown) => reject(onDecodeError(msg)),
+      onError: (msg) => reject(onDecodeError(msg)),
     };
-    const emit = (msg: unknown) => dispatch(msg, handlers);
+    const emit: ParserEmit = (msg) => dispatch(msg, handlers);
     const state = createState();
     run(state, emit, reject);
   });
@@ -176,7 +177,7 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
       } else {
         runParse(open(inputPath), state, { emit, ...nodeParseCodecs }).catch(reject);
       }
-    }, (msg) => mcpError('invalid-event-log', (msg as { message: string }).message));
+    }, (msg) => mcpError('invalid-event-log', msg.message ?? 'Not a Spark event log.'));
   } finally {
     for (const file of opened) file.close();
   }

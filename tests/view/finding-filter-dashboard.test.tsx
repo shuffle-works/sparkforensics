@@ -4,9 +4,9 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
+import { auditConfig } from '@sparkforensics/core/analysis';
 import { store, emptyAppModel } from '@/store/store';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { runState } from './_shared/run';
 
 function readyAppModel() {

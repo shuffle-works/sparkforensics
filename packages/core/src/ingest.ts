@@ -1,60 +1,56 @@
-// Worker/CLI-shared message router: maps a worker (or Node-synchronous) message to its handler.
-// Exported so both contexts run one switch. `pendingTaskRequests` is optional: the CLI path never
-// sends a `getTaskData` request, so never receives `taskData` back. Handler dispatch is
-// optional-chained, so a caller that adds a message type without wiring its handler no-ops rather than throws.
+// Worker/CLI-shared message router: maps a parser message to its handler. Exported so both contexts
+// run one switch. `pendingTaskRequests` is optional: the CLI path never sends a `getTaskData`
+// request, so never receives `taskData` back. Handlers are optional, so a consumer wires only the
+// messages it reads; the switch is exhaustive, so a new message type must be routed here.
+import type { ParserMessage } from './parser-messages.ts';
 
-export interface IngestHandlers {
-  onProgress?: (data: unknown) => void;
-  onApp?: (data: unknown) => void;
-  onStage?: (data: unknown) => void;
-  onSql?: (data: unknown) => void;
-  onSqlPlan?: (data: unknown) => void;
-  onExecutor?: (data: unknown) => void;
-  onJob?: (data: unknown) => void;
-  onRunAggregates?: (data: unknown) => void;
-  onStageExecutorMetrics?: (data: unknown) => void;
-  onStageSpeculationWaste?: (data: unknown) => void;
-  onStageLateAttemptWork?: (data: unknown) => void;
-  onDone?: (data: unknown) => void;
-  onError?: (data: unknown) => void;
-}
+type RoutedMessage = Exclude<ParserMessage, { type: 'taskData' }>;
+// A message with a `data` field hands its handler that payload; progress and error have none and
+// hand the handler the whole message.
+type HandlerPayload<M> = M extends { data: infer D } ? D : M;
+
+/** One optional handler per routed message type, named `on` plus the capitalized type. */
+export type IngestHandlers = {
+  [M in RoutedMessage as `on${Capitalize<M['type']>}`]?: (payload: HandlerPayload<M>) => void;
+};
 
 interface PendingTaskRequest {
   resolve: (v: unknown) => void;
   reject: (e: unknown) => void;
 }
 
+function assertNever(message: never): never {
+  throw new Error(`Unrouted parser message: ${JSON.stringify(message)}`);
+}
+
 export function routeMessage(
-  data: { type: string; [k: string]: unknown },
+  msg: ParserMessage,
   handlers: IngestHandlers,
   pendingTaskRequests?: Map<string | number, PendingTaskRequest>
 ): void {
-  switch (data.type) {
-    case 'progress': handlers.onProgress?.(data); break;
-    case 'app':      handlers.onApp?.(data.data); break;
-    case 'stage':    handlers.onStage?.(data.data); break;
-    case 'sql':      handlers.onSql?.(data.data); break;
-    case 'sqlPlan':  handlers.onSqlPlan?.(data.data); break;
-    case 'executor': handlers.onExecutor?.(data.data); break;
-    case 'job':      handlers.onJob?.(data.data); break;
-    case 'runAggregates': handlers.onRunAggregates?.(data.data); break;
-    case 'stageExecutorMetrics': handlers.onStageExecutorMetrics?.(data.data); break;
-    case 'stageSpeculationWaste': handlers.onStageSpeculationWaste?.(data.data); break;
-    case 'stageLateAttemptWork': handlers.onStageLateAttemptWork?.(data.data); break;
-    case 'done': {
-      const { skippedLines, unreadableSqlExecutions } = data;
-      handlers.onDone?.(unreadableSqlExecutions ? { skippedLines, unreadableSqlExecutions } : { skippedLines });
-      break;
-    }
-    case 'error':    handlers.onError?.(data); break;
+  switch (msg.type) {
+    case 'progress': handlers.onProgress?.(msg); break;
+    case 'app':      handlers.onApp?.(msg.data); break;
+    case 'stage':    handlers.onStage?.(msg.data); break;
+    case 'sql':      handlers.onSql?.(msg.data); break;
+    case 'sqlPlan':  handlers.onSqlPlan?.(msg.data); break;
+    case 'executor': handlers.onExecutor?.(msg.data); break;
+    case 'job':      handlers.onJob?.(msg.data); break;
+    case 'runAggregates': handlers.onRunAggregates?.(msg.data); break;
+    case 'stageExecutorMetrics': handlers.onStageExecutorMetrics?.(msg.data); break;
+    case 'stageSpeculationWaste': handlers.onStageSpeculationWaste?.(msg.data); break;
+    case 'stageLateAttemptWork': handlers.onStageLateAttemptWork?.(msg.data); break;
+    case 'done':     handlers.onDone?.(msg.data); break;
+    case 'error':    handlers.onError?.(msg); break;
     case 'taskData': {
-      const pending = pendingTaskRequests?.get(data.reqId as string | number);
+      const pending = pendingTaskRequests?.get(msg.reqId);
       if (pending) {
-        pending.resolve({ metrics: data.metrics, fieldNames: data.fieldNames });
-        pendingTaskRequests!.delete(data.reqId as string | number);
+        pending.resolve({ metrics: msg.metrics, fieldNames: msg.fieldNames });
+        pendingTaskRequests!.delete(msg.reqId);
       }
       break;
     }
+    default: assertNever(msg);
   }
 }
 
@@ -84,7 +80,7 @@ export function createIngestClient(): {
     worker = new Worker(new URL('./parser-worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => routeMessage(data, handlers, pendingTaskRequests);
     worker.onerror = (err) => {
-      handlers.onError?.(`Worker crashed: ${err.message}`);
+      handlers.onError?.({ type: 'error', message: `Worker crashed: ${err.message}` });
       terminate();
     };
   }

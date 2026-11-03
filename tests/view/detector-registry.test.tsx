@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
-import { FINDING_DISPLAY_ORDER, REFERENCE_DISPLAY_TYPES } from '@sparkforensics/core/run-verdict.ts';
+import { FINDING_DISPLAY_ORDER, REFERENCE_DISPLAY_TYPES, detectorInfoByType } from '@sparkforensics/core/analysis';
 import { REGISTRY, orderedWidgets, isAlwaysMountedType, alwaysMountedWidgets } from '../../src/view/detector-registry';
-import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
 
 test('registry owns stable widget identity', () => {
   expect(REGISTRY.skew).toMatchObject({ widgetId: 'skew', region: 'action', routeable: true });

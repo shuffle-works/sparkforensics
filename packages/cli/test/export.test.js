@@ -14,10 +14,10 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, renameSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
-import { CORE_VERSION, EXPORT_DATA_SCHEMA_VERSION } from '@sparkforensics/core/export-data.ts';
-import { coreSourceHash } from '@sparkforensics/core/load-vendored.js';
+import { collectRun } from '@sparkforensics/core/cli';
+import { auditConfig } from '@sparkforensics/core/analysis';
+import { CORE_VERSION, EXPORT_DATA_SCHEMA_VERSION } from '@sparkforensics/core/export';
+import { coreSourceHash } from '../../core/src/load-vendored.js';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
 // tests/helpers/ stays at the repo root: shared with analyze.test.js/mcp-tools.test.js.

@@ -3,18 +3,19 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { planTreeToDot } from '@sparkforensics/core/plan-dot.ts';
-import { useStore } from '@/store/store';
 import {
+  planTreeToDot,
   buildDurationMap,
   classifyNode,
   getPrimaryMetric,
   formatPlanMetricValue,
   parseOperatorDetail,
-} from '@sparkforensics/core/plan-node-detail.ts';
-import { describePlanNode, summarizePlanTree } from '@sparkforensics/core/plan-summary.ts';
-import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel, PlanNode, SqlExecution, StageId } from '@sparkforensics/core/types.ts';
+  describePlanNode,
+  summarizePlanTree,
+  formatDuration,
+} from '@sparkforensics/core/view-model';
+import { useStore } from '@/store/store';
+import type { AppModel, PlanNode, SqlExecution, StageId } from '@sparkforensics/core/types';
 import { Section, type Row } from '@/view/Section';
 import { TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';

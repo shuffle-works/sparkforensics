@@ -6,7 +6,7 @@ import { store } from '@/store/store';
 
 // CompareLanding renders a real DropZone, which reads recentFiles (indexedDB)
 // on mount: stub it out for a deterministic render.
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(async () => []),
   add: vi.fn(async () => ({})),

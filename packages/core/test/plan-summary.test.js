@@ -190,6 +190,18 @@ describe('scanRelationId', () => {
   it('returns null for a non-scan node', () => {
     expect(scanRelationId('Project', '')).toBeNull();
   });
+  // Plan detail text comes from the event log. A quadratic regex took >10s on each input below.
+  it.each([
+    ['repeated Location: markers', 'Scan parquet', 'FileScan parquet ' + 'Location:'.repeat(100000), null],
+    ['unclosed Location: brackets', 'Scan parquet', 'FileScan parquet ' + 'Location:[\\'.repeat(100000), null],
+    ['repeated JDBCRelation( markers', 'Scan JDBCRelation', 'JDBCRelation(a'.repeat(150000), null],
+    ['repeated JDBCRelation(( markers', 'Scan JDBCRelation', 'JDBCRelation((a'.repeat(150000), null],
+    ['a long space run after the relation', 'Scan JDBCRelation', 'JDBCRelation(SELECT a FROM t)' + ' '.repeat(500000), null],
+  ])('stays linear on %s', (_label, name, detail, expected) => {
+    const started = Date.now();
+    expect(scanRelationId(name, detail)).toBe(expected);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
 });
 
 describe('describePlanNode', () => {

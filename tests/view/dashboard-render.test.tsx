@@ -4,9 +4,9 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
+import { auditConfig } from '@sparkforensics/core/analysis';
 import { store, emptyAppModel } from '@/store/store';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { testFinding, unknownTypeFinding } from './_shared/finding';
 import { runState } from './_shared/run';
 
@@ -123,7 +123,7 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
-    { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 0.4 },
+    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 0.4 }),
   ];
   store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
 
@@ -299,7 +299,7 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
-    { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 0.4 },
+    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 0.4 }),
   ];
   store.setState({ status: 'ready', ...runState({ appModel: readyAppModel() as any, catalog }) });
 

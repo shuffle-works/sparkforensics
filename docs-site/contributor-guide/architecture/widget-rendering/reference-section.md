@@ -75,5 +75,5 @@ the clean-check list bypasses `orderedWidgets()` entirely, iterating
 own array order and iteration, plus its cross-detector `suppressedBy` logic
 (e.g. `stageSlowness` deferring to `slowHost`, see
 [Detector contract](../detector-contract.md#detector-contract)), live entirely in
-`packages/core/src/detectors.ts`/`packages/core/src/analyzer.ts`. Which React
+`packages/core/src/detectors.ts`, `packages/core/src/detectors/` and `packages/core/src/analyzer.ts`. Which React
 component each finding type resolves to is registry-owned.

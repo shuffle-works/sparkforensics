@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { Inbox } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
-import type { LocalityChartPoint } from '@sparkforensics/core/core-usage-locality.ts';
-import { formatCores } from '@sparkforensics/core/format-utils.ts';
+import type { LocalityChartPoint } from '@sparkforensics/core/analysis';
+import { formatCores } from '@sparkforensics/core/view-model';
 import { useInterpretation } from '@/view/interpretation';
 import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';

@@ -23,7 +23,7 @@ import { analyzeRun } from '../packages/core/src/analyzed-run.ts';
 import { encodeCollections } from '../packages/core/src/export-data.ts';
 import { buildHtmlExportData } from '../packages/core/src/html-export.ts';
 import { interpretRun } from '../packages/core/src/run-interpretation.ts';
-import { bandRank, IMPACT_BANDS } from '../packages/core/src/format-utils.ts';
+import { bandRank, IMPACT_BANDS } from '../packages/core/src/impact-band-order.ts';
 import { gzipSync, strToU8 } from '../packages/core/src/vendor/fflate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

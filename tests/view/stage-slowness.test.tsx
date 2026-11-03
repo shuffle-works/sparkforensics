@@ -8,7 +8,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { emptyAppModel } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 import { StageSlowness } from '@/view/widgets/StageSlowness';
 import { installInterpretation } from './_shared/interpretation';

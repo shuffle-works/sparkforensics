@@ -2,7 +2,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { emptyAppModel, store } from '@/store/store';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import { buildBoardLayout } from '@/view/board-layout';

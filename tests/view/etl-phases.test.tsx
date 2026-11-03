@@ -4,7 +4,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 
 import { EtlPhases } from '../../src/view/widgets/EtlPhases';
 import { store } from '../../src/store/store';
-import type { AppModel, Stage } from '@sparkforensics/core/types.ts';
+import type { AppModel, Stage } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 // The widget renders the store's interpretation of the run, as the dashboard installs it.

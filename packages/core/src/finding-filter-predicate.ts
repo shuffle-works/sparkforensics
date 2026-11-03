@@ -1,7 +1,7 @@
 // Core-owned finding-filter predicate, shared by the CLI/MCP evidence report and the dashboard's
 // filter bar (its view counterpart wraps this instead of reimplementing). Each dimension is
 // unconstrained when empty; a stageId criterion only matches a row whose own stageId is present.
-import { IMPACT_BAND_ORDER, IMPACT_BANDS } from './format-utils.ts';
+import { IMPACT_BAND_ORDER, IMPACT_BANDS } from './impact-band-order.ts';
 import type { ImpactBand } from './types.ts';
 
 type Membership<T> = ReadonlySet<T> | readonly T[];

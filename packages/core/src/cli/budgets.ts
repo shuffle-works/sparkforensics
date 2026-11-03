@@ -1,10 +1,12 @@
 import { maxOf } from '../array-extremes.ts';
 import { computeEfficiencyModel } from '../efficiency-model.ts';
-import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
+import { ENTRY_BY_TYPE } from '../detector-catalog.ts';
+import { computeSkewRatio } from '../detectors/tail.ts';
 import { runTiming } from '../run-timing.ts';
+import type { ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { withEarlierAttempts } from '../run-totals.ts';
-import { IMPACT_BANDS } from '../format-utils.ts';
+import { IMPACT_BANDS } from '../impact-band-order.ts';
 import { isEscalation, type CompareRunsResult } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS, type PairDeltaMetric, type StagePair } from '../stage-alignment.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';

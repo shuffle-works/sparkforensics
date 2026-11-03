@@ -6,12 +6,13 @@ import userEvent from '@testing-library/user-event';
 import { RetryWaste } from '../../src/view/widgets/RetryWaste';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
+import { testStage } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageNames: Record<number, string>): AppModel {
-  const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), { id: Number(id), name }]));
+  const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), testStage({ id: Number(id), name })]));
   return { ...emptyAppModel(), stages };
 }
 

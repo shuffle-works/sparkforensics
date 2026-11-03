@@ -66,7 +66,7 @@ introduces it.
   `RowStatusCluster`'s fixed slot is the row's own stage-pill/title line
   (`justify-between`, cluster right-aligned), the same position in every
   adopting widget, not floating with the row's detail below.
-  Lists longer than `VISIBLE_LIMIT` (6, `packages/core/src/format-utils.ts`) get
+  Lists longer than `VISIBLE_LIMIT` (6, `src/view/visible-limit.ts`) get
   page-based navigation (Previous/Next, `usePagedRows`/`RowPagination`,
   `src/view/usePagedRows.ts`/`src/view/RowPagination.tsx`) instead of
   rendering unconditionally: the one sanctioned cap mechanism across every

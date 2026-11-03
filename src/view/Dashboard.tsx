@@ -3,7 +3,7 @@ import { Suspense, useCallback, useMemo, useState, type DragEvent, type ReactNod
 import { selectAppModel, selectCatalog, selectConfigFindings, store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry';
-import { findingName } from '@sparkforensics/core/finding-names.ts';
+import { findingName } from '@sparkforensics/core/view-model';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import {
   buildBoardLayout,
@@ -28,8 +28,7 @@ import {
   type FilterOptions,
   type FilterSelection,
 } from '@/view/finding-filter';
-import { countHiddenNotes } from '@sparkforensics/core/finding-filter-predicate.ts';
-import { IMPACT_BANDS } from '@sparkforensics/core/format-utils.ts';
+import { countHiddenNotes, IMPACT_BANDS } from '@sparkforensics/core/view-model';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { EtlPhases } from '@/view/widgets/EtlPhases';
@@ -51,7 +50,7 @@ import { useIngest } from '@/store/useIngest';
 import { useTriageShortcuts } from '@/view/useTriageShortcuts';
 import { useRecentFiles } from '@/view/useRecentFiles';
 import type { TriageTarget } from '@/view/triage-target';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 
 type ActiveTab = 'findings' | 'full-report';
 

@@ -9,8 +9,8 @@ import {
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
-import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { coreFindingGenericRecommendation } from '@sparkforensics/core/view-model';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { cardLandingKey } from '@/view/route-keys';

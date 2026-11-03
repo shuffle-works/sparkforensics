@@ -37,10 +37,12 @@ const vendorDir = join(targetPackageDir, 'vendor-core');
 // reachable from cli/collect-run.ts.
 const BROWSER_ONLY_TOP_LEVEL_ENTRIES = new Set([
   'recent-files.ts', // IndexedDB recent-files list
+  'browser.ts', // the entry point that re-exports it
 ]);
 
+// Static (`from '...ts'`) and dynamic (`import('...ts')`, node.ts's lazy MCP factory) specifiers.
 function rewriteImportSpecifiers(code) {
-  return code.replace(/(from\s+['"][^'"]+)\.ts(['"])/g, '$1.js$2');
+  return code.replace(/((?:from\s+|import\(\s*)['"][^'"]+)\.ts(['"])/g, '$1.js$2');
 }
 
 function copyTree(srcNode, destNode) {

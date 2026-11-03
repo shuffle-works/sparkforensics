@@ -10,7 +10,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { DocsProvider } from '@/view/DocsContext';
 import { MergeRewrite } from '@/view/widgets/MergeRewrite';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 
 const estimate = (stageTaskMs: number) => ({ basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs });

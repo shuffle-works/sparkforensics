@@ -1,7 +1,7 @@
 import { Suspense, useMemo } from 'react';
 
-import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { worstImpactBand } from '@sparkforensics/core/view-model';
+import type { Finding } from '@sparkforensics/core/types';
 import { store, useStore } from '@/store/store';
 import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import type { WidgetProps } from '@/view/detector-registry';

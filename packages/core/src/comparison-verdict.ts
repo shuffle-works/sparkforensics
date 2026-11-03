@@ -1,4 +1,5 @@
-import { formatDuration, typeTag } from './format-utils.ts';
+import { typeTag } from './finding-presentation.ts';
+import { formatDuration } from './units.ts';
 import { tagHelp } from './finding-tag-help.ts';
 import { DEFAULT_NOISE_BAND, isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
 import type { Caveats, Comparability } from './comparability.ts';

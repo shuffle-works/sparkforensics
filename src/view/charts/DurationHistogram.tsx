@@ -1,6 +1,6 @@
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { buildHistogram } from '@sparkforensics/core/format-utils.ts';
+import { buildHistogram } from './histogram';
 import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from './ChartTheme';
 
 const MIN_HISTOGRAM_TASKS = 5;

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 import { TestRunVerdict } from './_shared/board';
@@ -133,10 +133,10 @@ describe('RunVerdict', () => {
   });
 
   it('never moves idle capacity ahead of a smaller time-based fix, and still states the idle share', () => {
-    const idleCores: Finding = {
+    const idleCores: Finding = testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 92,
       recommendation: '92% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    };
+    });
     renderVerdict([timed('skew', 7, 64), idleCores], vi.fn(), idleModel(1_600));
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     expect(screen.getByTestId('run-verdict')).toHaveTextContent('92% of the executor capacity sat idle');
@@ -150,10 +150,10 @@ describe('RunVerdict', () => {
   });
 
   it('states a non-leading idle-capacity step as idle executor capacity', () => {
-    renderVerdict([timed('skew', 7, 2_400), {
+    renderVerdict([timed('skew', 7, 2_400), testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 50,
       recommendation: '50% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    }], vi.fn(), idleModel(10_000));
+    })], vi.fn(), idleModel(10_000));
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).toHaveTextContent('50% of the executor capacity sat idle, so the cluster may be larger than this job needs.');
@@ -182,10 +182,10 @@ describe('RunVerdict', () => {
   });
 
   it('titles a heap-sizing lead by its own fix, not by cluster size', () => {
-    renderVerdict([{
+    renderVerdict([testFinding({
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, impactBand: 'warning',
       recommendation: 'Executors peaked at 20% of allocated heap: reduce spark.executor.memory.',
-    }]);
+    })]);
     expect(screen.getByRole('heading', { level: 2 })).not.toHaveTextContent(/cluster size/i);
     expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('idle cores');
   });

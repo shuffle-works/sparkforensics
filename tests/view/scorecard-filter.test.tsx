@@ -4,11 +4,11 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import App from '@/App';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(() => new Promise(() => {})),
   add: vi.fn(async () => ({})),

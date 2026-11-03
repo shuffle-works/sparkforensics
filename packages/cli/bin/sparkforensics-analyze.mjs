@@ -16,32 +16,21 @@ const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
 
 // Core loading (vendor-core/ vs core/src): docs-site/contributor-guide/development-setup.md, "Generated and vendored files".
-const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
-const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
-const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).href);
-const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
+const srcBootstrap = join(pkgDir, '..', 'core', 'src', 'load-node-core.js');
+const bootstrapPath = existsSync(srcBootstrap) ? srcBootstrap : join(pkgDir, 'vendor-core', 'load-node-core.js');
+const { loadNodeCore } = await import(pathToFileURL(bootstrapPath).href);
+const { core, buildId: coreBuildId } = await loadNodeCore(pkgDir);
 
-const { collectRun } = await loadCore('cli/collect-run');
-const { collectRunPair } = await loadCore('cli/collect-run-pair');
-const { resolveFromShs } = await loadCore('shs-load');
-const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { analyzeRun } = await loadCore('analyzed-run');
-const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
-const { evaluateBudgets } = await loadCore('cli/budgets');
-const { renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
-const { buildComparisonOutput } = await loadCore('comparison-output');
-const { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } = await loadCore('stage-alignment');
-const { compileConfIgnorePatterns } = await loadCore('comparability');
-const { DEFAULT_NOISE_BAND } = await loadCore('run-comparison');
-const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
-const { runPayloadScript } = await loadCore('run-payload');
-const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
-const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities } = await loadCore('cli/regression-budgets');
-const { parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced } = await loadCore('cli/flag-values');
-const { tunedDetectors } = await loadCore('threshold-overrides');
-const { runOutputBlocks } = await loadCore('run-output');
-const { buildEffectiveConf } = await loadCore('effective-conf');
-const { runDetectorsCommand } = await loadCore('cli/detectors-command');
+const {
+  collectRun, collectRunPair, resolveFromShs, validateShsRequest, analyzeRun,
+  buildEvidenceReport, toFindingsFilter, evaluateBudgets,
+  renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput,
+  compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS, compileConfIgnorePatterns,
+  buildHtmlExportData, encodeRunPayload, runPayloadScript, loadThresholdOverrides,
+  parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
+  parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced,
+  tunedDetectors, runOutputBlocks, buildEffectiveConf, runDetectorsCommand,
+} = /** @type {typeof import('../../core/src/node.ts')} */ (core);
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
@@ -249,11 +238,11 @@ function splitCsv(value) {
 }
 
 // The provenance stamp: this CLI's own name and version, and the build id of the core it loaded
-// (vendor-core/'s stamp or core/src's hash, see coreBuildId). The JSON report carries it as the
+// (vendor-core/'s stamp or core/src's hash, see load-node-core.js). The JSON report carries it as the
 // `generator` block, the HTML export as one "<name> <version>" producer string.
 function generatorInfo() {
   const { name, version } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
-  return { name, version, buildId: coreBuildId(pkgDir) };
+  return { name, version, buildId: coreBuildId };
 }
 
 function exportProducer() {
@@ -263,13 +252,13 @@ function exportProducer() {
 
 async function writeHtmlExport(destDir, run, { redact }) {
   const exportData = buildHtmlExportData(run, {
-    redact, buildId: coreBuildId(pkgDir), producer: exportProducer(),
+    redact, buildId: coreBuildId, producer: exportProducer(),
   });
 
   // Published install: packages/cli/export-template/ (populated by
   // scripts/vendor-export-template.mjs at prepack time). Monorepo dev mode:
   // fall back to the repo-root dist-export/ build output directly, same
-  // fallback pattern as loadCore()'s vendor-core/ -> core/src/ resolution.
+  // fallback pattern as the core loading's vendor-core/ -> core/src/ resolution.
   const vendoredTemplate = join(pkgDir, 'export-template');
   const templateDir = existsSync(vendoredTemplate) ? vendoredTemplate : join(pkgDir, '..', '..', 'dist-export');
   if (!existsSync(templateDir)) {

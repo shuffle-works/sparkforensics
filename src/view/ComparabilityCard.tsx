@@ -1,7 +1,7 @@
 import { Table, TableBody, TableCell, TableHead, TableRow } from '@/components/ui/table';
 import { WidgetCard } from '@/view/WidgetCard';
-import { formatBytes, formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { Comparability, VolumeFigure } from '@sparkforensics/core/comparability.ts';
+import { formatBytes, formatDuration } from '@sparkforensics/core/view-model';
+import type { Comparability, VolumeFigure } from '@sparkforensics/core/analysis';
 
 const COUNT = Intl.NumberFormat();
 const MAX_LISTED_CONF_KEYS = 8;

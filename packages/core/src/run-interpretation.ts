@@ -11,7 +11,7 @@ import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import { computeEfficiencyModel } from './efficiency-model.ts';
 import { attributeEtlPhases } from './etl-phases.ts';
-import { bandRank, worstImpactBand } from './format-utils.ts';
+import { bandRank, worstImpactBand } from './impact-band-order.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';

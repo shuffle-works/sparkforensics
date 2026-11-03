@@ -1,7 +1,7 @@
 import { ImpactDot } from '@/view/ImpactBadge';
 import { defineFindingWidget, type FindingRowProps } from '@/view/finding-widget';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { formatCores, formatDuration, formatMetricValue, formatRawWaste, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { formatCores, formatDuration, formatMetricValue, formatRawWaste, numericValue } from '@sparkforensics/core/view-model';
 import { CoreUsageChart, panelShowsChart, useLocalityChartModel } from './CoreUsageArea';
 import { executorUtilizationModel, type ExecutorUtilizationRow } from './ExecutorUtilization.rows';
 

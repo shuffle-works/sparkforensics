@@ -1,21 +1,12 @@
-import type {
-  AppModel,
-  SparkAppInfo,
-  Stage,
-  StageAttemptTotals,
-  SqlExecution,
-  PlanNode,
-  ExecutorEvent,
-  Job,
-  RunAggregates,
-} from './types.ts';
+import type { IngestHandlers } from './ingest.ts';
+import type { ParseSummary } from './parser-messages.ts';
+import type { AppModel } from './types.ts';
 
 // The done message's counts of what the parse could not read. On the model, not only passed to onDone,
 // so every consumer of the model (dashboard export, CLI, MCP) reports them the same way.
-function recordParseGaps(appModel: AppModel, data: unknown): void {
-  const done = data as { skippedLines?: number; unreadableSqlExecutions?: number[] } | undefined;
-  appModel.skippedLines = done?.skippedLines ?? 0;
-  if (done?.unreadableSqlExecutions) appModel.unreadableSqlExecutions = done.unreadableSqlExecutions;
+function recordParseGaps(appModel: AppModel, summary: ParseSummary): void {
+  appModel.skippedLines = summary.skippedLines;
+  if (summary.unreadableSqlExecutions) appModel.unreadableSqlExecutions = summary.unreadableSqlExecutions;
   else delete appModel.unreadableSqlExecutions;
 }
 
@@ -23,60 +14,44 @@ function recordParseGaps(appModel: AppModel, data: unknown): void {
 // mutation: analysis/render/persist stay in the caller via the onDone/onProgress/onError hooks.
 export function createModelCallbacks(
   appModel: AppModel,
-  { onProgress, onDone, onError }: {
-    onProgress?: (data: unknown) => void;
-    onDone?: (data: unknown) => void;
-    onError?: (data: unknown) => void;
-  },
-) {
+  { onProgress, onDone, onError }: Pick<IngestHandlers, 'onProgress' | 'onDone' | 'onError'>,
+): Required<IngestHandlers> {
   return {
-    onProgress,
-    onApp(data: unknown) { appModel.app = data as SparkAppInfo; },
-    onStage(data: unknown) {
-      const stage = data as Stage;
-      appModel.stages.set(stage.id, stage);
-    },
-    onSql(data: unknown) {
+    onProgress: onProgress ?? (() => {}),
+    onApp(app) { appModel.app = app; },
+    onStage(stage) { appModel.stages.set(stage.id, stage); },
+    onSql(exec) {
       // Full overwrite, not a merge: safe only because planTree (set by onSqlPlan from a separate
       // 'sqlPlan' message) is never present on a 'sql' message's data. That relies on
       // SQLAdaptiveExecutionUpdate always preceding SQLExecutionEnd (Spark re-plans mid-run, never
       // after the query finishes). A 'sql' producer that could arrive after onSqlPlan would need to merge.
-      const event = data as { id: number; stageIds?: number[] };
-      appModel.sql.set(event.id, data as SqlExecution);
-      for (const stageId of (event.stageIds ?? [])) {
+      appModel.sql.set(exec.id, exec);
+      for (const stageId of (exec.stageIds ?? [])) {
         const stage = appModel.stages.get(stageId);
-        if (stage) stage.sqlExecutionId = event.id;
+        if (stage) stage.sqlExecutionId = exec.id;
       }
     },
-    onSqlPlan(data: unknown) {
-      const event = data as { executionId: number; planTree: PlanNode };
-      const exec = appModel.sql.get(event.executionId);
-      if (exec) exec.planTree = event.planTree;
+    onSqlPlan({ executionId, planTree }) {
+      const exec = appModel.sql.get(executionId);
+      if (exec) exec.planTree = planTree;
     },
-    onExecutor(data: unknown) {
-      const event = data as ExecutorEvent;
+    onExecutor(event) {
       if (event.kind === 'added') appModel.executors.added.push(event);
       else appModel.executors.removed.push(event);
     },
-    onJob(data: unknown) {
-      const job = data as Job;
-      appModel.jobs.set(job.id, job);
-    },
-    onRunAggregates(data: unknown) { appModel.runAggregates = data as RunAggregates; },
+    onJob(job) { appModel.jobs.set(job.id, job); },
+    onRunAggregates(aggregates) { appModel.runAggregates = aggregates; },
     // Patch per-stage executorMetrics posted once before `done`: those events arrive after
-    // StageCompleted, so the stage message itself carried an empty map. `data` is Map<stageId, Map<execId, metrics>>.
-    onStageExecutorMetrics(data: unknown) {
-      if (!(data instanceof Map)) return;
-      const metricsByStage = data as Map<number, Map<string, unknown>>;
+    // StageCompleted, so the stage message itself carried an empty map.
+    onStageExecutorMetrics(metricsByStage) {
       for (const [stageId, execMetrics] of metricsByStage) {
         const stage = appModel.stages.get(stageId);
         if (stage) stage.executorMetrics = execMetrics;
       }
     },
     // Patch speculation totals that grew after StageCompleted: Spark kills a losing speculative
-    // copy only once its stage finishes. `data` is Map<stageId, { speculationWasteMs, speculationWastedAttempts }>.
-    onStageSpeculationWaste(data: unknown) {
-      const totalsByStage = data as Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }>;
+    // copy only once its stage finishes.
+    onStageSpeculationWaste(totalsByStage) {
       for (const [stageId, totals] of totalsByStage) {
         const stage = appModel.stages.get(stageId);
         if (stage) {
@@ -85,18 +60,17 @@ export function createModelCallbacks(
         }
       }
     },
-    onDone(data: unknown) {
-      recordParseGaps(appModel, data);
-      onDone?.(data);
-    },
     // Patch the late work of failed attempts, whose TaskEnds arrive after StageCompleted.
-    // `data` is Map<stageId, StageAttemptTotals>.
-    onStageLateAttemptWork(data: unknown) {
-      for (const [stageId, work] of data as Map<number, StageAttemptTotals>) {
+    onStageLateAttemptWork(workByStage) {
+      for (const [stageId, work] of workByStage) {
         const stage = appModel.stages.get(stageId);
         if (stage) stage.lateAttemptWork = work;
       }
     },
-    onError,
+    onDone(summary) {
+      recordParseGaps(appModel, summary);
+      onDone?.(summary);
+    },
+    onError: onError ?? (() => {}),
   };
 }

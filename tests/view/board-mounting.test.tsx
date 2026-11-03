@@ -5,13 +5,13 @@ import { beforeEach, expect, test, vi } from 'vitest';
 
 import App from '@/App';
 import { emptyAppModel, store } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { runState } from './_shared/run';
 
 // The board mounts what is showing: a hidden tab holds no widgets, and a collapsed board card holds
 // no body. What a widget remembers (a filter, a page) lives in the store, so hiding it loses nothing.
 
-vi.mock('@sparkforensics/core/recent-files.ts', () => ({
+vi.mock('@core-src/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(() => new Promise(() => {})),
   add: vi.fn(async () => ({})),

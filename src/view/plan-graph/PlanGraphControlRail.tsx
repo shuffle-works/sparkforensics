@@ -5,7 +5,7 @@ import { ZoomIn, ZoomOut, Maximize2, Timer, Flag, Info, Map } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { PlanGraphSettingsControl } from '@/view/plan-graph/PlanGraphSettingsControl';
 import { FIT_TO_VIEW_OPTIONS } from '@/view/plan-graph/readable-fit';
-import type { PlanGraphDurationMode, PlanGraphFilterMode } from '@sparkforensics/core/types.ts';
+import type { PlanGraphDurationMode, PlanGraphFilterMode } from '@sparkforensics/core/types';
 
 type FlowData = { durationSharePct: number | null };
 const flowData = (n: Node) => n.data as unknown as FlowData;

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { TestImpactBoard } from './_shared/board';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
-import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 
@@ -21,7 +21,7 @@ function readyAppModel() {
 const getTaskData = vi.fn(async (): Promise<TaskData> => ({ taskEvents: [] }) as unknown as TaskData);
 
 function skewFinding(stageId: number, impactBand: Finding['impactBand']): Finding {
-  return { type: 'skew', stageId, impactBand, metric: 'p95Median', value: 5, recommendation: `Rebalance Stage ${stageId}.` } as Finding;
+  return { type: 'skew', stageId, impactBand, metric: 'P95/median', value: 5, recommendation: `Rebalance Stage ${stageId}.` } as Finding;
 }
 function gcFinding(stageId: number, impactBand: Finding['impactBand']): Finding {
   return testFinding({ type: 'gc', stageId, impactBand, value: 15, recommendation: `Investigate GC in Stage ${stageId}.` });

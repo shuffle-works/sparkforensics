@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { TYPE_TAG_MAP, typeTag } from '@sparkforensics/core/format-utils.ts';
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
+import { TYPE_TAG_MAP, typeTag } from '@sparkforensics/core/view-model';
+import { DETECTORS } from '@sparkforensics/core/analysis';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const page = readFileSync(

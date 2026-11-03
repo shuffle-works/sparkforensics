@@ -6,7 +6,8 @@ import {
   parseThresholdOverrides, tunedThresholdsOf, tunedDetectors, tunedDetectorCatalog, describeTunedThresholds,
 } from '../src/threshold-overrides.ts';
 import { loadThresholdOverrides } from '../src/cli/threshold-config.ts';
-import { DETECTORS, detectorCatalog } from '../src/detectors.ts';
+import { DETECTORS } from '../src/detectors.ts';
+import { detectorCatalog } from '../src/detector-catalog.ts';
 
 const entry = (type) => DETECTORS.find((d) => d.type === type);
 

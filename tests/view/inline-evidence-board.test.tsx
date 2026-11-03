@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { memo } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { Finding, TaskData } from '@sparkforensics/core/types';
 
 import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { StageDetailProvider } from '@/view/StageDetailContext';

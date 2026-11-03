@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types';
 import { pendingLayoutJob, storeLayout, type PlanLayoutDirection } from './dagre-layout';
 import { layoutInWorker, shouldLayoutInWorker } from './layout-worker-client';
 

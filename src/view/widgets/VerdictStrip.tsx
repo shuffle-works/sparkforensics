@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { selectAppModel, useStore } from '@/store/store';
 import type { InterpretationState } from '@/view/interpretation';
-import type { ImpactBand, Stage } from '@sparkforensics/core/types.ts';
+import type { ImpactBand, Stage } from '@sparkforensics/core/types';
 import { computeRunEndSec, formatRunClock, runClockTicks, runStartMs } from '@/view/charts/run-clock';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
 import { findingById, stepCodes } from '@/view/interpretation';

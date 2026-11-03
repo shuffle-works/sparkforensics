@@ -2,7 +2,7 @@
 // failure throws an Error naming the flag and what it accepts, so the caller refuses to run
 // (exit 2) instead of treating a bad value as a pass or as an empty filter.
 import { FINDING_NAMES } from '../finding-names.ts';
-import { IMPACT_BANDS } from '../format-utils.ts';
+import { IMPACT_BANDS } from '../impact-band-order.ts';
 import type { ImpactBand } from '../types.ts';
 
 // Plain non-negative decimals only: Number() would also accept '', ' ', '0x10' and '1e3'.

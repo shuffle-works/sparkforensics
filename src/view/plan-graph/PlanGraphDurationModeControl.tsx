@@ -1,5 +1,5 @@
 import { PlanGraphRadioControl } from '@/view/plan-graph/PlanGraphRadioControl';
-import type { PlanGraphDurationMode } from '@sparkforensics/core/types.ts';
+import type { PlanGraphDurationMode } from '@sparkforensics/core/types';
 
 const OPTIONS: Array<{ value: PlanGraphDurationMode; label: string; description: string }> = [
   {
