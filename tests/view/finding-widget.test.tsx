@@ -50,6 +50,7 @@ function renderWidget(findings: FindingOf<'spill'>[], target: TriageTarget | nul
       <TriageNavigationProvider
         registerWidget={vi.fn(() => vi.fn())}
         registerFindingAnchor={registerFindingAnchor}
+        findingKey={() => ''}
         reportWidgetOpen={vi.fn()}
         clearRouteFocus={vi.fn()}
         focusedCardKey={null}
