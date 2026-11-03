@@ -353,7 +353,12 @@ app (`docs-widget.html`, `src/docs-widget/`), built from the HTML export's graph
 and guard. It draws the finding as the dashboard does, as a verdict step when
 the run's verdict leads with it and as a Findings row otherwise, with its
 evidence panel open, and without the "Next step" header or the step labels
-(`StepCodesShownContext`) that tie a step to the rest of the dashboard. It follows the docs page's theme and
-reports its height to the page. Adding a finding type adds
+(`StepCodesShownContext`) that tie a step to the rest of the dashboard. The docs
+site and the app's frames exchange only the typed messages in
+`src/docs-widget/frame-messages.ts`, never each other's documents: the page puts
+the first theme in the frame's `theme` query parameter and posts a `theme`
+message when it changes, and the frame posts its `height`. A framed docs page
+posts `escape` for an Esc it does not consume, which closes the app's docs panel.
+Each receiver checks `event.origin` and `event.source`. Adding a finding type adds
 its page; the type needs a `FINDING_PRESENTATION` row with a `pitch` and
 `family`, and `tests/detector-pages.test.js` fails until a log fires it.

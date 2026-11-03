@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { findingActionLabel, findingName } from '@sparkforensics/core/view-model';
 import { DocsWidgetApp } from '@/docs-widget/DocsWidgetApp';
-import { HEIGHT_MESSAGE, followHostTheme, hostTheme, reportHeight } from '@/docs-widget/host';
+import { followHostTheme, hostTheme, reportHeight } from '@/docs-widget/host';
 import { loadExportPayload } from '@/export/hydrate-store';
 import { store } from '@/store/store';
 import { eligibleFindings, findingAt } from '@/view/interpretation';
@@ -126,46 +126,68 @@ test('says so when the run has no such finding', () => {
   expect(screen.getByRole('alert')).toHaveTextContent('no finding missing');
 });
 
-// Makes `root` the docs page's <html> element and returns the page, whose postMessage is a spy.
-function frameInside(root: HTMLElement) {
-  const parent = { document: { documentElement: root }, postMessage: vi.fn() };
-  vi.spyOn(window, 'parent', 'get').mockReturnValue(parent as unknown as Window);
+const THEME = 'sparkforensics:docs-theme';
+const HEIGHT_TYPE = 'sparkforensics:docs-widget-height';
+
+// Makes the docs page the window's parent; its postMessage is a spy.
+function frameInside() {
+  const parent = { postMessage: vi.fn() } as unknown as Window;
+  vi.spyOn(window, 'parent', 'get').mockReturnValue(parent);
   return parent;
 }
 
-test('has no host theme when nothing frames it', () => {
+function sendToFrame(data: unknown, init: { source: Window | null; origin?: string }) {
+  window.dispatchEvent(new MessageEvent('message', { data, origin: init.origin ?? window.location.origin, source: init.source }));
+}
+
+test('has no host theme when the URL names none', () => {
   expect(hostTheme()).toBeNull();
 });
 
-test('reads the docs page theme from its data-theme attribute', () => {
-  const root = document.createElement('html');
-  root.dataset.theme = 'dark';
-  frameInside(root);
+test('reads the first theme from the theme query parameter', () => {
+  window.history.replaceState(null, '', '/?type=skew&theme=dark');
   expect(hostTheme()).toBe('dark');
-  root.dataset.theme = 'sepia';
+  window.history.replaceState(null, '', '/?theme=sepia');
   expect(hostTheme()).toBeNull();
+  window.history.replaceState(null, '', '/');
 });
 
-test('applies the docs page theme each time it changes', async () => {
-  const root = document.createElement('html');
-  frameInside(root);
+test('applies the theme in each message from the docs page', () => {
+  const parent = frameInside();
   const apply = vi.fn();
   followHostTheme(apply);
 
-  root.dataset.theme = 'light';
-  await vi.waitFor(() => expect(apply).toHaveBeenCalledWith('light'));
+  sendToFrame({ type: THEME, theme: 'light' }, { source: parent });
+  expect(apply).toHaveBeenCalledExactlyOnceWith('light');
+  sendToFrame({ type: THEME, theme: 'dark' }, { source: parent });
+  expect(apply).toHaveBeenLastCalledWith('dark');
+});
+
+test('ignores theme messages from another window or origin, and malformed ones', () => {
+  const parent = frameInside();
+  const apply = vi.fn();
+  followHostTheme(apply);
+
+  sendToFrame({ type: THEME, theme: 'dark' }, { source: window });
+  sendToFrame({ type: THEME, theme: 'dark' }, { source: null });
+  sendToFrame({ type: THEME, theme: 'dark' }, { source: parent, origin: 'https://example.invalid' });
+  sendToFrame({ type: THEME, theme: 'sepia' }, { source: parent });
+  sendToFrame({ type: 'sparkforensics:docs-escape' }, { source: parent });
+  sendToFrame(null, { source: parent });
+
+  expect(apply).not.toHaveBeenCalled();
 });
 
 test('posts the content height to the docs page now and on every resize', () => {
-  const parent = frameInside(document.createElement('html'));
+  const parent = frameInside();
   const element = document.createElement('div');
   vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({ height: 412.2 } as DOMRect);
   ResizeObserverStub.instances = [];
 
   reportHeight(element);
-  expect(parent.postMessage).toHaveBeenLastCalledWith({ type: HEIGHT_MESSAGE, height: 413 }, window.location.origin);
+  expect(parent.postMessage).toHaveBeenLastCalledWith({ type: HEIGHT_TYPE, height: 413 }, window.location.origin);
 
   vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({ height: 600 } as DOMRect);
   ResizeObserverStub.instances[0].callback();
-  expect(parent.postMessage).toHaveBeenLastCalledWith({ type: HEIGHT_MESSAGE, height: 600 }, window.location.origin);
+  expect(parent.postMessage).toHaveBeenLastCalledWith({ type: HEIGHT_TYPE, height: 600 }, window.location.origin);
 });

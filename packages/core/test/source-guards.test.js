@@ -46,6 +46,18 @@ function siteSourceFiles(dir = siteDir) {
   });
 }
 
+// The docs site and the app's frames talk through the typed messages in src/docs-widget/frame-messages.ts;
+// reading the other side's document couples them to its markup.
+describe('frame isolation', () => {
+  it('the site never reads a frame or host document', () => {
+    const offenders = siteSourceFiles().flatMap((file) => {
+      const text = readFileSync(file, 'utf8');
+      return ['window.parent.document', '.contentDocument'].filter((probe) => text.includes(probe)).map((probe) => `${path.relative(siteDir, file)}: ${probe}`);
+    });
+    expect(offenders, `exchange docs-widget/frame-messages instead:\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
+
 describe('core entry points', () => {
   it('the site imports core only through its entry points', () => {
     const offenders = siteSourceFiles().flatMap((file) => {

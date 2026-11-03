@@ -254,27 +254,39 @@ describe('DocsSheet + DocsContext', () => {
 });
 
 describe('DocsSheet Escape inside the docs frame', () => {
-  it('closes the panel on Escape pressed inside the frame, but not while the docs search popup is open', async () => {
+  const escapeMessage = { type: 'sparkforensics:docs-escape' };
+
+  function postMessage(data: unknown, init: { source: Window | null; origin?: string }) {
+    act(() => {
+      window.dispatchEvent(new MessageEvent('message', { data, origin: init.origin ?? window.location.origin, source: init.source }));
+    });
+  }
+
+  async function openFrame() {
     const user = userEvent.setup();
     renderTree();
     await user.click(screen.getByRole('button', { name: 'open-site' }));
     expect(screen.getByTestId('is-open')).toHaveTextContent('true');
+    return (document.querySelector('[data-slot="docs-panel"] iframe') as HTMLIFrameElement).contentWindow!;
+  }
 
-    const frame = document.querySelector('[data-slot="docs-panel"] iframe') as HTMLIFrameElement;
-    fireEvent.load(frame);
-    const frameDoc = frame.contentDocument!;
+  it('closes the panel on an escape message from its docs frame', async () => {
+    const frameWindow = await openFrame();
 
-    // The docs site's own search popup owns Escape while it is open.
-    const search = frameDoc.createElement('div');
-    search.className = 'VPLocalSearchBox';
-    // jsdom never loads the page, so the frame document starts empty.
-    if (!frameDoc.documentElement) frameDoc.appendChild(frameDoc.createElement('html'));
-    frameDoc.documentElement.appendChild(search);
-    act(() => { frameDoc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
-    expect(screen.getByTestId('is-open')).toHaveTextContent('true');
+    postMessage(escapeMessage, { source: frameWindow });
 
-    search.remove();
-    act(() => { frameDoc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
     expect(screen.getByTestId('is-open')).toHaveTextContent('false');
+  });
+
+  it('keeps the panel open for an escape message from another window or another origin, and for other messages', async () => {
+    const frameWindow = await openFrame();
+
+    postMessage(escapeMessage, { source: window });
+    postMessage(escapeMessage, { source: null });
+    postMessage(escapeMessage, { source: frameWindow, origin: 'https://example.invalid' });
+    postMessage({ type: 'sparkforensics:docs-theme', theme: 'dark' }, { source: frameWindow });
+    postMessage('sparkforensics:docs-escape', { source: frameWindow });
+
+    expect(screen.getByTestId('is-open')).toHaveTextContent('true');
   });
 });
