@@ -20,7 +20,7 @@ npm run build         # production build, outputs dist/ (plus dist/export-templa
 npm run preview       # serves dist/ locally
 npx tsc --noEmit      # typecheck (strict TypeScript across src/, tests/view/ and packages/core/src/)
 npm run lint          # eslint over the repo's JS (.ts/.tsx are covered by tsc and lint:structure)
-npm run lint:structure  # ast-grep structure rules over src/ (rules/, tested by rule-tests/)
+npm run lint:structure  # ast-grep structure rules over src/ and packages/core/src/ (rules/, tested by rule-tests/)
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
 

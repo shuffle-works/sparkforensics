@@ -32,8 +32,9 @@ names, tables or paths in tracked files, commits or PR text. Use the neutral `pr
 
 ## Structure rules
 
-`npm run lint:structure` runs the ast-grep rules in `rules/` over `src/`, after
-their tests in `rule-tests/` (`sgconfig.yml` is the config). CI runs it next to
+`npm run lint:structure` runs the ast-grep rules in `rules/` over `src/` and
+`packages/core/src/`, after their tests in `rule-tests/` (`sgconfig.yml` is the
+config). CI runs it next to
 `npm run lint`. A decision about what to render is a value computed from data
 before anything renders, so the rules ban the ways a view can read its own
 rendered output and correct it afterwards:
