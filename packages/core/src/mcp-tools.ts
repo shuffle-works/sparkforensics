@@ -17,7 +17,7 @@ import { buildComparisonOutput, type ComparisonOutput } from './comparison-outpu
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { compileConfIgnorePatterns } from './comparability.ts';
 import { runOutputBlocks, type ReportGenerator } from './run-output.ts';
-import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
+import { evaluateBudgets, regressionPairingError, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
@@ -571,12 +571,8 @@ export async function evaluateBudgetsForRun(
   runId: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean;
   tunedThresholds?: Record<string, TunedThresholds>;
 }> {
-  // Mirrors the CLI's --regression-metric/--max-regression-pct pairing guard: unlike the CLI, this
-  // tool never defaults regressionMetric, so seeing it set here means the caller asked for a
-  // regression check and forgot the threshold, evaluateBudgets() would otherwise skip it silently.
-  if (budgets.regressionMetric !== undefined && budgets.maxRegressionPct === undefined) {
-    throw mcpError('access-or-upstream-failure', 'regressionMetric requires maxRegressionPct.');
-  }
+  const pairingError = regressionPairingError(budgets);
+  if (pairingError) throw mcpError('access-or-upstream-failure', pairingError);
   // The CLI's rule: a metric is budgeted once across the single pair and the list.
   try {
     const pair = budgets.maxRegressionPct === undefined ? [] : [{ metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct }];

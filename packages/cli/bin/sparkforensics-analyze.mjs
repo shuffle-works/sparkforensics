@@ -23,7 +23,7 @@ const { core, buildId: coreBuildId } = await loadNodeCore(pkgDir);
 
 const {
   collectRun, collectRunPair, resolveFromShs, validateShsRequest, analyzeRun,
-  buildEvidenceReport, toFindingsFilter, evaluateBudgets,
+  buildEvidenceReport, toFindingsFilter, evaluateBudgets, regressionPairingError,
   renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput, comparedFindings,
   compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS, compileConfIgnorePatterns,
   buildHtmlExportData, encodeRunPayload, runPayloadScript, loadThresholdOverrides,
@@ -532,9 +532,11 @@ async function runCli(argv, { fetchImpl } = {}) {
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
     return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--ignore-conf/--noise-band-pct/--executor-ratio/--unmatched-stages-pct/--task-count-change-pct/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
   }
-  if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
-    return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
-  }
+  const pairingError = regressionPairingError(
+    { regressionMetric: values['regression-metric'], maxRegressionPct: values['max-regression-pct'] },
+    { metric: '--regression-metric', pct: '--max-regression-pct' },
+  );
+  if (pairingError) return bail(`${pairingError}\n${USAGE}`, 2);
   if (values['regression-metric'] !== undefined && !COMPARISON_METRIC_KEYS.includes(values['regression-metric'])) {
     return bail(`Unknown --regression-metric "${values['regression-metric']}" (expected one of: ${COMPARISON_METRIC_KEYS.join(', ')}).\n${USAGE}`, 2);
   }

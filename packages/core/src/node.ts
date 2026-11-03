@@ -6,7 +6,7 @@
 // install, and only the MCP bin builds a server.
 export { collectRun } from './cli/collect-run.ts';
 export { collectRunPair } from './cli/collect-run-pair.ts';
-export { evaluateBudgets } from './cli/budgets.ts';
+export { evaluateBudgets, regressionPairingError } from './cli/budgets.ts';
 export { runDetectorsCommand } from './cli/detectors-command.ts';
 export { parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced } from './cli/flag-values.ts';
 export {
