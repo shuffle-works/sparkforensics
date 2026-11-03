@@ -1,12 +1,13 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CircleX, CopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
-import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/analysis';
+import type { InterpretedCostStep } from '@sparkforensics/core/analysis';
 import type { Finding } from '@sparkforensics/core/types';
-import type { AnyEvidencePanel } from '@/view/evidence-panel';
+import type { StepEvidence, StepLayout } from '@/view/board-layout';
+import { landmarkRowKey, VERDICT_LANDMARK } from '@/view/route-keys';
 import { useStore, useWidgetDensity } from '@/store/store';
 import type { InterpretationState } from '@/view/interpretation';
 import { findingName, recommendationParts, findingActionLabel } from '@sparkforensics/core/view-model';
@@ -14,7 +15,8 @@ import { useOptionalDocs } from '@/view/DocsContext';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingById, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
-import { useEvidenceOpen, useRouteLanding } from '@/view/InlineEvidence';
+import { useCardOpen } from '@/view/InlineEvidence';
+import { useLanding, useLine } from '@/view/route-landing';
 import { StepCode, useStepCodesShown } from '@/view/StepCode';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
@@ -28,13 +30,10 @@ export interface RunVerdictProps {
   onShowMoreFindings: () => void;
   /** How many findings the Findings tab lists under "More findings". */
   moreFindingsCount?: number;
-  /** The evidence panel a widget shows for a step's lead finding, which the step already states,
-   * or null when the widget has nothing to show beyond the step. */
-  evidencePanel?: (widgetId: string, lead: Finding) => AnyEvidencePanel | null;
-  /** The card that shows `panel` in place. */
-  renderEvidence?: (panel: AnyEvidencePanel) => ReactNode;
-  /** Step index to the widget whose evidence renders inside that step. */
-  evidenceOwners?: ReadonlyMap<number, string>;
+  /** The verdict's steps, with the evidence each shows in place. */
+  steps: readonly StepLayout[];
+  /** The card that shows a step's evidence panel in place. */
+  renderEvidence?: (evidence: Extract<StepEvidence, { kind: 'panel' }>, finding: Finding) => ReactNode;
 }
 
 function CopyTextButton({ text, label, testId }: { text: string; label: string; testId: string }) {
@@ -65,38 +64,24 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
 /** The verdict step's small bordered actions; the first step's evidence button is the soft primary. */
 const STEP_ACTION = 'h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent';
 
-/** What a step shows in place of its widget's card. A `panel` step has evidence to show and offers
- * the control for it. A `bare` step has nothing beyond the step line: no control, and a route to
- * it lands on the step. No evidence at all (null) means the step routes to the widget's card. */
-export type StepEvidence =
-  | { kind: 'panel'; widgetId: string; panel: AnyEvidencePanel; card: ReactNode }
-  | { kind: 'bare'; widgetId: string };
-
 export function NextStepItem({
-  step,
-  finding,
+  layout,
   interpretation,
-  index,
   onRoute,
-  evidence,
+  renderEvidence,
 }: {
-  step: InterpretedStep;
-  /** The step's lead finding, resolved from `step.leadId`. */
-  finding: Finding;
+  layout: StepLayout;
   interpretation: InterpretationState;
-  index: number;
   /** Absent where the page has nowhere to route, so a step with no panel offers no control. */
   onRoute?: (target: TriageTarget) => void;
-  evidence: StepEvidence | null;
+  renderEvidence?: (evidence: Extract<StepEvidence, { kind: 'panel' }>, finding: Finding) => ReactNode;
 }) {
+  const { step, finding, index, evidence } = layout;
   const { openStage } = useStageDetail();
-  const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null, [finding]);
   const shown = evidence?.kind === 'panel' ? evidence : null;
+  const evidenceState = useCardOpen(shown?.cardKey ?? null);
   const bare = evidence?.kind === 'bare' || (!shown && !onRoute);
-  const scope = useMemo(() => [finding], [finding]);
-  const stepRef = useRef<HTMLLIElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  useRouteLanding(evidence?.kind === 'bare' ? evidence.widgetId : null, scope, stepRef, titleRef);
+  const line = useLine(layout.lineKey);
   const evidenceId = `next-step-${index}-evidence`;
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
@@ -109,17 +94,16 @@ export function NextStepItem({
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
-    <li ref={stepRef} className={cn('verdict-step', !codeShown && 'verdict-step--plain')} data-testid="next-step" aria-labelledby={titleId}>
+    <li className={cn('verdict-step', !codeShown && 'verdict-step--plain')} data-testid="next-step" aria-labelledby={titleId}>
       {/* The step code (F1, F2, ...) also marks this step's Findings row, its
           bar on the stage strip and its Stage Summary row. */}
       <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 [overflow-wrap:anywhere]">
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
         <h3
-          ref={titleRef}
+          {...(bare ? line : {})}
           id={titleId}
           tabIndex={bare ? -1 : undefined}
-          data-shortcut-target={bare ? '' : undefined}
           className={cn('text-[0.9375rem] font-semibold', bare && 'rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring')}
         >
           {findingActionLabel(finding)}
@@ -183,7 +167,7 @@ export function NextStepItem({
             size="sm"
             variant={index === 0 ? 'soft' : 'outline'}
             className={cn(STEP_ACTION, index === 0 && 'border-transparent bg-accent-soft dark:bg-accent-soft')}
-            data-shortcut-target
+            {...line}
             aria-expanded={shown ? evidenceState.open : undefined}
             aria-controls={shown ? evidenceId : undefined}
             onClick={() => {
@@ -204,7 +188,7 @@ export function NextStepItem({
             )}
           </Button>
         </div>}
-        {shown && evidenceState.open ? <div id={evidenceId} className="pt-2">{shown.card}</div> : null}
+        {shown && evidenceState.open ? <div id={evidenceId} className="pt-2">{renderEvidence?.(shown, finding)}</div> : null}
       </div>
     </li>
   );
@@ -323,21 +307,14 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, evidencePanel, renderEvidence, evidenceOwners }: RunVerdictProps) {
+export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, steps, renderEvidence }: RunVerdictProps) {
   const { title, summary, failed, clean, failureReason, copyText, idleLine } = interpretation.data.verdict;
-  const shown = interpretation.data.verdict.steps
-    .map((step) => ({ step, finding: findingById(interpretation, step.leadId) }))
-    .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
-  const evidenceFor = (index: number, lead: Finding): StepEvidence | null => {
-    const widgetId = evidenceOwners?.get(index);
-    if (!widgetId || !evidencePanel) return null;
-    const panel = evidencePanel(widgetId, lead);
-    return panel ? { kind: 'panel', widgetId, panel, card: renderEvidence?.(panel) } : { kind: 'bare', widgetId };
-  };
+  const landing = useLanding([landmarkRowKey(VERDICT_LANDMARK)]);
 
   return (
     <section
+      ref={landing}
       id="run-verdict"
       // Target of the dashboard's "Skip to the verdict" link.
       tabIndex={-1}
@@ -369,24 +346,22 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
       </div>
       <VerdictStrip interpretation={interpretation} />
       {density === 'advanced' ? null : <div className="mt-4"><NewcomerPrimer /></div>}
-      {shown.length > 0 ? <p className="trace-eyebrow mt-4">By cluster time (task-hours)</p> : null}
-      {shown.length > 0 ? (
+      {steps.length > 0 ? <p className="trace-eyebrow mt-4">By cluster time (task-hours)</p> : null}
+      {steps.length > 0 ? (
         <ol aria-label="Next steps" className="verdict-steps">
-          {shown.map(({ step, finding }, index) => (
+          {steps.map((layout) => (
             <NextStepItem
-              key={step.key}
-              step={step}
-              finding={finding}
+              key={layout.step.key}
+              layout={layout}
               interpretation={interpretation}
-              index={index}
               onRoute={onRoute}
-              evidence={evidenceFor(index, finding)}
+              renderEvidence={renderEvidence}
             />
           ))}
         </ol>
       ) : null}
       <CostLane interpretation={interpretation} onRoute={onRoute} />
-      {shown.length > 0 ? (
+      {steps.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           {moreFindingsCount > 0 ? (
             <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onShowMoreFindings}>
@@ -403,7 +378,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
           />
         </div>
       ) : null}
-      {density === 'advanced' && shown.length > 1 ? (
+      {density === 'advanced' && steps.length > 1 ? (
         <p className="mt-2 text-xs text-muted-foreground">
           {failed
             ? 'Order: failures first, then cluster time, then highest potential savings; impact band breaks ties.'

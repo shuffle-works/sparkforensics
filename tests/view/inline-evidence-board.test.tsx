@@ -7,10 +7,10 @@ import type { Finding, TaskData } from '@sparkforensics/core/types';
 
 import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { emptyAppModel } from '@/store/store';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
+import { TestImpactBoard } from './_shared/board';
 
 function appModel() {
   return {
@@ -20,18 +20,14 @@ function appModel() {
   };
 }
 
+const boardModel = appModel();
+
 function renderBoard(catalog: Finding[], onRoute = vi.fn()) {
-  installInterpretation(catalog, appModel() as never);
+  const model = boardModel;
+  installInterpretation(catalog, model as never);
   render(
     <StageDetailProvider>
-      <ImpactBoard
-        appModel={appModel() as never}
-        catalog={catalog}
-        configFindings={[]}
-        stages={appModel().stages as never}
-        getTaskData={async () => ({ taskEvents: [] }) as unknown as TaskData}
-        onRoute={onRoute}
-      />
+      <TestImpactBoard appModel={model as never} catalog={catalog} onRoute={onRoute} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -129,7 +125,7 @@ describe('evidence panel on a Findings row', () => {
     const onRoute = vi.fn();
     const board = () => (
       <StageDetailProvider>
-        <ImpactBoard appModel={model as never} catalog={catalog} configFindings={configFindings} stages={model.stages as never} getTaskData={getTaskData} onRoute={onRoute} />
+        <TestImpactBoard appModel={model as never} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} onRoute={onRoute} />
       </StageDetailProvider>
     );
     const { rerender } = render(board());

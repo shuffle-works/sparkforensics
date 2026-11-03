@@ -31,7 +31,7 @@ export interface GraphViewPickerDialogProps {
  * 0 renders no entry point at all. */
 export function GraphViewPickerDialog({ open, entries, onSelect, onOpenChange }: GraphViewPickerDialogProps) {
   const [filter, setFilter] = useState('');
-  const listRef = useRef<HTMLUListElement>(null);
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     if (!open) setFilter('');
@@ -50,8 +50,7 @@ export function GraphViewPickerDialog({ open, entries, onSelect, onOpenChange }:
   // Moves focus to the row button at `index` among the currently visible
   // (filtered) rows, clamped to the list's bounds: no wraparound.
   function focusRowAt(index: number) {
-    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [];
-    buttons[index]?.focus();
+    rowRefs.current[index]?.focus();
   }
 
   function handleRowKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -93,10 +92,11 @@ export function GraphViewPickerDialog({ open, entries, onSelect, onOpenChange }:
         {visibleEntries.length === 0 ? (
           <p className="px-1.5 py-1 text-sm text-muted-foreground">No matching executions</p>
         ) : (
-          <ul ref={listRef} className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+          <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
             {visibleEntries.map((entry, index) => (
               <li key={entry.executionId}>
                 <button
+                  ref={(button) => { rowRefs.current[index] = button; }}
                   type="button"
                   className="flex w-full min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-md px-1.5 py-1 text-left hover:bg-muted"
                   onClick={() => onSelect(entry.stageId)}

@@ -43,6 +43,7 @@ import { StepCode } from '@/view/StepCode';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
+import { useWidgetState } from '@/view/useWidgetState';
 
 const PAGE_SIZE = 10;
 const TOP_N = 10;
@@ -120,17 +121,21 @@ function dedupTagsByType(tags: Finding[]): Finding[] {
   });
 }
 
+const NO_SORTING: SortingState = [];
+const FIRST_PAGE: PaginationState = { pageIndex: 0, pageSize: PAGE_SIZE };
+
 /** Stage-by-stage summary table (shadcn `Table` + tanstack `useTable`).
  * Defaults to the top-N-by-duration view; a toggle switches to the
- * problem-stage view (only stages any board widget flagged). Sorting and
- * pagination are local `useState`, not persisted. */
+ * problem-stage view (only stages any board widget flagged). The view,
+ * filter, sorting and page are remembered for the run (`useWidgetState`), so
+ * hiding the Full app report tab does not reset them. */
 export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRoute }: StageTableProps) {
   const { openStage } = useStageDetail();
   const density = useWidgetDensity();
-  const [showProblems, setShowProblems] = useState(false);
-  const [nameFilter, setNameFilter] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE });
+  const [showProblems, setShowProblems] = useWidgetState('stage-table:problems-only', false);
+  const [nameFilter, setNameFilter] = useWidgetState('stage-table:name-filter', '');
+  const [sorting, setSorting] = useWidgetState<SortingState>('stage-table:sorting', NO_SORTING);
+  const [pagination, setPagination] = useWidgetState<PaginationState>('stage-table:pagination', FIRST_PAGE);
 
   const { catalogByStage, flaggedStageIds } = useMemo(() => {
     const byStage = new Map<number, Finding[]>();

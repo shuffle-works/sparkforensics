@@ -1,9 +1,26 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RowStatusCluster } from '../../src/view/RowStatusCluster.tsx';
-import { EvidenceAvailabilityContext } from '../../src/view/EvidenceAvailabilityContext.tsx';
+import { emptyAppModel, store } from '../../src/store/store';
+import { BoardLayoutContext } from '../../src/view/BoardLayoutContext.tsx';
+import { buildBoardLayout } from '../../src/view/board-layout.ts';
+import { emptySelection } from '../../src/view/finding-filter.ts';
+
+const layout = buildBoardLayout({
+  interpretation: null,
+  appModel: {
+    ...emptyAppModel(),
+    evidenceAvailability: { schemaVersion: 1, entries: [{ key: 'sqlPlan', state: 'notEmitted', reasonCode: 'noResolvedSqlPlan', summary: 'Not emitted.' }] },
+  },
+  catalog: [],
+  configFindings: [],
+  selection: emptySelection(),
+  density: 'basic',
+});
+
+beforeEach(() => store.getState().resetModel());
 
 describe('RowStatusCluster', () => {
   it('renders nothing when neither confidence nor an evidence key is given', () => {
@@ -51,21 +68,19 @@ describe('RowStatusCluster', () => {
     expect(caveat).not.toHaveAttribute('title');
   });
 
-  it('renders evidence-only as a real button with an "Evidence: <label>" accessible name', async () => {
+  it('renders evidence-only as a real button with an "Evidence: <label>" accessible name that routes to the ledger row', async () => {
     const user = userEvent.setup();
-    const revealEvidence = vi.fn();
     render(
-      <EvidenceAvailabilityContext.Provider
-        value={{ revealRequest: 0, evidenceCardOpen: false, setEvidenceCardOpen: vi.fn(), revealEvidence, registerRow: vi.fn() }}
-      >
+      <BoardLayoutContext.Provider value={layout}>
         <RowStatusCluster evidenceKey="sqlPlan" />
-      </EvidenceAvailabilityContext.Provider>,
+      </BoardLayoutContext.Provider>,
     );
     const button = screen.getByRole('button', { name: /^evidence: sql plan$/i });
     // Visible text is just the bare label, not the full accessible name.
     expect(button).toHaveTextContent('SQL plan');
     await user.click(button);
-    expect(revealEvidence).toHaveBeenCalledWith('sqlPlan');
+    expect(store.getState().board.route).toMatchObject({ tab: 'full-report', rowKey: 'evidence:sqlPlan' });
+    expect(store.getState().board.openCards.has('reference-evidence-availability')).toBe(true);
   });
 
   it('renders both confidence and evidence together, in one cluster', () => {
@@ -74,11 +89,12 @@ describe('RowStatusCluster', () => {
     expect(screen.getByRole('button', { name: /^evidence: executor metrics$/i })).toBeInTheDocument();
   });
 
-  it('renders the evidence button even without an EvidenceAvailabilityProvider in scope (click is then a safe no-op)', async () => {
+  it('renders the evidence button even outside a board (click is then a safe no-op)', async () => {
     const user = userEvent.setup();
     render(<RowStatusCluster evidenceKey="sqlPlan" />);
     const button = screen.getByRole('button', { name: /^evidence: sql plan$/i });
     expect(button).toBeInTheDocument();
     await user.click(button); // must not throw
+    expect(store.getState().board.route).toBeNull();
   });
 });

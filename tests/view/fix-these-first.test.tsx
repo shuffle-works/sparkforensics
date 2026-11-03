@@ -1,16 +1,17 @@
 // @vitest-environment jsdom
-import { useState } from 'react';
-import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, it, expect } from 'vitest';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { impactFigure } from '@sparkforensics/core/analysis';
-import { TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
+import { TypeGroupRow } from '../../src/view/widgets/FixTheseFirst';
 import { rankedRollup } from '@sparkforensics/core/view-model';
 import type { AppModel, Finding, FindingOf, FindingType, ImpactBand } from '@sparkforensics/core/types';
-import { emptyAppModel } from '@/store/store';
-import type { BoardGroup } from '@/view/interpretation';
+import { emptyAppModel, store } from '@/store/store';
+import type { GroupRowLayout } from '@/view/board-layout';
+import type { WidgetProps } from '@/view/detector-registry';
+import { boardRollup, type BoardGroup } from '@/view/interpretation';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding, unknownTypeFinding } from './_shared/finding';
 
@@ -20,9 +21,26 @@ const STAGES = new Map(Array.from({ length: 20 }, (_, i) => [i + 1, { id: i + 1,
 
 const APP_MODEL = { ...emptyAppModel(), stages: STAGES } as unknown as AppModel;
 
-// The board as ImpactBoard reads it: the run's interpretation over these findings, unfiltered.
+beforeEach(() => store.getState().resetModel());
+
+// The board's groups as the layout reads them: the run's interpretation over these findings, unfiltered.
 function boardData(catalog: Finding[], configFindings: Finding[] = []) {
-  return useFixTheseFirstData(catalog, configFindings, APP_MODEL.stages, installInterpretation(catalog, APP_MODEL, configFindings));
+  return boardRollup(installInterpretation(catalog, APP_MODEL, configFindings), [...catalog, ...configFindings], APP_MODEL.stages);
+}
+
+const WIDGET_PROPS: WidgetProps = { appModel: APP_MODEL, catalog: [], getTaskData: () => Promise.reject(new Error('no task data')) };
+
+// The group row the layout gives a type group with no evidence card; `expanded` lists its members.
+function groupRow(group: BoardGroup, expanded = false): GroupRowLayout {
+  const row: GroupRowLayout = {
+    kind: 'group',
+    lineKey: `group:${group.key}`,
+    group,
+    evidence: { widget: null, panel: null, cardKey: null },
+    memberLineKeys: group.findings.map((_, i) => `member:${group.key}:${i}`),
+  };
+  if (expanded) store.getState().toggleGroup(row.lineKey);
+  return row;
 }
 
 // One board group for TypeGroupRow, built the way the interpretation builds it.
@@ -41,7 +59,7 @@ function findingWithMagnitude<T extends FindingType>(type: T, stageId: number, l
   } as FindingOf<T>;
 }
 
-describe('useFixTheseFirstData', () => {
+describe('the board\'s groups', () => {
   it('bands a one-finding group by that finding', () => {
     const catalog = [findingWithMagnitude('spill', 1, 9000, 'critical')];
     const { groups } = boardData(catalog);
@@ -76,12 +94,11 @@ describe('useFixTheseFirstData', () => {
     expect(groups[0].findings[0]).toBe(findingA);
   });
 
-  it('useFixTheseFirstData returns the eligible/groups/triageTarget ImpactBoard renders from', () => {
+  it('returns the eligible findings and groups the board lists', () => {
     const catalog = [findingWithMagnitude('spill', 1, 9000, 'critical')];
-    const { eligible, groups, triageTarget } = boardData(catalog);
+    const { eligible, groups } = boardData(catalog);
     expect(eligible).toHaveLength(1);
     expect(groups).toHaveLength(1);
-    expect(triageTarget?.finding).toBe(catalog[0]);
   });
 
   it('renders the unfiltered board exactly as the interpretation carries it', () => {
@@ -89,7 +106,7 @@ describe('useFixTheseFirstData', () => {
     const state = installInterpretation(catalog, APP_MODEL);
     // A figure no core computes: the board must show the carried one, not derive its own.
     state.data.rollup.groups[0].stat = 'carried figure';
-    const { groups } = useFixTheseFirstData(catalog, [], APP_MODEL.stages, state);
+    const { groups } = boardRollup(state, catalog, APP_MODEL.stages);
     expect(groups[0].stat).toBe('carried figure');
     expect(groups[0].findings).toEqual([catalog[0], catalog[1]]);
   });
@@ -97,8 +114,8 @@ describe('useFixTheseFirstData', () => {
   it('recomputes the groups over the findings a filter keeps', () => {
     const catalog = [findingWithMagnitude('spill', 1, 3000), findingWithMagnitude('spill', 2, 2000)];
     const state = installInterpretation(catalog, APP_MODEL);
-    expect(useFixTheseFirstData(catalog, [], APP_MODEL.stages, state).groups[0].stat).toBe('×2 · 5.0s recoverable');
-    const filtered = useFixTheseFirstData([catalog[1]], [], APP_MODEL.stages, state);
+    expect(boardRollup(state, catalog, APP_MODEL.stages).groups[0].stat).toBe('×2 · 5.0s recoverable');
+    const filtered = boardRollup(state, [catalog[1]], APP_MODEL.stages);
     expect(filtered.eligible).toEqual([catalog[1]]);
     expect(filtered.groups).toHaveLength(1);
     expect(filtered.groups[0].findings).toEqual([catalog[1]]);
@@ -130,7 +147,7 @@ describe('duplicatePlanSubtree identity across a cross-execution rollup', () => 
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={group} allFindings={[findingA, findingB]} expanded onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(group, true)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,
@@ -198,7 +215,7 @@ describe('TypeGroupRow generic description', () => {
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={group} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(group)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,
@@ -231,7 +248,7 @@ describe('TypeGroupRow generic description', () => {
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={group} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(group)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,
@@ -251,7 +268,7 @@ describe('TypeGroupRow generic description', () => {
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={group} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(group)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,
@@ -274,7 +291,7 @@ describe('TypeGroupRow docs link', () => {
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={group} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(group)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,
@@ -309,7 +326,7 @@ describe('TypeGroupRow pagination', () => {
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={group} allFindings={findings} expanded onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(group, true)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,
@@ -325,16 +342,40 @@ describe('TypeGroupRow pagination', () => {
   });
 });
 
+describe('TypeGroupRow routes to a member', () => {
+  it('shows the page holding a routed member past the first page, focuses it, then pages freely', async () => {
+    const user = userEvent.setup();
+    const findings = Array.from({ length: 11 }, (_, i) => findingWithMagnitude('spill', i + 1, 1000 + i * 100, 'warning'));
+    const row = groupRow(groupOf(findings), true);
+
+    render(
+      <StageDetailProvider>
+        <Table>
+          <TableBody>
+            <TypeGroupRow row={row} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
+          </TableBody>
+        </Table>
+      </StageDetailProvider>,
+    );
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+
+    act(() => store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: row.memberLineKeys[10] }, { flash: false, block: 'nearest' }));
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+    const [member] = screen.getAllByTestId('fix-these-first-row');
+    expect(member.contains(document.activeElement)).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+  });
+});
+
 describe('TypeGroupRow expand/collapse', () => {
-  // TypeGroupRow itself is controlled (expanded/onToggle come from the parent),
-  // so this harness owns the toggled state to exercise a real click round trip
-  // rather than only asserting onToggle was called.
-  function ControlledGroupRow({ group, allFindings }: { group: BoardGroup; allFindings: Finding[] }) {
-    const [expanded, setExpanded] = useState(false);
+  // The group's expansion is the board's: a click toggles it in the store.
+  function GroupRowHarness({ group }: { group: BoardGroup }) {
     return (
       <Table>
         <TableBody>
-          <TypeGroupRow group={group} allFindings={allFindings} expanded={expanded} onToggle={() => setExpanded((e) => !e)} onRoute={() => {}} />
+          <TypeGroupRow row={groupRow(group)} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
         </TableBody>
       </Table>
     );
@@ -351,7 +392,7 @@ describe('TypeGroupRow expand/collapse', () => {
 
     const { container } = render(
       <StageDetailProvider>
-        <ControlledGroupRow group={group} allFindings={findings} />
+        <GroupRowHarness group={group} />
       </StageDetailProvider>,
     );
 
@@ -410,7 +451,7 @@ describe('TypeGroupRow hit area', () => {
       <StageDetailProvider>
         <Table>
           <TableBody>
-            <TypeGroupRow group={groupOf(findings)} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+            <TypeGroupRow row={groupRow(groupOf(findings))} widgetProps={WIDGET_PROPS} onRoute={() => {}} />
           </TableBody>
         </Table>
       </StageDetailProvider>,

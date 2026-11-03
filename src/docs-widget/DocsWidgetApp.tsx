@@ -1,6 +1,5 @@
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { FindingExample } from './FindingExample';
 
@@ -10,9 +9,7 @@ export function DocsWidgetApp({ findingId }: { findingId: string }) {
     <ThemeProvider>
       <DocsProvider>
         <StageDetailProvider>
-          <EvidenceAvailabilityProvider>
-            <FindingExample findingId={findingId} />
-          </EvidenceAvailabilityProvider>
+          <FindingExample findingId={findingId} />
         </StageDetailProvider>
       </DocsProvider>
     </ThemeProvider>

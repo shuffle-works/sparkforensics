@@ -1,4 +1,3 @@
-import { useState } from 'react';
 
 import {
   Table,
@@ -13,6 +12,7 @@ import type { Finding } from '@sparkforensics/core/types';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
+import { useCardStateKey, useWidgetState } from '@/view/useWidgetState';
 import type { RddInfoRow, StorageLevel } from './CacheUtilization.rows';
 
 const MAX_SHORT_NAME_LENGTH = 70;
@@ -39,7 +39,7 @@ function rowShortName(r: RddInfoRow): string {
 
 /** The cached RDDs a page at a time, each marked with the worst band of the findings on it. */
 export function CachedRddTable({ rdds, findings }: { rdds: readonly RddInfoRow[]; findings: readonly (Finding & { rddId?: number })[] }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useWidgetState(useCardStateKey('page'), 0);
   const { totalPages, effectivePage, visible } = usePagedRows([...rdds], page, setPage);
   return (
     <>

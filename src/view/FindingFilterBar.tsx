@@ -17,6 +17,8 @@ import type { ImpactBand } from '@sparkforensics/core/types';
 import { ImpactDot } from './ImpactBadge';
 import { isEmptySelection, type FilterOptions } from './finding-filter';
 import { useFindingFilter } from './FindingFilterContext';
+import { FILTERS_LANDMARK, landmarkRowKey } from './route-keys';
+import { useLanding } from './route-landing';
 
 // Selected pills tint to their impact color; the dot carries the color when
 // unselected. Keeps the fixed impact palette single-sourced with ImpactDot.
@@ -76,6 +78,7 @@ export function FindingFilterBar({ options, resultCount, hiddenNotes = 0 }: { op
   const { selection, toggleImpactBand, toggleType, toggleStage, clearAll } = useFindingFilter();
   const [stageQuery, setStageQuery] = useState('');
   const [typeQuery, setTypeQuery] = useState('');
+  const landing = useLanding([landmarkRowKey(FILTERS_LANDMARK)]);
 
   const visibleStages = useMemo(() => {
     const q = stageQuery.trim();
@@ -151,9 +154,10 @@ export function FindingFilterBar({ options, resultCount, hiddenNotes = 0 }: { op
             value={[...selection.impactBands]}
             onValueChange={(next) => toggleChanged(next as ImpactBand[], selection.impactBands, toggleImpactBand)}
           >
-            {options.impactBands.map((band) => (
+            {options.impactBands.map((band, index) => (
               <ToggleGroupItem
                 key={band}
+                ref={index === 0 ? landing : undefined}
                 value={band}
                 variant="outline"
                 size="sm"

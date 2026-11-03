@@ -6,10 +6,9 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { ScalingSim, makespanYAxisDomain } from '@/view/widgets/ScalingSim';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import type { AppModel, Job } from '@sparkforensics/core/types';
-import { testApp } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
+import { testApp } from './_shared/model';
 
 // Fixture mirrors the real per-stage shape posted by the parser worker so
 // simulateScaling can actually run.
@@ -37,9 +36,7 @@ describe('ScalingSim', () => {
     installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
-        <EvidenceAvailabilityProvider>
-          <ScalingSim appModel={runnableAppModel()} />
-        </EvidenceAvailabilityProvider>
+        <ScalingSim appModel={runnableAppModel()} />
       </DocsProvider>,
     );
 
@@ -73,7 +70,7 @@ describe('ScalingSim', () => {
   it('renders the unavailable fallback (not the chart) when there are no run aggregates', () => {
     const model = { ...runnableAppModel(), runAggregates: null };
     installInterpretation([], model);
-    render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
+    render(<ScalingSim appModel={model} />);
 
     expect(screen.getByRole('heading', { name: /what-if executor scaling/i })).toBeInTheDocument();
     expect(screen.getByText(/not available/i)).toBeInTheDocument();
@@ -89,7 +86,7 @@ describe('ScalingSim', () => {
     };
 
     installInterpretation([], model);
-    render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
+    render(<ScalingSim appModel={model} />);
 
     expect(screen.getByRole('button', { name: /evidence: task and core time/i })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /estimated makespan/i })).not.toBeInTheDocument();
@@ -100,7 +97,7 @@ describe('ScalingSim', () => {
     model.app = testApp({ startTime: 0, endTime: 1000, resources: {} });
     model.executors = { added: [], removed: [] };
     installInterpretation([], model);
-    render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
+    render(<ScalingSim appModel={model} />);
 
     expect(screen.getByText(/baseline executor\/core capacity is unavailable/i)).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /estimated makespan/i })).not.toBeInTheDocument();
@@ -176,9 +173,7 @@ describe('ScalingSim', () => {
     installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
-        <EvidenceAvailabilityProvider>
-          <ScalingSim appModel={runnableAppModel()} />
-        </EvidenceAvailabilityProvider>
+        <ScalingSim appModel={runnableAppModel()} />
       </DocsProvider>,
     );
     expect(screen.queryByText(/model error:/i)).not.toBeInTheDocument();
@@ -188,9 +183,7 @@ describe('ScalingSim', () => {
     installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
-        <EvidenceAvailabilityProvider>
-          <ScalingSim appModel={runnableAppModel()} />
-        </EvidenceAvailabilityProvider>
+        <ScalingSim appModel={runnableAppModel()} />
       </DocsProvider>,
     );
     expect(screen.getByText(/model error:/i)).toBeInTheDocument();
@@ -202,9 +195,7 @@ describe('ScalingSim', () => {
     const model = { ...runnableAppModel(), runAggregates: null };
     installInterpretation([], model);
     render(
-      <EvidenceAvailabilityProvider>
-        <ScalingSim appModel={model} />
-      </EvidenceAvailabilityProvider>,
+      <ScalingSim appModel={model} />,
     );
     expect(screen.getByRole('button', { name: /evidence:/i })).toBeInTheDocument();
   });
@@ -230,7 +221,7 @@ describe('ScalingSim', () => {
   it('the unavailable fallback has a summary', () => {
     const model = { ...runnableAppModel(), runAggregates: null };
     installInterpretation([], model);
-    render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
+    render(<ScalingSim appModel={model} />);
 
     expect(screen.getByText(/not available/i)).toBeInTheDocument();
   });

@@ -1,7 +1,9 @@
 import type { EvidenceAvailability as EvidenceAvailabilityLedger, EvidenceAvailabilityEntry, EvidenceReasonCode, EvidenceState } from '@sparkforensics/core/types';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { evidenceLabel, useEvidenceAvailabilityDisclosure, useEvidenceRowRegistration } from '@/view/EvidenceAvailabilityContext';
+import { evidenceRowKey } from '@/view/route-keys';
+import { evidenceLabel } from '@/view/evidence-labels';
+import { useLanding } from '@/view/route-landing';
 import { ImpactDot, type ImpactDotProps } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 
@@ -31,7 +33,7 @@ const INFORMATIVE_SUMMARY = new Set<EvidenceReasonCode>(['noRddStorageSnapshot',
 
 function EvidenceRow({ entry }: { entry: EvidenceAvailabilityEntry }) {
   const observedCount = entry.evidence?.count;
-  const registerRow = useEvidenceRowRegistration();
+  const landing = useLanding([evidenceRowKey(entry.key)]);
   const detail = `${entry.summary}${observedCount != null ? ` · ${observedCount} observed` : ''}`;
   // The visible line drops a summary that only restates the state; the tooltip keeps it.
   const shown = INFORMATIVE_SUMMARY.has(entry.reasonCode) ? detail : observedCount != null ? `${observedCount} observed` : null;
@@ -47,7 +49,7 @@ function EvidenceRow({ entry }: { entry: EvidenceAvailabilityEntry }) {
     <li
       id={`evidence-availability-${entry.key}`}
       tabIndex={-1}
-      ref={(el) => registerRow(entry.key, el)}
+      ref={landing}
       className="flex flex-col gap-0.5 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-ring"
       {...tooltipProps}
     >
@@ -79,13 +81,9 @@ function stateTally(entries: EvidenceAvailabilityEntry[]): string {
 }
 
 export function EvidenceAvailability({ ledger }: { ledger: EvidenceAvailabilityLedger | null }) {
-  const { evidenceCardOpen, setEvidenceCardOpen } = useEvidenceAvailabilityDisclosure();
-
   return (
     <WidgetCard
       title="Evidence availability"
-      open={evidenceCardOpen}
-      onOpenChange={setEvidenceCardOpen}
       summary={
         <span className="text-xs text-muted-foreground">
           {ledger ? stateTally(ledger.entries) : 'Unavailable for this restored run'}

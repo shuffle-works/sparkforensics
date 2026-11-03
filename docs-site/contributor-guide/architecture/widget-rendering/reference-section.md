@@ -26,7 +26,7 @@ WallClock, Timeline, Executor Count Over Time and StageTable render
 expanded. The grid tiles beside them (Core Locality, Evidence
 availability and the report lenses) are `collapsedTile`s: they start
 collapsed at a uniform height and widen to the full row when opened;
-`revealEvidence` opens the Evidence availability tile. Core Locality is the only detector-driven `REGISTRY`
+a route to a ledger row opens the Evidence availability tile. Core Locality is the only detector-driven `REGISTRY`
 card in this section, always mounted; Memory Utilization, Executor
 Utilization, and Cache Utilization live in the Findings tab above and surface
 there only when they have an active finding.
@@ -35,14 +35,12 @@ The Evidence availability card is the persistent, non-impact-band ledger
 [defined in the worker protocol](../worker-protocol/evidence-availability.md#evidence-availability-contract),
 not an alert or detector widget. An `Evidence: …`
 control appears only where a conclusion or unavailable report lens declares
-a relevant ledger dependency. `revealEvidence`
-(`src/view/EvidenceAvailabilityContext.tsx`) bumps a `revealRequest`
-counter, which `DashboardContent` (`src/view/Dashboard.tsx`) watches in a
-`useLayoutEffect` and translates into `setActiveTab('full-report')`. Each
-click is a new request, so it switches tabs again after the reader returns
-to Findings. The layout effect makes the tab visible before the provider's
-queued focus runs, since a row inside the hidden, still-mounted panel can't
-take focus. Mouse and keyboard activation switches to the Full app report
+a relevant ledger dependency. The control starts a route to the ledger row
+(`routeTo` with `{ kind: 'evidence', key }`, `src/view/board-route.ts`):
+`resolveRoute` returns the Full app report tab, the Evidence availability card
+to open and the row to focus, and the row focuses itself when it mounts. Each
+click is a new route, so it switches tabs again after the reader returns
+to Findings. Mouse and keyboard activation switches to the Full app report
 tab, opens the ledger card, then focuses the referenced stable entry id
 (`evidence-availability-<key>`). The control
 explains evidence availability; it does not promise an unavailable signal
@@ -53,8 +51,8 @@ would have produced a finding.
 card expands it across the full row. Nested `WidgetCard`s are isolated from
 the parent grid state. A Findings-tab `FixTheseFirst` rollup row is a table
 row, not a `WidgetGrid` card, and carries no collapse/expand state of its own
-(`ImpactBoard` holds which group is expanded; a `TypeGroupRow` owns only its
-page). Full app report's non-`REGISTRY` tiles (ETL Phase Attribution,
+(the store's `board.expandedGroup` holds which group is expanded; a
+`TypeGroupRow` owns only its page). Full app report's non-`REGISTRY` tiles (ETL Phase Attribution,
 What-If Executor Scaling, Compute Efficiency, Core-Usage
 Distribution) sit in the same `WidgetGrid` as Core Locality and
 Evidence availability; only Core Locality's item carries a

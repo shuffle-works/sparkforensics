@@ -9,7 +9,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { UnprunedScan } from '@/view/widgets/UnprunedScan';
 import type { Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
@@ -36,9 +35,7 @@ function renderWidget(catalog: Finding[]) {
   installInterpretation(catalog);
   return render(
     <DocsProvider>
-      <EvidenceAvailabilityProvider>
-        <UnprunedScan appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
-      </EvidenceAvailabilityProvider>
+      <UnprunedScan appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
     </DocsProvider>,
   );
 }

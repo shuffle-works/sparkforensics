@@ -6,18 +6,6 @@ const openStage = vi.fn();
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage, close: vi.fn() }),
 }));
-vi.mock('@/view/TriageNavigationContext', () => ({
-  useActiveRouteTarget: () => null,
-  useTriageNavigation: () => ({
-    registerWidget: vi.fn(),
-    registerFindingAnchor: vi.fn(() => vi.fn()),
-    findingKey: () => '',
-    reportWidgetOpen: vi.fn(),
-    clearRouteFocus: vi.fn(),
-  }),
-  useRouteFocusedCardKey: () => null,
-  useRouteFlashedFinding: () => null,
-}));
 
 import { emptyAppModel } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types';

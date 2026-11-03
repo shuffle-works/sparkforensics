@@ -9,6 +9,7 @@ import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
 import { DocsLink } from '../DocsContext';
 import { WidgetCard } from '../WidgetCard';
+import { useCardDisclosure } from '../WidgetGrid';
 import { WidgetLeadSummary } from '../WidgetLeadSummary';
 
 const HEIGHT = 220;
@@ -33,9 +34,8 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
   const { unavailable: noTaskData, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const [histogram, setHistogram] = useState<number[] | null>(null);
   const [incomplete, setIncomplete] = useState(false);
-  // Controlled disclosure so the task-data fetch below can be gated on the card
-  // actually being open.
-  const [open, setOpen] = useState(false);
+  // The card's disclosure is the board's; the task-data fetch below is gated on it being open.
+  const { open, setOpen } = useCardDisclosure(false);
   const hasStages = hasCoreUsageHistogram(appModel);
 
   useEffect(() => {

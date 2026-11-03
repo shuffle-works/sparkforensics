@@ -2,6 +2,7 @@ import { createStore } from 'zustand/vanilla';
 import { useStore as useZustand } from 'zustand';
 import { serializeRun, type ExportProvenance, type SerializedRun } from '@sparkforensics/core/export';
 import type { AnalyzedRun } from '@sparkforensics/core/analysis';
+import { boardActions, initialBoard, type BoardActions, type BoardState } from '@/store/board';
 import type { AppModel, Finding, TaskData, StageId } from '@sparkforensics/core/types';
 
 export function emptyAppModel(): AppModel {
@@ -20,7 +21,9 @@ export function emptyAppModel(): AppModel {
 export const EMPTY_APP_MODEL: AppModel = emptyAppModel();
 const NO_FINDINGS: Finding[] = [];
 
-interface State {
+interface State extends BoardActions {
+  /** The Findings board's tab, open cards and active route for the loaded run. */
+  board: BoardState;
   /** The run on screen, built once by `analyzeRun` (live) or read from an export, and installed whole by
    * `installRun`. Null until a run is installed. Views render its conclusions, never derive them. */
   run: AnalyzedRun | null;
@@ -117,6 +120,8 @@ export function snapshotOf(state: Pick<State, 'run' | 'taskDataCache'>): Seriali
 }
 
 export const store = createStore<State>((set) => ({
+  ...boardActions(set),
+  board: initialBoard(),
   run: null,
   runKey: null,
   exportProvenance: null,
@@ -167,6 +172,7 @@ export const store = createStore<State>((set) => ({
       comparison: { active: false, baselineId: null, candidateId: null },
       compareLoad: null,
       planGraph: { active: false, stageId: null, initialScope: 'segment' },
+      board: initialBoard(),
     }),
   setStatus: (status) => set({ status }),
   setShsParsing: (shsParsing) => set({ shsParsing }),
@@ -184,7 +190,7 @@ export const store = createStore<State>((set) => ({
       for (const [stageId, data] of entries) next.set(stageId, data);
       return { taskDataCache: next };
     }),
-  setActiveFile: (activeFileId) => set({ activeFileId }),
+  setActiveFile: (activeFileId) => set((s) => ({ activeFileId, board: s.activeFileId === activeFileId ? s.board : initialBoard() })),
   setError: (errorMessage) =>
     set((s) => ({ errorMessage, errorNonce: errorMessage ? s.errorNonce + 1 : s.errorNonce, status: errorMessage ? 'error' : s.status })),
   setTheme: (theme) => set({ theme }),

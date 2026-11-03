@@ -34,7 +34,7 @@ function PanelWidget({ findings }: { findings?: Finding[] }) {
 function renderPanel(findings: Finding[], statedFindings: Finding[]) {
   installInterpretation(findings);
   const widget = { component: () => <PanelWidget findings={findings} />, widgetId: 'spill', index: 0, findings, impactBand: 'critical' };
-  return render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: findings, getTaskData: undefined as never }} stated={statedFindings} panel={allRowsPanel('spill', findings as FindingOf<'spill'>[])} />);
+  return render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: findings, getTaskData: undefined as never }} stated={statedFindings} panel={allRowsPanel('spill', findings as FindingOf<'spill'>[])} cardKey="panel" />);
 }
 
 describe('in-place evidence panel', () => {
@@ -43,7 +43,7 @@ describe('in-place evidence panel', () => {
     installInterpretation([first, second]);
     const Widget = ({ catalog }: { catalog: Finding[] }) => <p>{catalog.map((finding) => finding.id).join(',')}</p>;
     const widget = { component: Widget, widgetId: 'spill', index: 0, findings: [first, second], impactBand: 'critical' };
-    render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: [first, second], getTaskData: undefined as never }} panel={allRowsPanel('spill', [first])} />);
+    render(<InlineEvidence widget={widget as never} widgetProps={{ appModel: undefined as never, catalog: [first, second], getTaskData: undefined as never }} panel={allRowsPanel('spill', [first])} cardKey="panel" />);
     expect(screen.getByText('spill-1')).toBeInTheDocument();
   });
 
@@ -74,11 +74,6 @@ describe('in-place evidence panel', () => {
   it("falls back to the widget's band when the line above states no finding", () => {
     renderPanel([stated('warning'), other()], []);
     expect(screen.getByRole('heading', { name: 'Spill' }).closest('section')).toHaveClass('border-critical');
-  });
-
-  it('makes the heading the route focus target', () => {
-    renderPanel([stated()], []);
-    expect(screen.getByRole('heading', { name: 'Spill' })).toHaveAttribute('tabindex', '-1');
   });
 
   it('shows every figure a widget renders when the line above states no finding in the panel', () => {

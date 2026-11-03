@@ -306,8 +306,7 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
   render(<App />);
   await waitForDashboard();
   // Spill needs its finding's impact band to resolve before its heading joins
-  // the outline. Full app report's keepMounted panel stays out of the tree
-  // (native hidden) until selected.
+  // the outline. Full app report's panel is not mounted until selected.
   await screen.findByRole('heading', { name: 'Spill' });
 
   // Exactly one page title.
@@ -341,8 +340,8 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
 });
 
 test('switching Findings <-> Full app report keeps an expanded finding group open', async () => {
-  // Both panels are keepMounted (hidden, not unmounted) so a round trip through
-  // Full app report doesn't reset ImpactBoard's local expandedGroupKey state.
+  // The expanded group is in the store, so a round trip through Full app report
+  // (which unmounts the Findings panel) doesn't reset it.
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.stages = new Map([

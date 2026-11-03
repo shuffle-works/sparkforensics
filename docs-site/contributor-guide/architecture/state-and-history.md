@@ -184,6 +184,19 @@ becoming the default on reload would risk hiding findings from a user who
 didn't realize a filter was still active, so a plain reload with no filter
 params is always the default board.
 
+### Board state
+
+The Findings board's state for the loaded run is the store's `board` slice
+(`src/store/board.ts`), replaced whenever a run loads (`resetModel` and a change
+of the active file). It holds the active tab, the set of open cards, the cards a
+route has revealed, the expanded group, the active route and the line holding
+focus. It also holds what widgets remember while their body is unmounted, by key:
+a page, a sort, the Stage Summary's filter and sorting, the Clean checks
+disclosure (`useWidgetState`, `src/view/useWidgetState.ts`). What the board lists
+is not in the store: it is the pure layout `buildBoardLayout` computes from the
+interpretation, the finding filter and the density, and routes resolve against it
+(see [First investigation routing](./widget-rendering/investigation-routing.md)).
+
 ### Recent files vs. session cache
 
 Two mechanisms cover reopening a file, at different lifetimes.

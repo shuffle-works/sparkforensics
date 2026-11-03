@@ -1,85 +1,30 @@
 // @vitest-environment jsdom
-import { expect, test, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, expect, test } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
 
+import { store } from '@/store/store';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
-import {
-  TriageNavigationProvider,
-  type WidgetRegistration,
-} from '@/view/TriageNavigationContext';
+import { useCardStateKey, useWidgetState } from '@/view/useWidgetState';
+import { BoardWithCards } from './_shared/board';
+
+beforeEach(() => store.getState().resetModel());
 
 function TestCard({
   cardId,
-  widgetId,
   title,
   defaultCollapsed = true,
   collapsedTile = false,
 }: {
   cardId: string;
-  widgetId?: string;
   title: string;
   defaultCollapsed?: boolean;
   collapsedTile?: boolean;
 }) {
   return (
-    <WidgetGridItem cardId={cardId} widgetId={widgetId} collapsedTile={collapsedTile}>
+    <WidgetGridItem cardId={cardId} collapsedTile={collapsedTile}>
       <WidgetCard title={title} defaultCollapsed={defaultCollapsed}>
-        <p>{title} details</p>
-      </WidgetCard>
-    </WidgetGridItem>
-  );
-}
-
-function TestNavigationProvider({
-  children,
-  registerWidget,
-  reportWidgetOpen = vi.fn(),
-  focusedCardKey = null,
-}: {
-  children: React.ReactNode;
-  registerWidget: (widgetId: string, registration: WidgetRegistration) => () => void;
-  reportWidgetOpen?: (widgetId: string, open: boolean) => void;
-  focusedCardKey?: string | null;
-}) {
-  return (
-    <TriageNavigationProvider
-      registerWidget={registerWidget}
-      registerFindingAnchor={vi.fn(() => vi.fn())}
-      findingKey={() => ''}
-      reportWidgetOpen={reportWidgetOpen}
-      clearRouteFocus={vi.fn()}
-      focusedCardKey={focusedCardKey}
-      activeRouteTarget={null}
-      flashedFinding={null}
-    >
-      {children}
-    </TriageNavigationProvider>
-  );
-}
-
-function ControlledTestCard({
-  cardId,
-  widgetId,
-  title,
-  onOpenChange,
-}: {
-  cardId: string;
-  widgetId: string;
-  title: string;
-  onOpenChange?: (open: boolean) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const handleOpenChange = (nextOpen: boolean) => {
-    onOpenChange?.(nextOpen);
-    setOpen(nextOpen);
-  };
-
-  return (
-    <WidgetGridItem cardId={cardId} widgetId={widgetId}>
-      <WidgetCard title={title} open={open} onOpenChange={handleOpenChange}>
         <p>{title} details</p>
       </WidgetCard>
     </WidgetGridItem>
@@ -90,10 +35,12 @@ test('grid cards expand, span, and collapse independently', async () => {
   const user = userEvent.setup();
 
   render(
-    <WidgetGrid>
-      <TestCard cardId="first" title="First" />
-      <TestCard cardId="second" title="Second" />
-    </WidgetGrid>,
+    <BoardWithCards keys={['first', 'second']}>
+      <WidgetGrid>
+        <TestCard cardId="first" title="First" />
+        <TestCard cardId="second" title="Second" />
+      </WidgetGrid>
+    </BoardWithCards>,
   );
 
   const first = screen.getByTestId('widget-grid-item-first');
@@ -109,18 +56,21 @@ test('grid cards expand, span, and collapse independently', async () => {
   await user.click(screen.getByRole('button', { name: 'First' }));
 
   expect(first).not.toHaveClass('col-span-full');
-  expect(screen.queryByText('First details')).not.toBeVisible();
+  expect(screen.queryByText('First details')).not.toBeInTheDocument();
   expect(second).toHaveClass('col-span-full');
   expect(screen.getByText('Second details')).toBeVisible();
 });
 
-test('a default-expanded grid card spans and can be collapsed', async () => {
+test('an open grid card spans and can be collapsed', async () => {
   const user = userEvent.setup();
 
+  act(() => store.getState().setCardOpen('available', true));
   render(
-    <WidgetGrid>
-      <TestCard cardId="available" title="Available" defaultCollapsed={false} />
-    </WidgetGrid>,
+    <BoardWithCards keys={['available']}>
+      <WidgetGrid>
+        <TestCard cardId="available" title="Available" defaultCollapsed={false} />
+      </WidgetGrid>
+    </BoardWithCards>,
   );
 
   const item = screen.getByTestId('widget-grid-item-available');
@@ -129,7 +79,7 @@ test('a default-expanded grid card spans and can be collapsed', async () => {
 
   await user.click(screen.getByRole('button', { name: 'Available' }));
 
-  expect(screen.queryByText('Available details')).not.toBeVisible();
+  expect(screen.queryByText('Available details')).not.toBeInTheDocument();
   expect(item).not.toHaveClass('col-span-full');
 });
 
@@ -137,14 +87,16 @@ test('a collapsedTile grid item starts collapsed and floors its height regardles
   const user = userEvent.setup();
 
   render(
-    <WidgetGrid>
-      <TestCard cardId="reference" title="Reference" defaultCollapsed={false} collapsedTile />
-    </WidgetGrid>,
+    <BoardWithCards keys={['reference']}>
+      <WidgetGrid>
+        <TestCard cardId="reference" title="Reference" defaultCollapsed={false} collapsedTile />
+      </WidgetGrid>
+    </BoardWithCards>,
   );
 
   // `collapsedTile` overrides the card's own `defaultCollapsed={false}`: it
   // still starts collapsed so every reference-region tile lines up.
-  expect(screen.queryByText('Reference details')).not.toBeVisible();
+  expect(screen.queryByText('Reference details')).not.toBeInTheDocument();
   const card = screen.getByRole('heading', { name: 'Reference' }).closest('[data-slot="card"]');
   expect(card).toHaveClass('min-h-[6.5rem]');
 
@@ -154,128 +106,84 @@ test('a collapsedTile grid item starts collapsed and floors its height regardles
   expect(card).not.toHaveClass('min-h-[6.5rem]');
 });
 
-test('registers only the outer stable widget and opens it through its registration', async () => {
-  let registration: WidgetRegistration | undefined;
-  const registerWidget = vi.fn((_widgetId: string, nextRegistration: WidgetRegistration) => {
-    registration = nextRegistration;
-    return vi.fn();
-  });
-
-  render(
-    <TestNavigationProvider registerWidget={registerWidget}>
-      <WidgetGrid>
-        <TestCard cardId="test" widgetId="spill" title="Spill" />
-      </WidgetGrid>
-    </TestNavigationProvider>,
-  );
-
-  expect(registerWidget).toHaveBeenCalledWith(
-    'spill',
-    expect.objectContaining({
-      wrapperElement: expect.any(HTMLDivElement),
-      open: expect.any(Function),
-      getDisclosureButton: expect.any(Function),
-    }),
-  );
-  expect(registration?.getDisclosureButton()).toBe(screen.getByRole('button', { name: 'Spill' }));
-
-  act(() => registration?.open());
-
-  await waitFor(() => expect(screen.getByText('Spill details')).toBeVisible());
-  const item = screen.getByTestId('widget-grid-item-test');
-  expect(item).toHaveClass('scroll-mt-20', 'col-span-full');
-});
-
-test('registration opens a controlled outer widget through its onOpenChange path', async () => {
+test('a collapsed board card mounts no body, and what its widget remembers survives collapsing', async () => {
   const user = userEvent.setup();
-  const openChanges: boolean[] = [];
-  let registration: WidgetRegistration | undefined;
-  const registerWidget = vi.fn((_widgetId: string, nextRegistration: WidgetRegistration) => {
-    registration = nextRegistration;
-    return vi.fn();
-  });
-
+  function PagedBody() {
+    const [page, setPage] = useWidgetState(useCardStateKey('page'), 0);
+    return <button onClick={() => setPage(page + 1)}>{`page ${page}`}</button>;
+  }
   render(
-    <TestNavigationProvider registerWidget={registerWidget}>
+    <BoardWithCards keys={['paged']}>
       <WidgetGrid>
-        <ControlledTestCard
-          cardId="controlled"
-          widgetId="spill"
-          title="Controlled spill"
-          onOpenChange={(nextOpen) => openChanges.push(nextOpen)}
-        />
-      </WidgetGrid>
-    </TestNavigationProvider>,
-  );
-
-  act(() => registration?.open());
-
-  await waitFor(() => expect(screen.getByText('Controlled spill details')).toBeVisible());
-  const trigger = screen.getByRole('button', { name: 'Controlled spill' });
-  expect(trigger).toHaveAttribute('aria-expanded', 'true');
-
-  await user.click(trigger);
-
-  await waitFor(() => expect(screen.getByText('Controlled spill details')).not.toBeVisible());
-  expect(trigger).toHaveAttribute('aria-expanded', 'false');
-  await act(async () => {
-    await Promise.resolve();
-  });
-  expect(openChanges).toEqual([true, false]);
-});
-
-test('does not acknowledge a route-open request that a controlled widget refuses', async () => {
-  let registration: WidgetRegistration | undefined;
-  const registerWidget = vi.fn((_widgetId: string, nextRegistration: WidgetRegistration) => {
-    registration = nextRegistration;
-    return vi.fn();
-  });
-  const reportWidgetOpen = vi.fn();
-  const onOpenChange = vi.fn();
-
-  render(
-    <TestNavigationProvider
-      registerWidget={registerWidget}
-      reportWidgetOpen={reportWidgetOpen}
-    >
-      <WidgetGrid>
-        <WidgetGridItem cardId="controlled" widgetId="spill">
-          <WidgetCard title="Controlled spill" open={false} onOpenChange={onOpenChange}>
-            Controlled spill details
-          </WidgetCard>
+        <WidgetGridItem cardId="paged">
+          <WidgetCard title="Paged" defaultCollapsed><PagedBody /></WidgetCard>
         </WidgetGridItem>
       </WidgetGrid>
-    </TestNavigationProvider>,
+    </BoardWithCards>,
   );
+  expect(screen.queryByRole('button', { name: /^page/ })).not.toBeInTheDocument();
 
-  reportWidgetOpen.mockClear();
-  act(() => registration?.open());
+  await user.click(screen.getByRole('button', { name: 'Paged' }));
+  await user.click(screen.getByRole('button', { name: 'page 0' }));
+  expect(screen.getByRole('button', { name: 'page 1' })).toBeInTheDocument();
 
-  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(true));
-  expect(screen.getByRole('button', { name: 'Controlled spill' })).toHaveAttribute(
-    'aria-expanded',
-    'false',
-  );
-  expect(screen.getByTestId('widget-grid-item-controlled')).not.toHaveClass('col-span-full');
-  expect(reportWidgetOpen).not.toHaveBeenCalledWith('spill', true);
+  await user.click(screen.getByRole('button', { name: 'Paged' }));
+  expect(screen.queryByRole('button', { name: /^page/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Paged' }));
+  expect(screen.getByRole('button', { name: 'page 1' })).toBeInTheDocument();
 });
 
-test('a nested WidgetCard cannot affect its outer widget registration or grid span', () => {
-  const registerWidget = vi.fn(() => vi.fn());
+test('a card on its own keeps its collapsed body mounted, hidden', () => {
+  render(<WidgetCard title="Alone" defaultCollapsed>alone details</WidgetCard>);
+  expect(screen.getByText('alone details')).not.toBeVisible();
+});
 
+test('a route that opens a card expands and spans it', () => {
   render(
-    <TestNavigationProvider registerWidget={registerWidget}>
+    <BoardWithCards keys={['test']}>
       <WidgetGrid>
-        <WidgetGridItem cardId="outer" widgetId="outer">
+        <TestCard cardId="test" title="Spill" />
+      </WidgetGrid>
+    </BoardWithCards>,
+  );
+  expect(screen.queryByText('Spill details')).not.toBeInTheDocument();
+
+  act(() => store.getState().startRoute({ tab: null, openCards: ['test'], cardKey: 'test', rowKey: null }));
+
+  expect(screen.getByText('Spill details')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Spill' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByTestId('widget-grid-item-test')).toHaveClass('scroll-mt-20', 'col-span-full');
+});
+
+test('a card the board does not list keeps its own disclosure and does not span', async () => {
+  const user = userEvent.setup();
+  render(
+    <WidgetGrid>
+      <TestCard cardId="alone" title="Alone" />
+    </WidgetGrid>,
+  );
+
+  await user.click(screen.getByRole('button', { name: 'Alone' }));
+
+  expect(screen.getByText('Alone details')).toBeVisible();
+  expect(screen.getByTestId('widget-grid-item-alone')).not.toHaveClass('col-span-full');
+  expect(store.getState().board.openCards.size).toBe(0);
+});
+
+test('a nested WidgetCard cannot affect its outer card\'s disclosure or grid span', () => {
+  render(
+    <BoardWithCards keys={['outer']}>
+      <WidgetGrid>
+        <WidgetGridItem cardId="outer">
           <WidgetCard title="Outer" defaultCollapsed>
             <WidgetCard title="Nested" defaultCollapsed={false}>nested details</WidgetCard>
           </WidgetCard>
         </WidgetGridItem>
       </WidgetGrid>
-    </TestNavigationProvider>,
+    </BoardWithCards>,
   );
 
-  expect(registerWidget).toHaveBeenCalledTimes(1);
-  expect(registerWidget).toHaveBeenCalledWith('outer', expect.any(Object));
   expect(screen.getByTestId('widget-grid-item-outer')).not.toHaveClass('col-span-full');
+  expect(store.getState().board.openCards.size).toBe(0);
+  expect(screen.getByRole('button', { name: 'Outer' })).toHaveAttribute('aria-expanded', 'false');
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { resolvePlanTree } from '@/view/plan-tree';
 import { buildPlanGraphModel } from '@sparkforensics/core/view-model';
@@ -119,7 +119,8 @@ export function clearPlanGraphModelCache(): void {
   planGraphModelCache = new WeakMap();
 }
 
-function memoizedBuildPlanGraphModel(
+/** Exposed for tests. */
+export function memoizedBuildPlanGraphModel(
   planTree: NonNullable<ReturnType<typeof resolvePlanTree>>,
   opts: { scope: 'segment' | 'full'; stageId: StageId; appModel: AppModel; findings: Finding[]; durationMode: PlanGraphDurationMode },
   showInfo: boolean,
@@ -137,6 +138,45 @@ function memoizedBuildPlanGraphModel(
   return result;
 }
 
+/** What the route's view is showing and what is picked in it. One reducer owns them, so an action that
+ * changes the view also decides the selection and the jump target that go with it. */
+export interface PlanView {
+  focusStageId: StageId;
+  requestedScope: 'segment' | 'full';
+  /** Id of the plan node whose detail card is open (null = none), held here so the single Escape
+   * handler can close it before the route. */
+  selectedNodeId: string | null;
+  /** Recenter request for a paired-node jump; separate from the fit signal so a jump focuses the
+   * partner rather than re-fitting the graph. */
+  center: CenterRequest;
+}
+
+export type PlanViewAction =
+  | { type: 'selectNode'; id: string | null }
+  /** Jump to a node of the model on screen: select it and recenter on it. */
+  | { type: 'jumpTo'; id: string }
+  /** Switch scope. A node id only means something in one stage and scope, so the selection is
+   * cleared, or is the jump target the switch was made for (the two Exchange halves always live in
+   * different segments). */
+  | { type: 'setScope'; scope: 'segment' | 'full'; jumpTo?: string }
+  | { type: 'focusStage'; stageId: StageId };
+
+export function planViewReducer(view: PlanView, action: PlanViewAction): PlanView {
+  const centered = (id: string): CenterRequest => ({ nodeId: id, token: view.center.token + 1 });
+  switch (action.type) {
+    case 'selectNode':
+      return { ...view, selectedNodeId: action.id };
+    case 'jumpTo':
+      return { ...view, selectedNodeId: action.id, center: centered(action.id) };
+    case 'setScope':
+      return { ...view, requestedScope: action.scope, selectedNodeId: action.jumpTo ?? null, center: action.jumpTo ? centered(action.jumpTo) : view.center };
+    case 'focusStage':
+      return { ...view, focusStageId: action.stageId, requestedScope: 'segment', selectedNodeId: null };
+    default:
+      return view;
+  }
+}
+
 export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFileId, onClose, initialScope }: PlanGraphRouteProps) {
   const { resetToDropZone, getTaskData } = useIngest();
   const { openStage, close: closeStageDetail } = useStageDetail();
@@ -147,16 +187,23 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   const [showInfo, setShowInfo] = useState(false);
   const findings = useMemo(() => (showInfo ? catalog : filterFindings(catalog, emptySelection())), [catalog, showInfo]);
   const infoNoteCount = useMemo(() => catalog.filter((f) => f.impactBand === 'info').length, [catalog]);
-  const [requestedScope, setRequestedScope] = useState<'segment' | 'full'>(initialScope ?? 'segment');
-  const [confirmExpandOpen, setConfirmExpandOpen] = useState(false);
+  // Which stage's plan segment is in view (seeded from the stageId prop on a remount, App.tsx's
+  // key={stageId}), at which scope, and what is picked in it.
+  const [view, dispatch] = useReducer(planViewReducer, {
+    focusStageId: stageId,
+    requestedScope: initialScope ?? 'segment',
+    selectedNodeId: null,
+    center: { nodeId: null, token: 0 },
+  });
+  const { focusStageId, requestedScope, center: centerRequest } = view;
   const [initialFullResolved, setInitialFullResolved] = useState(initialScope !== 'full');
-  const [fallbackDismissed, setFallbackDismissed] = useState(false);
-  // Which stage's plan segment is in view. Seeded from the stageId prop on a
-  // remount (App.tsx's key={stageId}); handleSelectStage moves it without one.
-  const [focusStageId, setFocusStageId] = useState<StageId>(stageId);
-  // Id of the plan node whose detail card is open (null = none). Held here so
-  // the single Escape handler can close it before the route.
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // The expand awaiting the reader's confirmation, with the paired node to jump to once it is
+  // confirmed (null for a plain expand).
+  const [expandRequest, setExpandRequest] = useState<{ jumpTo: string | null } | null>(null);
+  // The view whose oversized fallback the reader dismissed: another stage, duration mode or info
+  // setting is a different view with its own model.
+  const [dismissedView, setDismissedView] = useState<string | null>(null);
+  const fallbackView = `${focusStageId}::${durationMode}::${showInfo}`;
   // Id of the stage whose findings panel is open (null = none). It shares the
   // inspector slot with the node detail, so selecting one closes the other.
   const [stagePanelId, setStagePanelId] = useState<StageId | null>(null);
@@ -164,16 +211,9 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   const stageEntryRef = useRef<HTMLElement | null>(null);
   // Bumped on each scope switch; the canvas re-fits on each change.
   const [fitSignal, setFitSignal] = useState(0);
-  // Recenter request for a paired-node jump; separate from fitSignal so a jump
-  // focuses the partner rather than re-fitting the graph.
-  const [centerRequest, setCenterRequest] = useState<CenterRequest>({ nodeId: null, token: 0 });
-  // Target of a paired-node jump waiting on the full plan (the two Exchange
-  // halves always live in different segments); null when none is pending.
-  const [pendingJumpId, setPendingJumpId] = useState<string | null>(null);
-  const requestCenter = (nodeId: string) => setCenterRequest((prev) => ({ nodeId, token: prev.token + 1 }));
 
   const selectNode = useCallback((id: string | null) => {
-    setSelectedNodeId(id);
+    dispatch({ type: 'selectNode', id });
     if (id) setStagePanelId(null);
   }, []);
   const stageSelection = useMemo<StageSelection>(
@@ -182,7 +222,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
       select: (id, entry) => {
         stageEntryRef.current = entry;
         setStagePanelId(id);
-        setSelectedNodeId(null);
+        dispatch({ type: 'selectNode', id: null });
       },
     }),
     [stagePanelId],
@@ -207,7 +247,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
 
   // A 'segment' request can fall back to a 'full' model inside
   // buildPlanGraphModel; that must pass the same node-count guardrail as an
-  // explicit expand. Deliberately independent of `fallbackDismissed`: dismissing
+  // explicit expand. Deliberately independent of the dismissal: dismissing
   // the dialog must not lift the block on the oversized model.
   const segmentFellBackOversized =
     segmentModel != null &&
@@ -215,12 +255,9 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
     requestedScope === 'segment' &&
     segmentModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD;
 
-  // Gates the auto-open effect only, so a dismissed dialog does not reopen.
-  const segmentFellBackUnguarded = segmentFellBackOversized && !fallbackDismissed;
-
-  useEffect(() => {
-    if (segmentFellBackUnguarded) setConfirmExpandOpen(true);
-  }, [segmentFellBackUnguarded]);
+  // Asks for confirmation unless the reader dismissed this view's fallback.
+  const segmentFellBackUnguarded = segmentFellBackOversized && dismissedView !== fallbackView;
+  const confirmExpandOpen = expandRequest != null || segmentFellBackUnguarded;
 
   const fullModel = planTree && (requestedScope === 'full' || confirmExpandOpen)
     ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, showInfo)
@@ -240,19 +277,6 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   useEffect(() => {
     if (guardrailOpen) warmLayoutWorker();
   }, [guardrailOpen]);
-
-  useEffect(() => {
-    // The Radix dialog's Escape listener does not stop propagation, so skip while
-    // it is open or one press would also close the route.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || guardrailOpen) return;
-      if (stagePanelId != null) setStagePanelId(null);
-      else if (selectedNodeId) setSelectedNodeId(null);
-      else onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, guardrailOpen, stagePanelId, selectedNodeId]);
 
   const model = segmentFellBackOversized
     ? null // held back until an explicit confirm flips requestedScope to 'full'
@@ -275,96 +299,6 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   const effectiveFilterMode =
     MODES_NARROW_TO_WIDE.slice(MODES_NARROW_TO_WIDE.indexOf(filterMode)).find((mode) => !emptyModes.has(mode)) ?? 'advanced';
 
-  // A node id only means something within one stage/scope/filter view.
-  useEffect(() => {
-    setSelectedNodeId(null);
-  }, [focusStageId, requestedScope, effectiveFilterMode]);
-
-  // Apply a pending paired-node jump once its partner is on screen. Declared after
-  // the selection-reset effect so its selection wins over that reset's clear on
-  // the render where the scope flips to 'full'.
-  useEffect(() => {
-    if (!pendingJumpId || requestedScope !== 'full') return;
-    if (!model?.nodes.some((n) => n.id === pendingJumpId)) return;
-    selectNode(pendingJumpId);
-    requestCenter(pendingJumpId);
-    setPendingJumpId(null);
-  }, [pendingJumpId, requestedScope, model, selectNode]);
-
-  function handleExpandClick() {
-    const candidateModel = planTree
-      ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, showInfo)
-      : null;
-    if (candidateModel && candidateModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD) {
-      setConfirmExpandOpen(true);
-    } else {
-      setRequestedScope('full');
-      setFitSignal((s) => s + 1);
-    }
-  }
-
-  function handleBackToSegment() {
-    setRequestedScope('segment');
-    setFitSignal((s) => s + 1);
-  }
-
-  // Jump to the paired Exchange half: directly when it is rendered, otherwise
-  // expand (through the guardrail) and let the apply effect above select it.
-  function handleJumpToPaired(pairedNodeId: string) {
-    if (model?.nodes.some((n) => n.id === pairedNodeId)) {
-      selectNode(pairedNodeId);
-      requestCenter(pairedNodeId);
-      return;
-    }
-    setPendingJumpId(pairedNodeId);
-    handleExpandClick();
-  }
-
-  // Focus another stage's segment view from the full graph. Every stage box in
-  // full scope belongs to the same SQL execution, so the plan tree is unchanged.
-  // Bumps fitSignal because the canvas stays mounted and would keep the full
-  // plan's pan/zoom. Stable identity matters: it feeds the canvas's layout memo,
-  // so a fresh reference per render would re-run Dagre on every selection.
-  const handleSelectStage = useCallback((newStageId: StageId) => {
-    setFocusStageId(newStageId);
-    setRequestedScope('segment');
-    setInitialFullResolved(true);
-    setFallbackDismissed(false);
-    setPendingJumpId(null);
-    setFitSignal((s) => s + 1);
-  }, []);
-
-  function handleExpandConfirm() {
-    setInitialFullResolved(true);
-    setRequestedScope('full');
-    setConfirmExpandOpen(false);
-    setFitSignal((s) => s + 1);
-  }
-
-  function handleExpandCancel() {
-    setConfirmExpandOpen(false);
-    // Abandon any paired-node jump that was waiting on this expansion.
-    setPendingJumpId(null);
-    if (initialFullOversized) {
-      setInitialFullResolved(true);
-      setRequestedScope('segment');
-      // If even the segment request resolves to this same oversized full
-      // model, keep it blocked without immediately reopening the dialog.
-      if (segmentModel?.scope === 'full') setFallbackDismissed(true);
-    }
-    // Only the fallback path needs a dismiss flag: it has no ungated segment view,
-    // so the guardrail effect would reopen the dialog on the next render.
-    if (segmentFellBackUnguarded) setFallbackDismissed(true);
-  }
-
-  function handlePickRecent(id: string) {
-    // pickRecent's cached path mutates the live appModel in place. Tear down
-    // this route synchronously first so it can never render graph state from
-    // the outgoing run against the incoming snapshot.
-    onClose();
-    return onPickRecent(id);
-  }
-
   // Memoized on (model, effectiveFilterMode): these feed the canvas's layout memo, so new
   // references on a selection-only render would re-run Dagre on each click.
   const { visibleNodeIds, filteredEdges, hiddenNodes } = useMemo(() => {
@@ -380,6 +314,90 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
     const hiddenNodes = model ? model.nodes.filter((n) => !visibleNodeIds.has(n.id)) : [];
     return { visibleNodeIds, filteredEdges, hiddenNodes };
   }, [model, effectiveFilterMode]);
+
+  // A picked node only counts while it is on screen in this view.
+  const selectedNodeId = view.selectedNodeId != null && visibleNodeIds.has(view.selectedNodeId) ? view.selectedNodeId : null;
+
+  useEffect(() => {
+    // The Radix dialog's Escape listener does not stop propagation, so skip while
+    // it is open or one press would also close the route.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || guardrailOpen) return;
+      if (stagePanelId != null) setStagePanelId(null);
+      else if (selectedNodeId) dispatch({ type: 'selectNode', id: null });
+      else onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, guardrailOpen, stagePanelId, selectedNodeId]);
+
+  // Expand to the full plan, through the guardrail when it is oversized. `jumpTo` is the paired
+  // node to select once the full plan is showing.
+  function expandToFull(jumpTo: string | null) {
+    const candidateModel = planTree
+      ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, showInfo)
+      : null;
+    if (candidateModel && candidateModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD) {
+      setExpandRequest({ jumpTo });
+    } else {
+      dispatch({ type: 'setScope', scope: 'full', jumpTo: jumpTo ?? undefined });
+      setFitSignal((s) => s + 1);
+    }
+  }
+
+  function handleBackToSegment() {
+    dispatch({ type: 'setScope', scope: 'segment' });
+    setFitSignal((s) => s + 1);
+  }
+
+  // Jump to the paired Exchange half: directly when it is rendered, otherwise
+  // expand (through the guardrail) with the partner as the node to select.
+  function handleJumpToPaired(pairedNodeId: string) {
+    if (model?.nodes.some((n) => n.id === pairedNodeId)) dispatch({ type: 'jumpTo', id: pairedNodeId });
+    else expandToFull(pairedNodeId);
+  }
+
+  // Focus another stage's segment view from the full graph. Every stage box in
+  // full scope belongs to the same SQL execution, so the plan tree is unchanged.
+  // Bumps fitSignal because the canvas stays mounted and would keep the full
+  // plan's pan/zoom. Stable identity matters: it feeds the canvas's layout memo,
+  // so a fresh reference per render would re-run Dagre on every selection.
+  const handleSelectStage = useCallback((newStageId: StageId) => {
+    dispatch({ type: 'focusStage', stageId: newStageId });
+    setInitialFullResolved(true);
+    setExpandRequest(null);
+    setFitSignal((s) => s + 1);
+  }, []);
+
+  function handleExpandConfirm() {
+    setInitialFullResolved(true);
+    dispatch({ type: 'setScope', scope: 'full', jumpTo: expandRequest?.jumpTo ?? undefined });
+    setExpandRequest(null);
+    setFitSignal((s) => s + 1);
+  }
+
+  function handleExpandCancel() {
+    // Abandons any paired-node jump that was waiting on this expansion.
+    setExpandRequest(null);
+    if (initialFullOversized) {
+      setInitialFullResolved(true);
+      dispatch({ type: 'setScope', scope: 'segment' });
+      // If even the segment request resolves to this same oversized full
+      // model, keep it blocked without immediately reopening the dialog.
+      if (segmentModel?.scope === 'full') setDismissedView(fallbackView);
+    }
+    // Only the fallback path needs a dismissal: it has no ungated segment view,
+    // so the dialog would reopen on the next render.
+    if (segmentFellBackUnguarded) setDismissedView(fallbackView);
+  }
+
+  function handlePickRecent(id: string) {
+    // pickRecent's cached path mutates the live appModel in place. Tear down
+    // this route synchronously first so it can never render graph state from
+    // the outgoing run against the incoming snapshot.
+    onClose();
+    return onPickRecent(id);
+  }
 
   // Keyed off the rendered `model.scope`: a segment request that fell back to a
   // small full model leaves `requestedScope` at 'segment'.
@@ -429,7 +447,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
                 size="sm"
                 disabled={backDisabled}
                 aria-describedby={backDisabled ? backDisabledReasonId : undefined}
-                onClick={showingFullPlan ? handleBackToSegment : handleExpandClick}
+                onClick={showingFullPlan ? handleBackToSegment : () => expandToFull(null)}
               >
                 {showingFullPlan ? 'Back to segment view' : 'Expand to full plan'}
               </Button>

@@ -4,14 +4,15 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { registryTypes } from '@/view/detector-registry';
-import { evidencePanelOf, InlineEvidence } from '@/view/InlineEvidence';
+import { evidencePanelOf } from '@/view/board-layout';
+import { InlineEvidence } from '@/view/InlineEvidence';
+import { interpretationOf } from '@/view/interpretation';
 import { computeActiveWidgets } from '@/view/widgets/Alerts';
-import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { showsEvidence } from './_shared/evidence-panel';
 import { installInterpretation } from './_shared/interpretation';
+import { TestImpactBoard } from './_shared/board';
 import { exampleRuns, loadExampleRun } from './_shared/detector-examples';
 
 // The same swaps vite.export.config.ts makes (LIVE_ONLY_STUBS): the runs are the HTML export's.
@@ -44,6 +45,7 @@ test.each(exampleRuns())('%s: every panel a content check keeps renders evidence
   const appModel = selectAppModel(state);
   const catalog = selectCatalog(state);
   const configFindings = selectConfigFindings(state);
+  const interpretation = interpretationOf(state.run!);
   const widgets = computeActiveWidgets(catalog, configFindings, state.run!.interpretation.detectors, appModel, 'advanced');
   const widgetProps = { appModel, catalog, configFindings, getTaskData: vi.fn() };
   const empty: string[] = [];
@@ -54,16 +56,14 @@ test.each(exampleRuns())('%s: every panel a content check keeps renders evidence
         store.setState({ widgetDensity: density });
         // A step or a row states its own finding; a group row states none.
         for (const stated of [[finding], []]) {
-          const panel = evidencePanelOf(widget, appModel, [finding], stated, density);
+          const panel = evidencePanelOf(widget, appModel, [finding], stated, density, interpretation);
           // No panel: nothing renders, and the host offers no evidence control.
           if (!panel) continue;
           const { container, unmount } = render(
             <ThemeProvider>
               <DocsProvider>
                 <StageDetailProvider>
-                  <EvidenceAvailabilityProvider>
-                    <InlineEvidence widget={widget} widgetProps={widgetProps} stated={stated} panel={panel} />
-                  </EvidenceAvailabilityProvider>
+                  <InlineEvidence widget={widget} widgetProps={widgetProps} stated={stated} panel={panel} cardKey="evidence-check" />
                 </StageDetailProvider>
               </DocsProvider>
             </ThemeProvider>,
@@ -100,10 +100,10 @@ test.each(exampleRuns())('%s: a row offers the evidence control exactly when its
     const widget = computeActiveWidgets(rowCatalog, rowConfig, interpreted.data.detectors, appModel, 'advanced')[0];
     for (const density of ['basic', 'advanced'] as const) {
       store.setState({ widgetDensity: density });
-      const expected = evidencePanelOf(widget, appModel, [finding], [finding], density) !== null;
+      const expected = evidencePanelOf(widget, appModel, [finding], [finding], density, interpreted) !== null;
       const { unmount } = render(
         <StageDetailProvider>
-          <ImpactBoard appModel={appModel} catalog={rowCatalog} configFindings={rowConfig} stages={appModel.stages} getTaskData={vi.fn()} onRoute={vi.fn()} />
+          <TestImpactBoard appModel={appModel} catalog={rowCatalog} configFindings={rowConfig} getTaskData={vi.fn()} onRoute={vi.fn()} />
         </StageDetailProvider>,
       );
       if (screen.queryAllByTestId('fix-these-first-row').length > 0) {

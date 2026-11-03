@@ -1,130 +1,73 @@
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense } from 'react';
 
 import { Table, TableBody } from '@/components/ui/table';
-import { useWidgetDensity } from '@/store/store';
-import type { AppModel, Finding } from '@sparkforensics/core/types';
 import type { WidgetProps } from '@/view/detector-registry';
-import { useInterpretation, type BoardGroup } from '@/view/interpretation';
-import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
-import {
-  CleanChecks,
-  computeActiveWidgets,
-  SUGGESTED_IMPROVEMENTS_ANCHOR_ID,
-  type ActiveWidget,
-} from '@/view/widgets/Alerts';
-import {
-  FindingRow,
-  TypeGroupRow,
-  useFixTheseFirstData,
-  type RowEvidence,
-} from '@/view/widgets/FixTheseFirst';
+import type { BandLayout, BoardLayout } from '@/view/board-layout';
+import { bandLandmark, BOARD_LANDMARK, landmarkRowKey } from '@/view/route-keys';
+import { useInterpretation } from '@/view/interpretation';
+import { useLanding } from '@/view/route-landing';
+import type { TriageTarget } from '@/view/triage-target';
+import { CleanChecks, SUGGESTED_IMPROVEMENTS_ANCHOR_ID } from '@/view/widgets/Alerts';
+import { FindingRow, TypeGroupRow } from '@/view/widgets/FixTheseFirst';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
+import { useStore } from '@/store/store';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
 
-export interface ImpactBoardProps extends WidgetProps {
-  stages: AppModel['stages'];
+export interface ImpactBoardProps {
+  layout: BoardLayout;
+  widgetProps: WidgetProps;
   onRoute: (target: TriageTarget) => void;
-  /** The findings the verdict's steps lead with: the verdict lists them, so the board starts after them. */
-  verdictLeads?: ReadonlySet<Finding>;
-  /** Widgets whose evidence card the verdict shows in place; they stay out of the grid. */
-  verdictWidgetIds?: ReadonlySet<string>;
-  /** The finding types with a widget over the unfiltered run: every other type is a clean check.
-   * Defaults to the types of the board's own widgets. */
-  evidenceTypes?: ReadonlySet<string>;
-  /** Widgets whose full card is shown because a route targeted a finding no row or step holds. */
-  fullCardWidgetIds?: ReadonlySet<string>;
 }
 
-const IMPACT_BAND_LABEL: Record<Finding['impactBand'], string> = {
+const IMPACT_BAND_LABEL = {
   critical: 'Critical',
   warning: 'Warning',
   info: 'Info',
-};
-const IMPACT_BAND_ORDER_LIST: Finding['impactBand'][] = ['critical', 'warning', 'info'];
+} as const;
 
 /** One impact band: its recommendation rows as a compact table. Each row has
  * at most one "Show evidence" control, which expands that widget's card in
  * place, scoped to the row's findings. Evidence cards no step or row shows
- * stay in a grid under the table, collapsed.
- * Renders nothing (no heading) when the band has neither row nor card. */
+ * stay in a grid under the table, collapsed. A band with neither row nor card
+ * is not in the layout, so it has no heading. */
 function ImpactGroup({
-  impactBand,
-  groups,
-  widgets,
-  allWidgets,
-  allFindings,
-  expandedGroupKey,
-  onToggleGroup,
+  band,
+  widgetProps,
   onRoute,
-  appModel,
-  catalog,
-  configFindings,
-  getTaskData,
   subheading,
 }: {
-  impactBand: Finding['impactBand'];
-  groups: BoardGroup[];
-  /** This band's widgets that no step or row shows in place: collapsed cards under the table. */
-  widgets: ActiveWidget[];
-  /** Every active widget, whatever its band: a group's panel comes from its type's widget. */
-  allWidgets: ActiveWidget[];
-  allFindings: Finding[];
-  expandedGroupKey: string | null;
-  onToggleGroup: (key: string) => void;
+  band: BandLayout;
+  widgetProps: WidgetProps;
   onRoute: (target: TriageTarget) => void;
   /** Whether the band heading is a sub-heading of "More findings". */
   subheading: boolean;
-} & WidgetProps) {
-  const widgetProps: WidgetProps = { appModel, catalog, configFindings, getTaskData };
-  const evidenceByGroup = useMemo(() => {
-    const byWidget = new Map(allWidgets.map((widget) => [widget.widgetId, widget]));
-    const evidence = new Map<string, ActiveWidget>();
-    for (const group of groups) {
-      const widgetId = triageTargetFor(group.findings[0])?.widgetId;
-      const widget = widgetId ? byWidget.get(widgetId) : undefined;
-      if (widget) evidence.set(group.key, widget);
-    }
-    return evidence;
-  }, [groups, allWidgets]);
-
-  if (groups.length === 0 && widgets.length === 0) return null;
-  const headingId = `impact-band-${impactBand}-heading`;
+}) {
+  const headingId = `impact-band-${band.band}-heading`;
   const Heading = subheading ? 'h3' : 'h2';
+  // The top bar's count chip lands on the band it names.
+  const landing = useLanding([landmarkRowKey(bandLandmark(band.band))]);
+  const revealed = useStore((s) => s.board.revealedCards);
+  const cards = band.cards.filter(({ key }) => !band.routeOnlyCardKeys.has(key) || revealed.has(key));
+  if (band.rows.length === 0 && cards.length === 0) return null;
   return (
     <section aria-labelledby={headingId} className="space-y-2">
-      {/* tabIndex -1: the top bar's count chip focuses the band it names. */}
       {/* Mono uppercase group label (Trace): the band reads from the tags below it. */}
-      <Heading id={headingId} tabIndex={-1} className="trace-eyebrow scroll-mt-20 rounded-sm px-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {IMPACT_BAND_LABEL[impactBand]}
+      <Heading ref={landing} id={headingId} tabIndex={-1} className="trace-eyebrow scroll-mt-20 rounded-sm px-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {IMPACT_BAND_LABEL[band.band]}
       </Heading>
-      {groups.length > 0 && (
+      {band.rows.length > 0 && (
         <Table className="findings-table">
           <TableBody>
-            {groups.map((group) => {
-              const evidence: RowEvidence = { widget: evidenceByGroup.get(group.key) ?? null, widgetProps };
-              if (group.findings.length === 1) {
-                return <FindingRow key={group.findings[0].id} finding={group.findings[0]} allFindings={allFindings} onRoute={onRoute} evidence={evidence} />;
-              }
-              const { key } = group;
-              return (
-                <TypeGroupRow
-                  key={key}
-                  group={group}
-                  allFindings={allFindings}
-                  expanded={expandedGroupKey === key}
-                  onToggle={() => onToggleGroup(key)}
-                  onRoute={onRoute}
-                  evidence={evidence}
-                />
-              );
-            })}
+            {band.rows.map((row) => (row.kind === 'finding'
+              ? <FindingRow key={row.lineKey} row={row} widgetProps={widgetProps} />
+              : <TypeGroupRow key={row.lineKey} row={row} widgetProps={widgetProps} onRoute={onRoute} />))}
           </TableBody>
         </Table>
       )}
-      {widgets.length > 0 && (
+      {cards.length > 0 && (
         <WidgetGrid>
-          {widgets.map(({ component: Widget, widgetId, index }) => (
-            <WidgetGridItem key={widgetId} cardId={`alert-${index}`} widgetId={widgetId}>
+          {cards.map(({ key, widget: { component: Widget } }) => (
+            <WidgetGridItem key={key} cardId={key}>
               <Suspense fallback={<WidgetCardSkeleton />}>
                 <Widget {...widgetProps} defaultCollapsed />
               </Suspense>
@@ -141,96 +84,28 @@ function ImpactGroup({
  * evidence expandable in place, followed by the Clean checks disclosure. The
  * run-level verdict (where to start, and the clean-run message) sits above
  * the tabs in `RunVerdict`. */
-export function ImpactBoard({
-  appModel,
-  catalog,
-  configFindings = [],
-  stages,
-  getTaskData,
-  onRoute,
-  verdictLeads,
-  verdictWidgetIds,
-  evidenceTypes,
-  fullCardWidgetIds,
-}: ImpactBoardProps) {
-  const density = useWidgetDensity();
-  // Recompute the rollup/active-widget ranking only when the underlying findings
-  // (or stages) change, not on every `setExpandedGroupKey` re-render.
+export function ImpactBoard({ layout, widgetProps, onRoute }: ImpactBoardProps) {
   const interpretation = useInterpretation();
-  const { groups, eligible } = useMemo(() => {
-    const rest = (findings: Finding[]) => (verdictLeads ? findings.filter((finding) => !verdictLeads.has(finding)) : findings);
-    return useFixTheseFirstData(rest(catalog), rest(configFindings), stages, interpretation);
-  }, [catalog, configFindings, stages, interpretation, verdictLeads]);
-  const allFindings = [...catalog, ...configFindings];
-  const detectors = interpretation?.data.detectors;
-  const activeWidgets = useMemo(
-    () => (detectors
-      ? computeActiveWidgets(catalog, configFindings, detectors, appModel, density)
-      : []),
-    [catalog, configFindings, detectors, appModel, density],
-  );
-  // A widget is claimed when a verdict step or any board row shows it in place.
-  const claimedWidgetIds = useMemo(() => {
-    const claimed = new Set(verdictWidgetIds);
-    for (const group of groups) {
-      const widgetId = triageTargetFor(group.findings[0])?.widgetId;
-      if (widgetId && activeWidgets.some((widget) => widget.widgetId === widgetId)) claimed.add(widgetId);
-    }
-    fullCardWidgetIds?.forEach((widgetId) => claimed.delete(widgetId));
-    return claimed;
-  }, [groups, activeWidgets, verdictWidgetIds, fullCardWidgetIds]);
-  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
-
-  const { groupsByImpactBand, widgetsByImpactBand } = useMemo(() => {
-    const groupsByImpactBand = new Map<Finding['impactBand'], BoardGroup[]>();
-    for (const group of groups) {
-      const impactBand = group.band;
-      if (!groupsByImpactBand.has(impactBand)) groupsByImpactBand.set(impactBand, []);
-      groupsByImpactBand.get(impactBand)!.push(group);
-    }
-    const widgetsByImpactBand = new Map<Finding['impactBand'], ActiveWidget[]>();
-    for (const widget of activeWidgets) {
-      if (claimedWidgetIds.has(widget.widgetId)) continue;
-      if (!widgetsByImpactBand.has(widget.impactBand)) widgetsByImpactBand.set(widget.impactBand, []);
-      widgetsByImpactBand.get(widget.impactBand)!.push(widget);
-    }
-    return { groupsByImpactBand, widgetsByImpactBand };
-  }, [groups, activeWidgets, claimedWidgetIds]);
-
+  const landing = useLanding([landmarkRowKey(BOARD_LANDMARK)]);
   // With the verdict's steps taken out, "More findings" is what is left; a
   // board with nothing left says so instead of showing an empty list.
-  const hasVerdictLeads = (verdictLeads?.size ?? 0) > 0;
-  const nothingLeft = eligible.length === 0;
+  const hasVerdictLeads = layout.verdictLeads.size > 0;
+  const nothingLeft = layout.listedCount === 0;
   return (
-    <div id={SUGGESTED_IMPROVEMENTS_ANCHOR_ID} className="space-y-6 scroll-mt-20">
+    <div ref={landing} id={SUGGESTED_IMPROVEMENTS_ANCHOR_ID} tabIndex={-1} className="space-y-6 scroll-mt-20 outline-none">
       {hasVerdictLeads ? (
         nothingLeft ? (
           <p data-testid="no-more-findings" className="text-sm text-muted-foreground">No more findings to show.</p>
         ) : (
           <h2 data-testid="more-findings-heading" className="font-heading text-base font-semibold">
-            More findings <span className="font-mono text-xs font-normal text-muted-foreground tabular-nums">({eligible.length})</span>
+            More findings <span className="font-mono text-xs font-normal text-muted-foreground tabular-nums">({layout.listedCount})</span>
           </h2>
         )
       ) : null}
-      {IMPACT_BAND_ORDER_LIST.map((impactBand) => (
-        <ImpactGroup
-          key={impactBand}
-          impactBand={impactBand}
-          groups={groupsByImpactBand.get(impactBand) ?? []}
-          widgets={widgetsByImpactBand.get(impactBand) ?? []}
-          allWidgets={activeWidgets}
-          allFindings={allFindings}
-          expandedGroupKey={expandedGroupKey}
-          onToggleGroup={(key) => setExpandedGroupKey((current) => (current === key ? null : key))}
-          onRoute={onRoute}
-          appModel={appModel}
-          catalog={catalog}
-          configFindings={configFindings}
-          getTaskData={getTaskData}
-          subheading={hasVerdictLeads}
-        />
+      {layout.bands.map((band) => (
+        <ImpactGroup key={band.band} band={band} widgetProps={widgetProps} onRoute={onRoute} subheading={hasVerdictLeads} />
       ))}
-      {interpretation ? <CleanChecks activeTypes={evidenceTypes ?? new Set(activeWidgets.map((widget) => widget.type))} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
+      {interpretation ? <CleanChecks activeTypes={layout.evidenceTypes} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
     </div>
   );
 }

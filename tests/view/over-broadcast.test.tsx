@@ -10,7 +10,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { OverBroadcast } from '@/view/widgets/OverBroadcast';
 import type { Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
@@ -32,9 +31,7 @@ function renderWidget(catalog: Finding[], { defaultCollapsed = false }: { defaul
   installInterpretation(catalog);
   return render(
     <DocsProvider>
-      <EvidenceAvailabilityProvider>
-        <OverBroadcast appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={defaultCollapsed} />
-      </EvidenceAvailabilityProvider>
+      <OverBroadcast appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={defaultCollapsed} />
     </DocsProvider>,
   );
 }

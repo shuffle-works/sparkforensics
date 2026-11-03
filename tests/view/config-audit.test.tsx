@@ -4,7 +4,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { ConfigAudit } from '@/view/widgets/ConfigAudit';
 import { auditConfig } from '@sparkforensics/core/analysis';
 import type { AppModel } from '@sparkforensics/core/types';
@@ -20,14 +19,12 @@ function buildAppModel(app: AppModel['app'], ledger?: AppModel['evidenceAvailabi
 function renderWidget(app: AppModel['app'], ledger?: AppModel['evidenceAvailability']) {
   return render(
     <DocsProvider>
-      <EvidenceAvailabilityProvider>
-        <ConfigAudit
-          appModel={buildAppModel(app, ledger)}
-          catalog={[]}
-          configFindings={auditConfig(app, RDD_STAGES)}
-          getTaskData={async () => ({ metrics: [], fieldNames: [] })}
-        />
-      </EvidenceAvailabilityProvider>
+      <ConfigAudit
+        appModel={buildAppModel(app, ledger)}
+        catalog={[]}
+        configFindings={auditConfig(app, RDD_STAGES)}
+        getTaskData={async () => ({ metrics: [], fieldNames: [] })}
+      />
     </DocsProvider>,
   );
 }
