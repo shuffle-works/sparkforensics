@@ -255,11 +255,11 @@ function FilteredBoard({
             </TabsTrigger>
             <TabsTrigger value="full-report" className="tap-target-comfortable">Full app report</TabsTrigger>
           </TabsList>
-          <TabsContent value="findings" keepMounted>
+          <TabsContent value="findings">
             <h2 className="sr-only">Findings</h2>
             <ImpactBoard layout={layout} widgetProps={widgetProps} onRoute={routeFinding} />
           </TabsContent>
-          <TabsContent value="full-report" keepMounted>
+          <TabsContent value="full-report">
             <ReferenceSection
               layout={layout}
               appModel={appModel}

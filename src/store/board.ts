@@ -42,10 +42,13 @@ export interface BoardState {
   landedToken: number;
   /** The line holding focus, from which j/k step. */
   cursor: string | null;
+  /** What each widget remembers while its card is collapsed or its tab is hidden (a page, a sort,
+   * a filter), by the widget's own key. It belongs to the loaded run and goes with it. */
+  widgets: Readonly<Record<string, unknown>>;
 }
 
 export function initialBoard(): BoardState {
-  return { tab: 'findings', openCards: new Set(), revealedCards: new Set(), expandedGroup: null, route: null, landedToken: 0, cursor: null };
+  return { tab: 'findings', openCards: new Set(), revealedCards: new Set(), expandedGroup: null, route: null, landedToken: 0, cursor: null, widgets: {} };
 }
 
 export interface BoardActions {
@@ -56,6 +59,8 @@ export interface BoardActions {
   startRoute: (route: ResolvedRoute, options?: RouteOptions) => void;
   landRoute: (token: number) => void;
   setCursor: (key: string | null) => void;
+  /** Sets a widget's remembered state; `next` may be a function of the current value. */
+  setWidgetState: (key: string, next: unknown | ((current: unknown) => unknown), initial: unknown) => void;
 }
 
 type Slice = { board: BoardState };
@@ -82,5 +87,10 @@ export function boardActions(set: (update: (state: Slice) => Partial<Slice>) => 
     })),
     landRoute: (token) => set(({ board }) => (board.landedToken === token ? {} : { board: { ...board, landedToken: token } })),
     setCursor: (cursor) => set(({ board }) => (board.cursor === cursor ? {} : { board: { ...board, cursor } })),
+    setWidgetState: (key, next, initial) => set(({ board }) => {
+      const current = key in board.widgets ? board.widgets[key] : initial;
+      const value = typeof next === 'function' ? (next as (current: unknown) => unknown)(current) : next;
+      return Object.is(value, current) && key in board.widgets ? {} : { board: { ...board, widgets: { ...board.widgets, [key]: value } } };
+    }),
   };
 }

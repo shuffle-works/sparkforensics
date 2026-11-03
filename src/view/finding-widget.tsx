@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { memo, useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 
 import { findingName, titleCase } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
@@ -21,6 +21,7 @@ import type { SortMode } from '@/view/impact-sort';
 import { useSortMode } from '@/view/useSortMode';
 import { WidgetCard } from '@/view/WidgetCard';
 import { useCardDisclosure } from '@/view/WidgetGrid';
+import { useCardStateKey, useWidgetState } from '@/view/useWidgetState';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
 const NOTHING_STATED: ReadonlySet<string> = new Set();
@@ -145,15 +146,17 @@ interface RowListProps<R extends AnyRow> {
   rowElement: RowElement;
   rowClassName: string;
   listClassName: string;
+  /** The list's section title, which tells its page apart from the card's other lists. */
+  title: string | null;
 }
 
 /** One paged list of rows in display order. A new sort order starts it on the first page (a new run
  * remounts it through the run-keyed dashboard), and a route to one of its findings opens the page
  * that holds it. */
 function RowList<R extends AnyRow>({
-  rows, Row, appModel, getTaskData, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName,
+  rows, Row, appModel, getTaskData, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName, title,
 }: RowListProps<R>) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useWidgetState(useCardStateKey(`page:${title ?? ''}`), 0);
   const mountedRef = useRef(false);
   useEffect(() => {
     if (!mountedRef.current) {
@@ -225,7 +228,7 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
     const inline = useInlineEvidence();
     const stated = inline?.stated ?? NOTHING_STATED;
     const disclosure = useCardDisclosure(!defaultCollapsed);
-    const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
+    const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode(useCardStateKey('sort'));
 
     const localityChart = useInterpretation()?.data.coreLocality?.chart;
     const findings = findingsFor(model, { catalog, configFindings });
@@ -252,6 +255,7 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
         rowElement={rowElement}
         rowClassName={rowClassName}
         listClassName={listClassName}
+        title={group.title}
       />
     ));
 

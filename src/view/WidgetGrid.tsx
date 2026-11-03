@@ -14,6 +14,13 @@ interface GridCard {
 }
 
 const GridCardContext = createContext<GridCard | null>(null);
+// The key of the board card around a component, for the state its widget remembers. Unlike the grid
+// card it reaches into the card's body, where a nested card has its own.
+const CardKeyContext = createContext<string | null>(null);
+
+export function useCardKey(): string | null {
+  return useContext(CardKeyContext);
+}
 
 export function useWidgetGridCard(): GridCard | null {
   return useContext(GridCardContext);
@@ -59,6 +66,7 @@ export function WidgetGridItem({
   const open = useStore((s) => listed && s.board.openCards.has(cardId));
   return (
     <GridCardContext.Provider value={{ key: listed ? cardId : null, collapsedTile }}>
+      <CardKeyContext.Provider value={listed ? cardId : null}>
       <div
         data-testid={`widget-grid-item-${cardId}`}
         className={cn('scroll-mt-20', open && 'col-span-full', className)}
@@ -68,6 +76,7 @@ export function WidgetGridItem({
           {children}
         </ErrorBoundary>
       </div>
+      </CardKeyContext.Provider>
     </GridCardContext.Provider>
   );
 }

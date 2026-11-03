@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
-import { emptyAppModel, useWidgetDensity } from '@/store/store';
+import { emptyAppModel, store, useWidgetDensity } from '@/store/store';
 import type { InterpretationState } from '@/view/interpretation';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import { buildBoardLayout, type BoardLayout, type FindingRowLayout, type LayoutCard } from '@/view/board-layout';
@@ -12,6 +12,7 @@ const ALL_BANDS: FilterSelection = { ...emptySelection(), impactBands: new Set(I
 import { InlineEvidence } from '@/view/InlineEvidence';
 import { useInterpretation } from '@/view/interpretation';
 import type { TriageTarget } from '@/view/triage-target';
+import { WidgetGridItem } from '@/view/WidgetGrid';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 
@@ -112,4 +113,15 @@ export function TestRunVerdict({
 /** The row the layout gives a finding that has no evidence card. */
 export function findingRowOf(finding: Finding): FindingRowLayout {
   return { kind: 'finding', lineKey: `row:${finding.id ?? finding.type}`, finding, evidence: { widget: null, panel: null, cardKey: null } };
+}
+
+/** Renders `ui` inside a board card that is open, for a widget whose card a test must read the body of:
+ * a collapsed card does not mount its body. */
+export function renderInOpenCard(ui: ReactNode, render: (ui: ReactNode) => unknown, cardKey = 'open-card') {
+  store.getState().setCardOpen(cardKey, true);
+  return render(
+    <BoardWithCards keys={[cardKey]}>
+      <WidgetGridItem cardId={cardKey}>{ui}</WidgetGridItem>
+    </BoardWithCards>,
+  );
 }

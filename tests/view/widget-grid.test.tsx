@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { store } from '@/store/store';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
+import { useCardStateKey, useWidgetState } from '@/view/useWidgetState';
 import { BoardWithCards } from './_shared/board';
 
 beforeEach(() => store.getState().resetModel());
@@ -55,7 +56,7 @@ test('grid cards expand, span, and collapse independently', async () => {
   await user.click(screen.getByRole('button', { name: 'First' }));
 
   expect(first).not.toHaveClass('col-span-full');
-  expect(screen.queryByText('First details')).not.toBeVisible();
+  expect(screen.queryByText('First details')).not.toBeInTheDocument();
   expect(second).toHaveClass('col-span-full');
   expect(screen.getByText('Second details')).toBeVisible();
 });
@@ -78,7 +79,7 @@ test('an open grid card spans and can be collapsed', async () => {
 
   await user.click(screen.getByRole('button', { name: 'Available' }));
 
-  expect(screen.queryByText('Available details')).not.toBeVisible();
+  expect(screen.queryByText('Available details')).not.toBeInTheDocument();
   expect(item).not.toHaveClass('col-span-full');
 });
 
@@ -95,7 +96,7 @@ test('a collapsedTile grid item starts collapsed and floors its height regardles
 
   // `collapsedTile` overrides the card's own `defaultCollapsed={false}`: it
   // still starts collapsed so every reference-region tile lines up.
-  expect(screen.queryByText('Reference details')).not.toBeVisible();
+  expect(screen.queryByText('Reference details')).not.toBeInTheDocument();
   const card = screen.getByRole('heading', { name: 'Reference' }).closest('[data-slot="card"]');
   expect(card).toHaveClass('min-h-[6.5rem]');
 
@@ -103,6 +104,38 @@ test('a collapsedTile grid item starts collapsed and floors its height regardles
 
   expect(screen.getByText('Reference details')).toBeVisible();
   expect(card).not.toHaveClass('min-h-[6.5rem]');
+});
+
+test('a collapsed board card mounts no body, and what its widget remembers survives collapsing', async () => {
+  const user = userEvent.setup();
+  function PagedBody() {
+    const [page, setPage] = useWidgetState(useCardStateKey('page'), 0);
+    return <button onClick={() => setPage(page + 1)}>{`page ${page}`}</button>;
+  }
+  render(
+    <BoardWithCards keys={['paged']}>
+      <WidgetGrid>
+        <WidgetGridItem cardId="paged">
+          <WidgetCard title="Paged" defaultCollapsed><PagedBody /></WidgetCard>
+        </WidgetGridItem>
+      </WidgetGrid>
+    </BoardWithCards>,
+  );
+  expect(screen.queryByRole('button', { name: /^page/ })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Paged' }));
+  await user.click(screen.getByRole('button', { name: 'page 0' }));
+  expect(screen.getByRole('button', { name: 'page 1' })).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Paged' }));
+  expect(screen.queryByRole('button', { name: /^page/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Paged' }));
+  expect(screen.getByRole('button', { name: 'page 1' })).toBeInTheDocument();
+});
+
+test('a card on its own keeps its collapsed body mounted, hidden', () => {
+  render(<WidgetCard title="Alone" defaultCollapsed>alone details</WidgetCard>);
+  expect(screen.getByText('alone details')).not.toBeVisible();
 });
 
 test('a route that opens a card expands and spans it', () => {
@@ -113,7 +146,7 @@ test('a route that opens a card expands and spans it', () => {
       </WidgetGrid>
     </BoardWithCards>,
   );
-  expect(screen.getByText('Spill details')).not.toBeVisible();
+  expect(screen.queryByText('Spill details')).not.toBeInTheDocument();
 
   act(() => store.getState().startRoute({ tab: null, openCards: ['test'], cardKey: 'test', rowKey: null }));
 

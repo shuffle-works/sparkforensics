@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { useWidgetState } from '@/view/useWidgetState';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -13,6 +14,7 @@ import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { findingsFor } from '@/view/finding-widget';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
+const NO_OPEN_ITEMS: string[] = [];
 export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
 
 const NOTHING_STATED: ReadonlySet<string> = new Set();
@@ -94,6 +96,8 @@ export function CleanChecks({
   coverage,
   detectors,
 }: { activeTypes: ReadonlySet<string>; coverage: CoverageData; detectors: Record<string, DetectorInfo> }) {
+  // Remembered for the run, so hiding the Findings tab does not fold it again.
+  const [openItems, setOpenItems] = useWidgetState<string[]>('clean-checks:open', NO_OPEN_ITEMS);
 
   // A check the log could not run is not a pass: the same rule the verdict
   // and the CLI/MCP report use to withhold "clean" (an evidence caveat, a
@@ -124,7 +128,7 @@ export function CleanChecks({
   }
 
   return (
-    <Accordion>
+    <Accordion value={openItems} onValueChange={setOpenItems}>
       <AccordionItem value="clean-checks">
         <AccordionTrigger>Clean checks</AccordionTrigger>
         <AccordionContent>

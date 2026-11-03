@@ -8,10 +8,10 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { DisclosureOpenContext } from '@/view/DisclosureContext';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
-import { DisclosureOpenContext } from '@/view/DisclosureContext';
 import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { cardLandingKey } from '@/view/board-layout';
 import { useLanding } from '@/view/route-landing';
@@ -176,10 +176,10 @@ export function WidgetCard({
             <div className="px-(--card-spacing) pt-label pb-(--card-spacing)">{summary}</div>
           ) : null}
           <WidgetGridCardBoundary>
-            <CollapsibleContent keepMounted>
-              {/* `keepMounted` keeps the body in the DOM while collapsed so its
-                  text stays queryable/find-able; the context lets charts skip
-                  mounting a 0×0 ResponsiveContainer until the card is open. */}
+            {/* A board card's collapsed body is not mounted: what its widgets remember lives in the
+                store. A card on its own (the docs example, a test) keeps its body mounted so state
+                held in the body survives, hidden at 0×0 until open, which the context tells charts. */}
+            <CollapsibleContent keepMounted={gridCard?.key == null}>
               <DisclosureOpenContext.Provider value={open}>
                 <CardContent className="pt-(--card-spacing)">{body}</CardContent>
               </DisclosureOpenContext.Provider>

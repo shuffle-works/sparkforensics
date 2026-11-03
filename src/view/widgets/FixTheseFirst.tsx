@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -18,6 +18,7 @@ import { store, useStore } from '@/store/store';
 import type { FindingRowLayout, GroupRowLayout, RowEvidence } from '@/view/board-layout';
 import { InlineEvidence, useCardOpen } from '@/view/InlineEvidence';
 import { useLine } from '@/view/route-landing';
+import { useWidgetState } from '@/view/useWidgetState';
 import type { WidgetProps } from '@/view/detector-registry';
 import { Button } from '@/components/ui/button';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
@@ -297,7 +298,7 @@ export function TypeGroupRow({
 }) {
   const { group, evidence } = row;
   const expanded = useStore((s) => s.board.expandedGroup === row.lineKey);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useWidgetState(`${row.lineKey}:members`, 0);
   // Members arrive ranked, representative first.
   const sorted = group.findings;
   const best = sorted[0];
