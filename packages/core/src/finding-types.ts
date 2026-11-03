@@ -212,24 +212,37 @@ export interface GcEvidence {
 }
 export interface GcFinding extends NumericFinding<'gc'>, GcEvidence {}
 
-// Three shapes share this type: a slow host by mean task time (no variant), a host doing most of the
-// stage's task time ('durationShare'), and an executor deviating on one dimension ('multiDim').
-export interface SlowHostEvidence {
-  variant?: 'durationShare' | 'multiDim';
-  host?: string;
-  hostTaskShare?: number;
+// Three shapes: a slow host by mean task time (no `variant`, so the key is absent at runtime), a host
+// doing most of the stage's task time ('durationShare'), and an executor deviating on one dimension
+// ('multiDim').
+interface SlowHostByHostEvidence {
+  host: string;
+  hostTaskShare: number;
   // The host's mean task duration, ms: `value` is a ratio or share.
-  hostMeanMs?: number;
-  dimension?: 'taskTime' | 'inputBytes' | 'shuffleBytes' | 'storageMemory';
-  executorId?: string;
+  hostMeanMs: number;
+}
+export interface SlowHostMeanTimeEvidence extends SlowHostByHostEvidence {
+  variant?: undefined;
+}
+export interface SlowHostDurationShareEvidence extends SlowHostByHostEvidence {
+  variant: 'durationShare';
+}
+export interface SlowHostMultiDimEvidence {
+  variant: 'multiDim';
+  dimension: 'taskTime' | 'inputBytes' | 'shuffleBytes' | 'storageMemory';
+  executorId: string;
   // The deviating executor's raw magnitude in `dimension`'s unit (ms for taskTime, else bytes).
-  execMaxValue?: number;
-  // multiDim taskTime: how many executors the deviating one was picked from, and the stage's task
+  execMaxValue: number;
+  // taskTime only: how many executors the deviating one was picked from, and the stage's task
   // count. The largest of N samples reaches a high ratio by chance more often as N grows.
   executorCount?: number;
   taskCount?: number;
 }
-export interface SlowHostFinding extends NumericFinding<'slowHost'>, SlowHostEvidence {}
+export type SlowHostEvidence = SlowHostMeanTimeEvidence | SlowHostDurationShareEvidence | SlowHostMultiDimEvidence;
+export interface SlowHostMeanTimeFinding extends NumericFinding<'slowHost'>, SlowHostMeanTimeEvidence {}
+export interface SlowHostDurationShareFinding extends NumericFinding<'slowHost'>, SlowHostDurationShareEvidence {}
+export interface SlowHostMultiDimFinding extends NumericFinding<'slowHost'>, SlowHostMultiDimEvidence {}
+export type SlowHostFinding = SlowHostMeanTimeFinding | SlowHostDurationShareFinding | SlowHostMultiDimFinding;
 
 export interface StageSlownessEvidence {
   // What the stage reads, which decides the fix: a shuffle, input files, or neither.
@@ -331,41 +344,76 @@ export interface RightSizingEvidence {
 }
 export interface RightSizingFinding extends NumericFinding<'rightSizing'>, RightSizingEvidence {}
 
-export interface MemoryUtilizationEvidence {
-  variant: 'idleCores' | 'memoryBand' | 'wasteModel';
-  // memoryBand only: the measured band the executors fell in.
-  rule?: 'heapOverProvisioned';
-  // heapOverProvisioned: the executor with the highest sampled heap peak.
-  executorId?: string;
-  // heapOverProvisioned only: that peak heap, bytes (a lower bound: Spark samples at heartbeat).
-  heap?: number;
-  // The memoryBand caveat for a log with no executor metrics.
-  dataUnavailable?: boolean;
+// Four shapes: idle core-time, the executor heap band (over-provisioned, or the caveat for a log
+// with no executor metrics) and the allocated-vs-used memory-time waste model.
+export interface MemoryIdleCoresEvidence {
+  variant: 'idleCores';
 }
-export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
-  // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
-  // (idleCores; wasteModel carries the allocated memory-time too), and the allocation and
-  // executor-time behind heapOverProvisioned's rounded ratio.
-  idleRateFraction?: number;
-  allocatedMBSeconds?: number | null;
-  allocatedBytes?: number;
-  // heapOverProvisioned: executors with a measured peak, and the seconds the run's executors were alive.
-  executorCount?: number;
-  executorSeconds?: number;
+export interface MemoryIdleCoresFinding extends NumericFinding<'memoryUtilization'>, MemoryIdleCoresEvidence {
+  // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time.
+  idleRateFraction: number;
+  allocatedMBSeconds: number | null;
 }
+// The memoryBand caveat for a log with no executor metrics.
+export interface MemoryBandUnavailableEvidence {
+  variant: 'memoryBand';
+  rule?: undefined;
+  dataUnavailable: true;
+}
+export interface MemoryBandUnavailableFinding extends NumericFinding<'memoryUtilization'>, MemoryBandUnavailableEvidence {}
+export interface MemoryHeapOverProvisionedEvidence {
+  variant: 'memoryBand';
+  rule: 'heapOverProvisioned';
+  // The executor with the highest sampled heap peak.
+  executorId: string;
+  // That peak heap, bytes (a lower bound: Spark samples at heartbeat).
+  heap: number;
+  dataUnavailable?: undefined;
+}
+export interface MemoryHeapOverProvisionedFinding extends NumericFinding<'memoryUtilization'>, MemoryHeapOverProvisionedEvidence {
+  // Impact-estimator inputs behind the rounded ratio: the allocation, the executors with a
+  // measured peak, and the seconds the run's executors were alive.
+  allocatedBytes: number;
+  executorCount: number;
+  executorSeconds: number;
+}
+export interface MemoryWasteModelEvidence {
+  variant: 'wasteModel';
+}
+export interface MemoryWasteModelFinding extends NumericFinding<'memoryUtilization'>, MemoryWasteModelEvidence {
+  // Impact-estimator input: the run's allocated memory-time.
+  allocatedMBSeconds: number;
+}
+export type MemoryUtilizationEvidence =
+  | MemoryIdleCoresEvidence | MemoryBandUnavailableEvidence | MemoryHeapOverProvisionedEvidence | MemoryWasteModelEvidence;
+export type MemoryUtilizationFinding =
+  | MemoryIdleCoresFinding | MemoryBandUnavailableFinding | MemoryHeapOverProvisionedFinding | MemoryWasteModelFinding;
 
-export interface CacheUtilizationEvidence {
-  variant: 'partialCache' | 'diskSpillover' | 'storageUnobserved';
-  rddId?: number;
-  rddName?: string;
-  memorySize?: number;
-  diskSize?: number;
-  numCachedPartitions?: number;
-  numPartitions?: number;
-  // storageUnobserved: the log has no cache-storage evidence at all.
-  dataUnavailable?: boolean;
+// The cached RDD a partialCache or diskSpillover finding is about.
+interface CachedRddEvidence {
+  rddId: number;
+  rddName: string;
+  memorySize: number;
+  diskSize: number;
+  numCachedPartitions: number;
+  numPartitions: number;
 }
-export interface CacheUtilizationFinding extends NumericFinding<'cacheUtilization'>, CacheUtilizationEvidence {}
+export interface CachePartialCacheEvidence extends CachedRddEvidence {
+  variant: 'partialCache';
+}
+export interface CacheDiskSpilloverEvidence extends CachedRddEvidence {
+  variant: 'diskSpillover';
+}
+// The log has no cache-storage evidence at all.
+export interface CacheStorageUnobservedEvidence {
+  variant: 'storageUnobserved';
+  dataUnavailable: true;
+}
+export type CacheUtilizationEvidence = CachePartialCacheEvidence | CacheDiskSpilloverEvidence | CacheStorageUnobservedEvidence;
+export interface CachePartialCacheFinding extends NumericFinding<'cacheUtilization'>, CachePartialCacheEvidence {}
+export interface CacheDiskSpilloverFinding extends NumericFinding<'cacheUtilization'>, CacheDiskSpilloverEvidence {}
+export interface CacheStorageUnobservedFinding extends NumericFinding<'cacheUtilization'>, CacheStorageUnobservedEvidence {}
+export type CacheUtilizationFinding = CachePartialCacheFinding | CacheDiskSpilloverFinding | CacheStorageUnobservedFinding;
 
 export interface CoreLocalityEvidence {
   nonLocalTaskCount: number;
@@ -379,18 +427,26 @@ export interface AutoscalingChurnEvidence {
 }
 export interface AutoscalingChurnFinding extends NumericFinding<'autoscalingChurn'>, AutoscalingChurnEvidence {}
 
-// A relation scanned by several SQL executions (no variant), or a join/union result several
-// executions recompute ('composite', which lists its leaf relations).
-export interface CachingOpportunityEvidence {
-  variant?: 'composite';
+interface CachingReuseEvidence {
   relation: string;
   format: string;
-  relations?: { relation: string; format: string }[];
-  operator?: 'join' | 'union';
   executionIds: number[];
   totalReadBytes: number;
 }
-export interface CachingOpportunityFinding extends NumericFinding<'cachingOpportunity'>, CachingOpportunityEvidence {}
+// A relation scanned by several SQL executions (no `variant`, so the key is absent at runtime).
+export interface CachingRelationEvidence extends CachingReuseEvidence {
+  variant?: undefined;
+}
+// A join/union result several executions recompute, which lists its leaf relations.
+export interface CachingCompositeEvidence extends CachingReuseEvidence {
+  variant: 'composite';
+  relations: { relation: string; format: string }[];
+  operator: 'join' | 'union';
+}
+export type CachingOpportunityEvidence = CachingRelationEvidence | CachingCompositeEvidence;
+export interface CachingRelationFinding extends NumericFinding<'cachingOpportunity'>, CachingRelationEvidence {}
+export interface CachingCompositeFinding extends NumericFinding<'cachingOpportunity'>, CachingCompositeEvidence {}
+export type CachingOpportunityFinding = CachingRelationFinding | CachingCompositeFinding;
 
 export interface JobFailureRateEvidence {
   failedJobs: number;
@@ -570,7 +626,9 @@ export type Finding =
   | PartitionSizingFinding
   | SpillFinding
   | GcFinding
-  | SlowHostFinding
+  | SlowHostMeanTimeFinding
+  | SlowHostDurationShareFinding
+  | SlowHostMultiDimFinding
   | StageSlownessFinding
   | StageFailedFinding
   | FailuresFinding
@@ -582,11 +640,17 @@ export type Finding =
   | ColdStartFinding
   | UtilizationFinding
   | RightSizingFinding
-  | MemoryUtilizationFinding
-  | CacheUtilizationFinding
+  | MemoryIdleCoresFinding
+  | MemoryBandUnavailableFinding
+  | MemoryHeapOverProvisionedFinding
+  | MemoryWasteModelFinding
+  | CachePartialCacheFinding
+  | CacheDiskSpilloverFinding
+  | CacheStorageUnobservedFinding
   | CoreLocalityFinding
   | AutoscalingChurnFinding
-  | CachingOpportunityFinding
+  | CachingRelationFinding
+  | CachingCompositeFinding
   | JobFailureRateFinding
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
@@ -598,6 +662,9 @@ export type Finding =
   | JoinKeyCastFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;
+
+/** Every key of any member of a union: `keyof` alone sees only the keys the members share. */
+export type AllKeys<U> = U extends unknown ? keyof U : never;
 
 /** The finding member for one `type`. */
 export type FindingOf<T extends Finding['type']> = Extract<Finding, { type: T }>;

@@ -44,15 +44,17 @@ function memoryDetail(f: MemoryFinding): string {
 // Only the `rule`-discriminated variant (heapOverProvisioned) has a diagnosis clause worth keeping:
 // the same figure memoryDetail() shows, in the detector's own words.
 function memoryDiagnosis(f: MemoryFinding): string | null {
-  if (f.rule == null) return null;
+  if (f.variant !== 'memoryBand' || f.rule == null) return null;
   const recommendation = f.recommendation ?? '';
   const adviceStart = recommendation.indexOf(': ');
   return adviceStart === -1 ? null : ` ${recommendation.slice(0, adviceStart)}.`;
 }
 
 function memoryEvidence(f: MemoryFinding): string | null {
-  if (f.heap != null && f.allocatedBytes != null) {
-    return `Peak heap ${formatBytes(f.heap)} of ${formatBytes(f.allocatedBytes)} allocated, across ${f.executorCount} sampled executors.`;
+  if (f.variant === 'memoryBand') {
+    return f.rule === 'heapOverProvisioned' && f.heap != null && f.allocatedBytes != null
+      ? `Peak heap ${formatBytes(f.heap)} of ${formatBytes(f.allocatedBytes)} allocated, across ${f.executorCount} sampled executors.`
+      : null;
   }
   if (f.allocatedMBSeconds == null) return null;
   const used = f.variant === 'wasteModel' ? `, ${memoryTime(f.allocatedMBSeconds - numericValue(f))} used` : '';

@@ -39,10 +39,10 @@ function stageShapeFinding(
 }
 
 function slowHostFinding(stageId: number, host: string, ratio: number, hostTaskShare: number): Finding {
-  return {
+  return testFinding({
     type: 'slowHost', stageId, impactBand: 'warning', metric: 'hostMeanRatio', value: ratio, host, hostTaskShare,
     recommendation: 'r',
-  };
+  });
 }
 
 const TASK_DATA: TaskData = {

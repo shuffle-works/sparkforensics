@@ -21,7 +21,7 @@ export interface SlowHostRow extends WidgetRow<'slowHost'> {
 // secondary dimension (with no `host`). Each needs its own sentence.
 export function slowHostDetail(f: SlowHostFinding): string {
   const value = numericValue(f);
-  if (f.metric === 'execMaxMedianRatio') {
+  if (f.variant === 'multiDim') {
     return `Executor ${f.executorId}: ${formatMetricValue('ratio', value)} the median ${f.dimension ? SLOW_HOST_DIMENSION_LABEL[f.dimension] : 'value'}`;
   }
   const taskSharePct = Math.round((f.hostTaskShare ?? 0) * 100);
@@ -34,14 +34,14 @@ export function slowHostDetail(f: SlowHostFinding): string {
 // What the line above an evidence panel leaves out of `slowHostDetail`: its sentence states the
 // executor deviation and a host's share of task time, but not a host's task-time ratio or its share of tasks.
 function slowHostUnstatedDetail(f: SlowHostFinding): string | null {
-  if (f.metric === 'execMaxMedianRatio') return null;
+  if (f.variant === 'multiDim') return null;
   const taskSharePct = formatMetricValue('pct', Math.round((f.hostTaskShare ?? 0) * 100));
   return f.metric === 'hostDurationShare' ? `${taskSharePct} of tasks ran on ${f.host}` : slowHostDetail(f);
 }
 
 // The measurements behind a row, for an evidence panel: the line above states the ratio or share, not the raw magnitude.
 function slowHostMeasurement(f: SlowHostFinding): string | null {
-  if (f.metric === 'execMaxMedianRatio') {
+  if (f.variant === 'multiDim') {
     if (f.execMaxValue == null || !f.dimension) return null;
     const amount = f.dimension === 'taskTime' ? formatDuration(f.execMaxValue) : formatBytes(f.execMaxValue);
     const of = f.executorCount != null ? `, the most of ${f.executorCount} executors` : '';

@@ -1,6 +1,7 @@
 import { presentationOf } from './finding-presentation.ts';
 import { pathBasename } from './format-utils.ts';
-import type { Finding, FindingOf } from './types.ts';
+import type { SlowHostMultiDimEvidence } from './finding-types.ts';
+import type { Finding } from './types.ts';
 
 /** A generic, type-level recommendation sentence for a finding: the shape of the fix, with no
  * instance data (numbers, stage ids, host names, file counts, config values), from its type's
@@ -29,7 +30,7 @@ export function duplicateSubtreeNote(f: { occurrencesIdentical: boolean; readsDi
 
 /** Reader-facing names for slowHost's per-executor dimensions, for the detector's recommendation
  * and the Slow Executor Host row. */
-export const SLOW_HOST_DIMENSION_LABEL: Record<NonNullable<FindingOf<'slowHost'>['dimension']>, string> = {
+export const SLOW_HOST_DIMENSION_LABEL: Record<SlowHostMultiDimEvidence['dimension'], string> = {
   taskTime: 'task time',
   inputBytes: 'input read',
   shuffleBytes: 'shuffle read and write',

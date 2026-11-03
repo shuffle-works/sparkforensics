@@ -122,10 +122,10 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
     // An ordinary (non-dataUnavailable) row: the dataUnavailable placeholder
     // carries no evidence pill of its own (it would be circular, its
     // whole content IS the "evidence unavailable" note).
-    catalog: [{
+    catalog: [testFinding({
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3', impactBand: 'info',
       recommendation: 'Executor 3 used only 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
-    }],
+    })],
   });
   renderDashboard();
 

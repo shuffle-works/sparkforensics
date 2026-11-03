@@ -227,7 +227,7 @@ describe('StageTable', () => {
     const catalog: Finding[] = [
       { type: 'spill', stageId: 1, impactBand: 'warning' },
       { type: 'gc', stageId: 1, impactBand: 'warning' },
-      { type: 'slowHost', stageId: 1, impactBand: 'critical' },
+      testFinding({ type: 'slowHost', stageId: 1, impactBand: 'critical' }),
     ];
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);

@@ -11,6 +11,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import type {
   Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorAddedEvent, ExecutorRemovedEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
+import type { AllKeys } from './finding-types.ts';
 
 // The runner reads each entry through the Detector contract, not its own precise `as const` shape:
 // the scope switch below calls each entry's bound detect with that scope's target.
@@ -53,7 +54,7 @@ type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number] | (typeof APPENDED
 // collide across groups); memoryUtilization leaves out `rule` because its one heap band sits on
 // the busiest executor, so executorId is already unique; partitionSizing keeps `rule` because a
 // stage can emit several rules at once sharing stageId+metric.
-const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & keyof FindingOf<T>)[] } = {
+const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & AllKeys<FindingOf<T>>)[] } = {
   skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],
   slowHost: ['host', 'executorId', 'variant', 'dimension'], stageSlowness: [], stageFailed: ['variant'],
   failures: [], straggler: [], speculationWaste: [], retryWaste: [], tinyTask: [],

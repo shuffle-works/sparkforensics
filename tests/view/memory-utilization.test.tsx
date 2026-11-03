@@ -8,6 +8,7 @@ import { DocsProvider } from '../../src/view/DocsContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 test('renders nothing when there are no memoryUtilization findings (collapses to a Clean-checks row instead)', () => {
   const { container } = render(<MemoryUtilization appModel={emptyAppModel()} catalog={[]} />);
@@ -30,22 +31,22 @@ test('renders nothing when the only memoryUtilization finding is the dataUnavail
 
 test('renders the WidgetCard heading, MEM badge, and every affected variant (not just the worst), with each variant fix stated once, visible at Basic tier', async () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
       recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    },
-    {
+    }),
+    testFinding({
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '7',
       impactBand: 'info', metric: 'heapUsedRatio', value: 20,
       recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
-    },
-    {
+    }),
+    testFinding({
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
-    },
+    }),
   ];
 
   // No density set: defaults to Basic. The card's fixes must already be
@@ -87,11 +88,11 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
 
 test('the header MEM badge links to the docs anchor for memoryUtilization findings (no separate "Learn more" link)', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
       recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    },
+    }),
   ];
   render(
     <DocsProvider>
@@ -107,13 +108,13 @@ test('the header MEM badge links to the docs anchor for memoryUtilization findin
 
 test('shows a low-confidence caveat for the waste-model finding', async () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
       validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
-    },
+    }),
   ];
 
   store.getState().setWidgetDensity('advanced');
@@ -134,11 +135,11 @@ test('shows a muted data-unavailable note with no bold label, impact dot, or evi
   // this needs a real accompanying finding to exercise the dataUnavailable
   // row's own rendering.
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
       recommendation: 'Over half of available core-time ran no task.',
-    },
+    }),
     {
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
       impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
@@ -169,10 +170,10 @@ test('attaches executor-metrics evidence to ordinary memory findings (uniform di
   store.getState().setWidgetDensity('advanced');
   render(
     <EvidenceAvailabilityProvider>
-      <MemoryUtilization appModel={emptyAppModel()} catalog={[{
+      <MemoryUtilization appModel={emptyAppModel()} catalog={[testFinding({
         type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3',
         impactBand: 'warning', recommendation: 'Executor 3 needs more memory.',
-      }]} defaultCollapsed={false} />
+      })]} defaultCollapsed={false} />
     </EvidenceAvailabilityProvider>,
   );
 
@@ -184,11 +185,11 @@ test('attaches executor-metrics evidence to ordinary memory findings (uniform di
 
 test('a memoryUtilization row has no per-row toggle; the card fix is always visible, at both densities', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
       recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    },
+    }),
   ];
   const advice = 'Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
 
@@ -208,12 +209,12 @@ test('a memoryUtilization row has no per-row toggle; the card fix is always visi
 
 test('renders the wasted MB-seconds raw-waste figure for a wasteModel finding', async () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       recommendation: 'Allocated executor memory sat largely idle over the run.',
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 12345, unit: 'mbSeconds' } },
-    },
+    }),
   ];
   installInterpretation(catalog);
   render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
@@ -223,10 +224,10 @@ test('renders the wasted MB-seconds raw-waste figure for a wasteModel finding', 
 
 test('stays domain-agnostic: no company/industry copy leaks', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', recommendation: 'Over half of available core-time ran no task.',
-    },
+    }),
   ];
   render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.queryByText(/scanntech/i)).not.toBeInTheDocument();
@@ -234,13 +235,13 @@ test('stays domain-agnostic: no company/industry copy leaks', () => {
 
 test('the header status badge (confidence + evidence) is Advanced-only', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
       validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
-    },
+    }),
   ];
 
   store.getState().setWidgetDensity('basic');
@@ -258,13 +259,13 @@ test('the header status badge (confidence + evidence) is Advanced-only', () => {
 test('confidence and evidence markers stay out of the summary view until the card is expanded', async () => {
   const user = userEvent.setup();
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
       validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
-    },
+    }),
   ];
 
   store.getState().setWidgetDensity('advanced');
@@ -280,16 +281,16 @@ test('confidence and evidence markers stay out of the summary view until the car
 
 test('card defaults collapsed with worst-row summary when there are findings', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
       recommendation: 'Over half of available core-time ran no task.',
-    },
-    {
+    }),
+    testFinding({
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3',
       impactBand: 'info', metric: 'heapUsedRatio', value: 98,
       recommendation: 'Executor 3 needs more memory.',
-    },
+    }),
   ];
 
   render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} />);
@@ -299,12 +300,12 @@ test('card defaults collapsed with worst-row summary when there are findings', (
 
 test('states a run-sized waste-model figure in GB-hours, matching the savings figure', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 10_956_685.3,
       recommendation: 'Allocated executor memory sat largely idle over the run.',
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10_956_685.3, unit: 'mbSeconds' } },
-    },
+    }),
   ];
   render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText(/~3\.0 GB-h wasted/)).toBeInTheDocument();

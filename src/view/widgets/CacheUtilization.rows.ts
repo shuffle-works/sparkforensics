@@ -70,7 +70,7 @@ export const cacheRows: RowsOf<'cacheUtilization', CacheRow> = ({ findings, stat
       finding,
       caveat,
       stated: isStated(finding, stated),
-      label: caveat ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`,
+      label: finding.variant === 'storageUnobserved' ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`,
       detail,
     }];
   });

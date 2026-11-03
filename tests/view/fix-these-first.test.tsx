@@ -166,21 +166,21 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
   });
 
   it('keeps a memoryUtilization memoryBand finding when the underlying data was actually available', () => {
-    const heapOverProvisioned: Finding = {
+    const heapOverProvisioned: Finding = testFinding({
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '1',
       impactBand: 'info', metric: 'heapUsedRatio', value: 20,
       recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
-    };
+    });
     const { eligible } = boardData([heapOverProvisioned]);
     expect(eligible).toEqual([heapOverProvisioned]);
   });
 
   it('keeps a memoryUtilization finding of a different variant (idleCores), which never carries dataUnavailable at all', () => {
-    const idleCores: Finding = {
+    const idleCores: Finding = testFinding({
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 80,
       recommendation: '80% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    };
+    });
     const { eligible } = boardData([idleCores]);
     expect(eligible).toEqual([idleCores]);
   });

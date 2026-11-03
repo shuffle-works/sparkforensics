@@ -49,7 +49,7 @@ function slowHostFinding(
   hostTaskShare: number,
   impactBand: Finding['impactBand'] = 'warning',
 ): Finding {
-  return {
+  return testFinding({
     type: 'slowHost',
     stageId,
     impactBand,
@@ -58,7 +58,7 @@ function slowHostFinding(
     host,
     hostTaskShare,
     recommendation: 'r',
-  };
+  });
 }
 
 function stragglerFinding(

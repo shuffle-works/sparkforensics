@@ -19,7 +19,7 @@ function sourceFiles(dir = srcDir) {
 describe('type escape hatches', () => {
   // The count may fall, never rise: a new `as unknown as` bridges two shapes the compiler cannot
   // relate, and each one is a place a renamed field compiles and goes quiet.
-  const MAX_UNKNOWN_CASTS = 13;
+  const MAX_UNKNOWN_CASTS = 12;
 
   it('does not add `as unknown as` casts to core sources', () => {
     const hits = sourceFiles().flatMap((file) => {

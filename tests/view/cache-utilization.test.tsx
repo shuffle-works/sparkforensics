@@ -120,7 +120,7 @@ test('tags the card content with data-widget for instrumentation', () => {
   expect(container.querySelector('[data-widget="cache-utilization"]')).not.toBeNull();
 });
 
-function cacheUtilizationFinding(overrides: Partial<FindingOf<'cacheUtilization'>> = {}): Finding {
+function cacheUtilizationFinding(overrides: Partial<Extract<FindingOf<'cacheUtilization'>, { rddId: number }>> = {}): Finding {
   const rddId = overrides.rddId ?? 1;
   const variant = overrides.variant ?? 'partialCache';
   return testFinding({

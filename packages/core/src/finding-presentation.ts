@@ -500,7 +500,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     pitch: 'A cached dataset does not fit in memory or spills to disk.',
     region: 'reference',
     thresholdSummary: () => 'cached partitions evicted or spilled to disk',
-    actionLabel: (f) => (f.dataUnavailable ? 'Enable block-update logging' : 'Increase cache memory'),
+    actionLabel: (f) => (f.variant === 'storageUnobserved' ? 'Enable block-update logging' : 'Increase cache memory'),
     genericRecommendation(f) {
       switch (f.variant) {
         case 'partialCache': return 'Increase executor memory or reduce the cached dataset size so more of it stays cached.';

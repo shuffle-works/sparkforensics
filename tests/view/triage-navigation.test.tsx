@@ -152,27 +152,27 @@ function retryWasteFinding(stageId: number, impactBand: Finding['impactBand'] = 
 }
 
 function slowHostFinding(stageId: number, impactBand: Finding['impactBand'] = 'warning', value = 3): Finding {
-  return {
+  return testFinding({
     type: 'slowHost',
     stageId,
     impactBand,
     value,
     recommendation: `Investigate slow host in Stage ${stageId}.`,
-  };
+  });
 }
 
 // `stageId` defaults to `null` to match the real memoryUtilization detector
 // (app-level). A few tests pass an explicit `stageId` to get a genuine
 // StageTable route button, the only click-through into a reference-region finding.
 function memoryFinding(stageId: number | null = null): Finding {
-  return {
+  return testFinding({
     type: 'memoryUtilization',
     stageId,
     impactBand: 'warning',
     variant: 'idleCores',
     value: 0.7,
     recommendation: 'Review executor allocation.',
-  };
+  });
 }
 
 // The `memoryBand` variant emits one finding per flagged executor, the shape

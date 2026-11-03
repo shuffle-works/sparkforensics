@@ -45,7 +45,7 @@ import type {
 import type {
   FinalizedStage, StageExecutorStat, StageFailureReason,
 } from './stage-quantiles.ts';
-import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TunedThresholds } from './finding-types.ts';
+import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostMultiDimFinding, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -628,7 +628,7 @@ function executorDurationZ(execs: DetectorExecutorStat[]): Map<string, number> |
 // No `host` here: it is one of slowHost's id discriminators, so setting it would change the id.
 function executorTaskTimeCaveat(
   executorId: string, ratio: number, executorCount: number, taskCount: number,
-): Pick<SlowHostFinding, 'confidence' | 'validationRequired' | 'executorCount' | 'taskCount'> {
+): Pick<SlowHostMultiDimFinding, 'confidence' | 'validationRequired' | 'executorCount' | 'taskCount'> {
   return {
     confidence: 'low',
     validationRequired:
@@ -2248,7 +2248,7 @@ export const DETECTORS = [
       const taskTimeSamples = execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount }));
       const taskTimeZs = executorDurationZ(execs);
       const taskTimeZ = chanceOutlierZ(taskTimeSamples.length, thresholds.outlierAlpha);
-      const dims: { dimension: NonNullable<SlowHostFinding['dimension']>; floor: number; samples: { key: string; value: number }[]; qualifies?: (sample: { key: string; value: number }) => boolean }[] = [
+      const dims: { dimension: SlowHostMultiDimFinding['dimension']; floor: number; samples: { key: string; value: number }[]; qualifies?: (sample: { key: string; value: number }) => boolean }[] = [
         {
           dimension: 'taskTime', floor: floorMs, samples: taskTimeSamples,
           // Only an executor the stage's own spread can't explain: with no known spread, none.
@@ -2291,11 +2291,9 @@ export const DETECTORS = [
       // `metric`), the duration-share branch (`variant`), and the multiDim taskTime dimension. Every
       // byte-based multiDim dimension has no absolute figure today, so it stays informational.
       const absoluteMs =
-        finding.metric === 'hostMeanRatio' || finding.variant === 'durationShare'
-          ? (finding.hostMeanMs as number | undefined)
-          : finding.variant === 'multiDim' && finding.dimension === 'taskTime'
-            ? (finding.execMaxValue as number | undefined)
-            : null;
+        finding.variant === 'multiDim'
+          ? (finding.dimension === 'taskTime' ? finding.execMaxValue : null)
+          : (finding.metric === 'hostMeanRatio' || finding.variant === 'durationShare' ? finding.hostMeanMs : null);
       if (absoluteMs == null) {
         return costOnly('none'); // byte-based multiDim dims: no absolute figure today, no model applied
       }
@@ -2933,7 +2931,7 @@ export const DETECTORS = [
     },
     estimate(finding): ImpactEstimate | null {
       // storageUnobserved reports missing evidence: no sizes, so nothing to model.
-      if (finding.dataUnavailable) return costOnly('none');
+      if (finding.variant === 'storageUnobserved') return costOnly('none');
       const memorySize = (finding.memorySize as number | undefined) ?? 0;
       const diskSize = (finding.diskSize as number | undefined) ?? 0;
       const numCachedPartitions = (finding.numCachedPartitions as number | undefined) ?? 0;
