@@ -2,13 +2,13 @@
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ExportApp } from '@/export/ExportApp';
-import { selectCatalog, selectConfigFindings, store } from '@/store/store';
-import { runFindingKeys } from '@/view/finding-anchor';
+import { selectAppModel, selectCatalog, selectConfigFindings, store } from '@/store/store';
+import { buildBoardLayout, resolveRoute } from '@/view/board-layout';
+import { emptySelection, IMPACT_BANDS } from '@/view/finding-filter';
+import { interpretationOf } from '@/view/interpretation';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
-import type { WidgetRegistration } from '@/view/TriageNavigationContext';
 import { examples, exampleRuns, loadExampleRun } from './_shared/detector-examples';
 import { isHidden } from './_shared/evidence-panel';
 
@@ -18,13 +18,8 @@ vi.mock('@/view/useRecentFiles', () => import('@/export/live-only-stubs/useRecen
 vi.mock('@/view/EvidenceExport', () => import('@/export/live-only-stubs/EvidenceExport'));
 vi.mock('@/view/core-usage-histogram-data', () => import('@/export/live-only-stubs/core-usage-histogram-data'));
 
-// What the dashboard's route machinery hands out, tapped from outside: the verdict's route handler,
-// every widget registration and every row anchor. Production code is untouched.
-const tap = vi.hoisted(() => ({
-  route: null as ((target: TriageTarget) => void) | null,
-  widgets: [] as { widgetId: string; registration: WidgetRegistration }[],
-  anchors: new Map<string, HTMLElement>(),
-}));
+// The verdict's route handler, tapped from outside: the same entry every route from the board takes.
+const tap = vi.hoisted(() => ({ route: null as ((target: TriageTarget) => void) | null }));
 
 vi.mock('@/view/widgets/RunVerdict', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/view/widgets/RunVerdict')>();
@@ -33,36 +28,6 @@ vi.mock('@/view/widgets/RunVerdict', async (importOriginal) => {
     RunVerdict: (props: ComponentProps<typeof actual.RunVerdict>) => {
       tap.route = props.onRoute;
       return <actual.RunVerdict {...props} />;
-    },
-  };
-});
-
-vi.mock('@/view/TriageNavigationContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/view/TriageNavigationContext')>();
-  const { useCallback, useRef } = await import('react');
-  return {
-    ...actual,
-    TriageNavigationProvider: (props: ComponentProps<typeof actual.TriageNavigationProvider>) => {
-      const latest = useRef(props);
-      latest.current = props;
-      const registerWidget = useCallback<typeof props.registerWidget>((widgetId, registration) => {
-        const entry = { widgetId, registration };
-        tap.widgets.push(entry);
-        const unregister = latest.current.registerWidget(widgetId, registration);
-        return () => {
-          tap.widgets.splice(tap.widgets.indexOf(entry), 1);
-          unregister();
-        };
-      }, []);
-      const registerFindingAnchor = useCallback<typeof props.registerFindingAnchor>((key, element) => {
-        tap.anchors.set(key, element);
-        const unregister = latest.current.registerFindingAnchor(key, element);
-        return () => {
-          if (tap.anchors.get(key) === element) tap.anchors.delete(key);
-          unregister();
-        };
-      }, []);
-      return <actual.TriageNavigationProvider {...props} registerWidget={registerWidget} registerFindingAnchor={registerFindingAnchor} />;
     },
   };
 });
@@ -87,19 +52,10 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-/** Where a route to `finding` lands: its row, else the card or panel registered for it (the panel
- * scoped to it before the widget's full card), as the dashboard resolves it. */
-function landingOf(finding: Finding, widgetId: string): HTMLElement | undefined {
-  const state = store.getState();
-  const anchor = tap.anchors.get(runFindingKeys([...selectCatalog(state), ...selectConfigFindings(state)])(finding));
-  if (anchor) return anchor;
-  const registrations = tap.widgets.filter((entry) => entry.widgetId === widgetId).map((entry) => entry.registration);
-  return (registrations.find((candidate) => candidate.holds?.(finding)) ?? registrations.find((candidate) => !candidate.holds))?.wrapperElement;
-}
-
 // A route must land on something a person can see and use: the focused element is visible and is
-// in the row, panel or card of the finding it was asked for. A route to a panel that was hidden,
-// unmounted or never built fails here whatever mechanism hid it.
+// in the card the layout resolved the route to. A route to a panel that was hidden, unmounted or
+// never built fails here whatever mechanism hid it. No timers are faked: the route lands in the
+// commit that mounts its row.
 test.each(
   exampleRuns().flatMap((log) => (['basic', 'advanced'] as const).map((density) => [log, density] as const)),
 )('%s (%s): a route to each example finding lands on a visible element of that finding', async (log, density) => {
@@ -110,8 +66,11 @@ test.each(
   await screen.findByRole('tab', { name: 'Findings' });
 
   const state = store.getState();
+  const appModel = selectAppModel(state);
   const catalog = selectCatalog(state);
   const configFindings = selectConfigFindings(state);
+  const interpretation = state.run ? interpretationOf(state.run) : null;
+  const layout = buildBoardLayout({ interpretation, appModel, catalog, configFindings, selection: { ...emptySelection(), impactBands: new Set(IMPACT_BANDS) }, density });
   const found = Object.values(examples).flatMap((example) => {
     if (!example || `${example.source}/${example.log}` !== log) return [];
     const finding = [...catalog, ...configFindings].find((candidate) => candidate.id === example.finding.id);
@@ -125,6 +84,11 @@ test.each(
     const target = triageTargetFor(finding);
     if (!target) continue;
     routed += 1;
+    const resolved = resolveRoute(target, layout);
+    if (!resolved) {
+      failures.push(`${finding.type} ${finding.id}: the layout has no place for the route`);
+      continue;
+    }
     // Start every route from nothing focused, so the focus below is the route's.
     (document.activeElement as HTMLElement | null)?.blur();
     act(() => tap.route!(target));
@@ -135,10 +99,10 @@ test.each(
       continue;
     }
     const focused = document.activeElement as HTMLElement;
-    const landing = landingOf(finding, target.widgetId);
+    const card = resolved.cardKey ? screen.getByTestId(`widget-grid-item-${resolved.cardKey}`) : null;
     if (isHidden(focused, document.body)) failures.push(`${finding.type} ${finding.id}: the focused element is hidden`);
-    else if (!landing?.contains(focused)) failures.push(`${finding.type} ${finding.id}: the focused element is outside the finding's row, panel and card`);
+    else if (card && !card.contains(focused)) failures.push(`${finding.type} ${finding.id}: the focused element is outside the finding's card`);
   }
   expect(routed).toBeGreaterThan(0);
   expect(failures).toEqual([]);
-}, 120_000);
+}, 30_000);

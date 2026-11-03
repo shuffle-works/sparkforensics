@@ -4,20 +4,20 @@ How the Findings tab renders recommendation rows and active widget cards in one 
 
 Rendered by `FilteredBoard`'s `TabsContent value="findings"`
 (`src/view/widgets/ImpactBoard.tsx`): recommendation rows and active
-widget cards in one impact-ranked board. The recommendation-rollup logic lives in
-`src/view/widgets/FixTheseFirst.tsx` (its own file with directly-testable
-exports, not rendered as a standalone page section by `Dashboard.tsx`) and
+widget cards in one impact-ranked board. The recommendation rows render from
+`src/view/widgets/FixTheseFirst.tsx` (`FindingRow`, `TypeGroupRow`; not
+rendered as a standalone page section by `Dashboard.tsx`) and
 the active-widget logic lives in `src/view/widgets/Alerts.tsx` (same: not
 rendered standalone).
-`ImpactBoard` calls `FixTheseFirst.tsx`'s exported `useFixTheseFirstData`
-(eligible findings, rollup groups, the top triage target) and
+`ImpactBoard` renders the bands of the board layout that `buildBoardLayout`
+(`src/view/board-layout.ts`) builds from the rollup groups and
 `Alerts.tsx`'s exported `computeActiveWidgets` (the ranked active-`REGISTRY`
 list). The rollup and its ranking are computed in core by `interpretRun`
 (`rankedRollup`/`rankFindings`, `packages/core/src/recommendation-rollup.ts`);
-`useFixTheseFirstData` reads it through `boardRollup`
+`buildBoardLayout` reads it through `boardRollup`
 (`src/view/interpretation.ts`: the interpretation's carried groups when
 unfiltered, core `rankedRollup` recomputed over the kept findings under a
-filter). `ImpactBoard` then buckets rows by each group's `band` (its worst
+filter). The layout then buckets rows by each group's `band` (its worst
 member's impact band, which the group row's badge also shows, while
 `rankFindings` orders the members by stage task time) and cards by each
 active widget's own `worstImpactBand`. The verdict's step leads
@@ -81,7 +81,7 @@ target. A row whose widget has no rows to show beyond the line above has no butt
 (`EvidencePanelRow`, `InlineEvidence`), scoped to the row's findings: the
 widget renders without its other findings of the same type. The panel starts
 at the text column, and stacks full width below `sm`. A route that targets one
-of the row's findings opens that row's panel too (`useEvidenceOpen`). A
+of the row's findings opens that row's panel too (`resolveRoute`). A
 `TypeGroupRow` has the same button, scoped to the group's members, and its
 text block is an inner button that toggles its expand state
 (`aria-expanded`). A group member's row routes via
@@ -90,8 +90,8 @@ per-finding resolver Stage Summary Table's own control uses (see "First
 investigation routing" below), and opens the group's panel. An expanded group's members (`FindingInstanceRow`) omit
 the badge and span its cell (`colSpan={2}`): the location line, then the
 recommendation clamped to one line, then the figure in the third column.
-`ImpactBoard` owns which single group is expanded (`expandedGroupKey`); a
-`TypeGroupRow` owns only its page.
+The store's `board.expandedGroup` (`src/store/board.ts`) holds which single
+group is expanded; a `TypeGroupRow` owns only its page.
 
 Each impact band (`ImpactBoard.tsx`'s own `ImpactGroup`, one call per
 entry of `IMPACT_BAND_ORDER_LIST = ['critical', 'warning', 'info']`) is a
@@ -114,7 +114,7 @@ own order: the interpretation's `DetectorInfo` sorted by region
 render collapsed (`defaultCollapsed`) in both Basic and Advanced view. A route
 to a finding that no step or row holds (a log note or an evidence caveat, which
 the rollup leaves out) adds its type's card to this grid, whatever else shows
-that type (`fullCardWidgetIds`, `Dashboard.tsx`).
+that type (a `route-only` card in the layout, `board-layout.ts`).
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
 Utilization, Memory Utilization, or Executor Utilization card with an active

@@ -1,187 +1,93 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { runFindingKeys, useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
-import { TriageNavigationProvider, type TriageNavigation } from '@/view/TriageNavigationContext';
+import { emptyAppModel, store } from '@/store/store';
+import { BoardLayoutContext } from '@/view/BoardLayoutContext';
+import { buildBoardLayout } from '@/view/board-layout';
+import { emptySelection } from '@/view/finding-filter';
+import { useAnchoredRow } from '@/view/finding-anchor';
 import { testFinding } from './_shared/finding';
 
-function noop() {
-  return () => {};
-}
+const originalScrollIntoView = Element.prototype.scrollIntoView;
 
-// Stable across re-renders: inline handlers would change the memoized navigation
-// bundle's identity and defeat the same-contents-different-reference test below.
-const reportWidgetOpen = vi.fn();
-const clearRouteFocus = vi.fn();
-
-function skewFinding(stageId = 1): Finding {
-  return testFinding({ type: 'skew', stageId, impactBand: 'warning', recommendation: 'Salt the key.' });
-}
-
-function stageShapeFinding(stageId = 1): Finding {
-  return testFinding({ type: 'stageShape', stageId, impactBand: 'info', recommendation: 'Check partition count.', rule: 'lowParallelism' });
-}
-
-// Module-level so the navigation bundle keeps its identity across re-renders.
-const typeAndStageKey: TriageNavigation['findingKey'] = (finding) => `${finding.type}:${finding.stageId}`;
-
-function AnchorProbe({ findings }: { findings: Finding[] }) {
-  const ref = useFindingAnchor(findings);
-  const flashed = useIsRouteFlash(findings);
-  return (
-    <div>
-      <div ref={ref} data-testid="anchor" />
-      <span data-testid="flashed">{String(flashed)}</span>
-    </div>
-  );
-}
-
-function Harness({
-  findings,
-  registerFindingAnchor = noop,
-  findingKey = typeAndStageKey,
-  flashedFinding = null,
-}: {
-  findings: Finding[];
-  registerFindingAnchor?: TriageNavigation['registerFindingAnchor'];
-  findingKey?: TriageNavigation['findingKey'];
-  flashedFinding?: Finding | null;
-}) {
-  return (
-    <TriageNavigationProvider
-      registerWidget={noop}
-      registerFindingAnchor={registerFindingAnchor}
-      findingKey={findingKey}
-      reportWidgetOpen={reportWidgetOpen}
-      clearRouteFocus={clearRouteFocus}
-      focusedCardKey={null}
-      activeRouteTarget={null}
-      flashedFinding={flashedFinding}
-    >
-      <AnchorProbe findings={findings} />
-    </TriageNavigationProvider>
-  );
-}
-
-test('registers the mounted element under the key of every finding in the group', () => {
-  const registerFindingAnchor = vi.fn(() => vi.fn());
-  const f1 = skewFinding(1);
-  const f2 = stageShapeFinding(1);
-
-  render(<Harness findings={[f1, f2]} registerFindingAnchor={registerFindingAnchor} />);
-
-  const element = screen.getByTestId('anchor');
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(2);
-  expect(registerFindingAnchor).toHaveBeenNthCalledWith(1, 'skew:1', element);
-  expect(registerFindingAnchor).toHaveBeenNthCalledWith(2, 'stageShape:1', element);
+beforeEach(() => {
+  store.getState().resetModel();
+  Element.prototype.scrollIntoView = vi.fn();
+});
+afterEach(() => {
+  Element.prototype.scrollIntoView = originalScrollIntoView;
 });
 
-test('unregisters every finding on unmount', () => {
-  const cleanup1 = vi.fn();
-  const cleanup2 = vi.fn();
-  const registerFindingAnchor = vi.fn().mockReturnValueOnce(cleanup1).mockReturnValueOnce(cleanup2);
-  const f1 = skewFinding(1);
-  const f2 = stageShapeFinding(1);
+const skew = testFinding({ type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Salt the key.' });
+const stageShape = testFinding({ type: 'stageShape', stageId: 1, impactBand: 'info', recommendation: 'Check partition count.', rule: 'lowParallelism' });
+const other = testFinding({ type: 'skew', stageId: 2, impactBand: 'warning', recommendation: 'Salt the key.' });
 
-  const { unmount } = render(<Harness findings={[f1, f2]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(cleanup1).not.toHaveBeenCalled();
-  expect(cleanup2).not.toHaveBeenCalled();
+function layoutOf(catalog: Finding[]) {
+  return buildBoardLayout({ interpretation: null, appModel: emptyAppModel(), catalog, configFindings: [], selection: emptySelection(), density: 'basic' });
+}
 
+function Row({ findings, id }: { findings: Finding[]; id: string }) {
+  const anchor = useAnchoredRow(findings);
+  return <div ref={anchor.ref} tabIndex={anchor.tabIndex} data-testid={id} data-flashed={anchor.dataFlashed} className={anchor.flashClassName} />;
+}
+
+function Board({ catalog }: { catalog: Finding[] }) {
+  return (
+    <BoardLayoutContext.Provider value={layoutOf(catalog)}>
+      <Row findings={[skew, stageShape]} id="grouped" />
+      <Row findings={[other]} id="other" />
+    </BoardLayoutContext.Provider>
+  );
+}
+
+const route = (finding: Finding, catalog: Finding[]) => ({ tab: null, openCards: [], cardKey: null, rowKey: layoutOf(catalog).keyOf(finding) });
+
+test('a route to any finding of a row lands on that row and flashes it, and no other', () => {
+  const catalog = [skew, stageShape, other];
+  render(<Board catalog={catalog} />);
+  expect(screen.getByTestId('grouped')).toHaveAttribute('data-flashed', 'false');
+
+  act(() => store.getState().startRoute(route(stageShape, catalog)));
+
+  expect(screen.getByTestId('grouped')).toHaveFocus();
+  expect(screen.getByTestId('grouped')).toHaveAttribute('data-flashed', 'true');
+  expect(screen.getByTestId('grouped')).toHaveClass('route-flash');
+  expect(screen.getByTestId('other')).toHaveAttribute('data-flashed', 'false');
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+});
+
+test('each route lands once: a row that mounts again under the same route does not take focus again', () => {
+  const catalog = [skew, stageShape, other];
+  const { unmount } = render(<Board catalog={catalog} />);
+  act(() => store.getState().startRoute(route(other, catalog)));
+  expect(screen.getByTestId('other')).toHaveFocus();
   unmount();
-  expect(cleanup1).toHaveBeenCalledTimes(1);
-  expect(cleanup2).toHaveBeenCalledTimes(1);
+
+  render(<Board catalog={catalog} />);
+  expect(screen.getByTestId('other')).not.toHaveFocus();
 });
 
-test('a same-contents different-reference findings array does not cause a spurious unregister/re-register', () => {
-  const registerFindingAnchor = vi.fn(() => vi.fn());
-  const f1 = skewFinding(1);
-  const f2 = stageShapeFinding(1);
-
-  const { rerender } = render(<Harness findings={[f1, f2]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(2);
-
-  // Brand-new array wrapper, same finding object references, same signature.
-  rerender(<Harness findings={[f1, f2]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(2); // unchanged: no churn
-
-  // Brand-new array AND brand-new finding objects, but same type:stageId signature.
-  rerender(<Harness findings={[skewFinding(1), stageShapeFinding(1)]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(2); // still unchanged
+test('a newer route to the same row lands again', () => {
+  const catalog = [skew, stageShape, other];
+  render(<Board catalog={catalog} />);
+  act(() => store.getState().startRoute(route(other, catalog)));
+  screen.getByTestId('other').blur();
+  act(() => store.getState().startRoute(route(other, catalog)));
+  expect(screen.getByTestId('other')).toHaveFocus();
 });
 
-test('re-registers under the new keys when another run gives the same findings different keys', () => {
-  const cleanup = vi.fn();
-  const registerFindingAnchor = vi.fn(() => cleanup);
-  const finding = skewFinding(1);
-  const runKey = (run: string): TriageNavigation['findingKey'] => (f) => `${run}|${f.type}:${f.stageId}`;
-
-  const { rerender } = render(<Harness findings={[finding]} findingKey={runKey('a')} registerFindingAnchor={registerFindingAnchor} />);
-  const element = screen.getByTestId('anchor');
-  expect(registerFindingAnchor).toHaveBeenLastCalledWith('a|skew:1', element);
-
-  // Same type and stage id, new run: the row registers under the new run's key.
-  rerender(<Harness findings={[skewFinding(1)]} findingKey={runKey('b')} registerFindingAnchor={registerFindingAnchor} />);
-  expect(cleanup).toHaveBeenCalledTimes(1);
-  expect(registerFindingAnchor).toHaveBeenLastCalledWith('b|skew:1', element);
+test('a route to a finding mounts the row that lands it in the same commit', () => {
+  const catalog = [skew, stageShape, other];
+  act(() => store.getState().startRoute(route(other, catalog)));
+  render(<Board catalog={catalog} />);
+  expect(screen.getByTestId('other')).toHaveFocus();
 });
 
-test('re-registers when the set of findings actually changes', () => {
-  const cleanups: Array<ReturnType<typeof vi.fn>> = [];
-  const registerFindingAnchor = vi.fn(() => {
-    const cleanup = vi.fn();
-    cleanups.push(cleanup);
-    return cleanup;
-  });
-  const f1 = skewFinding(1);
-  const f2 = stageShapeFinding(1);
-  const f3 = skewFinding(2); // different stageId -> different signature
-
-  const { rerender } = render(<Harness findings={[f1]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(1);
-
-  rerender(<Harness findings={[f1, f2]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(cleanups[0]).toHaveBeenCalledTimes(1); // old single-finding registration torn down
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(3); // re-registered for both f1 and f2
-
-  rerender(<Harness findings={[f3]} registerFindingAnchor={registerFindingAnchor} />);
-  expect(cleanups[1]).toHaveBeenCalledTimes(1);
-  expect(cleanups[2]).toHaveBeenCalledTimes(1);
-  expect(registerFindingAnchor).toHaveBeenCalledTimes(4);
-});
-
-test('is a no-op when rendered outside a TriageNavigationProvider', () => {
-  expect(() => render(<AnchorProbe findings={[skewFinding(1)]} />)).not.toThrow();
-  expect(screen.getByTestId('flashed')).toHaveTextContent('false');
-});
-
-test('useIsRouteFlash is true when the flashed finding is one of the findings, by reference', () => {
-  const f1 = skewFinding(1);
-  const f2 = stageShapeFinding(1);
-  render(<Harness findings={[f1, f2]} flashedFinding={f2} />);
-  expect(screen.getByTestId('flashed')).toHaveTextContent('true');
-});
-
-test('useIsRouteFlash is false when there is no active flash', () => {
-  render(<Harness findings={[skewFinding(1)]} flashedFinding={null} />);
-  expect(screen.getByTestId('flashed')).toHaveTextContent('false');
-});
-
-test('useIsRouteFlash is false for a different finding object even with the same type/stageId (reference check)', () => {
-  const f1 = skewFinding(1);
-  const lookalike = skewFinding(1); // same shape, different identity, not in the group
-  render(<Harness findings={[f1]} flashedFinding={lookalike} />);
-  expect(screen.getByTestId('flashed')).toHaveTextContent('false');
-});
-
-test('runFindingKeys gives findings that share a core key one key each, and leaves a lone finding its core key', () => {
-  const [a, b, lone] = [skewFinding(1), skewFinding(2), stageShapeFinding(3)];
-  const keys = runFindingKeys([a, b, lone]);
-  expect([keys(a), keys(b), keys(lone)]).toEqual(['skew|skew|stage:#1', 'skew|skew|stage:#2', 'stageShape|lowParallelism|stage:#3']);
-  const twin = skewFinding(1);
-  const twins = runFindingKeys([a, twin]);
-  expect([twins(a), twins(twin)]).toEqual(['skew|skew|stage:#1', 'skew|skew|stage:#1#1']);
-  // A finding outside the run's list falls back to the core key.
-  expect(twins(skewFinding(9))).toBe('skew|skew|stage:#9');
+test('a row outside a board is not a landing', () => {
+  render(<Row findings={[skew]} id="alone" />);
+  act(() => store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: 'skew|skew|stage:#1' }));
+  expect(screen.getByTestId('alone')).not.toHaveFocus();
+  expect(screen.getByTestId('alone')).toHaveAttribute('data-flashed', 'false');
 });

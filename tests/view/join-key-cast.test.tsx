@@ -9,7 +9,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { JoinKeyCast } from '@/view/widgets/JoinKeyCast';
 import type { Finding } from '@sparkforensics/core/types.ts';
 
@@ -32,9 +31,7 @@ function finding(overrides: Record<string, unknown> = {}): Finding {
 function renderWidget(catalog: Finding[]) {
   return render(
     <DocsProvider>
-      <EvidenceAvailabilityProvider>
-        <JoinKeyCast appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
-      </EvidenceAvailabilityProvider>
+      <JoinKeyCast appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />
     </DocsProvider>,
   );
 }

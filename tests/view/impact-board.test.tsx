@@ -2,11 +2,10 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ImpactBoard } from '../../src/view/widgets/ImpactBoard';
+import { TestImpactBoard } from './_shared/board';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
-import type { TriageTarget } from '../../src/view/triage-target';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 
@@ -40,14 +39,7 @@ function renderBoard(catalog: Finding[]) {
   installInterpretation(catalog, readyAppModel() as any);
   return render(
     <StageDetailProvider>
-      <ImpactBoard
-        appModel={readyAppModel() as any}
-        catalog={catalog}
-        configFindings={[]}
-        stages={readyAppModel().stages as any}
-        getTaskData={getTaskData}
-        onRoute={(_target: TriageTarget) => {}}
-      />
+      <TestImpactBoard appModel={readyAppModel() as any} catalog={catalog} getTaskData={getTaskData} />
     </StageDetailProvider>,
   );
 }

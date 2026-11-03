@@ -1,9 +1,8 @@
-import { useState } from 'react';
-
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { byStageAsc, canToggleSort, orderByImpact, type SortMode } from '@/view/impact-sort';
 import { useWidgetDensity } from '@/store/store';
 import { useInterpretation } from '@/view/interpretation';
+import { useWidgetState } from '@/view/useWidgetState';
 
 export interface UseSortModeResult {
   sortMode: SortMode;
@@ -35,9 +34,10 @@ export interface UseSortModeResult {
  * density back to Basic after choosing stage order in Advanced can't leave a
  * widget stuck showing stage order with no visible control to undo it. The
  * raw choice is preserved underneath, so switching back to Advanced restores
- * it. */
-export function useSortMode(initial: SortMode = 'impact'): UseSortModeResult {
-  const [sortMode, setSortMode] = useState<SortMode>(initial);
+ * it. `stateKey` is where the choice is remembered while the widget's card is collapsed or its tab is
+ * hidden (`useWidgetState`). */
+export function useSortMode(stateKey: string | null = null, initial: SortMode = 'impact'): UseSortModeResult {
+  const [sortMode, setSortMode] = useWidgetState<SortMode>(stateKey, initial);
   const density = useWidgetDensity();
   const interpretation = useInterpretation();
   const effectiveMode: SortMode = density === 'advanced' ? sortMode : 'impact';

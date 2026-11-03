@@ -69,6 +69,8 @@ function listenForEscapeInFrame(frame: HTMLIFrameElement, close: () => void): vo
   if (!doc) return;
   doc.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
+    // The docs site is a separate document: whether its search box or a modal is open is only in its DOM.
+    // ast-grep-ignore: no-dom-routing
     if (doc!.querySelector('.VPLocalSearchBox, [role="dialog"][aria-modal="true"]')) return;
     close();
   });

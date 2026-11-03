@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
 import { cleanup, configure } from '@testing-library/react';
+import { initialBoard } from '@/store/board';
+import { store } from '@/store/store';
 
 // A test file's first render() of <App/> pays for a cold dynamic import +
 // Vite transform of whichever lazy route it hits (Dashboard's is the
@@ -13,6 +15,9 @@ configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();
+  // The board's tab, open cards and route belong to one loaded run; a test that puts findings in the
+  // store directly does not go through the load that resets them.
+  store.setState({ board: initialBoard() });
   // Global setupFile: node-environment tests have no `window`, so only clear
   // storage where jsdom actually provides it (view tests).
   if (typeof window !== 'undefined') window.localStorage?.clear();

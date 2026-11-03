@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { memo, useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 
 import { findingName, titleCase } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
@@ -14,12 +14,14 @@ import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { useInterpretation } from '@/view/interpretation';
 import { RowPagination } from '@/view/RowPagination';
 import { SortModeToggle } from '@/view/SortModeToggle';
-import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
-import type { TriageTarget } from '@/view/triage-target';
+import { useBoardLayout } from '@/view/BoardLayoutContext';
+import { useRouteRowKey } from '@/view/route-landing';
 import { usePagedRows } from '@/view/usePagedRows';
 import type { SortMode } from '@/view/impact-sort';
 import { useSortMode } from '@/view/useSortMode';
 import { WidgetCard } from '@/view/WidgetCard';
+import { useCardDisclosure } from '@/view/WidgetGrid';
+import { useCardStateKey, useWidgetState } from '@/view/useWidgetState';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
 const NOTHING_STATED: ReadonlySet<string> = new Set();
@@ -138,33 +140,36 @@ interface RowListProps<R extends AnyRow> {
   Row: ComponentType<FindingRowProps<R>>;
   appModel: AppModel;
   getTaskData: (id: number) => Promise<TaskData>;
-  routeTarget: TriageTarget | null;
   sortMode: SortMode;
   jumpLabel?: (row: R) => string;
   Frame?: ComponentType<{ children: ReactNode }>;
   rowElement: RowElement;
   rowClassName: string;
   listClassName: string;
+  /** The list's section title, which tells its page apart from the card's other lists. */
+  title: string | null;
 }
 
 /** One paged list of rows in display order. A new sort order starts it on the first page (a new run
  * remounts it through the run-keyed dashboard), and a route to one of its findings opens the page
  * that holds it. */
 function RowList<R extends AnyRow>({
-  rows, Row, appModel, getTaskData, routeTarget, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName,
+  rows, Row, appModel, getTaskData, sortMode, jumpLabel, Frame, rowElement, rowClassName, listClassName, title,
 }: RowListProps<R>) {
-  const [page, setPage] = useState(0);
-  const mountedRef = useRef(false);
+  const [page, setPage] = useWidgetState(useCardStateKey(`page:${title ?? ''}`), 0);
+  // Compare with the last values, not a mounted flag: StrictMode runs mount effects twice with refs kept.
+  const resetKeyRef = useRef({ appModel, sortMode });
   useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
+    const last = resetKeyRef.current;
+    if (last.appModel === appModel && last.sortMode === sortMode) return;
+    resetKeyRef.current = { appModel, sortMode };
     setPage(0);
   }, [sortMode]);
 
   const List = LIST_ELEMENT[rowElement];
-  const routeIndex = routeTarget ? rows.findIndex((row) => row.findings.includes(routeTarget.finding)) : null;
+  const layout = useBoardLayout();
+  const routeRowKey = useRouteRowKey();
+  const routeIndex = layout && routeRowKey != null ? rows.findIndex((row) => row.findings.some((finding) => layout.keyOf(finding) === routeRowKey)) : null;
   const { totalPages, effectivePage, visible } = usePagedRows([...rows], page, setPage, routeIndex);
   const list = (
     <List className={listClassName}>
@@ -222,9 +227,8 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
     const density = useWidgetDensity();
     const inline = useInlineEvidence();
     const stated = inline?.stated ?? NOTHING_STATED;
-    const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
-    const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
-    const activeRouteTarget = useActiveRouteTarget();
+    const disclosure = useCardDisclosure(!defaultCollapsed);
+    const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode(useCardStateKey('sort'));
 
     const localityChart = useInterpretation()?.data.coreLocality?.chart;
     const findings = findingsFor(model, { catalog, configFindings });
@@ -245,13 +249,13 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
         Row={Row}
         appModel={appModel}
         getTaskData={getTaskData}
-        routeTarget={activeRouteTarget}
         sortMode={sortMode}
         jumpLabel={jumpLabel}
         Frame={Frame}
         rowElement={rowElement}
         rowClassName={rowClassName}
         listClassName={listClassName}
+        title={group.title}
       />
     ));
 
@@ -263,14 +267,14 @@ export function defineFindingWidget<T extends FindingType, R extends WidgetRow<T
         badges={
           <>
             {band ? <TagBadge type={type} impactBand={band} className={model.tagClassName} docAnchor={model.tagDocAnchor?.(rows)} /> : null}
-            {groups.some((group) => canToggleSort(group.rows, (row) => row.findings, stageOf, cardOpen)) ? (
+            {groups.some((group) => canToggleSort(group.rows, (row) => row.findings, stageOf, disclosure.open)) ? (
               <SortModeToggle mode={sortMode} onChange={setSortMode} />
             ) : null}
           </>
         }
         statusBadge={Status ? <Status rows={rows} density={density} /> : undefined}
-        open={cardOpen}
-        onOpenChange={setCardOpen}
+        open={disclosure.open}
+        onOpenChange={disclosure.setOpen}
         summary={Summary
           ? <Summary appModel={appModel} rows={rows} density={density} />
           : lead ? <WidgetLeadSummary value={lead.value} context={lead.context ?? findingCount(shown.length)} /> : undefined}

@@ -5,9 +5,13 @@ import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { store, emptyAppModel } from '@/store/store';
+import { store, emptyAppModel, selectAppModel, selectCatalog, selectConfigFindings } from '@/store/store';
+import { buildBoardLayout } from '@/view/board-layout';
+import { emptySelection } from '@/view/finding-filter';
+import { interpretationOf } from '@/view/interpretation';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { runState } from './_shared/run';
+import { exampleRuns, loadExampleRun } from './_shared/detector-examples';
 
 function readyAppModel() {
   return {
@@ -249,4 +253,39 @@ test('in Advanced view, j and k reach a finding row that offers no evidence cont
 
   // The row is the last control, so k leaves it and j comes back.
   await walkThrough(row.querySelector('[tabindex="-1"]')!, 'k');
+});
+
+test("in Advanced view, j and k step on from a group's evidence control", async () => {
+  const log = exampleRuns().find((candidate) => {
+    store.getState().resetModel();
+    expect(loadExampleRun(candidate)).toBeNull();
+    const state = store.getState();
+    const layout = buildBoardLayout({
+      interpretation: state.run ? interpretationOf(state.run) : null,
+      appModel: selectAppModel(state),
+      catalog: selectCatalog(state),
+      configFindings: selectConfigFindings(state),
+      selection: emptySelection(),
+      density: 'advanced',
+    });
+    return layout.bands.some((band) => band.rows.some((row) => row.kind === 'group' && row.evidence.panel));
+  });
+  expect(log).toBeDefined();
+  store.setState({ widgetDensity: 'advanced' });
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole('tab', { name: 'Findings' });
+  const groupRow = (await screen.findAllByTestId('fix-these-first-group-row'))
+    .find((row) => [...row.querySelectorAll('button')].some((button) => /Show evidence/.test(button.textContent ?? '')))!;
+  const toggle = groupRow.querySelector<HTMLElement>('button[aria-expanded]')!;
+  const evidence = [...groupRow.querySelectorAll<HTMLElement>('button')].find((button) => /Show evidence/.test(button.textContent ?? ''))!;
+  act(() => evidence.focus());
+
+  await user.keyboard('k');
+  await waitFor(() => expect(document.activeElement).toBe(toggle));
+  await user.keyboard('j');
+  await waitFor(() => expect(document.activeElement).toBe(evidence));
+  await user.keyboard('j');
+  await act(() => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined))));
+  expect(document.activeElement?.closest('[data-testid="next-step"]')).toBeNull();
 });

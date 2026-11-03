@@ -9,7 +9,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { DuplicatePlanSubtree } from '@/view/widgets/DuplicatePlanSubtree';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
@@ -33,9 +32,7 @@ function renderWidget(catalog: Finding[], { defaultCollapsed = false }: { defaul
   installInterpretation(catalog);
   return render(
     <DocsProvider>
-      <EvidenceAvailabilityProvider>
-        <DuplicatePlanSubtree appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={defaultCollapsed} />
-      </EvidenceAvailabilityProvider>
+      <DuplicatePlanSubtree appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={defaultCollapsed} />
     </DocsProvider>,
   );
 }

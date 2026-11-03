@@ -1,6 +1,8 @@
 import type { EvidenceKey } from '@sparkforensics/core/types.ts';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
-import { evidenceLabel, useEvidenceAvailabilityNavigation } from '@/view/EvidenceAvailabilityContext';
+import { useBoardLayout } from '@/view/BoardLayoutContext';
+import { evidenceLabel } from '@/view/evidence-labels';
+import { routeTo } from '@/view/board-route';
 
 export interface RowStatusClusterProps {
   confidence?: string;
@@ -11,12 +13,12 @@ export interface RowStatusClusterProps {
 /** Fixed-position, always-visible cluster that shows confidence and/or evidence
  * with no click needed to reveal either. Confidence is plain, non-interactive
  * text with a tooltip carrying the full `validationRequired` detail; evidence
- * is the cluster's one real click target, wired to `revealEvidence` navigation.
+ * is the cluster's one real click target, a route to the ledger row.
  * Renders nothing when there's nothing to show, so callers never need a
  * guard around the JSX. */
 export function RowStatusCluster({ confidence, validationRequired, evidenceKey }: RowStatusClusterProps) {
   const { tooltipProps, srOnlyTooltip } = useAccessibleTooltip(validationRequired);
-  const { revealEvidence } = useEvidenceAvailabilityNavigation();
+  const layout = useBoardLayout();
 
   const hasConfidence = Boolean(confidence) && confidence !== 'high';
   const hasEvidence = Boolean(evidenceKey);
@@ -50,7 +52,7 @@ export function RowStatusCluster({ confidence, validationRequired, evidenceKey }
           // 44px effective touch target that calibration assumes. `min-h`
           // brings the control itself up to the 22px the overlay expects.
           className="tap-target-comfortable tap-target-comfortable--sm inline-flex min-h-[22px] cursor-pointer items-center rounded-sm text-primary outline-none hover:underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring/50"
-          onClick={() => revealEvidence(evidenceKey as EvidenceKey)}
+          onClick={() => routeTo(layout, { kind: 'evidence', key: evidenceKey as EvidenceKey })}
         >
           {evidenceLabel(evidenceKey as EvidenceKey)}
         </button>

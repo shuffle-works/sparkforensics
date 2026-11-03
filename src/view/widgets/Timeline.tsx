@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 import { Inbox } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -10,6 +10,7 @@ import { formatRunClock, runClockTicks } from '@/view/charts/run-clock';
 import { EmptyState } from '@/view/EmptyState';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
+import { useWidgetState } from '@/view/useWidgetState';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
@@ -78,7 +79,7 @@ export const Timeline = memo(function Timeline({ appModel, catalog }: TimelinePr
   // WidgetCard's own uncontrolled open state) so a later density toggle
   // doesn't clobber a manual edit made via the input below. The Dashboard keys
   // this widget by the active file, so each run starts from its own default.
-  const [topN, setTopN] = useState(() => (density === 'advanced' ? total : TIMELINE_TOP_N));
+  const [topN, setTopN] = useWidgetState('timeline:top-n', density === 'advanced' ? total : TIMELINE_TOP_N);
 
   const rows = useMemo<TimelineRow[]>(() => {
     const { stages } = selectTimelineStages(allStages, topN);

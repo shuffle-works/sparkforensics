@@ -4,8 +4,8 @@ import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { clearPlanGraphModelCache, collapseHiddenEdges, PlanGraphRoute } from '@/view/PlanGraphRoute';
-import { emptyAppModel } from '@/store/store';
+import { collapseHiddenEdges, PlanGraphRoute } from '@/view/PlanGraphRoute';
+import { emptyAppModel, store } from '@/store/store';
 import type { ReactElement } from 'react';
 import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
 
@@ -94,7 +94,7 @@ test('collapseHiddenEdges keeps the shuffle weight on a direct visible edge but 
 });
 
 test('Basic filtering preserves the full model for canvas grouping while separately identifying foreground nodes', () => {
-  clearPlanGraphModelCache();
+  store.getState().resetModel();
   const planTree = {
     id: 'n0', name: 'Project', detail: 'Project', metrics: [],
     children: [{ id: 'n1', name: 'Sort', detail: 'Sort', metrics: [], children: [] }],

@@ -10,7 +10,6 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
-import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import { ConfigAudit } from '@/view/widgets/ConfigAudit';
 import { DuplicatePlanSubtree } from '@/view/widgets/DuplicatePlanSubtree';
@@ -28,7 +27,7 @@ type CatalogWidget = ComponentType<{ appModel: AppModel; catalog: Finding[]; def
 function renderIn(ui: React.ReactNode, stated: string[] | null) {
   const body = (
     <DocsProvider>
-      <EvidenceAvailabilityProvider>{ui}</EvidenceAvailabilityProvider>
+      {ui}
     </DocsProvider>
   );
   return render(

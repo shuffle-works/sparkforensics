@@ -6,6 +6,9 @@ valid:
   # A widget that is not built with the shell may use the card.
   - |
     export function Scorecard() { return <WidgetCard title="Scorecard"><p /></WidgetCard>; }
+  # A widget that is not built with the shell may own its disclosure.
+  - |
+    export function Histogram() { const { open } = useCardDisclosure(false); return <p />; }
 invalid:
   - |
     export function Row() { return <WidgetCard title="x"><p /></WidgetCard>; }
@@ -24,4 +27,13 @@ invalid:
     export const Skew = defineFindingWidget(skewModel, { Row });
   - |
     export function Row() { const density = useWidgetDensity(); return <p />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { const key = useRouteRowKey(); return <p />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { const layout = useBoardLayout(); return <p />; }
+    export const Skew = defineFindingWidget(skewModel, { Row });
+  - |
+    export function Row() { const disclosure = useCardDisclosure(true); return <p />; }
     export const Skew = defineFindingWidget(skewModel, { Row });

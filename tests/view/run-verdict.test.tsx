@@ -5,10 +5,10 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
+import { TestRunVerdict } from './_shared/board';
 
 function timed<T extends FindingType>(type: T, stageId: number, highMs: number, impactBand: ImpactBand = 'critical'): Finding {
   return {
@@ -32,7 +32,7 @@ function appModel(): AppModel {
 function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel(), moreFindingsCount?: number) {
   render(
     <StageDetailProvider>
-      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} onShowMoreFindings={vi.fn()} moreFindingsCount={moreFindingsCount} />
+      <TestRunVerdict appModel={model} catalog={catalog} interpretation={installInterpretation(catalog, model)} onRoute={onRoute} moreFindingsCount={moreFindingsCount} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -326,13 +326,10 @@ describe('RunVerdict on a failed run', () => {
       type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect the driver log for the failure reason.',
       failedJobs: 1, totalJobs: 2, failedTasks: 0, totalTasks: 0, avgJobDurationMs: 0, taskFailureRate: 0,
     });
+    const quotedModel = withJobs([failedJob(1, [], 'Job aborted: out of memory')]);
     const { unmount } = render(
       <StageDetailProvider>
-        <RunVerdict
-          interpretation={installInterpretation([jobFailures], withJobs([failedJob(1, [], 'Job aborted: out of memory')]))}
-          onRoute={vi.fn()}
-          onShowMoreFindings={vi.fn()}
-        />
+        <TestRunVerdict appModel={quotedModel} catalog={[jobFailures]} interpretation={installInterpretation([jobFailures], quotedModel)} />
       </StageDetailProvider>,
     );
     expect(screen.getByTestId('next-step')).toHaveTextContent("What to try: Spark's recorded reason is quoted above.");

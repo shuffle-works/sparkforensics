@@ -1,7 +1,6 @@
-import { useState } from 'react';
-
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
+import { useCardStateKey, useWidgetState } from '@/view/useWidgetState';
 
 interface NonLocalStage {
   stageId: number;
@@ -12,7 +11,7 @@ interface NonLocalStage {
 
 /** The stages with non-local tasks, a page at a time. */
 export function NonLocalStageList({ stages }: { stages: readonly NonLocalStage[] }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useWidgetState(useCardStateKey('non-local-page'), 0);
   const { totalPages, effectivePage, visible } = usePagedRows([...stages], page, setPage);
   if (visible.length === 0) return null;
   return (

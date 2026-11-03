@@ -7,8 +7,8 @@ note: |
   `finding-widget.tsx` owns the card frame, the tag, sort, paging, route index and row anchors, and
   the widget's `.rows.ts` owns what a row shows, in both densities, stated or not. Leave out
   `WidgetCard`, `TagBadge`, `RowPagination`, `SortModeToggle` and `AdvancedOnly`, and do not call
-  `useSortMode`, `usePagedRows`, `useAnchoredRow`, `useFindingAnchor`, `useActiveRouteTarget`,
-  `useWidgetDensity` or `useInlineEvidence`. Put the fact the row needs in the row.
+  `useSortMode`, `usePagedRows`, `useAnchoredRow`, `useRouteRowKey`, `useBoardLayout`,
+  `useCardDisclosure`, `useWidgetDensity` or `useInlineEvidence`. Put the fact the row needs in the row.
 rule:
   any:
     - any:
@@ -21,7 +21,7 @@ rule:
       has:
         field: function
         kind: identifier
-        regex: ^(useSortMode|usePagedRows|useAnchoredRow|useFindingAnchor|useActiveRouteTarget|useWidgetDensity|useInlineEvidence|useStatedAbove|useAnyStatedAbove)$
+        regex: ^(useSortMode|usePagedRows|useAnchoredRow|useRouteRowKey|useBoardLayout|useCardDisclosure|useWidgetDensity|useInlineEvidence|useStatedAbove|useAnyStatedAbove)$
   inside:
     stopBy: end
     kind: program

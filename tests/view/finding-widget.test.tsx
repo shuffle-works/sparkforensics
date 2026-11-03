@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
 
 import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
-import { runFindingKeys } from '@/view/finding-anchor';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetModel } from '@/view/finding-widget';
-import { TriageNavigationProvider } from '@/view/TriageNavigationContext';
-import type { TriageTarget } from '@/view/triage-target';
+import { BoardLayoutContext } from '@/view/BoardLayoutContext';
+import { buildBoardLayout } from '@/view/board-layout';
+import { emptySelection } from '@/view/finding-filter';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 
@@ -44,30 +44,28 @@ function spill(stageId: number, savingsMs: number, stageTaskMs = 10 * savingsMs,
   return testFinding({ type: 'spill', stageId, impactBand, id: `s${stageId}`, value: 1024, recommendation: 'r', confidence: 'low', impactEstimate: estimate(savingsMs, stageTaskMs) });
 }
 
-function renderWidget(findings: FindingOf<'spill'>[], target: TriageTarget | null = null, registerFindingAnchor: (key: string) => () => void = vi.fn(() => vi.fn())) {
+function layoutOf(findings: FindingOf<'spill'>[]) {
+  return buildBoardLayout({ interpretation: null, appModel: emptyAppModel(), catalog: findings, configFindings: [], selection: emptySelection(), density: 'basic' });
+}
+
+/** Renders the widget on a board whose active route (if any) lands on `routedFinding`'s row. */
+function renderWidget(findings: FindingOf<'spill'>[], routedFinding: FindingOf<'spill'> | null = null) {
   installInterpretation(findings);
-  const wrap = (children: ReactNode) => (
+  const layout = layoutOf(findings);
+  if (routedFinding) store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: layout.keyOf(routedFinding) });
+  return render(
     <DocsProvider>
-      <TriageNavigationProvider
-        registerWidget={vi.fn(() => vi.fn())}
-        registerFindingAnchor={registerFindingAnchor}
-        findingKey={runFindingKeys(findings)}
-        reportWidgetOpen={vi.fn()}
-        clearRouteFocus={vi.fn()}
-        focusedCardKey={null}
-        activeRouteTarget={target}
-        flashedFinding={null}
-      >
-        {children}
-      </TriageNavigationProvider>
-    </DocsProvider>
+      <BoardLayoutContext.Provider value={layout}>
+        <Widget appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />
+      </BoardLayoutContext.Provider>
+    </DocsProvider>,
   );
-  return render(wrap(<Widget appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />));
 }
 
 const shownRows = () => screen.getAllByText(/^row /).map((node) => node.textContent);
 
 afterEach(() => {
+  store.getState().resetModel();
   cleanup();
   store.getState().setWidgetDensity('basic');
 });
@@ -126,16 +124,52 @@ describe('the finding widget shell', () => {
 
   it('opens the page that holds the routed finding', () => {
     const findings = Array.from({ length: 8 }, (_, i) => spill(i + 1, 1000 - i));
-    renderWidget(findings, { widgetId: 'spill', finding: findings[7] } as TriageTarget);
+    renderWidget(findings, findings[7]);
     expect(shownRows()).toContain('row s8');
   });
 
-  it('registers every row\'s findings as route anchors', () => {
-    const register = vi.fn((_key: string) => vi.fn());
+  it('keeps the routed page under StrictMode when the route mounts the list', () => {
+    const findings = Array.from({ length: 8 }, (_, i) => spill(i + 1, 1000 - i));
+    installInterpretation(findings);
+    const layout = layoutOf(findings);
+    store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: layout.keyOf(findings[7]) });
+    render(
+      <StrictMode>
+        <DocsProvider>
+          <BoardLayoutContext.Provider value={layout}>
+            <Widget appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />
+          </BoardLayoutContext.Provider>
+        </DocsProvider>
+      </StrictMode>,
+    );
+    expect(shownRows()).toEqual(['row s7', 'row s8']);
+    expect(screen.getByText('row s8').closest('li')).toHaveFocus();
+  });
+
+  it('pages freely once the route has landed, and does not flash the routed row again when it mounts again', async () => {
+    const user = userEvent.setup();
+    const findings = Array.from({ length: 8 }, (_, i) => spill(i + 1, 1000 - i));
+    renderWidget(findings, findings[7]);
+    const routedRow = () => screen.getByText('row s8').closest('li');
+    expect(routedRow()).toHaveFocus();
+    expect(routedRow()).toHaveAttribute('data-flashed', 'true');
+
+    await user.click(screen.getByRole('button', { name: /previous/i }));
+    expect(shownRows()).toHaveLength(6);
+    expect(shownRows()).not.toContain('row s8');
+
+    await user.click(screen.getByRole('button', { name: /next/i }));
+    expect(shownRows()).toEqual(['row s7', 'row s8']);
+    expect(routedRow()).toHaveAttribute('data-flashed', 'false');
+  });
+
+  it('makes every row a route landing: a route to a row\'s finding focuses the row', () => {
     const findings = [spill(1, 100), spill(2, 200)];
-    renderWidget(findings, null, register);
-    const registered = register.mock.calls.map(([key]) => key);
-    const keyOf = runFindingKeys(findings);
-    expect(new Set(registered)).toEqual(new Set(findings.map(keyOf)));
+    renderWidget(findings);
+    const keyOf = layoutOf(findings).keyOf;
+    for (const finding of findings) {
+      act(() => store.getState().startRoute({ tab: null, openCards: [], cardKey: null, rowKey: keyOf(finding) }));
+      expect(screen.getByText(`row ${finding.id}`).closest('li')).toHaveFocus();
+    }
   });
 });
