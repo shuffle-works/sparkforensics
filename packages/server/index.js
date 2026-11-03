@@ -10,10 +10,13 @@ import { resolveStaticRoot, serveStatic } from './lib/static-files.js';
 // dependency, so node resolution finds it in both published and monorepo layouts.
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
+/** @typedef {typeof import('../core/src/mcp-server-factory.js').createMcpServer} CreateMcpServer */
+
 const DEFAULT_PORT = 4173;
 const DEFAULT_HOST = '127.0.0.1';
 
 // Core loading (vendor-core/ vs core/src): docs-site/contributor-guide/development-setup.md, "Generated and vendored files".
+/** @param {string} dir @param {string} moduleName @param {{ srcExt?: string }} [opts] */
 async function loadVendoredCore(dir, moduleName, opts) {
   const srcHelper = join(dir, '..', 'core', 'src', 'load-vendored.js');
   const helperPath = existsSync(srcHelper) ? srcHelper : join(dir, 'vendor-core', 'load-vendored.js');
@@ -23,6 +26,7 @@ async function loadVendoredCore(dir, moduleName, opts) {
 
 // The provenance stamp the MCP tools report: this package's name and version, and the build id of
 // the core it loaded.
+/** @param {string} dir */
 async function loadGenerator(dir) {
   const srcHelper = join(dir, '..', 'core', 'src', 'load-vendored.js');
   const helperPath = existsSync(srcHelper) ? srcHelper : join(dir, 'vendor-core', 'load-vendored.js');
@@ -31,11 +35,13 @@ async function loadGenerator(dir) {
   return { name, version, buildId: coreBuildId(dir) };
 }
 
+/** @param {string} dir */
 async function loadCreateMcpServer(dir) {
   const mod = await loadVendoredCore(dir, 'mcp-server-factory');
   return mod.createMcpServer;
 }
 
+/** @param {string} dir */
 async function loadHandleShsProxy(dir) {
   const mod = await loadVendoredCore(dir, 'proxy', { srcExt: 'js' });
   return mod.handleShsProxy;
@@ -43,10 +49,18 @@ async function loadHandleShsProxy(dir) {
 
 // The Host values this server answers to, matched against the raw Host header (host:port). The
 // port comes from the actual socket, not a hardcode: tests bind to an ephemeral port via listen(0, ...).
+/** @param {number | undefined} port */
 function allowedHostsFor(port) {
   return [`127.0.0.1:${port}`, `localhost:${port}`];
 }
 
+/**
+ * @param {{
+ *   staticRoot?: string,
+ *   fetchImpl?: typeof fetch,
+ *   loadCreateMcpServer?: (dir: string) => Promise<CreateMcpServer>,
+ * }} [options]
+ */
 export function createServer({
   staticRoot,
   fetchImpl = fetch,
@@ -70,7 +84,7 @@ export function createServer({
 
   return http.createServer(async (req, res) => {
     try {
-      const pathname = new URL(req.url, 'http://localhost').pathname;
+      const pathname = new URL(/** @type {string} */ (req.url), 'http://localhost').pathname;
       if (pathname === '/shs-proxy') {
         // A DNS-rebinding page reaches this socket with its own hostname in Host (and a matching
         // Origin), which the proxy's same-origin check accepts, so refuse any non-local Host first.
@@ -96,6 +110,7 @@ export function createServer({
         await mcpServer.connect(mcpTransport);
         // Each close() is isolated: a throw or rejection from one must not
         // skip the other (leaking it) or become an unhandled rejection.
+        /** @param {{ close(): unknown }} target */
         const closeQuietly = (target) => {
           try { Promise.resolve(target.close()).catch(() => {}); } catch { /* already closed */ }
         };
@@ -105,7 +120,7 @@ export function createServer({
         await serveStatic(req, res, root);
       }
     } catch (err) {
-      console.error('[server] %s %s failed:', req.method, req.url, err?.stack ?? err);
+      console.error('[server] %s %s failed:', req.method, req.url, /** @type {{ stack?: string } | null | undefined} */ (err)?.stack ?? err);
       // The message stays in the server log: it can carry paths and other internals.
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
       res.end('Internal server error');
@@ -113,6 +128,7 @@ export function createServer({
   });
 }
 
+/** @param {{ port?: number, host?: string, staticRoot?: string }} [options] */
 export function startServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, staticRoot } = {}) {
   const server = createServer({ staticRoot });
   return new Promise((resolve, reject) => {
@@ -124,6 +140,7 @@ export function startServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, staticRo
   });
 }
 
+/** @param {number} port */
 export function serverStartupGuidance(port) {
   return [
     `sparkforensics-server running at http://${DEFAULT_HOST}:${port}`,
@@ -134,6 +151,7 @@ export function serverStartupGuidance(port) {
 class UsageError extends Error {}
 
 // A port is a whole number from 0 (the OS picks one) to 65535; anything else is a usage error.
+/** @param {string} text @param {string} source */
 function parsePortValue(text, source) {
   if (!/^\d+$/.test(text) || Number(text) > 65535) {
     throw new UsageError(`${source} must be a whole number from 0 to 65535 (got "${text}").`);
@@ -141,6 +159,7 @@ function parsePortValue(text, source) {
   return Number(text);
 }
 
+/** @param {string[]} argv @param {NodeJS.ProcessEnv} [env] */
 export function parseServerArgs(argv, env = process.env) {
   let values;
   try {
@@ -150,7 +169,8 @@ export function parseServerArgs(argv, env = process.env) {
       allowPositionals: false,
     }));
   } catch (e) {
-    if (e?.code?.startsWith('ERR_PARSE_ARGS_')) throw new UsageError(e.message);
+    const parseError = /** @type {{ code?: string, message: string } | null | undefined} */ (e);
+    if (parseError?.code?.startsWith('ERR_PARSE_ARGS_')) throw new UsageError(parseError.message);
     throw e;
   }
   if (values.help) return { help: true };
@@ -160,7 +180,9 @@ export function parseServerArgs(argv, env = process.env) {
 }
 
 // One line for a failed start, without a stack trace.
-export function startupErrorMessage(err, port) {
+/** @param {unknown} thrown @param {number | undefined} port */
+export function startupErrorMessage(thrown, port) {
+  const err = /** @type {{ code?: string, message?: string } | null | undefined} */ (thrown);
   if (err?.code === 'EADDRINUSE') return `Port ${port} is already in use. Pass another one with --port <n>.`;
   return `Could not start the server: ${err?.message ?? err}`;
 }

@@ -8,11 +8,11 @@ Before opening a PR:
    config and suite, none of them covered by the root `npm test`. Run
    `npm run build` first on a fresh checkout: `tests/vite-entry.test.js`
    checks the production bundle in `dist/`.
-2. Typecheck: `npx tsc --noEmit`.
-3. Lint: `npm run lint`. A pre-commit hook (`.githooks/pre-commit`) runs
-   eslint on staged `.js`/`.mjs` files only, so run the full lint yourself
-   before committing. It does not lint `.ts`/`.tsx` (see `eslint.config.js`):
-   `tsc` and the structure rules below check them.
+2. Typecheck: `npx tsc --noEmit`, and `npx tsc --noEmit -p tsconfig.check.json`
+   for the CLI, MCP and server entry points and the core `.test.ts` files.
+3. Lint: `npm run lint` (eslint on JS, oxlint on `.ts`/`.tsx`). A pre-commit
+   hook (`.githooks/pre-commit`) lints the staged files, so run the full lint
+   yourself before committing.
    Structure rules: `npm run lint:structure` (see
    [Structure rules](#structure-rules)). The hook runs it when staged files are
    under `src/` or are rules.

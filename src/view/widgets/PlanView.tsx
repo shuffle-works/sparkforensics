@@ -334,6 +334,7 @@ function PlanSummaryTab({ summary, hasPlanGraph }: { summary: PlanSummary; hasPl
         ],
         warnings.length > 0 && [
           `Warnings (${warnings.length})`,
+          // eslint-disable-next-line react/jsx-key -- a [label, value] row tuple, not a rendered list.
           <span className="flex flex-wrap items-center gap-1.5">
             <TagBadge type="duplicatePlanSubtree" impactBand="warning" className={PLAN_TAG_CLASS} />
             {warnings.map((w) => w.detail).join('; ')}

@@ -2,7 +2,7 @@
 // (`hdfs://nn/...`). It starts at the beginning of the name or after a space, quote, bracket, `=`
 // or `,`, so a `/` inside a word ("a/b") is never taken for one. A `:` ends the path, which leaves
 // a trailing `:<line>` in place.
-const PATH_IN_STAGE_NAME = /(?<![^\s"'(\[=,])(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/]*)?(?:\/[^\s/:"')\]]+)+/g;
+const PATH_IN_STAGE_NAME = /(?<![^\s"'([=,])(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/]*)?(?:\/[^\s/:"')\]]+)+/g;
 
 /** A stage name for display and output: every path in it reduced to its last segment, so the
  * directories of the job's call site (a YARN container directory such as

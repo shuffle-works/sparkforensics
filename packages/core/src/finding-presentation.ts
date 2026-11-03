@@ -686,13 +686,13 @@ export function metricUnit(metric: MetricName): MetricUnit {
 
 // Finding type -> ALL-CAPS board tag, derived from FINDING_PRESENTATION. Every widget that renders
 // a catalog entry's tag outside its own card (e.g. Bottleneck Alerts) reads it through typeTag.
-// Exported so doc-sync checks can enumerate every tag. Read by free-form type string.
-export const TYPE_TAG_MAP: Readonly<Record<string, string>> = Object.fromEntries(
+// Exported so doc-sync checks can enumerate every tag. A free-form type string goes through `typeTag`.
+export const TYPE_TAG_MAP = Object.fromEntries(
   (Object.keys(FINDING_PRESENTATION) as FindingType[]).map((type) => [type, FINDING_PRESENTATION[type].tag]),
-);
+) as Readonly<Record<FindingType, string>>;
 
 export function typeTag(type: string): string {
-  return TYPE_TAG_MAP[type] ?? type.toUpperCase();
+  return presentationOf(type)?.tag ?? type.toUpperCase();
 }
 
 // Human-readable tooltips for the terse spill-classification badges (skew | vol | ?), surfaced via

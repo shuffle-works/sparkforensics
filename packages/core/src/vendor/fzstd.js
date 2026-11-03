@@ -1,3 +1,4 @@
+// @ts-nocheck -- third-party code, kept as vendored.
 // Vendored from fzstd@0.1.1 (esm/index.mjs), MIT license.
 // https://github.com/101arrowz/fzstd — Copyright (c) 2020 Arjun Barrett.
 // esm/index.mjs sha256 1a901fc5a58c349bbdb4f2aa1e688637ef56891ec58243a9f0cd863166b0d2a4

@@ -19,13 +19,13 @@ import { compileConfIgnorePatterns } from './comparability.ts';
 import { runOutputBlocks, type ReportGenerator } from './run-output.ts';
 import { evaluateBudgets, regressionPairingError, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
-import { FINDING_NAMES, titleCase } from './finding-names.ts';
+import { findingName, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
 import { DETECTORS } from './detector-catalog.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
-import { typeTag } from './finding-presentation.ts';
+import { presentationOf, typeTag } from './finding-presentation.ts';
 import type { AppModel, ImpactBand, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
@@ -360,7 +360,7 @@ export interface FindingDocumentation {
 // A finding type documents itself; a detector-level type that never appears on a finding
 // (broadcastSizing) documents the types its entry emits.
 function documentedTypes(type: string): readonly string[] {
-  if (FINDING_NAMES[type] !== undefined) return [type];
+  if (presentationOf(type) !== undefined) return [type];
   return DETECTORS.find((entry) => entry.type === type)?.emits ?? [];
 }
 
@@ -390,7 +390,7 @@ export function getFindingDocumentation(type: string): FindingDocumentation {
     if (entry) tuningDoc = { anchor, title: entry.title, content: readNavEntryContent(entry) };
   }
 
-  const name = types.map((t) => titleCase(FINDING_NAMES[t] ?? t)).join(' / ');
+  const name = types.map((t) => titleCase(findingName(t))).join(' / ');
   return { type, name, detectionDoc, tuningDoc };
 }
 

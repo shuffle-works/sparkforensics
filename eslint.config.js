@@ -89,10 +89,8 @@ export default [
     },
   },
   {
-    // `.ts`/`.tsx` are NOT linted: typescript-eslint crashes at import time
-    // against TypeScript 7 (`ts.Extension.Cjs` gone), and no released version
-    // supports it. `tsc --noEmit` is the only type/syntax check on the view
-    // layer.
+    // `.ts`/`.tsx` are linted by oxlint (`.oxlintrc.json`): typescript-eslint crashes at import
+    // time against TypeScript 7 (`ts.Extension.Cjs` gone).
     ignores: [
       'node_modules/**',
       'packages/server/node_modules/**',
@@ -101,7 +99,7 @@ export default [
       'packages/*/vendor-core/**',
       'dist/**',
       'dist-export/**',
-      'packages/*/coverage/**',
+      '**/coverage/**',
       'docs-site/.vitepress/dist/**',
       'docs-site/.vitepress/cache/**',
       'docs-site/public/detector-widget/**',

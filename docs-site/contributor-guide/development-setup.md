@@ -19,7 +19,8 @@ npm run dev           # Vite dev server for the app itself
 npm run build         # production build, outputs dist/ (plus dist/export-template.html, the HTML download's template)
 npm run preview       # serves dist/ locally
 npx tsc --noEmit      # typecheck (strict TypeScript across src/, tests/view/ and packages/core/src/)
-npm run lint          # eslint over the repo's JS (.ts/.tsx are covered by tsc and lint:structure)
+npx tsc --noEmit -p tsconfig.check.json   # typecheck the CLI, MCP and server entry points and the core .test.ts files
+npm run lint          # eslint over the repo's JS, oxlint over its .ts/.tsx
 npm run lint:structure  # ast-grep structure rules over src/ and packages/core/src/ (rules/, tested by rule-tests/)
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
@@ -36,7 +37,7 @@ from beside the app, so under `npm run dev` it fails with an error toast;
 use `npm run build && npm run preview` to try it.
 
 `npm install` also runs the `prepare` script, which points git at
-`.githooks/`. After that, a pre-commit hook lints staged JS files on every
+`.githooks/`. After that, a pre-commit hook lints staged JS and TS files on every
 commit, and runs `npm run lint:structure` when staged files are under `src/` or
 are structure rules. Fix what it reports, or skip it with `git commit --no-verify`.
 

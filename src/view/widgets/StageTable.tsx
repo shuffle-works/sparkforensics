@@ -345,7 +345,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         },
       },
     ],
-    [catalog, onRoute, triageTargets, openStage, density, interpretation],
+    [onRoute, triageTargets, openStage, density, interpretation],
   );
 
   const table = useTable({

@@ -1,3 +1,4 @@
+// @ts-nocheck -- third-party code, kept as vendored.
 // Vendored from fflate@0.8.3 (esm/browser.js), MIT license.
 // https://github.com/101arrowz/fflate — sha256 b7ca4450b19559a1d50eb381adcee94b82449674be4cd17789d9beba7e6122a1
 // Only Gunzip/UnzipInflate/gunzipSync/strFromU8 are used by this project's source (see src/shs-fetch.ts, src/zip-archive.ts); tests also use the zip writers and strToU8.

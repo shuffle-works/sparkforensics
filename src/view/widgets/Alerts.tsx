@@ -5,11 +5,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/view-model';
-import type { WidgetProps } from '@/view/detector-registry';
-import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
+import { isAlwaysMountedType, orderedWidgets, REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import type { DetectorInfo, CoverageData } from '@sparkforensics/core/analysis';
-import type { AppModel, Finding } from '@sparkforensics/core/types';
+import type { AppModel, Finding, FindingOf, FindingType } from '@sparkforensics/core/types';
 import { findingsFor } from '@/view/finding-widget';
+import type { PanelInput } from '@/view/evidence-panel';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
 const NO_OPEN_ITEMS: string[] = [];
@@ -56,7 +56,21 @@ export interface ActiveWidget {
   findings: Finding[];
   impactBand: Finding['impactBand'];
   /** The widget's finding type, for `evidencePanelFor`. */
-  type: string;
+  type: FindingType;
+}
+
+/** The findings `type`'s widget is for: its model's `findings`, or the type's findings in the catalog. */
+export function widgetFindings<T extends FindingType>(type: T, props: Pick<WidgetProps, 'catalog' | 'configFindings'>): readonly FindingOf<T>[] {
+  return findingsFor(REGISTRY[type].model, props);
+}
+
+/** The findings the rows of `type`'s widget stand for, in row order. */
+export function widgetRowFindings<T extends FindingType>(
+  type: T,
+  host: Pick<WidgetProps, 'appModel' | 'catalog' | 'configFindings'> & Pick<PanelInput<T>, 'stated' | 'density'>,
+): readonly Finding[] {
+  const { stated, density, appModel, catalog } = host;
+  return REGISTRY[type].model.rows({ findings: widgetFindings(type, host), stated, density, appModel, catalog }).flatMap((row) => row.findings);
 }
 
 /** Every `REGISTRY` widget except the always-mounted one(s) whose rows are not empty, ranked by
@@ -72,15 +86,7 @@ export function computeActiveWidgets(
   return orderedWidgets(detectors)
     .filter(({ type }) => !isAlwaysMountedType(type))
     .flatMap(({ component, widgetId, type }, index) => {
-      const { model } = REGISTRY[type];
-      const rows = model.rows({
-        findings: findingsFor(model, { catalog, configFindings }),
-        stated: NOTHING_STATED,
-        density,
-        appModel,
-        catalog,
-      });
-      const findings = [...new Set(rows.flatMap((row) => row.findings))] as Finding[];
+      const findings = [...new Set(widgetRowFindings(type, { catalog, configFindings, stated: NOTHING_STATED, density, appModel }))] as Finding[];
       const impactBand = worstImpactBand(findings);
       return impactBand ? [{ component, widgetId, type, index, findings, impactBand }] : [];
     })

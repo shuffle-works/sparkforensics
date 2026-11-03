@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "checkJs": true, "allowJs": true },
+  "include": [
+    "packages/cli/bin",
+    "packages/mcp/bin",
+    "packages/server/index.js",
+    "packages/server/lib",
+    "packages/core/test/*.test.ts"
+  ]
+}

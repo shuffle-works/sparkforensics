@@ -2,10 +2,10 @@ import type { ComponentType } from 'react';
 
 import { IMPACT_BANDS } from '@sparkforensics/core/view-model';
 import type { InterpretedStep } from '@sparkforensics/core/analysis';
-import type { AppModel, EvidenceKey, Finding } from '@sparkforensics/core/types';
+import type { AppModel, EvidenceKey, Finding, FindingType } from '@sparkforensics/core/types';
 import type { BoardTab, ResolvedRoute } from '@/store/board';
 import type { InterpretationState } from '@/view/interpretation';
-import { evidencePanelFor, isAlwaysMountedType, REGISTRY, type WidgetProps } from '@/view/detector-registry';
+import { evidencePanelFor, isAlwaysMountedType, REGISTRY, registryTypes, type WidgetProps } from '@/view/detector-registry';
 import type { AnyEvidencePanel } from '@/view/evidence-panel';
 import { filterFindings, type FilterSelection } from '@/view/finding-filter';
 import { bandLandmark, BOARD_LANDMARK, cardLandingKey, EVIDENCE_CARD_KEY, evidenceRowKey, FILTERS_LANDMARK, landmarkRowKey, referenceWidgetKey, VERDICT_LANDMARK } from '@/view/route-keys';
@@ -13,12 +13,11 @@ import { runFindingKeys } from '@/view/finding-keys';
 import { boardRollup, findingById, type BoardGroup } from '@/view/interpretation';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 import { verdictEvidenceOwners, verdictLeadFindings } from '@/view/verdict-evidence';
-import { computeActiveWidgets, type ActiveWidget } from '@/view/widgets/Alerts';
+import { computeActiveWidgets, widgetFindings, widgetRowFindings, type ActiveWidget } from '@/view/widgets/Alerts';
 import { hasCoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { hasEfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { hasEtlPhases } from '@/view/widgets/EtlPhases';
 import { hasScalingSim } from '@/view/widgets/ScalingSim';
-import { findingsFor } from '@/view/finding-widget';
 
 // Which cards the board has, in which tab and order, and which rows each card lists, decided once
 // from the run's interpretation, the finding filter and the density. Views render this and routes
@@ -231,9 +230,8 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
   const listedCount = eligible.length;
   const boardWidgets = detectors ? computeActiveWidgets(filteredCatalog, filteredConfig, detectors, appModel, density) : [];
   /** The findings `model` lists under the filter, in row order. */
-  const listedRows = (model: (typeof REGISTRY)[string]['model']) => model
-    .rows({ findings: findingsFor(model, { catalog: filteredCatalog, configFindings: filteredConfig }), stated: new Set(), density, appModel, catalog: filteredCatalog })
-    .flatMap((row) => row.findings);
+  const listedRows = (type: FindingType) =>
+    widgetRowFindings(type, { catalog: filteredCatalog, configFindings: filteredConfig, stated: new Set(), density, appModel });
   const widgetOf = (finding: Finding) => {
     const widgetId = triageTargetFor(finding)?.widgetId;
     return widgetId ? boardWidgets.find((widget) => widget.widgetId === widgetId) ?? null : null;
@@ -271,7 +269,7 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
   for (const widget of boardWidgets) {
     const key = `alert-${widget.index}`;
     const isClaimed = claimed.has(widget.widgetId);
-    cards.set(key, { key, tab: 'findings', rowKeys: rowKeysOf(listedRows(REGISTRY[widget.type].model)) });
+    cards.set(key, { key, tab: 'findings', rowKeys: rowKeysOf(listedRows(widget.type)) });
     for (const finding of widget.findings) holder(finding).card = { key, tab: 'findings' };
     if (isClaimed) routeOnlyKeys.add(key);
     const list = bandCards.get(widget.impactBand) ?? [];
@@ -295,13 +293,14 @@ export function buildBoardLayout(input: BoardLayoutInput): BoardLayout {
 
   // The Full app report: the reference widgets the data has content for.
   const reference: ReferenceCard[] = [];
-  for (const [type, entry] of Object.entries(REGISTRY)) {
+  for (const type of registryTypes()) {
     if (!isAlwaysMountedType(type)) continue;
+    const entry = REGISTRY[type];
     const key = referenceWidgetKey(entry.widgetId);
     reference.push({ key, kind: 'widget', component: entry.component });
-    cards.set(key, { key, tab: 'full-report', rowKeys: rowKeysOf(listedRows(entry.model)) });
+    cards.set(key, { key, tab: 'full-report', rowKeys: rowKeysOf(listedRows(type)) });
     // The card is on the page whatever the filter keeps, so a route to any finding of its type lands on it.
-    for (const finding of findingsFor(entry.model, { catalog, configFindings })) holder(finding).card = { key, tab: 'full-report' };
+    for (const finding of widgetFindings(type, { catalog, configFindings })) holder(finding).card = { key, tab: 'full-report' };
   }
   const evidenceKeys = new Set<EvidenceKey>(appModel.evidenceAvailability?.entries.map((entry) => entry.key) ?? []);
   reference.push({ key: EVIDENCE_CARD_KEY, kind: 'evidence-availability' });

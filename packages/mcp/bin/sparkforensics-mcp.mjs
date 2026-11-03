@@ -26,10 +26,21 @@ async function loadCreateMcpServer() {
   return (await loadMcpServerFactory()).createMcpServer;
 }
 
+/**
+ * `_registeredTools` is private in the SDK's typings but is the registry --help reads; this types
+ * only that one field, with no change to the runtime access.
+ * @param {import('@modelcontextprotocol/sdk/server/mcp.js').McpServer} server
+ * @returns {Record<string, unknown>}
+ */
+function toolRegistry(server) {
+  return /** @type {{ _registeredTools: Record<string, unknown> }} */ (/** @type {unknown} */ (server))._registeredTools;
+}
+
 // Tool names come from the server the bin actually builds, so --help can't drift
 // from the registered set. Building the server registers tools only: no transport,
 // no I/O. _registeredTools is the SDK's registry; the MCP package test checks that
 // this list matches what listTools reports.
+/** @param {string[]} toolNames */
 function usage(toolNames) {
   return `Usage: sparkforensics-mcp [--thresholds <file>] [--shs-base-url <url>]
 
@@ -59,15 +70,16 @@ async function main() {
       options: { thresholds: { type: 'string' }, 'shs-base-url': { type: 'string' }, help: { type: 'boolean', short: 'h' } },
     }));
   } catch (e) {
-    if (!e?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
+    const parseError = /** @type {{ code?: string, message: string } | null | undefined} */ (e);
+    if (!parseError?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
     const createMcpServer = await loadCreateMcpServer();
-    process.stderr.write(`${e.message}\n${usage(Object.keys(createMcpServer()._registeredTools))}`);
+    process.stderr.write(`${parseError.message}\n${usage(Object.keys(toolRegistry(createMcpServer())))}`);
     process.exitCode = 2;
     return;
   }
   if (values.help) {
     const createMcpServer = await loadCreateMcpServer();
-    process.stderr.write(usage(Object.keys(createMcpServer()._registeredTools)));
+    process.stderr.write(usage(Object.keys(toolRegistry(createMcpServer()))));
     return;
   }
   let thresholds;
@@ -76,7 +88,7 @@ async function main() {
     try {
       thresholds = loadThresholdOverrides(values.thresholds);
     } catch (e) {
-      process.stderr.write(`--thresholds: ${e.message}\n`);
+      process.stderr.write(`--thresholds: ${/** @type {Error} */ (e).message}\n`);
       process.exitCode = 2;
       return;
     }
