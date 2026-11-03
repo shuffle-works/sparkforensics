@@ -21,7 +21,8 @@ finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
 a wallClock estimate (`resourceOnly`/`informational` basis, e.g.
 `configAudit`, or a rule that keeps its own ratio-tiered classification,
-e.g. `failures`), the full threshold table below is
+e.g. `failures`), the tiers in
+[Findings that are never wallClock-derived](#findings-that-are-never-wallclock-derived) are
 the real, displayed classification: `detectors.ts` sets `impactBand`
 directly and nothing overwrites it. `partitionSizing`'s `maxPartitionTooBig`
 rule is a third case: it does carry a `wallClock` estimate but is explicitly

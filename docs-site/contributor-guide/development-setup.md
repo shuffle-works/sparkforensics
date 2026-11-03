@@ -153,16 +153,6 @@ Shuffle Works product bar on the published site. Never write that bar's
 marker attribute literally in the docs source, prose included: the hub
 skips injecting its bar into any built page that contains it.
 
-Lists, counts and default thresholds of the detectors come from the detector
-catalog, not from hand-written prose. In a contributor page, use
-`<DetectorTypeList family="plan" />` (or `region="reference"`) for a list of finding types and
-`<DetectorThresholds />` for the default-threshold table, and name no count of detectors, widgets or tools
-(`tests/docs-contributor-counts.test.js` rejects one). The header markup the shared bar and
-assistive technology read (the page-controls marker, the switch's `aria-label`, the home page's
-`main` landmark) is rendered by copies of five default-theme components in
-`docs-site/.vitepress/theme/overrides/`, which `config.ts` aliases over the originals. After a
-VitePress upgrade, diff those copies against `node_modules/vitepress/dist/client/theme-default/components/`.
-
 The app side of that contract is three DOM markers, all read in
 `src/view/shuffle-hub.ts` (`PRODUCT_BAR_SELECTOR`, `HUB_FOOTER_SELECTOR`) and
 set on the dashboard, plan graph and run comparison routes. Their exact
@@ -178,6 +168,16 @@ attribute names live in that file, not here, for the reason above.
   site's chrome-toggle script uses to hide the shared nav and footer while a
   dashboard is on screen. Each of those routes carries it, and `App` renders
   only one at a time, so it stays present across route changes.
+
+Lists, counts and default thresholds of the detectors come from the detector
+catalog, not from hand-written prose. In a contributor page, use
+`<DetectorTypeList family="plan" />` (or `region="reference"`) for a list of finding types and
+`<DetectorThresholds />` for the default-threshold table, and name no count of detectors, widgets or tools
+(`tests/docs-contributor-counts.test.js` rejects one). The header markup the shared bar and
+assistive technology read (the page-controls marker, the switch's `aria-label`, the home page's
+`main` landmark) is rendered by copies of five default-theme components in
+`docs-site/.vitepress/theme/overrides/`, which `config.ts` aliases over the originals. After a
+VitePress upgrade, diff those copies against `node_modules/vitepress/dist/client/theme-default/components/`.
 
 ## Driving the app in a browser
 
