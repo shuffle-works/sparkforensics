@@ -21,9 +21,9 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
   partition columns), and broadcast-join sizing in both directions (missed-
   broadcast info finding, over-broadcast warning at >1 GB), and
   row-at-a-time Python UDFs (`BatchEvalPython` stages that sent >64 MiB to
-  Python workers over >30 s; an info finding). Each of the nine
-  emitted types renders as its own card (`DuplicatePlanSubtree.tsx`,
-  `SmallFiles.tsx`, `NestedLoopJoin.tsx`, `JoinKeyCast.tsx`, `MergeRewrite.tsx`, `UnprunedScan.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`, `PythonUdf.tsx`): all nine
+  Python workers over >30 s; an info finding). Each
+  emitted type renders as its own card (its `REGISTRY` entry in
+  `src/view/detector-registry.tsx`): all of them
   share the `PLAN` tag and
   the same `--plan-aggregate` badge tint (`src/view/plan-finding-shared.ts`).
   Their `docAnchor`s (`#bottleneck-duplicate-plan-subtree`,

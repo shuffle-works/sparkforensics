@@ -14,7 +14,7 @@ function formatThresholds(thresholds: Record<string, unknown>): string[] {
 <template>
   <table>
     <thead>
-      <tr><th>Finding type</th><th>Clean when</th><th>Default thresholds</th></tr>
+      <tr><th>Finding type</th><th>Fires when</th><th>Default thresholds</th></tr>
     </thead>
     <tbody>
       <tr v-for="r in records" :key="r.type">

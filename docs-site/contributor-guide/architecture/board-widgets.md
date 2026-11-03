@@ -6,9 +6,8 @@
 e.g. `JobFailures.tsx`, `MemoryUtilization.tsx`.)
 
 Beyond the stage-level cards, app- and plan-level cards render in the
-Findings tab, all `region: 'action'` in `detector-registry.tsx`: Incomplete
-Run, Job Failure Rate, Caching Opportunities, Autoscaling Churn, Config Audit, and
-the Plan Advisor cards:
+Findings tab, all `region: 'action'` in `detector-registry.tsx`, whose
+`REGISTRY` lists them. The Plan Advisor cards are these:
 
 <DetectorTypeList family="plan" />
 
