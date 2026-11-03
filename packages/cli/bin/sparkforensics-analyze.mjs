@@ -44,7 +44,7 @@ Options:
   --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
                                     logs). ndjson requires --baseline, see "Several candidates".
   --out <path>                    Write output to a file instead of stdout.
-  --legacy-json                    Write the earlier JSON: the run's report alone, or { candidate,
+  --legacy-json                    Write the JSON without the envelope: the run's report alone, or { candidate,
                                     comparison } with --baseline, with no budget results in it.
                                     ${deprecationNote('usage', '--legacy-json')}
   --export-html <dir>              Write a self-contained HTML dashboard for this run into <dir>
