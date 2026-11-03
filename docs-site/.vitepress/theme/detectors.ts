@@ -58,3 +58,13 @@ export const SCOPE_LABEL: Record<string, string> = {
   sql: 'Judged per SQL query',
   config: 'Judged on the Spark configuration',
 };
+
+/** The catalog records of one outcome family and/or region; no filter returns every record. */
+export function selectRecords(
+  records: DetectorRecord[],
+  filter: { family?: string; region?: DetectorRecord['region'] },
+): DetectorRecord[] {
+  return records.filter(
+    (r) => (!filter.family || r.family === filter.family) && (!filter.region || r.region === filter.region),
+  );
+}

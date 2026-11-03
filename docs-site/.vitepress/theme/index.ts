@@ -5,6 +5,9 @@ import { nextTick, watch } from 'vue';
 import TuningLanding from './TuningLanding.vue';
 import DetectorIndex from './DetectorIndex.vue';
 import DetectorPage from './DetectorPage.vue';
+import DetectorTypeList from './DetectorTypeList.vue';
+import DetectorThresholds from './DetectorThresholds.vue';
+import DetectorMcpExample from './DetectorMcpExample.vue';
 import { postToParent } from '../../../src/docs-widget/frame-messages';
 import { setupCitationChips } from './citation-chips';
 // Trace fonts, self-hosted (bundled woff2): the docs make no font request.
@@ -41,24 +44,6 @@ function writeSharedTheme(isDark: boolean): void {
   document.documentElement.dataset.theme = value;
 }
 
-// On a deep link, both the browser and VitePress's router (which computes
-// its target before mount and applies it a frame later) scroll to the
-// heading against the pre-hydration layout. Hydration plus the citation-chip
-// pass then reflow the content above it (measured: a tuning-reference
-// heading moved up 140px), leaving it under the nav. Redo the jump once the
-// page has settled, in a frame queued after the router's; scroll-padding-top
-// (custom.css) keeps it below the nav.
-function scrollToLocationHash(): void {
-  if (!location.hash) return;
-  let target: HTMLElement | null = null;
-  try {
-    target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
-  } catch {
-    return; // malformed percent-encoding in the fragment
-  }
-  target?.scrollIntoView();
-}
-
 // The app frames these docs in its side panel, where Esc pressed inside the frame never reaches the
 // app. Tell the app about an Esc this page leaves unhandled; an open search box or modal dialog
 // owns it.
@@ -77,6 +62,9 @@ const theme: Theme = {
     app.component('TuningLanding', TuningLanding);
     app.component('DetectorIndex', DetectorIndex);
     app.component('DetectorPage', DetectorPage);
+    app.component('DetectorTypeList', DetectorTypeList);
+    app.component('DetectorThresholds', DetectorThresholds);
+    app.component('DetectorMcpExample', DetectorMcpExample);
 
     if (!inBrowser) return; // this hook also runs during SSR's data pass
 
@@ -100,10 +88,7 @@ const theme: Theme = {
     const originalMount = app.mount.bind(app);
     app.mount = ((...args: Parameters<typeof app.mount>) => {
       const result = originalMount(...args);
-      nextTick(() => {
-        setupCitationChips();
-        requestAnimationFrame(scrollToLocationHash);
-      });
+      nextTick(() => setupCitationChips());
       return result;
     }) as typeof app.mount;
 
@@ -138,47 +123,6 @@ const theme: Theme = {
       themeAttrObserver.observe(document.documentElement, {
         attributes: true,
         attributeFilter: ['data-theme'],
-      });
-
-      // Mark VitePress's own appearance-switch control so a hub-owned
-      // script (not part of this repo) can find and relocate/merge it into
-      // a shared nav bar later, instead of this site showing two toggle
-      // buttons side by side once that shared bar wraps it. VitePress
-      // renders up to three copies at once, shown/hidden by breakpoint via
-      // CSS rather than v-if: `.VPNavBarAppearance` (wide viewports),
-      // `.VPNavBarExtra .appearance-action` (medium, inside the "extra"
-      // flyout), `.VPNavScreenAppearance` (narrow, inside the full mobile
-      // nav screen, which only mounts once the hamburger is opened) - so
-      // keep watching rather than marking once.
-      const markAppearanceSwitch = () => {
-        document
-          .querySelectorAll(
-            '.VPNavBarAppearance, .VPNavScreenAppearance, .VPNavBarExtra .appearance-action',
-          )
-          .forEach((el) => {
-            if (!el.hasAttribute('data-shuffle-page-controls')) {
-              el.setAttribute('data-shuffle-page-controls', '');
-            }
-          });
-      };
-      // VitePress gives the switch only a `title`, and its home layout has no
-      // `main` landmark; add both as each copy or page mounts.
-      const labelAccessibility = () => {
-        document.querySelectorAll('.VPSwitchAppearance').forEach((el) => {
-          if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'Dark theme');
-        });
-        const home = document.querySelector('.VPHome');
-        if (home && !home.hasAttribute('role')) home.setAttribute('role', 'main');
-      };
-      const onDomChange = () => {
-        markAppearanceSwitch();
-        labelAccessibility();
-      };
-      onDomChange();
-      const switchMountObserver = new MutationObserver(onDomChange);
-      switchMountObserver.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
       });
     });
   },

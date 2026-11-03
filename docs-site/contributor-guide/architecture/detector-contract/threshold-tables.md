@@ -21,7 +21,8 @@ finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
 a wallClock estimate (`resourceOnly`/`informational` basis, e.g.
 `configAudit`, or a rule that keeps its own ratio-tiered classification,
-e.g. `failures`), the full threshold table below is
+e.g. `failures`), the tiers in
+[Findings that are never wallClock-derived](#findings-that-are-never-wallclock-derived) are
 the real, displayed classification: the detector entry sets `impactBand`
 directly and nothing overwrites it. `partitionSizing`'s `maxPartitionTooBig`
 rule is a third case: it does carry a `wallClock` estimate but is explicitly
@@ -34,42 +35,83 @@ finding at `warning` when its stage carries under `CRITICAL_MIN_TASK_TIME_SHARE`
 task time, whoever set the band. Failures (`stageFailed`, `jobFailureRate`), `maxPartitionTooBig`, a
 finding on no single stage and anything without recorded task time keep `critical`.
 
-### Fixed fallback only (usually wallClock-derived instead)
+### Default thresholds
 
-These rules have no *band* tiers in `packages/core/src/detectors/`
-(`deriveImpactBand` sets the band whenever a wallClock estimate is
-available); the constant in the last column is only a floor-case fallback.
-Their *firing* gate lives in each entry's
-`thresholds` object: it decides whether the rule reports anything, so it
-stays documented here in full.
+The table lists, for every finding type, the criterion that fires it and the default thresholds of each detector that emits it. It is generated from the detector catalog, so it always matches the entries in `packages/core/src/detectors/`.
 
-| Rule | Fires when | Fallback |
-|---|---|---|
-| Task skew | `taskDurationP95 / taskDurationP50 > 3×` (`taskDurationP50` and the other P50 fields are the textbook median: the mean of the two middle values on an even count; P95 stays nearest-rank) (`taskDurationMax / P50` for stages under `minTasksForP95` = 20 tasks), **and** the occupancy-clipped tail recovery (`tailRecoveryMs`: `finalizeStage`'s task-level replay of the stage with every task over 4× P50 capped at P50) is ≥ `floorPctWarn` = 0.5% of app runtime. The clip floors the claim at the longest task the fix leaves, not the current one, and at the core work the fix leaves over every core (see impact-estimation.md's occupancy section); `straggler`'s floors use the same clip, **and** the tail is data (`tailAttribution`: run time proportional to the slow tasks' input plus shuffle-read bytes or records accounts for at least `dataShareMin` = 0.5 of their extra time). An `unattributed` tail (no data volume to compare and nothing else explains the largest share, or no tail attribution) is `straggler`'s | `warning` |
-| Shuffle read | `shuffleReadBytes > minBytes` = 50 MiB, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (a zero-length stage or an unknown run duration passes; the claim is clipped to the stage, so a shorter one would grade `info`, the shuffle itself still there) | `info` |
-| Partition sizing: skew | `shuffleReadMax > 5×` `shuffleReadP50` **and** `shuffleReadMax > 256 MiB`; it is a single-key shuffle (`singleKey`) when `shuffleReadP50` is 0 **and** `shuffleReadMax ≥ singleKeyShare` = 90% of `shuffleReadBytes` | `warning` |
-| Partition sizing: low parallelism | `shuffleReadBytes ≥ 1 GiB` **and** `taskCount ≤ 7` | `warning` |
-| Partition sizing: oversized partition | `shuffleReadMax ≥ 5 GiB` | `critical` |
-| GC | `executorRunTime ≥ minRunTimeMs` = 10 s **and** `gcPct > 10%` | `warning` |
-| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire **and** the log has no measured executor heap peak) **and** the stage lasts ≥ `lowInfoFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time). Gets no wall-clock estimate (an over-provisioning signal), so this band always stands. The floor drops low-GC notes from stages that barely ran: low GC is still true on those stages, but a memory-sizing note from a stage that barely ran adds nothing | `info` |
-| Spill | any non-zero `memoryBytesSpilled`, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (as for shuffle read: a shorter stage would grade `info`). The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
-| Cold start | `firstExecutorAddedAt − firstStageSubmittedAt > gapSeconds` = 30 s (no finding without executor-added events): the time a runnable stage waited for its first executor. An executor added before the first stage and still alive at submission means no wait and no finding; one removed at or before submission is ignored, so the gap runs to the next executor added after it. | `warning` |
-| Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks, and lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, which gets no estimate and keeps its fallback band; every slow-host finding on a shorter stage would grade `info`, the imbalance itself still true; this gate covers every slowHost row); then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
-| Slow host: duration-share | same stage gate as the row above; then per host: ≥ `shareWarn` = 75% of the stage's total task-duration **and** ≥ `taskShareWarn` = 50% of its task count | `warning` |
-| Stage slowness: absolute fallback, suppressed when `slowHost` already fired | stage wall-clock duration ≥ `infoMin` = 15 min. The band then comes from the partitioning-headroom estimate (see impact-estimation.md), not the duration | `info` |
-| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** the stage lasts ≥ `floorPctWarn` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time; a shorter stage's tail can't cost more than its own duration, so every finding there would grade `info`, the slow tail itself still true), **and** either any speculative task ran, **or** straggler share > `shareWarn` = 5%, **or** straggler share > `shareWarnAtFloor` = 2.5% with the occupancy-clipped tail recovery (`tailRecoveryMs`, as for skew) already ≥ `floorPctWarn` (0.5% of app runtime). Skew's `ratioWarn` = 3 and the 0.5% floor are the values the task-level tail replay was tuned against. `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) do not set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports. The data cut and skew's gate (`ratioWarn`, `minTasksForP95`, `dataShareMin`, `floorPctWarn`) are not this detector's thresholds: it reads skew's, as resolved for the run (`DetectorCtx.skewThresholds`), so a tail that data-driven is skew's unless skew's gate does not admit it, and tuning `skew` alone never drops a tail from both. A tail skew's gate admits that data does not explain is reported here without the share test, on any stage size. A straggler share has no critical tier of its own | `info` |
-| Speculation waste | `speculationWastedAttempts ≥ minWasted` = 5 **and** `speculationWasteMs ≥ minWasteMs` = 60 s | `warning` |
-| Retry waste | `wastedAttempts ≥ minWasted` = 3 **and** `retryWasteMs ≥ minWasteMs` = 30 s (attempts superseded by a later retry of the same task) | `warning` |
-| Tiny tasks | `taskCount ≥ minTasks` = 100 **and** `taskDurationP50 ≤ maxP50` = 500 ms **and** `taskDurationP95 ≤ maxP95` = 1000 ms **and** the stage lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length; coalescing can't save more than the stage's own duration, so every finding on a shorter stage would grade `info`, the tasks still tiny). Checked against each stage's measured per-task overhead (task wall time minus executor run time, the estimate's own input): a stage with 100+ tasks outside the P50/P95 gate would not save 0.5% of its run by coalescing, while one inside it can, and grades above `info` | `info` |
-| Duplicate plan subtree | a subtree of ≥ `minSubtreeSize` = 3 nodes whose shape fingerprint repeats ≥ `minOccurrences` = 2× in the plan, unless its linked stages together lasted less than `stageFloorPct` = 0.5% of the run (a repeat with no linked stage time, or an unknown run duration, is kept; the claim counts at most each stage's own task-active time, so such a repeat would grade `info`, the repeat still in the plan). `occurrencesIdentical` records whether the repeats also agree node-for-node on normalized detail, ignoring AQE query-stage numbers; when they don't (same shape over another table, filter or projection) the finding is `info` with confidence `low` and no time claim. `readsDifferentVersions` is true when the repeats scan the same Delta tables at different versions recorded in the scan detail (`Delta[version=N]`, `versionAsOf`); the finding is then `info` with no cache advice. A repeat under a `show`, `showString` or `collect` action (`rootAction`) is `info` with no time claim; one under `count` or `save` is unchanged. `stageShares` gives, per stage, the repeated operators' share of the stage's operators (WholeStageCodegen wrappers and Exchange write halves not counted); with no attributed stage the finding is `info` | `warning` |
-| Small files read/write | per read/write side: file count > `minFiles` = 100 **and** average file size < `maxAvgFileSizeMB` = 3 MiB | `warning` |
-| Nested loop join | a `BroadcastNestedLoopJoin` or `CartesianProduct` whose executor-side `number of output rows` ≥ `minOutputRows` = 1,000,000; a `BroadcastNestedLoopJoin` also needs that output ≥ `minExpansion` = 10 × the larger of its two inputs' rows (found by walking row-preserving operators down to the nearest `number of output rows`; an input with none, or one behind an operator that can change the row count, means no finding). A `CartesianProduct` re-reads its inputs once per partition of the other side, so its input counts are not compared and the evidence carries `leftRows` and `rightRows` as null. The band comes from the wall-clock estimate over the `taskActiveMs` of the stages that run the join, with an `info` fallback | `info` |
-| Join key cast | a `SortMergeJoin` or `ShuffledHashJoin` with a `cast(<column> as <type>)` in a join key, whose output reaches an `Exchange hashpartitioning` keyed by that bare column before any other join, window, non-partial aggregate, `Expand` or `Union`. The exchange must not be a user repartition (`REPARTITION_BY_*`, `REBALANCE_PARTITIONS_BY_*`), and its hash keys must hold every key, cast removed, of a cast side that gives the join's output partitioning (both sides for Inner and Cross, the left for LeftOuter, LeftSemi, LeftAnti and ExistenceJoin, the right for RightOuter, neither for FullOuter). When the exchange feeds a join (past sorts and stage wrappers), its hash keys must be exactly that side's keys. No thresholds. `value` is the exchange's shuffle `data size` (0 when the log has none) | `info` |
-| MERGE rewrite | a `MergeIntoCommand` node, one finding per rule. `rewrittenRows`: `number of target rows rewritten unmodified` ≥ `minCopiedRows` = 100,000 **and** ≥ `minCopiedToChangedRatio` = 2 × the rows inserted, updated and deleted. `weakSkipping`: `number of target files before skipping` ≥ `minTargetFiles` = 8, files after skipping ≥ `minFilesKeptShare` = 90% of them, more than 1 partition scanned (`number of target partitions after skipping`) and the partitions changed (the larger of `number of target partitions from which files were removed` and `number of target partitions to which files were added`) ≤ `maxTouchedPartitionShare` = 50% of those scanned | `info` |
-| Unpruned scan | a scan node that reports `number of partitions read` (a partitioned table) with an empty `PartitionFilters`, at least one `DataFilters` predicate other than a null check, `number of partitions read` ≥ `minPartitionsRead` = 2 and `size of files read` ≥ `minBytesRead` = 1 GiB. A Delta log read is skipped | `info` |
-| Python UDF | a SQL execution whose `BatchEvalPython` nodes (never `ArrowEvalPython`) report `data sent to Python workers` ≥ `minBytesSent` = 64 MiB **and** whose stages together ran ≥ `minStageMs` = 30 s. The floors are conservative guesses: no corpus or private log runs a Python UDF, so they are not tuned against real workloads. A node with no `data sent to Python workers` value is skipped | `info` |
-| Broadcast sizing: missed | a 2-child `SortMergeJoin` with a buildable side (the right side for Inner, Cross, LeftOuter, LeftSingle, LeftSemi, LeftAnti and ExistenceJoin; the left side for Inner, Cross and RightOuter; neither for FullOuter) whose shuffle `data size` is ≥ `minSmallerSideBytes` = 1 MiB, ≤ `overBroadcastBytes` and ≤ the other side's (both sides need a shuffle `data size` of their own), and that is either at or under the effective threshold (`spark.sql.adaptive.autoBroadcastJoinThreshold` when the plan is adaptive and it is set, else `spark.sql.autoBroadcastJoinThreshold`, with the query's own settings applied) or < 10 MiB, or < 100 MiB with the other side > 10 GiB, or < 1 GiB with the other side > 300 GiB (`broadcastTiers` × `comparisonTiers`) | `info` |
-| Broadcast sizing: oversized | a `BroadcastExchange` node whose `data size` metric > `overBroadcastBytes` = 1 GiB | `warning` |
+<DetectorThresholds />
+
+### How the gates combine
+
+The generated table holds every number. The notes below name threshold keys only and say how they work together, which the catalog does not carry.
+
+#### Gates that pick the firing condition
+
+- `skew`: the stage's P95 over P50 task duration must exceed `ratioWarn` (the max over P50 for a stage under `minTasksForP95` tasks). P50 is the textbook median, the mean of the two middle values on an even count; P95 stays nearest-rank. The occupancy-clipped tail recovery (`tailRecoveryMs`, `finalizeStage`'s replay of the stage with every slow task capped at P50) must also reach `floorPctWarn` of the app runtime. The clip floors the claim at the longest task the fix leaves and at the core work it leaves over every core. Last, the tail must be data: `tailAttribution` must give the slow tasks' input plus shuffle-read volume at least `dataShareMin` of their extra time. An `unattributed` tail goes to `straggler`.
+- `straggler`: fires on a stage with at least `minTasks` tasks that lasts at least `floorPctWarn` of the run, when any speculative task ran, the straggler share exceeds `shareWarn`, or it exceeds `shareWarnAtFloor` with the clipped tail recovery already at `floorPctWarn`. It reads skew's thresholds as resolved for the run (`DetectorCtx.skewThresholds`), not its own: a tail skew's gate admits but data does not explain is reported here without the share test. Tuning `skew` alone never drops a tail from both. `warnPct`/`critPct` and `floorPctWarn`/`floorPctCrit` do not set the band; they rank the straggler and speculative tiers that pick which metric the finding reports. A straggler share has no critical tier of its own.
+- `shuffle`, `spill`, `tinyTask`, `duplicatePlanSubtree`, `slowHost` and the low-GC note skip a stage shorter than their `stageFloorPct` (`lowInfoFloorPct` for GC) share of the run, because the claim is clipped to the stage and would grade `info`. A zero-length stage or an unknown run duration passes.
+- `partitionSizing`: the skew rule needs `shuffleReadMax` over `skewRatio` times P50 and over `skewFloorBytes`; it is a single-key shuffle when P50 is 0 and the max holds at least `singleKeyShare` of the read. Low parallelism needs `lowParTotalBytes` read by at most `lowParMaxTasks` tasks. `maxPartBytes` flags an oversized partition.
+- `gc`: both directions need `minRunTimeMs` of executor run time. The high-GC rule is the warning tier and fires when GC time exceeds `warnPct100` of executor run time. The low-GC note under `lowInfoPct100` is checked only when the high-GC rule did not fire and the log has no measured executor heap peak.
+- `slowHost`: every rule first needs `minHosts` hosts or executors, `minTasks` tasks and the stage floor. The mean-duration rule then needs `ratioWarn`, `minShare` of the tasks and `floorMs`; the duration-share rule needs `shareWarn` of the task time and `taskShareWarn` of the tasks.
+- `stageSlowness`: the absolute fallback at `infoMin` minutes, suppressed when `slowHost` already fired. The band comes from the partitioning-headroom estimate, not the duration.
+
+#### slowHost multi-dimensional chance test
+
+The multi-dimensional rule compares each executor with the median on task time, input bytes, shuffle bytes and storage memory. A sample must also clear `floorMs` (task time) or `floorBytes` (the byte dimensions). The ratio grades against `ratioTiers`: index 0 is the `info` cut, index 1 `warning` and index 3 `critical`; index 2 is not read.
+
+The task-time dimension also has to pass a chance test, because the slowest of many executors always tops the median. On the log scale of task duration, the executor's mean minus the median executor's mean, over the stage's task spread divided by the root of the executor's task count, must reach √(2 ln(executors ÷ (2 × `outlierAlpha`))). An executor with fewer tasks, or a stage with more executors, needs a larger gap. The spread is rebuilt from each executor's `logDurationSum` and `logDurationM2`. A stage with under two tasks, no spread, or an executor missing either field flags no executor on task time. Of the executors that pass, the one with the largest mean is reported.
+
+The task-time dimension carries a wallClock estimate, so its band is the fixed fallback below until `deriveImpactBand` replaces it. The byte dimensions never get one and keep their ratio tier.
+
+#### Findings that are never wallClock-derived
+
+These detector entries set `impactBand` themselves, and nothing overwrites it. Each line names the warning key and the critical key.
+
+- `failures`: warning above `warnRate`, critical above `critRate`, on a stage with at least `minTasks` tasks.
+- `stageFailed`: always critical when a `stageFailureReason` is present.
+- `jobFailureRate`: info from `infoRate`, warning from `warnRate`, critical from `critRate`.
+- `autoscalingChurn`: the share of removed executors alive under `shortLivedMs`, warning above `warningPct`, critical above `criticalPct`, with at least `minExecutors` removed.
+- `coreLocality`: warning from `warnRatio`, critical from `critRatio`, with at least `minTasks` tasks.
+- `cacheUtilization`: partial caching is info under `cachedRatioInfo` and warning under `cachedRatioWarn`; disk spillover (`MEMORY_AND_DISK*` only) is info over `diskRatioInfo` and warning over `diskRatioWarn`. Storage unobserved is a single info caveat for persisted RDDs with no block-update evidence.
+- `stageShape`: info only. PRatio fires under `pRatioMax` tasks per core on a stage at least `lowParallelismFloorPct` of the run; OIRatio over `oiRatioMax` output per input byte; TaskStageSkew when the longest task spans over `stageShareMin` of the stage and runs over `skewWarn` times the median, on a multi-task stage at least `taskStageSkewFloorPct` of the run. The median gate is needed because on a single wave of even tasks the longest task spans the whole stage too.
+- `utilization`: always warning under `minUtil` busy over allocated core time.
+- `memoryUtilization`: idle cores warning above `idleCoreWarn`; the memory band is an info over-provisioning note under `bandTooHigh`. It has no near-capacity band, since heap used counts uncollected garbage.
+- `rightSizing`: always warning and low confidence. It needs a run peak of at least `minBaselineCores` cores, and fires when the smallest core count whose modeled stage time stays within `tolerancePct` of the observed one is at most `maxCoreShare` of that peak. It stays silent when the model error at the peak exceeds `maxModelErrorPct`.
+- `cachingOpportunity`: a single info tier. It fires when the same input relation, or join or union subtree, is scanned by at least `minExecutions` SQL executions in one run.
+- `configAudit`: `spark.executor.memoryOverhead` below the larger of the minimum and the factor times executor memory is info. The minimum is `spark.executor.minMemoryOverhead` on Spark 4+, else `floorMB`; the factor is `spark.executor.memoryOverheadFactor` on Spark 3.3+, else `floorPct`.
+
+### Fixed fallback bands
+
+These rules have no *band* tiers in `packages/core/src/detectors/` (`deriveImpactBand` sets the band whenever a wallClock estimate is available); the band in the table is only a floor-case fallback. A straggler share has no critical tier of its own.
+
+| Rule | Fallback band |
+|---|---|
+| Task skew | `warning` |
+| Shuffle read | `info` |
+| Partition sizing: skew | `warning` |
+| Partition sizing: low parallelism | `warning` |
+| Partition sizing: oversized partition | `critical` |
+| GC | `warning` |
+| GC (low / cost) | `info` |
+| Spill | `warning` |
+| Cold start | `warning` |
+| Slow host: mean-duration ratio | `warning` |
+| Slow host: duration-share | `warning` |
+| Slow host: multi-dimensional, task-time dimension | `info` |
+| Stage slowness: absolute fallback, suppressed when `slowHost` already fired | `info` |
+| Straggler / speculative-execution | `info` |
+| Speculation waste | `warning` |
+| Retry waste | `warning` |
+| Tiny tasks | `info` |
+| Duplicate plan subtree | `warning` |
+| Small files read/write | `warning` |
+| Nested loop join | `info` |
+| Join key cast | `info` |
+| MERGE rewrite | `info` |
+| Unpruned scan | `info` |
+| Python UDF | `info` |
+| Broadcast sizing: missed | `info` |
+| Broadcast sizing: oversized | `warning` |
 
 #### Spill magnitude tiers
 
@@ -80,45 +122,24 @@ evaluation order (first match wins, `null` when nothing matches):
 
 | Condition | Magnitude |
 |---|---|
-| Single-task stage: `spillDiskMax ≥ singleTaskDiskGiB` = 1 GiB **or** `spillMemMax ≥ singleTaskMemGiB` = 4 GiB | `severe` |
-| Multi-task stage: `spillDiskMax ≥ highDiskGiB` = 1 GiB, **or** `spillDiskMax / taskCount ≥ highTaskDiskMB` = 512 MiB (per-task proxy), **or** `spillMemMax ≥ highMemGiB` = 4 GiB | `high` |
-| Multi-task stage: `spillDiskMax ≥ medDiskMB` = 256 MiB **or** `spillMemMax ≥ medMemGiB` = 1 GiB | `medium` |
-| Skew (`taskCount ≥ skewMinTasks` = 10): `spillDiskMax / spillDiskP50 > skewRatio` = 5× **and** `spillDiskMax ≥ skewDiskFloorMB` = 128 MiB | `high` |
-| Skew (`taskCount ≥ 10`): `spillMemMax / spillMemP50 > 5×` **and** `spillMemMax ≥ skewMemFloorMB` = 256 MiB | `medium` |
+| Single-task stage: `spillDiskMax ≥ singleTaskDiskGiB` **or** `spillMemMax ≥ singleTaskMemGiB` | `severe` |
+| Multi-task stage: `spillDiskMax ≥ highDiskGiB`, **or** `spillDiskMax / taskCount ≥ highTaskDiskMB` (per-task proxy), **or** `spillMemMax ≥ highMemGiB` | `high` |
+| Multi-task stage: `spillDiskMax ≥ medDiskMB` **or** `spillMemMax ≥ medMemGiB` | `medium` |
+| Skew (`taskCount ≥ skewMinTasks`): `spillDiskMax / spillDiskP50 > skewRatio` **and** `spillDiskMax ≥ skewDiskFloorMB` | `high` |
+| Skew (`taskCount ≥ skewMinTasks`): `spillMemMax / spillMemP50 > skewRatio` **and** `spillMemMax ≥ skewMemFloorMB` | `medium` |
 
 Disk spill is weighted worse than memory spill by design: the memory
 thresholds sit well above their disk counterparts at every tier.
 
 The finding also reports `spillToInputRatio`, the memory spill over `inputBytes`
-plus `shuffleReadBytes`, and sets `wideRows` from `wideRowRatio` = 10. A stage
-with under `wideRowMinInputMB` = 64 MiB of input gets no ratio. Neither
+plus `shuffleReadBytes`, and sets `wideRows` from `wideRowRatio`. A stage
+with under `wideRowMinInputMB` of input gets no ratio. Neither
 threshold changes the band or the magnitude.
 
 A volume spill adds a `spark.executor.cores` fix when `peakExecutionMemoryMax`
-is at least `peakNearShareRatio` = 0.8 of the execution memory per task slot.
+is at least `peakNearShareRatio` of the execution memory per task slot.
 
-### Full threshold table (never wallClock-derived)
-
-| Rule | Warning | Critical |
-|---|---|---|
-| Stage shape: PRatio | `taskCount / totalCores < 0.5` (info, under-parallelized), on a stage lasting ≥ `lowParallelismFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length): parallelizing can't save more than the stage's duration, so a shorter stage would fire below the floor | none |
-| Stage shape: OIRatio | `outputBytes / inputBytes > 10×` (info, data explosion) | none |
-| Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > stageShareMin` = 0.5 **and** `taskDurationMax / taskDurationP50 > skewWarn` = 3× (info), on a multi-task stage lasting ≥ `taskStageSkewFloorPct` = 0.5% of the run. A task runs inside its stage, so the share is at most 1; the median gate is needed because on a single wave of even tasks the longest one spans the whole stage too | none |
-| Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |
-| Stage failed outright | none | any `stageFailureReason` present |
-| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there has no time estimate and would otherwise keep its ratio tier (a shorter stage's byte dimension would otherwise keep a warning or critical tier). The taskTime dimension also has to pass a chance test, since the slowest of many executors always tops the median: on the log scale of task duration, (the executor's mean − the median executor's mean) ÷ (the stage's task spread ÷ √ the executor's task count) must reach √(2 ln(executors ÷ (2 × `outlierAlpha`))) with `outlierAlpha` = 0.005 (3.4 for 3 executors, 4.2 for 75), so an executor with fewer tasks or a stage with more executors needs a larger gap. The stage spread is rebuilt from each executor's `logDurationSum` and `logDurationM2` (the sum and M2 of ln(1 + task duration) that `finalizeStage` accumulates); a stage with under two tasks, no spread, or an executor missing or non-finite in either field flags no executor on task time. Of the executors that pass, the one with the largest mean is reported. The taskTime dimension falls back to `info` and takes its band from its wall-clock estimate; the byte dimensions get no time estimate and keep the ratio tier | ≥ `ratioTiers[1]` = 1.78× warning, ≥ `ratioTiers[3]` = 10× critical (`ratioTiers[2]` = 3.16 is not read) |
-| Utilization | busy core time / allocated core time < 60% (always warning; ranks by its idle core time) | none |
-| Right-sized cluster | the smallest core count whose modeled stage time stays within `tolerancePct` = 10% of the observed one is at most `maxCoreShare` = 75% of the peak cores (min `minBaselineCores` = 8; silent when the model error at the peak exceeds `maxModelErrorPct` = 20%; always warning, low confidence) | none |
-| Autoscaling churn: short-lived executors | > 30% of removed executors alive under 2 min (min 5 removed executors) | > 60% |
-| Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |
-| Idle cores | idle share of allocated core time > 50% (warning) | none |
-| Memory band | highest executor peak heap / allocated < 70% over-provisioned (info); no near-capacity band, since heap used counts uncollected garbage | none |
-| Caching opportunity | same input relation (or join/union subtree) scanned by ≥ `minExecutions` = 2 SQL executions in one run | none (single tier, info) |
-| Cache utilization: partial caching | `numCachedPartitions / numPartitions < 0.90` (info) | `< 0.50` (warning) |
-| Cache utilization: disk spillover | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
-| Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
-| Core locality | non-local task ratio ≥ `warnRatio` = 15% (min `minTasks` = 50 tasks) | ≥ `critRatio` = 35% |
-| Config: memory overhead | `spark.executor.memoryOverhead` below max(minimum, factor × executor memory) (info). The minimum is `spark.executor.minMemoryOverhead` on Spark 4+, else `floorMB` = 384 MiB; the factor is `spark.executor.memoryOverheadFactor` on Spark 3.3+, else `floorPct` = 10%. An unrecorded Spark version reads both settings | none |
+### Cache and spill notes
 
 The RDD Info cache figures on stage events (`Number of Cached Partitions`,
 `Memory Size`, `Disk Size`) are always 0 since Spark 2.3; Spark 1.x fills them

@@ -1,4 +1,4 @@
-// Turns footnote markers ([1], [2], ...) on tuning-reference pages into
+// Turns footnote markers (rendered as "1", "2", ... by config.ts) on tuning-reference pages into
 // hoverable/focusable/clickable "citation chips": a popover shows the
 // citation's title and link, read live from the page's own
 // `<section class="footnotes">` list (built by markdown-it-footnote). No new
@@ -130,7 +130,6 @@ function wireChip(chip: HTMLAnchorElement, footnoteMap: Map<string, FootnoteEntr
   chip.classList.add(CHIP_CLASS);
   chip.setAttribute('aria-haspopup', 'true');
   chip.setAttribute('aria-expanded', 'false');
-  chip.textContent = id.replace(/^fn/, '');
 
   const togglePinned = () => {
     if (currentChip === chip && pinned) close();
