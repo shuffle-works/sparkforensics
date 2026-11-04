@@ -37,13 +37,13 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   not read it. No `docAnchor` is set: this is a tool-specific signal with no
   upstream `spark-tuning-reference` section.
 - **Job Failure Rate** (tag `JOBS`): app-level job-failure-rate rollup
-  (DETECTORS entry `jobFailureRate` in `packages/core/src/detectors/reliability.ts`), computed from
+  (DETECTORS entry `jobFailureRate` in `packages/core/src/detectors/job-failure-rate/detect.ts`), computed from
   the run's `jobs` map (`ctx.jobs`, `SparkListenerJobEnd` results):
   ≥10% info, ≥30% warning, ≥50% critical. Complements the per-stage,
   task-level Failed Tasks card (tag `FAIL`).
 - **Autoscaling Churn** (tag `CHRN`, `AutoscalingChurn.tsx`): app-level
   short-lived-executor detector (DETECTORS entry `autoscalingChurn` in
-  `packages/core/src/detectors/cost.ts`; reuses the same `executorsAdded`/`executorsRemoved`
+  `packages/core/src/detectors/autoscaling-churn/detect.ts`; reuses the same `executorsAdded`/`executorsRemoved`
   matching logic as `utilization`). For each added executor, finds its matching
   removal event and flags it short-lived if its lifetime is under 2 minutes
   (`thresholds.shortLivedMs`). An executor with no removal event is still alive

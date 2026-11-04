@@ -114,7 +114,7 @@ These rules have no *band* tiers in `packages/core/src/detectors/` (`gradeFindin
 #### Spill magnitude tiers
 
 The spill row's band is a fixed `warning` fallback, but `computeSpillMagnitude`
-(`packages/core/src/detectors/speed-stages.ts`) runs on every spill finding and sets its
+(`packages/core/src/detectors/spill/detect.ts`) runs on every spill finding and sets its
 `spillMagnitude` field, which the Spill widget displays. Its tiers, in
 evaluation order (first match wins, `null` when nothing matches):
 

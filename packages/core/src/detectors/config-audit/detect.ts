@@ -1,33 +1,23 @@
-import { noWasteModel } from '../impact-model.ts';
-import { runTiming } from '../run-timing.ts';
-import { increaseConf, setConf } from '../remediation.ts';
-import { effectiveSparkConf } from '../spark-conf.ts';
-import type { Finding } from '../types.ts';
-import { defaultOverheadSettings, effectiveConf, hasStageOutsideSql } from './conf.ts';
-import { defineAppDetector, defineConfigDetector } from './define.ts';
-import { setConfUnlessLogged } from './fixes.ts';
+import { noWasteModel } from '../../impact-model.ts';
+import { increaseConf, setConf } from '../../remediation.ts';
+import { effectiveSparkConf } from '../../spark-conf.ts';
+import type { Finding, FindingOf } from '../../types.ts';
+import { defaultOverheadSettings, effectiveConf, hasStageOutsideSql } from '../conf.ts';
+import { defineConfigDetector } from '../define.ts';
+import { setConfUnlessLogged } from '../fixes.ts';
+import type { TextFinding } from '../finding-bases.ts';
+import type { AllKeys } from '../../finding-types.ts';
+import type { DiscriminatorSlot } from '../../finding-meta.ts';
+
+export interface ConfigAuditEvidence {
+  property: string;
+}
+
+// valueText is the audited property's current value, or a note that it is unset.
+export interface ConfigAuditFinding extends TextFinding<'configAudit'>, ConfigAuditEvidence {}
 
 // Spark's default spark.dynamicAllocation.maxExecutors: no upper bound.
 const UNBOUNDED_EXECUTORS = 2147483647;
-
-const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (a job still running, a rotated log, or a cut-short capture), so every figure on this board covers only what was captured.';
-
-export const incompleteRunDetector = defineAppDetector({
-  // No docAnchor: the upstream spark-tuning-reference docs have no section for this
-  // tool-specific "capture stopped early" signal.
-  type: 'incompleteRun', order: 5, bandPolicy: 'own', fixEffort: 'code', version: 1,
-  emits: ['incompleteRun'],
-  thresholds: {},
-  detect(ctx): Finding | null {
-    if (!runTiming(ctx.app).incomplete) return null;
-    return {
-      type: 'incompleteRun', stageId: null, impactBand: 'warning',
-      metric: 'applicationEnd', valueText: 'missing',
-      recommendation: INCOMPLETE_RUN_RECOMMENDATION,
-    };
-  },
-  estimate: noWasteModel,
-});
 
 export const configAuditAutoscaleBoundsDetector = defineConfigDetector({
   type: 'configAudit', order: 121, bandPolicy: 'own', fixEffort: 'config', version: 1, inScorecard: false,
@@ -100,3 +90,26 @@ export const configAuditMemoryOverheadDetector = defineConfigDetector({
   },
   estimate: noWasteModel,
 });
+
+/** What this detector emits per finding type: its finding members and their public evidence. */
+export interface Emits {
+  configAudit: { finding: ConfigAuditFinding; evidence: ConfigAuditEvidence };
+}
+
+export declare const emits: Emits;
+
+export const detectors = [configAuditAutoscaleBoundsDetector, configAuditSerializerDetector, configAuditMemoryOverheadDetector] as const;
+
+/** The public evidence fields per emitted type, as the evidence report lists them. */
+export const evidenceKeys = {
+  configAudit: ['property'],
+} as const satisfies {
+  configAudit: readonly AllKeys<ConfigAuditEvidence>[];
+};
+
+/** The fields that tell sibling findings apart in their id (see findingId). */
+export const idDiscriminators = {
+  configAudit: [],
+} as const satisfies {
+  configAudit: readonly (DiscriminatorSlot & AllKeys<FindingOf<'configAudit'>>)[];
+};
