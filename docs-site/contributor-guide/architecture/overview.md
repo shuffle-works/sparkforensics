@@ -97,8 +97,9 @@ since the finalized stage already posted its stats. The exception is the
 losing copy of a speculative race: Spark kills it only once the stage
 finishes ("Stage cancelled: Stage finished"), so its TaskEnd is normally late.
 `accumulateTask` adds its time to the stage's `speculationWasteMs` and
-`speculationWastedAttempts` and nothing else, pairing it with a speculative
-winner kept for that purpose. `collectLateSpeculationWaste(state)` re-posts
+`speculationWastedAttempts` and nothing else. Only a speculative copy counts:
+a late original that a speculative winner beat (kept for that purpose) adds
+to `lateAttemptWork` only. `collectLateSpeculationWaste(state)` re-posts
 the updated totals of those stages once, just before `done`, as a
 `stageSpeculationWaste` message (`Map<stageId, { speculationWasteMs,
 speculationWastedAttempts }>`, empty when no speculative attempt ended late).

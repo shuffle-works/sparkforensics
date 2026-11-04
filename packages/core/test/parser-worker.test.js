@@ -2548,21 +2548,80 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     expect(msg.data.wastedAttempts).toBe(0);
   });
 
-  it('attributes waste to speculation when the winning attempt is the speculative copy', () => {
+  it('counts no waste when the winning attempt is the speculative copy and the original lost', () => {
     const s = createState();
     setupStage(s);
-    // Speculative copy launches and wins (finishes first)...
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, speculative: true }), s);
-    // ...original attempt is slow and arrives later, killed because it lost
-    // the race; its own `speculative` flag is false, but the *winner*
-    // (existing, already recorded) is speculative, so this must still
-    // classify as speculation waste.
+    // The original is killed because the copy won: speculation worked, so it is neither
+    // speculation waste nor retry waste.
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 500, killed: true, speculative: false }), s);
     const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 600 } }, s);
 
-    expect(msg.data.speculationWasteMs).toBe(500);
-    expect(msg.data.speculationWastedAttempts).toBe(1);
+    expect(msg.data.speculationWasteMs).toBe(0);
+    expect(msg.data.speculationWastedAttempts).toBe(0);
     expect(msg.data.retryWasteMs).toBe(0);
+    expect(msg.data.wastedAttempts).toBe(0);
+  });
+
+  it('counts an original that failed on its own as retry waste when a speculative copy then succeeds', () => {
+    const s = createState();
+    setupStage(s);
+    processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, taskId: 3 }), s);
+    processEvent(specTaskEnd(1, 0, { launch: 50, finish: 150, speculative: true, taskId: 103, attemptNumber: 1 }), s);
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+
+    expect(msg.data.retryWasteMs).toBe(100);
+    expect(msg.data.wastedAttempts).toBe(1);
+    expect(msg.data.retryTaskSamples).toHaveLength(1);
+    expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 3, reason: 'FetchFailed' });
+    expect(msg.data.speculationWasteMs).toBe(0);
+    expect(msg.data.speculationWastedAttempts).toBe(0);
+  });
+
+  it('counts a failed original as retry waste when the speculative copy failed first', () => {
+    const s = createState();
+    setupStage(s);
+    processEvent(specTaskEnd(1, 0, { launch: 50, finish: 120, failed: true, speculative: true, taskId: 103, attemptNumber: 1 }), s);
+    processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, taskId: 3 }), s);
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+
+    expect(msg.data.retryWasteMs).toBe(100);
+    expect(msg.data.wastedAttempts).toBe(1);
+    expect(msg.data.retryTaskSamples).toHaveLength(1);
+    expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 3 });
+  });
+
+  it('raises no speculationWaste finding for a stage whose copies won every race, at any original duration', () => {
+    const s = createState();
+    setupStage(s);
+    for (let i = 0; i < 6; i++) {
+      processEvent(specTaskEnd(1, i, { launch: 50000, finish: 60000, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
+      processEvent(specTaskEnd(1, i, { launch: 0, finish: 3_600_000, killed: true, taskId: i }), s);
+    }
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 3_700_000 } }, s);
+
+    expect(analyzedRunFrom({ app: null, stages: new Map([[1, msg.data]]) }).catalog.some((f) => f.type === 'speculationWaste')).toBe(false);
+  });
+
+  it('counts only the losing copies in a stage that also has beaten originals', () => {
+    const s = createState();
+    setupStage(s);
+    // Tasks 0-4: the original wins and its copy is killed.
+    for (let i = 0; i < 5; i++) {
+      processEvent(specTaskEnd(1, i, { launch: 0, finish: 100, taskId: i }), s);
+      processEvent(specTaskEnd(1, i, { launch: 10, finish: 130, killed: true, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
+    }
+    // Tasks 5-7: the copy wins and the original is killed.
+    for (let i = 5; i < 8; i++) {
+      processEvent(specTaskEnd(1, i, { launch: 50, finish: 100, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
+      processEvent(specTaskEnd(1, i, { launch: 0, finish: 900, killed: true, taskId: i }), s);
+    }
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 1000 } }, s);
+
+    expect(msg.data.speculationWasteMs).toBe(5 * 120);
+    expect(msg.data.speculationWastedAttempts).toBe(5);
+    expect(msg.data.retryWasteMs).toBe(0);
+    expect(msg.data.wastedAttempts).toBe(0);
   });
 
   it('attributes waste to a genuine failure-retry when neither attempt is speculative', () => {
@@ -2643,13 +2702,15 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       expect(s.evidenceInputs.taskRecords).toBe(1);
     });
 
-    it('counts a late killed original whose speculative copy already won', () => {
+    it('counts no waste for a late killed original whose speculative copy already won, and excludes it elsewhere', () => {
       const s = startRun();
       processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true, taskId: 5, attemptNumber: 1 }), s);
       const stageMsg = complete(s, 100);
       processEvent(specTaskEnd(1, 0, { launch: 0, finish: 400, killed: true }), s);
 
-      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 400, speculationWastedAttempts: 1 });
+      const stage = finishParse(s, stageMsg).stages.get(1);
+      expect(stage).toMatchObject({ speculationWasteMs: 0, speculationWastedAttempts: 0, retryWasteMs: 0, wastedAttempts: 0 });
+      expect(stage).toMatchObject({ taskCount: 1, failedTasks: 0 });
     });
 
     it('ignores a late non-speculative attempt that raced no speculative copy', () => {

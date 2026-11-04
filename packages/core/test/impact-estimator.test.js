@@ -82,12 +82,12 @@ describe('estimateImpact: measured group A', () => {
     expect(capped.estimateMethod).toBe('measured');
   });
 
-  it('speculationWaste: clips the stage\'s own speculationWasteMs the same way', () => {
+  it('speculationWaste: claims the stage\'s losing-copy time as core time, with no wall-clock', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], speculationWasteMs: 800 }]]);
     const findings = [{ type: 'speculationWaste', stageId: 0, metric: 'speculationWasteMs', value: 800, impactBand: 'info' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
-      basis: 'serial', wallClock: { low: 800, high: 800 }, estimateMethod: 'measured',
+      basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
       rawWaste: { value: 800, unit: 'ms' },
     });
   });

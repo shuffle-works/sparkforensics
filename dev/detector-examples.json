@@ -192,10 +192,10 @@
     }
   },
   "speculationWaste": {
-    "source": "corpus",
-    "log": "pairwise-01.ndjson",
+    "source": "synthetic",
+    "log": "speculation-waste.ndjson",
     "finding": {
-      "id": "ea58fb74",
+      "id": "3ecf4421",
       "type": "speculationWaste"
     }
   },
