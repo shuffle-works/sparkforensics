@@ -10,7 +10,12 @@ import {
   serializeFilterSelection,
 } from '../src/view/finding-filter.ts';
 
-const f = (over) => ({ type: 'skew', stageId: 1, impactBand: 'critical', ...over });
+/** @typedef {import('@sparkforensics/core/types').ImpactBand} ImpactBand */
+/** @typedef {import('@sparkforensics/core/types').Finding} Finding */
+
+/** @param {Record<string, unknown>} [over] */
+// A finding with only the fields the filter reads.
+const f = (over) => /** @type {Finding} */ (/** @type {unknown} */ ({ type: 'skew', stageId: 1, impactBand: 'critical', ...over }));
 
 test('empty selection matches every critical and warning finding, and no info finding', () => {
   const sel = emptySelection();
@@ -21,13 +26,13 @@ test('empty selection matches every critical and warning finding, and no info fi
 });
 
 test('an info finding matches once the selection names the info band', () => {
-  const sel = { ...emptySelection(), impactBands: new Set(['info']) };
+  const sel = { ...emptySelection(), impactBands: new Set(/** @type {ImpactBand[]} */ (['info'])) };
   expect(matchesFilter(f({ impactBand: 'info' }), sel)).toBe(true);
   expect(matchesFilter(f({ impactBand: 'critical' }), sel)).toBe(false);
 });
 
 test('impact-band dimension: union within, constrains when non-empty', () => {
-  const sel = { ...emptySelection(), impactBands: new Set(['critical', 'warning']) };
+  const sel = { ...emptySelection(), impactBands: new Set(/** @type {ImpactBand[]} */ (['critical', 'warning'])) };
   expect(matchesFilter(f({ impactBand: 'critical' }), sel)).toBe(true);
   expect(matchesFilter(f({ impactBand: 'warning' }), sel)).toBe(true);
   expect(matchesFilter(f({ impactBand: 'info' }), sel)).toBe(false);
@@ -58,7 +63,7 @@ test('stage dimension drops a sql-scope finding that spans several stages', () =
 });
 
 test('dimensions combine with AND', () => {
-  const sel = { impactBands: new Set(['critical']), types: new Set(['spill']), stages: new Set([2]) };
+  const sel = { impactBands: new Set(/** @type {ImpactBand[]} */ (['critical'])), types: new Set(['spill']), stages: new Set([2]) };
   expect(matchesFilter(f({ impactBand: 'critical', type: 'spill', stageId: 2 }), sel)).toBe(true);
   expect(matchesFilter(f({ impactBand: 'critical', type: 'spill', stageId: 9 }), sel)).toBe(false);
   expect(matchesFilter(f({ impactBand: 'warning', type: 'spill', stageId: 2 }), sel)).toBe(false);
@@ -88,7 +93,7 @@ test('deriveOptions offers the stage of a single-stage sql finding', () => {
 });
 
 test('parseFilterSelection seeds valid values and drops unknown/malformed', () => {
-  const options = { impactBands: ['critical', 'warning', 'info'], types: ['skew', 'spill'], stages: [3, 7] };
+  const options = { impactBands: /** @type {ImpactBand[]} */ (['critical', 'warning', 'info']), types: ['skew', 'spill'], stages: [3, 7] };
   const sel = parseFilterSelection('?impact=critical,bogus&type=skew,nope&stage=3,x,7.5', options);
   expect([...sel.impactBands]).toEqual(['critical']);
   expect([...sel.types]).toEqual(['skew']);
@@ -101,10 +106,10 @@ test('parseFilterSelection with no params yields an empty selection', () => {
 });
 
 test('serializeFilterSelection round-trips and uses impact/type/stage with literal commas', () => {
-  const sel = { impactBands: new Set(['critical', 'warning']), types: new Set(['spill', 'skew']), stages: new Set([7, 3]) };
+  const sel = { impactBands: new Set(/** @type {ImpactBand[]} */ (['critical', 'warning'])), types: new Set(['spill', 'skew']), stages: new Set([7, 3]) };
   const query = serializeFilterSelection(sel);
   expect(query).toBe('?impact=critical,warning&type=skew,spill&stage=3,7');
-  const options = { impactBands: ['critical', 'warning', 'info'], types: ['skew', 'spill'], stages: [3, 7] };
+  const options = { impactBands: /** @type {ImpactBand[]} */ (['critical', 'warning', 'info']), types: ['skew', 'spill'], stages: [3, 7] };
   const round = parseFilterSelection(query, options);
   expect([...round.impactBands].sort()).toEqual(['critical', 'warning']);
   expect([...round.types].sort()).toEqual(['skew', 'spill']);
@@ -116,7 +121,7 @@ test('serializeFilterSelection of an empty selection is the empty string', () =>
 });
 
 test('excludingDimensions names only the active dimensions that hide a finding', () => {
-  const sel = { impactBands: new Set(['critical']), types: new Set(['skew']), stages: new Set([2]) };
+  const sel = { impactBands: new Set(/** @type {ImpactBand[]} */ (['critical'])), types: new Set(['skew']), stages: new Set([2]) };
   expect(excludingDimensions(f({ type: 'spill', stageId: 2 }), sel)).toEqual(['types']);
   expect(excludingDimensions(f({ type: 'spill', impactBand: 'info', stageId: null }), sel)).toEqual(['impactBands', 'types', 'stages']);
   expect(excludingDimensions(f({ stageId: 2 }), sel)).toEqual([]);

@@ -11,6 +11,11 @@ const SAMPLE_LOG = fileURLToPath(new URL('../../../public/sample-runs/sample-run
 
 // node:http (unlike fetch) lets a caller send an explicit Host header, needed
 // to simulate a DNS-rebinding attempt against the /mcp and /shs-proxy routes.
+/**
+ * @param {number} port
+ * @param {string} hostHeader
+ * @param {{ path?: string, method?: string, headers?: Record<string, string> }} [options]
+ */
 function requestWithHost(port, hostHeader, { path = '/mcp', method = 'POST', headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -29,12 +34,25 @@ function requestWithHost(port, hostHeader, { path = '/mcp', method = 'POST', hea
   });
 }
 
+/** @type {import('node:http').Server | undefined} */
 let server;
+
+/** @param {import('node:http').Server} listening */
+function portOf(listening) {
+  const address = listening.address();
+  if (typeof address !== 'object' || !address) throw new Error('server is not listening on a TCP port');
+  return address.port;
+}
 afterEach(() => server && server.close());
 
+/**
+ * @param {Parameters<typeof createServer>[0]} opts
+ * @returns {Promise<number>}
+ */
 function listen(opts) {
-  server = createServer(opts);
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
+  const listening = createServer(opts);
+  server = listening;
+  return new Promise((resolve) => listening.listen(0, '127.0.0.1', () => resolve(portOf(listening))));
 }
 
 describe('createServer routing', () => {
@@ -130,7 +148,7 @@ describe('/mcp route', () => {
     const diagnosed = await first.callTool({ name: 'diagnose_run', arguments: { source: { path: SAMPLE_LOG } } });
     await first.close();
     expect(diagnosed.isError).toBeFalsy();
-    const { runId, findings, tunedThresholds } = diagnosed.structuredContent;
+    const { runId, findings, tunedThresholds } = /** @type {{ runId: string, findings: unknown[], tunedThresholds?: unknown }} */ (diagnosed.structuredContent);
     expect(findings.length).toBeGreaterThan(0);
     expect(tunedThresholds).toBeUndefined();
 
@@ -138,7 +156,7 @@ describe('/mcp route', () => {
     const summary = await second.callTool({ name: 'get_run_summary', arguments: { runId } });
     await second.close();
     expect(summary.isError).toBeFalsy();
-    expect(summary.structuredContent.runId).toBe(runId);
+    expect(/** @type {{ runId: string }} */ (summary.structuredContent).runId).toBe(runId);
   });
 
   it('surfaces run-not-found as isError with structuredContent.code over HTTP', async () => {
@@ -148,7 +166,7 @@ describe('/mcp route', () => {
     await client.connect(transport);
     const result = await client.callTool({ name: 'get_run_summary', arguments: { runId: 'nonexistent' } });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.code).toBe('run-not-found');
+    expect(/** @type {{ code: string }} */ (result.structuredContent).code).toBe('run-not-found');
     await client.close();
   });
 
@@ -224,8 +242,9 @@ describe('parseServerArgs', () => {
 
 describe('startServer', () => {
   it('rejects with EADDRINUSE when the port is taken instead of never settling', async () => {
-    server = await startServer({ port: 0 });
-    const { port } = server.address();
+    const started = await startServer({ port: 0 });
+    server = started;
+    const port = portOf(started);
     const err = await startServer({ port }).catch((e) => e);
     expect(err.code).toBe('EADDRINUSE');
     expect(startupErrorMessage(err, port)).toBe(`Port ${port} is already in use. Pass another one with --port <n>.`);
@@ -249,8 +268,9 @@ describe('server bin exit codes', () => {
   });
 
   it('exits 1 with one line when the port is already in use', async () => {
-    server = await startServer({ port: 0 });
-    const { port } = server.address();
+    const started = await startServer({ port: 0 });
+    server = started;
+    const port = portOf(started);
     const { status, stderr } = spawnSync(process.execPath, [binFile, '--port', String(port)], { encoding: 'utf8' });
     expect(status).toBe(1);
     expect(stderr.trim().split('\n')).toHaveLength(1);

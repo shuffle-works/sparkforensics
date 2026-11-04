@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const source = readFileSync(resolve(import.meta.dirname, '../docs-site/.vitepress/anchor-offset.js'), 'utf8');
 // Each run adds window listeners and a DOM observer; drop them after every
 // test so one test's script instance can't react to the next test's chrome.
+/** @type {[string, EventListenerOrEventListenerObject][]} */
 const listeners = [];
+/** @type {MutationObserver[]} */
 const observers = [];
 const runScript = () => {
   const add = window.addEventListener.bind(window);
@@ -17,21 +19,25 @@ const runScript = () => {
     add(type, fn, opts);
   });
   const observe = MutationObserver.prototype.observe;
-  vi.spyOn(MutationObserver.prototype, 'observe').mockImplementation(function (...args) {
+  vi.spyOn(MutationObserver.prototype, 'observe').mockImplementation(/** @this {MutationObserver} */ function (...args) {
     observers.push(this);
     observe.apply(this, args);
   });
   new Function(source)();
 };
 
+/**
+ * @param {string} html
+ * @param {{ style: string, height?: number, bottom?: number }} options
+ */
 function chrome(html, { style, height = 0, bottom = 0 }) {
   const el = document.createElement('div');
   document.body.appendChild(el);
   el.outerHTML = html;
-  const node = document.body.lastElementChild;
+  const node = /** @type {HTMLElement} */ (document.body.lastElementChild);
   node.setAttribute('style', style);
-  node.getClientRects = () => (node.style.display === 'none' ? [] : [{}]);
-  node.getBoundingClientRect = () => ({ top: bottom - height, bottom });
+  node.getClientRects = () => /** @type {DOMRectList} */ (/** @type {unknown} */ (node.style.display === 'none' ? [] : [{}]));
+  node.getBoundingClientRect = () => /** @type {DOMRect} */ (/** @type {unknown} */ ({ top: bottom - height, bottom }));
   Object.defineProperty(node, 'offsetHeight', { configurable: true, get: () => height });
   return node;
 }

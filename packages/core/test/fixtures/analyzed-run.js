@@ -18,6 +18,8 @@ import { emptyAppModel } from '../../src/run-serialization.ts';
 /**
  * A path parses the log and resolves to its run. A model holding only the parts a test needs (such as
  * `{ app, stages, sql }`) returns the run at once, the other parts empty. `options` go to `analyzeRun`.
+ * @param {string | Partial<import('../../src/types.ts').AppModel>} pathOrModel
+ * @param {import('../../src/analyzed-run.ts').AnalyzeRunOptions} [options]
  */
 export function analyzedRunFrom(pathOrModel, options) {
   if (typeof pathOrModel === 'string') {

@@ -6,7 +6,9 @@ const CORPUS_LOGS = fileURLToPath(new URL('../../../dev/log-corpus/logs', import
 
 /** The absolute path of a log or directory in the public corpus (`dev/log-corpus/logs`), or null
  * when it is missing, so a gated test can skip locally. In CI the corpus submodule is always
- * checked out, so a missing path throws and fails the suite instead of skipping its tests. */
+ * checked out, so a missing path throws and fails the suite instead of skipping its tests.
+ * @param {string} relativePath
+ */
 export function corpusLog(relativePath) {
   const path = join(CORPUS_LOGS, relativePath);
   if (existsSync(path)) return path;

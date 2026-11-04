@@ -4,10 +4,12 @@ import { build } from 'vite';
 import { exportModuleViolation, findForbiddenModules, formatViolations } from '../scripts/export-analysis-guard.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
+/** @param {string} id */
 const toRepoPath = (id) => path.relative(root, id.split('?')[0]).split(path.sep).join('/');
 
 describe('export analysis guard', () => {
   it('the real export build reaches only allowed core modules and no live-only module', async () => {
+    /** @type {string[]} */
     let moduleIds = [];
     // The same build `npm run build` runs for the export template, bundled in
     // memory (`--mode guard`); exportAnalysisGuard would fail it on a violation.
@@ -28,6 +30,7 @@ describe('export analysis guard', () => {
   }, 180_000);
 
   it('the docs example app reaches only allowed core modules and no live-only module either', async () => {
+    /** @type {string[]} */
     let moduleIds = [];
     // The build `npm run build:docs-widget` runs, bundled in memory.
     await build({
@@ -45,7 +48,9 @@ describe('export analysis guard', () => {
   }, 180_000);
 
   it('names each forbidden module with an importer chain back to the entry', () => {
+    /** @param {string} repoPath */
     const abs = (repoPath) => path.join(root, repoPath);
+    /** @type {Record<string, string[]>} */
     const importers = {
       [abs('src/export/main-export.tsx')]: [],
       [abs('src/view/Widget.tsx')]: [abs('src/export/main-export.tsx')],

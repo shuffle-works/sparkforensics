@@ -34,13 +34,20 @@ export const LIVE_ONLY_MODULES = [
 
 const CORE_PREFIX = 'packages/core/';
 
-/** Why `module` may not be in the export graph, or null when it may. */
+/**
+ * Why `module` may not be in the export graph, or null when it may.
+ * @param {string} module
+ */
 export function exportModuleViolation(module) {
   if (LIVE_ONLY_MODULES.includes(module)) return 'live-only module';
   if (module.startsWith(CORE_PREFIX) && !ALLOWED_EXPORT_CORE_MODULES.includes(module)) return 'core module not on the export allowlist';
   return null;
 }
 
+/**
+ * @param {string} root
+ * @param {string} id
+ */
 function toRepoPath(root, id) {
   return path.relative(root, id.split('?')[0]).split(path.sep).join('/');
 }
@@ -49,18 +56,23 @@ function toRepoPath(root, id) {
  * Every module in a build's graph the export may not reach, each with why and the shortest
  * importer chain from an entry (a module nothing imports) down to it.
  * `importersOf(id)` returns the ids that import `id`, statically or dynamically.
+ * @param {Iterable<string>} moduleIds
+ * @param {(id: string) => string[]} importersOf
+ * @param {string} root
  */
 export function findForbiddenModules(moduleIds, importersOf, root) {
+  /** @type {{ module: string, reason: string, chain: string[] }[]} */
   const violations = [];
   for (const id of moduleIds) {
     const module = toRepoPath(root, id);
     const reason = exportModuleViolation(module);
     if (reason == null) continue;
+    /** @type {Map<string, string | null>} */
     const parent = new Map([[id, null]]);
     const queue = [id];
     let top = id;
     while (queue.length > 0) {
-      const current = queue.shift();
+      const current = /** @type {string} */ (queue.shift());
       const importers = importersOf(current);
       if (importers.length === 0) { top = current; break; }
       for (const importer of importers) {
@@ -69,13 +81,15 @@ export function findForbiddenModules(moduleIds, importersOf, root) {
         queue.push(importer);
       }
     }
+    /** @type {string[]} */
     const chain = [];
-    for (let at = top; at != null; at = parent.get(at)) chain.push(toRepoPath(root, at));
+    for (let at = /** @type {string | null | undefined} */ (top); at != null; at = parent.get(at)) chain.push(toRepoPath(root, at));
     violations.push({ module, reason, chain });
   }
   return violations;
 }
 
+/** @param {{ module: string, reason: string, chain: string[] }[]} violations */
 export function formatViolations(violations) {
   return [
     'The export bundle reaches modules it may not (see scripts/export-analysis-guard.mjs):',
@@ -83,13 +97,18 @@ export function formatViolations(violations) {
   ].join('\n');
 }
 
-/** Vite plugin: errors at the end of the build when the graph reaches a module it may not. */
+/**
+ * Vite plugin: errors at the end of the build when the graph reaches a module it may not.
+ * @param {string} root
+ * @returns {import('vite').Plugin}
+ */
 export function exportAnalysisGuard(root) {
   return {
     name: 'export-analysis-guard',
     apply: 'build',
     buildEnd(error) {
       if (error) return;
+      /** @param {string} id */
       const importersOf = (id) => {
         const info = this.getModuleInfo(id);
         return [...(info?.importers ?? []), ...(info?.dynamicImporters ?? [])];

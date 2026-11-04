@@ -19,6 +19,10 @@ import {
 const UNREACHABLE = 'https://127.0.0.1:9/spark-tuning-reference.git';
 const ANCHORS = ['bottleneck-skew', 'joins', 'joins-broadcast'];
 
+/**
+ * @param {string[]} args
+ * @param {string} cwd
+ */
 function git(args, cwd) {
   return execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], {
     cwd,
@@ -28,6 +32,7 @@ function git(args, cwd) {
 
 // A minimal spark-tuning-reference checkout: one chapter (CRLF, like upstream),
 // one bottleneck page, and a diagram with its .mmd source. Returns its HEAD.
+/** @param {string} dir */
 function makeUpstream(dir) {
   mkdirSync(join(dir, 'content', 'bottlenecks'), { recursive: true });
   mkdirSync(join(dir, 'content', 'diagrams'));
@@ -48,14 +53,23 @@ function makeUpstream(dir) {
 }
 
 describe('ensureTuningDocs', () => {
+  /** @type {string} */
   let tmp;
+  /** @type {string} */
   let docsDir;
+  /** @type {string} */
   let upstreamDir;
+  /** @type {string} */
   let head;
 
+  /**
+   * @param {string} commit
+   * @param {string} [repository]
+   */
   const writePin = (commit, repository = UNREACHABLE) =>
     writeFileSync(join(docsDir, 'upstream.json'), JSON.stringify({ repository, commit }));
   const stamp = () => JSON.parse(readFileSync(join(docsDir, '.generated.json'), 'utf8'));
+  /** @param {NonNullable<Parameters<typeof ensureTuningDocs>[0]>} [opts] */
   const ensure = (opts = {}) => ensureTuningDocs({ docsContentDir: docsDir, anchors: ANCHORS, env: {}, ...opts });
   const withOverride = (env = {}) => ({ ...env, [OVERRIDE_ENV]: upstreamDir });
 
@@ -80,7 +94,7 @@ describe('ensureTuningDocs', () => {
     expect(readdirSync(join(docsDir, 'tuning'))).toEqual(['skew.md']);
     expect(readdirSync(join(docsDir, 'diagrams'))).toEqual(['a.svg']);
     const nav = JSON.parse(readFileSync(join(docsDir, 'chapters', 'nav-index.json'), 'utf8'));
-    expect(nav.map((e) => [e.anchor, e.store, e.slug])).toEqual([
+    expect(nav.map((/** @type {{ anchor: string, store: string, slug: string }} */ e) => [e.anchor, e.store, e.slug])).toEqual([
       ['joins', 'chapters', '05-joins'],
       ['bottleneck-skew', 'tuning', 'skew'],
     ]);
@@ -143,14 +157,15 @@ describe('ensureTuningDocs', () => {
         try {
           ensure();
         } catch (e) {
-          return e;
+          return /** @type {Error} */ (e);
         }
       })();
       expect(err).toBeInstanceOf(DieError);
-      expect(err.message).toMatch(new RegExp(`cached copy is for ${head}, and only docs:dev.*${OVERRIDE_ENV}`, 's'));
+      expect(err?.message).toMatch(new RegExp(`cached copy is for ${head}, and only docs:dev.*${OVERRIDE_ENV}`, 's'));
     });
 
     it('keeps the cached copy with a warning when allowStale', () => {
+      /** @type {string[]} */
       const warnings = [];
       const result = ensure({ allowStale: true, warn: (m) => warnings.push(m) });
       expect(result).toMatchObject({ source: 'local', commit: head, regenerated: false, stale: true });
@@ -212,7 +227,9 @@ describe('isLocalOnlyEntry', () => {
 });
 
 describe('withLock', () => {
+  /** @type {string} */
   let tmp;
+  /** @type {string} */
   let lockFile;
 
   beforeEach(() => {
@@ -234,6 +251,7 @@ describe('withLock', () => {
     try {
       await new Promise((r) => holder.once('spawn', r));
       writeFileSync(lockFile, String(holder.pid));
+      /** @type {string[]} */
       const logs = [];
       const started = Date.now();
       const result = withLock(lockFile, () => readFileSync(lockFile, 'utf8'), { pollMs: 20, log: (m) => logs.push(m) });

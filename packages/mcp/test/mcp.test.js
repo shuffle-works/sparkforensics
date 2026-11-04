@@ -12,9 +12,22 @@ import { MCP_TOOL_NAMES } from '../../core/src/mcp-server-factory.ts';
 const execFileAsync = promisify(execFile);
 
 const packageDir = process.cwd();
+/** @type {string[]} */
 const cleanupDirs = [];
+/** @type {string} */
 let binPath;
+/** @type {Client | undefined} */
 let client;
+
+/**
+ * Typed view of a tool result's structuredContent, which the SDK declares unknown.
+ * @template [T=Record<string, unknown>]
+ * @param {Record<string, unknown>} result
+ * @returns {T}
+ */
+function structured(result) {
+  return /** @type {T} */ (result.structuredContent);
+}
 
 // Packed and installed once for the whole suite, not per test: each pack+install
 // redoes a full tarball build and npm install.
@@ -54,8 +67,8 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     await client.connect(transport);
     expect(client.getServerVersion()).toMatchObject({ version });
     const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
-    expect(result.structuredContent.generator).toEqual({ name, version, buildId: expect.any(String) });
-    expect(result.structuredContent.app).toEqual({ id: 'app-1', attemptId: null });
+    expect(structured(result).generator).toEqual({ name, version, buildId: expect.any(String) });
+    expect(structured(result).app).toEqual({ id: 'app-1', attemptId: null });
   }, 30000);
 
   it('surfaces run-not-found as isError with structuredContent.code', async () => {
@@ -66,7 +79,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     await client.listTools();
     const result = await client.callTool({ name: 'diagnose_run', arguments: { runId: 'nonexistent' } });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.code).toBe('run-not-found');
+    expect(structured(result).code).toBe('run-not-found');
   }, 30000);
 
   it('diagnose_run reports checks an incomplete log could not run as notRunChecks, not clean', async () => {
@@ -83,16 +96,17 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     await client.connect(transport);
     const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, include: ['summary'], view: 'full' } });
     expect(result.isError).toBeFalsy();
-    const { notRunChecks, cleanChecks, summary } = result.structuredContent;
+    /** @type {{ notRunChecks: { type: string, reason: string }[], cleanChecks: { type: string }[], summary: { clean: boolean }, verdict: { title: string } }} */
+    const { notRunChecks, cleanChecks, summary, verdict } = structured(result);
     const notRun = new Map(notRunChecks.map((c) => [c.type, c.reason]));
     expect(notRun.get('skew')).toMatch(/No stage in this log recorded an end/);
     expect(notRun.get('utilization')).toMatch(/no end-of-run record/);
     expect(cleanChecks.map((c) => c.type)).not.toContain('skew');
     expect(summary.clean).toBe(false);
-    expect(result.structuredContent.verdict.title).toBe('This log looks incomplete, so results cover only part of the run');
+    expect(verdict.title).toBe('This log looks incomplete, so results cover only part of the run');
     const runSummary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path } } });
-    expect(runSummary.structuredContent).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
-    expect(runSummary.structuredContent.runShape).toEqual({
+    expect(structured(runSummary)).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
+    expect(structured(runSummary).runShape).toEqual({
       wallClockMs: null, efficiencyPct: null, unusedCoreTimePct: null, efficiencyFlag: null, unusedCoreTimeFlag: null, etlPhasesMs: null, peakBusyCores: null,
     });
   }, 30000);
@@ -103,7 +117,9 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     await client.connect(transport);
     const result = await client.callTool({ name: 'get_finding_documentation', arguments: { type: 'skew' } });
     expect(result.isError).toBeFalsy();
-    expect(result.structuredContent.detectionDoc.content.length).toBeGreaterThan(0);
+    /** @type {{ detectionDoc: { content: string } }} */
+    const { detectionDoc } = structured(result);
+    expect(detectionDoc.content.length).toBeGreaterThan(0);
   }, 30000);
 
   it('get_reference_doc returns chapter markdown by anchor', async () => {
@@ -112,8 +128,10 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     await client.connect(transport);
     const result = await client.callTool({ name: 'get_reference_doc', arguments: { anchor: '#joins' } });
     expect(result.isError).toBeFalsy();
-    expect(result.structuredContent.anchor).toBe('joins');
-    expect(result.structuredContent.content.length).toBeGreaterThan(0);
+    /** @type {{ anchor: string, content: string }} */
+    const { anchor, content } = structured(result);
+    expect(anchor).toBe('joins');
+    expect(content.length).toBeGreaterThan(0);
   }, 30000);
 
   it('prints usage on --help instead of starting the stdio server', async () => {
@@ -129,6 +147,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const { tools } = await client.listTools();
     const listed = stderr.match(/exposes (\d+) tools[^:]*:\s*([^.]+)\./);
     expect(listed).not.toBeNull();
+    if (!listed) throw new Error('--help output lists no tools');
     const helpNames = listed[2].split(',').map((name) => name.trim());
     expect(Number(listed[1])).toBe(tools.length);
     expect(helpNames.sort()).toEqual(tools.map((t) => t.name).sort());
@@ -149,7 +168,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
       client = new Client({ name: 'test-client', version: '1.0.0' });
       await client.connect(transport);
       const result = await client.callTool({ name: 'get_run_summary', arguments: { source: { appId } } });
-      expect(result.content[0].text).toMatch(/SHS fetch failed/);
+      expect(/** @type {{ text: string }[]} */ (result.content)[0].text).toMatch(/SHS fetch failed/);
       await client.close();
     }
   }, 30000);
@@ -173,6 +192,6 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
     const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
-    expect(result.structuredContent.tunedThresholds).toEqual({ skew: { ratioWarn: { value: 5, default: 3 } } });
+    expect(structured(result).tunedThresholds).toEqual({ skew: { ratioWarn: { value: 5, default: 3 } } });
   }, 30000);
 });
