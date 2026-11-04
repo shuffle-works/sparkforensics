@@ -4,27 +4,9 @@ import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { effectiveSparkConf, overlayModifiedConfigs } from '../src/spark-conf.ts';
 import { diagnoseJoinSkew, isSkewJoinNode } from '../src/aqe-skew.ts';
 import { makeTypedStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { present, firstOfType } from './fixtures/present.js';
 
 const MiB = 1024 * 1024;
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
-
-/**
- * @template {Finding['type']} T
- * @param {Finding[]} catalog
- * @param {T} type
- */
-function firstOfType(catalog, type) {
-  return catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
-}
 
 /** @param {Finding} f @returns {f is import('../src/finding-types.ts').PartitionSizingFinding} */
 const isShuffleSkew = (f) => f.type === 'partitionSizing' && f.rule === 'shufflePartitionSkew';

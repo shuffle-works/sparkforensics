@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { redactReport, redactComparison, redactRunModel } from '../src/redact.js';
+import { present, findingOfType } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').AppModel} AppModel */
 /** @typedef {import('../src/types.ts').Finding} Finding */
@@ -43,28 +44,6 @@ import { redactReport, redactComparison, redactRunModel } from '../src/redact.js
  *   findings: ReportFinding[],
  * }} Report
  */
-
-/**
- * A value the test expects to be there, so a missing one fails here rather than on a property read.
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
-
-/**
- * @template {Finding['type']} T
- * @param {Finding | undefined} finding
- * @param {T} type
- * @returns {Extract<Finding, { type: T }>}
- */
-function findingOfType(finding, type) {
-  if (finding?.type !== type) throw new Error(`expected a ${type} finding`);
-  return /** @type {Extract<Finding, { type: T }>} */ (finding);
-}
 
 /** @param {ReportFinding} finding */
 const evidenceOf = (finding) => present(finding.evidence);
@@ -289,7 +268,7 @@ describe('failure groups', () => {
     };
     const out = redactRun(data);
     expectScrubbed(present(present(out.appModel.stages.get(1)).failureGroups)[0]);
-    expectScrubbed(findingOfType(out.catalog[0], 'failures').failureGroups[0]);
+    expectScrubbed(findingOfType(out.catalog, 'failures').failureGroups[0]);
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 
@@ -342,7 +321,7 @@ describe('failure groups', () => {
     };
     const out = redactRun(data);
     expect(present(out.appModel.stages.get(1)).stageFailureReason).toBe('[redacted]');
-    expect(findingOfType(out.catalog[0], 'stageFailed').valueText).toBe('[redacted]');
+    expect(findingOfType(out.catalog, 'stageFailed').valueText).toBe('[redacted]');
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 
@@ -529,7 +508,7 @@ describe('redactRunModel', () => {
 
   it('reaches configFindings, not just catalog', () => {
     const out = redactRun(sampleExportData());
-    expect(findingOfType(out.configFindings[0], 'configAudit').valueText).toMatch(/host-\d+/);
+    expect(findingOfType(out.configFindings, 'configAudit').valueText).toMatch(/host-\d+/);
   });
 
   it('does not mutate the input', () => {

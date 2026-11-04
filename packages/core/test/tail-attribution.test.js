@@ -4,32 +4,11 @@ import { attributeTail, TAIL_FACTOR } from '../src/stage-quantiles.js';
 import { createState, processEvent } from '../src/parser-worker.js';
 import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
+import { present, findingOfType } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Finding} Finding */
 /** @typedef {import('../src/types.ts').TailAttribution} TailAttribution */
 /** @typedef {Parameters<typeof attributeTail>[0] extends Iterable<infer T> ? T : never} TailTask */
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
-
-/**
- * The first finding of `type`; a missing one fails here rather than on a property read.
- * @template {Finding['type']} T
- * @param {Finding[]} catalog
- * @param {T} type
- */
-function findingOfType(catalog, type) {
-  const finding = catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
-  if (!finding) throw new Error(`expected a ${type} finding`);
-  return finding;
-}
 
 /** @param {ReturnType<typeof processEvent>} message */
 function stageOf(message) {

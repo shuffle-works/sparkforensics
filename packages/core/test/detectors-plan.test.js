@@ -8,21 +8,12 @@ import { createState, dispatchLine } from '../src/parser-worker.js';
 import { pathBasename } from '../src/text-format.js';
 import { formatBytes } from '../src/units.js';
 import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').PlanNode} PlanNode */
 /** @typedef {import('../src/types.ts').SqlExecution} SqlExecution */
 /** @typedef {import('../src/types.ts').Finding} Finding */
 /** @typedef {import('../src/types.ts').Stage} Stage */
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
 
 /**
  * A `filter` or `find` predicate that narrows to one finding type.

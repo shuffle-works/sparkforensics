@@ -14,19 +14,9 @@ import { COMPARISON_METRIC_KEYS } from '../src/run-comparison.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 // Helper lives at repo-root tests/helpers/: shared with tests/cli-sparkforensics-analyze.test.js.
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
+import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/mcp-tools.ts').DiagnoseRunResult['findings'][number]} FindingRowOfEither */
-
-/**
- * A value the test expects to be there, so a missing one fails here rather than on a property read.
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
 
 /** The full-view row, which carries the impact estimate the compact row drops. @param {FindingRowOfEither | undefined} row */
 function fullRowOf(row) {

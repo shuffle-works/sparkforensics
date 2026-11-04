@@ -6,6 +6,7 @@ import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/units.js';
 import { FINDING_PRESENTATION } from '../src/finding-presentation.js';
 import { makeTypedStage, makeApp, dataTail, executorRow } from './fixtures/stage-app-fixtures.js';
+import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Finding} Finding */
 /** @typedef {import('../src/types.ts').Stage} Stage */
@@ -69,16 +70,6 @@ function hostOf(finding) {
  */
 function wallClockOf(finding) {
   return present(present(finding.impactEstimate).wallClock);
-}
-
-/** A value the test needs, so a missing one fails here rather than on a property read.
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('Expected a value.');
-  return value;
 }
 
 /**
@@ -760,8 +751,7 @@ describe('analyze: speculative / straggler', () => {
     // The same run without an end (duration unknown) keeps it, as the other runtime floors do.
     expect(analyze(makeApp({ endTime: null }), short, [], []).filter(ofType('straggler'))).toHaveLength(1);
     // A stage with no completion time in a run that ended is zero-length, not short: kept.
-    // @ts-expect-error a stage still open has no completion time
-    const open = new Map([[1, makeTypedStage({ ...straggling, submittedAt: 1000, completedAt: null })]]);
+    const open = new Map([[1, makeTypedStage({ ...straggling, submittedAt: 1000, completedAt: 0 })]]);
     expect(analyze(makeApp({ endTime: 400_000 }), open, [], []).filter(ofType('straggler'))).toHaveLength(1);
     // A 5s stage (1.25%) whose 4.99s tail clears the floor still grades above info.
     const long = new Map([[1, makeTypedStage({ ...straggling, submittedAt: 0, completedAt: 5005, taskDurationMax: 5000 })]]);
@@ -881,8 +871,7 @@ describe('analyze: stage shape smells (§7)', () => {
     const unknownRun = makeApp({ resources: { executor: { cores: 4 } }, endTime: null });
     expect(analyze(unknownRun, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'))).toHaveLength(1);
     // A stage with no completion time is zero-length, not short: kept, as the other stage floors do.
-    // @ts-expect-error a stage still open has no completion time
-    const open = makeTypedStage({ taskCount: 3, executorStats: execs(4), submittedAt: 1000, completedAt: null });
+    const open = makeTypedStage({ taskCount: 3, executorStats: execs(4), submittedAt: 1000, completedAt: 0 });
     expect(analyze(longRun, new Map([[1, open]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'))).toHaveLength(1);
   });
   it('pluralizes "task" correctly for a single-task stage', () => {
@@ -1909,8 +1898,7 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
     const lowLong = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 4000 })]]);
     expect(analyze(makeApp({ endTime: 400_000 }), lowLong, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
     // A stage with no completion time is zero-length, not short: its note is kept.
-    // @ts-expect-error a stage still open has no completion time
-    const lowOpen = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 1000, completedAt: null })]]);
+    const lowOpen = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 1000, completedAt: 0 })]]);
     expect(analyze(makeApp({ endTime: 400_000 }), lowOpen, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
     const high = new Map([[1, makeTypedStage({ gcPct: 15, jvmGCTime: 9000, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
     expect(analyze(makeApp({ endTime: 400_000 }), high, [], []).find(ofType('gc', b => b.direction !== 'low'))).toBeTruthy();

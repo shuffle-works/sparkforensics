@@ -7,30 +7,12 @@ import { rankedRollup, rankCostMs } from '../src/recommendation-rollup.ts';
 import { buildNextSteps } from '../src/run-verdict.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
+import { present, firstOfType } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Finding} Finding */
 /** @typedef {import('../src/types.ts').Stage} Stage */
 
 const HOUR_MS = 3_600_000;
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
-
-/**
- * @template {Finding['type']} T
- * @param {Finding[]} catalog
- * @param {T} type
- */
-function firstOfType(catalog, type) {
-  return catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
-}
 
 // A 30-minute stage of `taskHours` summed task time, spread over `executors` executors.
 /**

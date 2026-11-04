@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeStageName, matchStages, stageIdentity } from '../src/run-comparison.js';
+import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Stage} Stage */
 /** @typedef {import('../src/types.ts').SparkAppInfo} SparkAppInfo */
@@ -16,16 +17,6 @@ import { normalizeStageName, matchStages, stageIdentity } from '../src/run-compa
  */
 function asRun(parts) {
   return /** @type {ComparedRun} */ (parts);
-}
-
-/** A value the test needs, so a missing one fails here rather than on a property read.
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('Expected a value.');
-  return value;
 }
 
 /** @param {string} executorId @returns {import('../src/types.ts').ExecutorAddedEvent} */

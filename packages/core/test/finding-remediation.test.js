@@ -5,6 +5,7 @@ import { buildEvidenceReport } from '../src/evidence-report.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { makeTypedStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { present } from './fixtures/present.js';
 
 const MiB = 1024 * 1024;
 const KRYO = 'org.apache.spark.serializer.KryoSerializer';
@@ -22,16 +23,6 @@ const KRYO = 'org.apache.spark.serializer.KryoSerializer';
 /** @typedef {import('../src/types.ts').AppModel['executors']['added'][number]} ExecutorAdded */
 /** @typedef {import('../src/types.ts').AppModel['executors']['removed'][number]} ExecutorRemoved */
 /** @typedef {Map<number, SqlExecution>} SqlMap */
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
 
 /**
  * A `find` predicate that narrows to one finding type.

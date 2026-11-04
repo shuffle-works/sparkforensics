@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
+import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Finding} Finding */
 /** @typedef {import('../src/types.ts').Stage} Stage */
@@ -12,16 +13,6 @@ import { computeOccupancy } from '../src/occupancy.js';
  * }} MinimalStage
  */
 /** @typedef {Map<number, MinimalStage>} MinimalStages */
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
 
 /** @param {MinimalFinding} f */
 const impactOf = (f) => present(f.impactEstimate);

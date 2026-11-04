@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks, computeTailReplayRecoveryMs } from '../src/stage-quantiles.ts';
+import { SparkEventSchema } from '../src/event-schemas.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, reportParseFailure, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { createModelCallbacks } from '../src/model-assembler.ts';
 import { routeMessage } from '../src/ingest.ts';
@@ -12,6 +13,7 @@ import { zstdCompressSync, zstdDecompressSync, gunzipSync } from 'node:zlib';
 import { existsSync, createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { present, findingOfType } from './fixtures/present.js';
 
 /** @typedef {import('../src/parser-messages.ts').ParserMessage} ParserMessage */
 /** @typedef {import('../src/event-schemas.ts').SparkEvent} SparkEvent */
@@ -25,18 +27,6 @@ import { fileURLToPath } from 'node:url';
 /** @typedef {import('../src/types.ts').Finding} Finding */
 /** @typedef {{ 'Use Disk': boolean, 'Use Memory': boolean, Deserialized: boolean, Replication: number }} StorageLevel */
 
-/**
- * The first catalog finding of `type`; fails the test when there is none.
- * @template {Finding['type']} T
- * @param {Finding[]} catalog
- * @param {T} type
- * @returns {Extract<Finding, { type: T }>}
- */
-function firstOfType(catalog, type) {
-  const found = catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
-  if (!found) throw new Error(`expected a ${type} finding`);
-  return found;
-}
 /** @typedef {import('../src/parser-worker.ts').ZstdDecoderFactory} ZstdDecoderFactory */
 /** @typedef {Parameters<typeof runParse>[0]} FileSource */
 
@@ -49,16 +39,6 @@ function firstOfType(catalog, type) {
  */
 function firstMessage(messages, type) {
   return messageOf(type, messages.find((m) => m.type === type) ?? null);
-}
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value, got ' + value);
-  return value;
 }
 
 /**
@@ -585,7 +565,7 @@ describe('processEvent: SQLExecutionStart', () => {
     expect(msg.type).toBe('sql');
     expect(msg.data.id).toBe(7);
     // Nothing downstream reads the plan's text rendering, so it is never retained.
-    expect(Reflect.get(msg.data, 'physicalPlanDescription')).toBeUndefined();
+    expect(msg.data).not.toHaveProperty('physicalPlanDescription');
   });
 });
 
@@ -1173,12 +1153,12 @@ describe('processEvent: SQLExecution accumulator tracking', () => {
 
   it('SparkListenerSQLExecutionStart with no sparkPlanInfo stores null', () => {
     const s = createState();
-    // @ts-expect-error the key is omitted on purpose: a log line may lack sparkPlanInfo, which the parsed type requires
-    processEvent({
+    // A log line may lack sparkPlanInfo; the schema fills it with null.
+    processEvent(SparkEventSchema.parse({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
       executionId: 8, description: 'q', time: 1000,
       physicalPlanDescription: '',
-    }, s);
+    }), s);
     expect(present(s.sqlExecutions.get(8)).sparkPlanInfo).toBeNull();
     expect(s.accumState.has(8)).toBe(false);
   });
@@ -1238,7 +1218,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
 
     const exec = present(state.sqlExecutions.get(1));
     expect(exec.sparkPlanInfo?.nodeName).toBe('NewPlan');
-    expect(Reflect.get(exec, 'physicalPlanDescription')).toBeUndefined();
+    expect(exec).not.toHaveProperty('physicalPlanDescription');
   });
 
   it('last-write-wins across two successive updates for the same execution', () => {
@@ -1293,11 +1273,11 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
     expect(result).not.toBeNull();
     expect(result.type).toBe('sql');
     expect(result.data.id).toBe(1);
-    expect(Reflect.get(result.data, 'hadAdaptiveUpdate')).toBe(true);
+    expect(result.data.hadAdaptiveUpdate).toBe(true);
     // The raw plan stays worker-side (the main thread reads the resolved sqlPlan tree instead).
-    expect(Reflect.get(result.data, 'sparkPlanInfo')).toBeNull();
+    expect(result.data.sparkPlanInfo).toBeNull();
     expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('NewPlan');
-    expect(Reflect.get(result.data, 'physicalPlanDescription')).toBeUndefined();
+    expect(result.data).not.toHaveProperty('physicalPlanDescription');
     // Shallow copy, not the same mutable reference the worker keeps mutating
     // (mirrors the real self.postMessage structured-clone boundary).
     expect(result.data).not.toBe(state.sqlExecutions.get(1));
@@ -1306,14 +1286,14 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
   it('preserves an existing sparkPlanInfo when the update event carries none (does not wipe it with null)', () => {
     const state = createState();
     processEvent(makeExecStart(1, simplePlan('OldPlan')), state);
-    // @ts-expect-error the key is omitted on purpose: an update line may carry no sparkPlanInfo, which the parsed type requires
-    const result = messageOf('sql', processEvent({
+    // An update line may carry no sparkPlanInfo; the schema fills it with null.
+    const result = messageOf('sql', processEvent(SparkEventSchema.parse({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate',
       executionId: 1, physicalPlanDescription: 'new plan',
-    }, state));
+    }), state));
 
     expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('OldPlan');
-    expect(Reflect.get(result.data, 'sparkPlanInfo')).toBeNull();
+    expect(result.data.sparkPlanInfo).toBeNull();
   });
 });
 
@@ -1933,8 +1913,8 @@ describe('dispatchLine: deferred AQE updates', () => {
     emitParseCompletion(state, (m) => emitted.push(m), 2);
     expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('Latest');
     const sqlMsgs = emitted.flatMap((m) => (m.type === 'sql' ? [m] : []));
-    expect(Reflect.get(sqlMsgs[sqlMsgs.length - 1].data, 'hadAdaptiveUpdate')).toBe(true);
-    expect(emitted.findIndex((m) => m.type === 'sql' && Reflect.get(m.data, 'hadAdaptiveUpdate'))).toBeLessThan(emitted.findIndex((m) => m.type === 'done'));
+    expect(sqlMsgs[sqlMsgs.length - 1].data.hadAdaptiveUpdate).toBe(true);
+    expect(emitted.findIndex((m) => m.type === 'sql' && m.data.hadAdaptiveUpdate)).toBeLessThan(emitted.findIndex((m) => m.type === 'done'));
   });
 });
 
@@ -4245,7 +4225,7 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
 
     const stages = new Map([[1, msg.data]]);
     const catalog = analyzedRunFrom({ app: null, stages }).catalog;
-    const finding = firstOfType(catalog, 'retryWaste');
+    const finding = findingOfType(catalog, 'retryWaste');
     expect(finding).toBeDefined();
     expect(finding.retriedTaskDetails).toHaveLength(3);
     expect(finding.retriedTaskDetails[0]).toMatchObject({
@@ -4270,7 +4250,7 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
 
     const stages = new Map([[1, msg.data]]);
     const catalog = analyzedRunFrom({ app: null, stages }).catalog;
-    const finding = firstOfType(catalog, 'stageFailed');
+    const finding = findingOfType(catalog, 'stageFailed');
     expect(finding).toBeDefined();
     expect(finding.failedTaskDetails).toEqual([
       { taskId: 200, attemptNumber: 0, host: 'worker-9.internal', executorId: 'exec-1', reason: 'ExecutorLostFailure', peakExecMem: 100, memSpilled: 0, shuffleWrite: 0 },

@@ -4,6 +4,7 @@ import { adviseFailure, adviseFailureGroup, adviseStageFailure } from '../src/fa
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { createState, processEvent } from '../src/parser-worker.js';
 import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { present, firstOfType } from './fixtures/present.js';
 
 const OVERHEAD = [{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: null }];
 const MAX_ATTEMPTS = [{ kind: 'conf', key: 'spark.stage.maxConsecutiveAttempts', direction: 'increase', suggested: null }];
@@ -16,15 +17,6 @@ const group = (overrides) => ({
 });
 
 /**
- * @template {Finding['type']} T
- * @param {Finding[]} catalog
- * @param {T} type
- */
-function firstOfType(catalog, type) {
-  return catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
-}
-
-/**
  * The finding of `rule` the stage produces; a missing one fails here rather than on a property read.
  * @template {Finding['type']} T
  * @param {T} rule
@@ -34,16 +26,6 @@ function findingOf(rule, stage) {
   const finding = firstOfType(analyzedRunFrom({ app: makeApp(), stages: new Map([[stage.id, stage]]) }).catalog, rule);
   if (!finding) throw new Error(`expected a ${rule} finding`);
   return finding;
-}
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
 }
 
 const CONTAINER_KILL = 'Container killed by YARN for exceeding memory limits. 10.4 GB of 10 GB physical memory used.';

@@ -4,22 +4,13 @@ import {
   isDeltaBookkeepingStage, NORMALIZE_PATH_TOKEN, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS,
 } from '../src/stage-alignment.js';
 import { stageIdentity, compareRuns } from '../src/run-comparison.js';
+import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Stage} Stage */
 /** @typedef {import('../src/types.ts').PlanNode} PlanNode */
 /** @typedef {import('../src/compared-run.ts').ComparedRun} ComparedRun */
 /** @typedef {Partial<Stage> & { id: number, nodes?: PlanNode[] | null }} StageSpec */
 /** @typedef {{ id: number, description?: string, stages: StageSpec[] }} ExecutionSpec */
-
-/** A value the test needs, so a missing one fails here rather than on a property read.
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('Expected a value.');
-  return value;
-}
 
 // All names, paths and ids below are synthetic.
 

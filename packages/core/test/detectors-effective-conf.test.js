@@ -3,29 +3,11 @@ import { auditConfig } from '../src/analyzer.js';
 import { extractResources } from '../src/event-handlers.ts';
 import { makeTypedStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
+import { present, firstOfType } from './fixtures/present.js';
 
 const MiB = 1024 * 1024;
 
 /** @typedef {import('../src/types.ts').Finding} Finding */
-
-/** A finding the test needs, so a missing one fails here rather than on a property read.
- * @template T
- * @param {T | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value === undefined) throw new Error('Expected a finding.');
-  return value;
-}
-
-/**
- * @template {Finding['type']} T
- * @param {Finding[]} catalog
- * @param {T} type
- */
-function firstOfType(catalog, type) {
-  return catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
-}
 
 /** @param {Finding} f @returns {f is import('../src/finding-types.ts').PartitionSizingFinding} */
 const isLowParallelism = (f) => f.type === 'partitionSizing' && f.rule === 'lowShuffleParallelism';

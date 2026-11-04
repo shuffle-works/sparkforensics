@@ -3,22 +3,13 @@ import { recommendationParts } from '../src/finding-names.js';
 import { attributeSpill, describeSpillCause, exchangeWidth, spillToInputRatio } from '../src/spill-attribution.js';
 import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
+import { present } from './fixtures/present.js';
 
 const TB = 1e12;
 const GB = 1e9;
 
 /** @typedef {import('../src/types.ts').PlanNode} PlanNode */
 /** @typedef {NonNullable<PlanNode['metrics']>[number]} PlanMetric */
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
 
 /** @param {string} name @param {number} value @returns {PlanMetric} */
 const sized = (name, value) => ({ name, value, metricType: 'size', executorSide: true });

@@ -4,6 +4,7 @@ import { makeTypedStage, dataTail } from './fixtures/stage-app-fixtures.js';
 import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
+import { present, firstOfType } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').AppModel} AppModel */
 /** @typedef {import('../src/types.ts').SparkAppInfo} SparkAppInfo */
@@ -11,26 +12,6 @@ import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 /** @typedef {import('../src/types.ts').Job} Job */
 /** @typedef {import('../src/evidence-report.ts').EvidenceReportJson} EvidenceReportJson */
 /** @typedef {AppModel & { app: SparkAppInfo }} FixtureModel */
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
-
-/**
- * The first row of a type, or undefined.
- * @template {FindingRow['type']} T
- * @param {FindingRow[]} rows
- * @param {T} type
- */
-function rowOfType(rows, type) {
-  return rows.find(/** @returns {r is Extract<FindingRow, { type: T }>} */ (r) => r.type === type);
-}
 
 /**
  * The detector catalog a report embeds.
@@ -83,7 +64,7 @@ describe('buildEvidenceReport', () => {
     const fx = fixture();
     fx.stages.set(3, makeTypedStage({ id: 3, memoryBytesSpilled: 64 * 1024 * 1024 }));
     const { markdown, json } = buildEvidenceReport(fx);
-    const spill = present(rowOfType(json.findings, 'spill'));
+    const spill = present(firstOfType(json.findings, 'spill'));
     expect(spill).toBeTruthy();
     expect('spillMagnitude' in spill.evidence).toBe(false);
     expect(markdown).not.toContain('undefined');
@@ -119,7 +100,7 @@ describe('buildEvidenceReport', () => {
     // A low-confidence spill finding carries confidence + validationRequired.
     fx.stages.set(3, makeTypedStage({ id: 3, memoryBytesSpilled: 100 * 1024 * 1024 }));
     const { json } = buildEvidenceReport(fx);
-    const spill = present(rowOfType(json.findings, 'spill'));
+    const spill = present(firstOfType(json.findings, 'spill'));
     expect(spill.confidence).toBeTruthy();
     expect(spill.validationRequired).toBeTruthy();
   });
@@ -139,7 +120,7 @@ describe('buildEvidenceReport', () => {
     }]]);
 
     const { json, markdown } = buildEvidenceReport(fx);
-    const row = present(rowOfType(json.findings, 'smallFiles'));
+    const row = present(firstOfType(json.findings, 'smallFiles'));
 
     expect(row).toBeTruthy();
     expect(row.evidence).not.toHaveProperty('planNodeIds');
@@ -165,7 +146,7 @@ describe('buildEvidenceReport', () => {
     const fx = fixture();
     fx.stages.set(3, makeTypedStage({ id: 3, stageFailureReason: 'FetchFailed: lost executor' }));
     const { json, markdown } = buildEvidenceReport(fx);
-    const row = present(rowOfType(json.findings, 'stageFailed'));
+    const row = present(firstOfType(json.findings, 'stageFailed'));
     expect(row.value).toBeNull();
     expect(row.valueText).toBe('FetchFailed: lost executor');
     expect(row.evidence).not.toHaveProperty('valueText');
@@ -410,7 +391,7 @@ describe('buildEvidenceReport', () => {
         expect(typeof row.actionLabel).toBe('string');
         expect(row.actionLabel.length).toBeGreaterThan(0);
       }
-      const skew = present(rowOfType(json.findings, 'skew'));
+      const skew = present(firstOfType(json.findings, 'skew'));
       expect(skew.actionLabel).toBe('Fix task skew');
     });
 
@@ -748,7 +729,7 @@ describe('buildEvidenceReport: tuned thresholds', () => {
 
   it('labels the tuned finding, the tuned clean check, the catalog row and the summary', () => {
     const { json } = buildEvidenceReport(fixture(), { thresholds });
-    const skew = present(rowOfType(json.findings, 'skew'));
+    const skew = present(firstOfType(json.findings, 'skew'));
     expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
     expect(skew.validationRequired).toContain('estimate is unvalidated');
     // 2 GiB shuffled, under the tuned 4 GiB floor: shuffle becomes a clean check measured against it.

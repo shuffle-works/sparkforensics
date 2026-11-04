@@ -6,6 +6,7 @@ import { createMcpServer, MCP_TOOL_NAMES } from '../src/mcp-server-factory.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { findingOfType } from './fixtures/present.js';
 
 /** @typedef {Awaited<ReturnType<Client['callTool']>>} ToolResult */
 /**
@@ -38,18 +39,6 @@ function textOf(result) {
   const [first] = /** @type {{ type: string, text?: string }[]} */ (result.content);
   if (first?.text === undefined) throw new Error('expected a text content block');
   return first.text;
-}
-
-/**
- * @template {{ type: string }} T
- * @param {T[]} findings
- * @param {string} type
- * @returns {T}
- */
-function findingOfType(findings, type) {
-  const found = findings.find((f) => f.type === type);
-  if (!found) throw new Error(`expected a ${type} finding`);
-  return found;
 }
 
 function tmpEventLog() {

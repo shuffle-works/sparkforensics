@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs } from '../src/occupancy.js';
 import { mergeIntervals } from '../src/intervals.js';
+import { present } from './fixtures/present.js';
 
 /**
  * @param {number} id
@@ -9,16 +10,6 @@ import { mergeIntervals } from '../src/intervals.js';
  */
 function stage(id, opts) {
   return { id, submittedAt: 0, completedAt: 0, ...opts };
-}
-
-/**
- * @template T
- * @param {T | null | undefined} value
- * @returns {T}
- */
-function present(value) {
-  if (value == null) throw new Error('expected a value');
-  return value;
 }
 
 describe('computeOccupancyMs', () => {
