@@ -3,33 +3,54 @@ import { fileURLToPath } from 'node:url';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { joinKeyCastOf } from '../src/join-key-cast.js';
 import { parseJoinKeys, partitioningArgs, summarizePlanTree } from '../src/plan-summary.js';
-import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
+
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
 
 // A decimal(18,0) column joined to a bigint column, then a window over the decimal column, run on
 // Spark 3.5.3 in local mode with auto-broadcast and AQE off, and cut down for the repo.
 const SPIKE_LOG = fileURLToPath(new URL('./fixtures/join-key-cast-spark-3.5.3.ndjson', import.meta.url));
 
+/**
+ * @param {string} name
+ * @param {string} detail
+ * @param {PlanNode[]} [children]
+ * @param {Partial<PlanNode>} [extra]
+ * @returns {PlanNode}
+ */
 const node = (name, detail, children = [], extra = {}) => ({ id: `${name}-${detail}`, name, detail, children, stageIds: [1], ...extra });
 // A split Exchange: the read half over its write half, which carries the data size.
+/**
+ * @param {string} detail
+ * @param {PlanNode} child
+ * @param {number} [bytes]
+ */
 const exchange = (detail, child, bytes = 4096) => node('Exchange', `Exchange ${detail}, ENSURE_REQUIREMENTS`, [
   node('Exchange', '', [child], { exchangeRole: 'write', metrics: [{ name: 'data size', value: bytes }] }),
 ], { exchangeRole: 'read' });
+/** @param {string} name */
 const scan = (name) => node('Scan', name);
 
 const DECIMAL_JOIN = 'SortMergeJoin [cast(k#2 as decimal(20,0))], [cast(k#8L as decimal(20,0))], Inner';
 
+/** @param {string} detail */
 const joinOf = (detail) => node(detail.split(' ')[0], detail, [scan('a'), scan('b')]);
 
+/** @param {PlanNode} root */
 function parentsOf(root) {
+  /** @type {Map<PlanNode, PlanNode | null>} */
   const parents = new Map();
+  /** @param {PlanNode} n @param {PlanNode | null} parent */
   const visit = (n, parent) => { parents.set(n, parent); n.children.forEach((c) => visit(c, n)); };
   visit(root, null);
   return parents;
 }
 
+/** @param {PlanNode} root */
 function castOf(root) {
   const parents = parentsOf(root);
   const join = [...parents.keys()].find((n) => /Join/.test(n.name));
+  if (join === undefined) throw new Error('The plan has no join.');
   return joinKeyCastOf(join, parents);
 }
 
@@ -69,13 +90,14 @@ describe('parseJoinKeys', () => {
 });
 
 describe('joinKeyCastOf', () => {
+  /** @param {PlanNode} child */
   const window = (child) => node('Window', 'Window [row_number()]', [node('Sort', 'Sort [k#2 ASC]', [child])]);
 
   it('names the cast keys and the exchange that shuffles by the uncast column', () => {
     const root = window(exchange('hashpartitioning(k#2, 4)', node('Project', 'Project [k#2]', [joinOf(DECIMAL_JOIN)])));
     const found = castOf(root);
     expect(found).toMatchObject({ operator: 'SortMergeJoin', castKeys: ['cast(k as decimal(20,0))'], exchangeKeys: ['k'] });
-    expect(found.exchange.exchangeRole).toBe('read');
+    expect(found?.exchange.exchangeRole).toBe('read');
   });
 
   it('finds the exchange after a partial aggregate', () => {
@@ -138,6 +160,7 @@ describe('joinKeyCastOf', () => {
   });
 
   it('needs every key of a later join to match the cast side, not just cover it', () => {
+    /** @param {string} hash */
     const later = (hash) => {
       const cast = joinOf('SortMergeJoin [cast(a#1 as decimal(20,0))], [x#7L], Inner');
       const root = node('SortMergeJoin', 'SortMergeJoin [a#1, d#4], [b#5, e#6], Inner', [
@@ -158,9 +181,10 @@ describe('joinKeyCastOf', () => {
 });
 
 describe('joinKeyCast finding', () => {
+  /** @param {PlanNode} planTree */
   function findingsFor(planTree) {
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1, completedAt: 10_000, taskActiveMs: 10_000 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1, completedAt: 10_000, taskActiveMs: 10_000 })]]);
     return analyzedRunFrom({ app: makeApp({ endTime: 10_000 }), stages, sql }).catalog.filter((f) => f.type === 'joinKeyCast');
   }
 

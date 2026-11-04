@@ -8,27 +8,36 @@ import { Decompress } from '../src/vendor/fzstd.js';
 // blocks, frames with different windows one after another, and pushes that cut blocks anywhere.
 const enc = new TextEncoder();
 let seed = 11;
+/** @param {number} k */
 const rand = (k) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed % k; };
 const words = Array.from({ length: 400 }, (_, i) => `w${i.toString(36)}${'x'.repeat(i % 9)}`);
+/** @param {number} bytes */
 const text = (bytes) => {
   let s = '';
   while (s.length < bytes) s += `{"Event":"${words[rand(words.length)]}","v":${rand(1e6)},"s":"${words[rand(words.length)]}"}\n`;
   return enc.encode(s.slice(0, bytes));
 };
+/** @param {number} bytes */
 const noise = (bytes) => Uint8Array.from({ length: bytes }, () => rand(256));
+/** @param {Uint8Array[]} parts */
 const concat = (parts) => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
 };
+/** @param {Uint8Array} content @param {number} [windowLog] */
 const frame = (content, windowLog) => new Uint8Array(zstdCompressSync(content, windowLog
   ? { params: { [constants.ZSTD_c_windowLog]: windowLog } } : {}));
 
+/** @param {Uint8Array} bytes @param {number} pushSize */
 function decode(bytes, pushSize) {
+  /** @type {Uint8Array[]} */
   const out = [];
   // Copy each chunk: it is a view of the decoder's reused buffer, valid only during ondata.
-  const d = new Decompress((chunk) => out.push(chunk.slice()));
+  // The vendored ES5-style constructor has no construct signature for `new` to type-check.
+  /** @type {{ push(chunk: Uint8Array, final?: boolean): void }} */
+  const d = Reflect.construct(Decompress, [(/** @type {Uint8Array} */ chunk) => out.push(chunk.slice())]);
   for (let o = 0; o < bytes.length; o += pushSize) d.push(bytes.subarray(o, o + pushSize), o + pushSize >= bytes.length);
   return concat(out);
 }

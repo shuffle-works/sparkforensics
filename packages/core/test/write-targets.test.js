@@ -6,14 +6,26 @@ import { extractWriteTargets } from '../src/write-targets.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { emptyAppModel } from '../src/run-serialization.ts';
 
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+
+/** @param {string} name */
 const fixture = (name) => JSON.parse(readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', name), 'utf8'));
 
+/**
+ * @param {string} name
+ * @param {string} detail
+ * @param {Partial<PlanNode>} [extra]
+ * @returns {PlanNode}
+ */
 const node = (name, detail, extra = {}) => ({ name, detail, metrics: [], children: [], ...extra });
+/** @param {PlanNode[]} plans */
 const sqlOf = (...plans) => new Map(plans.map((planTree, i) => [i, { id: i, planTree }]));
+/** @param {PlanNode} plan */
 const writesOf = (plan) => extractWriteTargets(sqlOf(plan)).writes;
 
 describe('extractWriteTargets', () => {
+  /** @type {{ case: string, name: string, detail: string, kind: string | null, target: string | null }[]} */
   const cases = fixture('write-node-details.json');
   it.each(cases)('$case', ({ name, detail, kind, target }) => {
     const [write] = writesOf(node(name, detail, { id: 'n1' }));
@@ -159,7 +171,12 @@ describe('evidence report writeTargets contract', () => {
 });
 
 describe('mergeRows', () => {
+  /** @param {PlanNode['metrics']} metrics */
   const merge = (metrics) => node('Execute MergeIntoCommand', 'Execute MergeIntoCommand', { id: 'n1', metrics });
+  /**
+   * @param {string} name
+   * @param {number} value
+   */
   const metric = (name, value) => ({ name, value });
 
   it('reads the four counts from a MergeIntoCommand node; outputRows excludes the deleted count', () => {
@@ -187,8 +204,17 @@ describe('mergeRows', () => {
 });
 
 describe('command output figures', () => {
+  /**
+   * @param {string} name
+   * @param {PlanNode['metrics']} metrics
+   */
   const cmd = (name, metrics) => node(`Execute ${name}`, `Execute ${name}`, { id: 'n1', metrics });
+  /**
+   * @param {string} name
+   * @param {number} value
+   */
   const metric = (name, value) => ({ name, value });
+  /** @param {import('../src/write-targets.ts').WriteTarget} w */
   const figures = (w) => ({ rows: w.outputRows, source: w.outputRowsSource, bytes: w.outputBytes });
 
   it('sums a MERGE\'s inserted, updated and copied rows and reads its bytes added', () => {

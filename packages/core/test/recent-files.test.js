@@ -9,8 +9,23 @@ import {
 // Fresh DB per test: replace the global factory so each test is isolated.
 beforeEach(() => { globalThis.indexedDB = new IDBFactory(); });
 
+// The optional `getFile` shares a property with the module's all-optional handle type, so the fake
+// is accepted as a handle without carrying any method.
+/**
+ * @param {string} tag
+ * @returns {{ __tag: string, getFile?: undefined }}
+ */
 function fakeHandle(tag) { return { __tag: tag }; }
 
+/** @param {unknown} handle */
+function tagOf(handle) {
+  return typeof handle === 'object' && handle !== null && '__tag' in handle ? handle.__tag : undefined;
+}
+
+/**
+ * @param {string} name
+ * @param {{ appName?: string, issueCount?: number }} [extra]
+ */
 function mkEntry(name, size = 100, lastModified = 1, extra = {}) {
   return { handle: fakeHandle(name), name, size, lastModified, appName: null, issueCount: null, ...extra };
 }
@@ -23,7 +38,7 @@ describe('recent-files', () => {
     expect(all[0].name).toBe('app-a');
     expect(all[0].appName).toBe('App A');
     expect(all[0].issueCount).toBe(4);
-    expect(all[0].handle.__tag).toBe('app-a');
+    expect(tagOf(all[0].handle)).toBe('app-a');
     expect(all[0].id).toBe(entryId('app-a', 76, 10));
   });
 
@@ -64,7 +79,7 @@ describe('recent-files', () => {
   it('returns the stored handle by id', async () => {
     await add(mkEntry('a'));
     const h = await getHandle(entryId('a', 100, 1));
-    expect(h.__tag).toBe('a');
+    expect(tagOf(h)).toBe('a');
   });
 
   it('applyUpgrade clears the store (version-bump invalidation)', async () => {

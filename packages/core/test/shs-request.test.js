@@ -8,6 +8,12 @@ import {
   validateShsRequest,
 } from '../src/shs-request.js';
 
+/** @param {{ request: import('../src/shs-request.js').ShsRequest | null }} result */
+function requestOf(result) {
+  if (result.request === null) throw new Error('Expected a valid SHS request.');
+  return result.request;
+}
+
 describe('SHS request contract', () => {
   it('normalizes a reverse-proxy base path and encodes a separate attempt', () => {
     const result = validateShsRequest({
@@ -22,7 +28,7 @@ describe('SHS request contract', () => {
       appId: 'application_0000000000000_0001',
       attemptId: '2',
     });
-    expect(buildUpstreamUrl(result.request)).toBe(
+    expect(buildUpstreamUrl(requestOf(result))).toBe(
       'https://history.example/shs/api/v1/applications/application_0000000000000_0001/2/logs',
     );
   });
@@ -52,16 +58,17 @@ describe('SHS request contract', () => {
       baseUrl: 'https://history.example/shs', appId: 'application_1_2', attemptId: '',
     });
 
-    expect(buildProxyRequestUrl(withAttempt.request)).toBe(
+    expect(buildProxyRequestUrl(requestOf(withAttempt))).toBe(
       '/shs-proxy?baseUrl=https%3A%2F%2Fhistory.example%2Fshs%2F&appId=application_1_2&attemptId=3',
     );
-    expect(buildProxyRequestUrl(withoutAttempt.request)).toBe(
+    expect(buildProxyRequestUrl(requestOf(withoutAttempt))).toBe(
       '/shs-proxy?baseUrl=https%3A%2F%2Fhistory.example%2Fshs%2F&appId=application_1_2',
     );
   });
 
   it('builds a proxy query without URLSearchParams', () => {
     const original = globalThis.URLSearchParams;
+    // @ts-expect-error the test removes the global to exercise the fallback
     globalThis.URLSearchParams = undefined;
     try {
       expect(buildProxyRequestUrl({
@@ -72,7 +79,7 @@ describe('SHS request contract', () => {
     }
   });
 
-  it.each([
+  it.each(/** @type {[string, { baseUrl: string, appId: string, attemptId?: string }, keyof import('../src/shs-request.js').ShsRequestErrors][]} */ ([
     ['credentials', { baseUrl: 'https://user:pass@history.example', appId: 'application_1_2' }, 'baseUrl'],
     ['query string', { baseUrl: 'https://history.example/shs?x=1', appId: 'application_1_2' }, 'baseUrl'],
     ['empty query delimiter', { baseUrl: 'https://history.example/shs?', appId: 'application_1_2' }, 'baseUrl'],
@@ -90,12 +97,12 @@ describe('SHS request contract', () => {
     ['driver non-numeric', { baseUrl: 'https://history.example', appId: 'driver-abc' }, 'appId'],
     ['attempt traversal', { baseUrl: 'https://history.example', appId: 'application_1_2', attemptId: '..' }, 'attemptId'],
     ['attempt path separator', { baseUrl: 'https://history.example', appId: 'application_1_2', attemptId: '1/2' }, 'attemptId'],
-  ])('rejects %s with a field-specific error and no request', (_label, input, invalidField) => {
+  ]))('rejects %s with a field-specific error and no request', (_label, input, invalidField) => {
     const result = validateShsRequest(input);
 
     expect(result.request).toBeNull();
     expect(result.errors[invalidField]).not.toBeNull();
-    for (const field of ['baseUrl', 'appId', 'attemptId']) {
+    for (const field of /** @type {(keyof import('../src/shs-request.js').ShsRequestErrors)[]} */ (['baseUrl', 'appId', 'attemptId'])) {
       if (field !== invalidField) expect(result.errors[field]).toBeNull();
     }
   });
@@ -121,9 +128,11 @@ describe('SHS request contract', () => {
   });
 
   it('does not consider a missing request valid', () => {
-    expect(isShsRequestValid({
+    const result = {
       request: undefined,
       errors: { baseUrl: null, appId: null, attemptId: null },
-    })).toBe(false);
+    };
+
+    expect(isShsRequestValid(result)).toBe(false);
   });
 });

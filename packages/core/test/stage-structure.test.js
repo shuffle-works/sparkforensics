@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { attributeNames, structuralKey, detailTokens, jaccard } from '../src/stage-structure.js';
 
+/**
+ * @param {string} name
+ * @param {string} detail
+ * @param {import('../src/types.ts').PlanNode[]} [children]
+ * @returns {import('../src/types.ts').PlanNode}
+ */
 const node = (name, detail, children = []) => ({ name, detail, metrics: [], children });
 
 describe('attributeNames', () => {

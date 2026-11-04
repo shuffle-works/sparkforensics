@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkConcurrentJobGroups } from '../src/job-groups.js';
 
+/** @param {{ id: number, submissionTime: number, completionTime: number, sqlExecutionId?: number | null }[]} list */
 function jobsMap(list) { return new Map(list.map(j => [j.id, j])); }
 
 describe('checkConcurrentJobGroups', () => {

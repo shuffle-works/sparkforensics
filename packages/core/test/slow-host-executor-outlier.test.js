@@ -1,9 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
-import { makeStage, makeApp, executorRow } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp, executorRow } from './fixtures/stage-app-fixtures.js';
+
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {Partial<Record<Exclude<keyof import('../src/stage-quantiles.ts').StageExecutorStat, 'executorId'>, number | null>>} LooseExecutorRow */
 
 // A deterministic spread of task durations around `centerMs`: `count` values whose ln runs evenly
 // across +-`logSpread`, rotated by `offset` so executors don't all get the same set.
+/**
+ * @param {number} centerMs
+ * @param {number} count
+ * @param {number} logSpread
+ * @param {number} [offset]
+ */
 function spreadDurations(centerMs, count, logSpread, offset = 0) {
   return Array.from({ length: count }, (_, i) => {
     const slot = (i + offset) % count;
@@ -14,21 +23,39 @@ function spreadDurations(centerMs, count, logSpread, offset = 0) {
 
 // `executors` executors of `tasksEach` tasks over a 1000 s run, one stage of 900 s. The first
 // executor's tasks run `slowdown` times longer than its peers', which all draw from the same spread.
+/**
+ * @param {{ executors: number, tasksEach: number, logSpread: number, slowdown: number, centerMs?: number }} shape
+ * @returns {{ app: import('../src/types.ts').SparkAppInfo, stages: Map<number, Stage> }}
+ */
 function slowExecutorStage({ executors, tasksEach, logSpread, slowdown, centerMs = 100_000 }) {
   const rows = Array.from({ length: executors }, (_, i) => {
     const durations = spreadDurations(centerMs, tasksEach, logSpread, i);
     return executorRow(`exec-${i}`, i === 0 ? durations.map((d) => Math.round(d * slowdown)) : durations);
   });
   const app = makeApp({ startTime: 0, endTime: 1_000_000 });
-  const stage = makeStage({
+  const stage = makeTypedStage({
     taskCount: executors * tasksEach, submittedAt: 0, completedAt: 900_000, hostStats: [],
     executorStats: rows, taskDurationP50: centerMs,
   });
   return { app, stages: new Map([[1, stage]]) };
 }
 
+/**
+ * @param {import('../src/types.ts').Finding} f
+ * @returns {f is import('../src/finding-types.ts').SlowHostMultiDimFinding}
+ */
+const isMultiDim = (f) => f.type === 'slowHost' && f.variant === 'multiDim';
+
+/** @param {Map<number, Stage>} stages */
+function firstStage(stages) {
+  const stage = stages.get(1);
+  if (!stage) throw new Error('stage 1 is missing');
+  return stage;
+}
+
+/** @param {{ app: import('../src/types.ts').SparkAppInfo, stages: Map<number, Stage> }} fixture */
 const taskTimeFindings = ({ app, stages }) =>
-  analyzedRunFrom({ app, stages }).catalog.filter((f) => f.type === 'slowHost' && f.variant === 'multiDim' && f.dimension === 'taskTime');
+  analyzedRunFrom({ app, stages }).catalog.filter(isMultiDim).filter((f) => f.dimension === 'taskTime');
 
 describe('slowHost task time: an executor must stand out from the stage\'s own spread', () => {
   it('does not flag the slowest of 75 executors whose tasks vary as much as the gap (chance outlier)', () => {
@@ -65,7 +92,7 @@ describe('slowHost task time: an executor must stand out from the stage\'s own s
 
   it('reports the executor the spread rules out, not a slower one that ran too few tasks to tell', () => {
     const fixture = slowExecutorStage({ executors: 20, tasksEach: 10, logSpread: 0.3, slowdown: 1.6 });
-    const stage = fixture.stages.get(1);
+    const stage = firstStage(fixture.stages);
     // A second executor, slower still on its single task: one task is within the spread.
     stage.executorStats.push(executorRow('exec-lone', [Math.round(100_000 * 1.7)]));
     stage.taskCount += 1;
@@ -75,10 +102,11 @@ describe('slowHost task time: an executor must stand out from the stage\'s own s
   });
 
   describe('without a known spread', () => {
+    /** @param {(row: LooseExecutorRow) => void} mutate */
     const withoutSpread = (mutate) => {
       const fixture = slowExecutorStage({ executors: 10, tasksEach: 16, logSpread: 0.05, slowdown: 1.8 });
       expect(taskTimeFindings(fixture)).toHaveLength(1); // the control: flagged with the spread present
-      fixture.stages.get(1).executorStats.forEach(mutate);
+      firstStage(fixture.stages).executorStats.forEach(mutate);
       return fixture;
     };
 
@@ -110,27 +138,29 @@ describe('slowHost task time: an executor must stand out from the stage\'s own s
 
   it('keeps the byte dimensions on the plain ratio test', () => {
     const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 16, logSpread: 0.05, slowdown: 1 });
-    stages.get(1).executorStats.forEach((e, i) => { e.inputBytes = i === 0 ? 200 * 1024 * 1024 : 20 * 1024 * 1024; delete e.logDurationM2; });
-    const found = analyzedRunFrom({ app, stages }).catalog.filter((f) => f.type === 'slowHost' && f.dimension === 'inputBytes');
+    firstStage(stages).executorStats.forEach((/** @type {LooseExecutorRow} */ e, i) => { e.inputBytes = i === 0 ? 200 * 1024 * 1024 : 20 * 1024 * 1024; delete e.logDurationM2; });
+    const found = analyzedRunFrom({ app, stages }).catalog.filter(isMultiDim).filter((f) => f.dimension === 'inputBytes');
     expect(found).toHaveLength(1);
     expect(found[0].executorId).toBe('exec-0');
   });
 
   describe('on stages whose tasks are all alike', () => {
     // A seeded generator, so the stages and the count below never change between runs.
+    /** @param {number} seed */
     function seededGaussian(seed) {
       let state = seed;
       const uniform = () => (state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32;
       return () => Math.sqrt(-2 * Math.log(uniform() + 1e-12)) * Math.cos(2 * Math.PI * uniform());
     }
 
+    /** @param {{ executors: number, tasksEach: number, logSpread: number, stages?: number }} shape */
     const flaggedShare = ({ executors, tasksEach, logSpread, stages = 300 }) => {
       const gaussian = seededGaussian(7 * executors + tasksEach);
       let flagged = 0;
       for (let s = 0; s < stages; s++) {
         const rows = Array.from({ length: executors }, (_, i) =>
           executorRow(`exec-${i}`, Array.from({ length: tasksEach }, () => Math.round(100_000 * Math.exp(logSpread * gaussian())))));
-        const stage = makeStage({ taskCount: executors * tasksEach, submittedAt: 0, completedAt: 900_000, hostStats: [], executorStats: rows });
+        const stage = makeTypedStage({ taskCount: executors * tasksEach, submittedAt: 0, completedAt: 900_000, hostStats: [], executorStats: rows });
         if (taskTimeFindings({ app: makeApp({ startTime: 0, endTime: 1_000_000 }), stages: new Map([[1, stage]]) }).length > 0) flagged++;
       }
       return flagged / stages;

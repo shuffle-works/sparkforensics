@@ -3,12 +3,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 vi.mock('node:fs', async (importOriginal) => {
+  /** @type {typeof import('node:fs')} */
   const actual = await importOriginal();
-  const readFileSync = (path, ...rest) => {
+  /** @param {Parameters<typeof actual.readFileSync>} args */
+  const readFileSync = (...args) => {
+    const [path] = args;
     if (String(path).includes('docs-content')) {
       throw Object.assign(new Error(`ENOENT: no such file or directory, open '${path}'`), { code: 'ENOENT' });
     }
-    return actual.readFileSync(path, ...rest);
+    return actual.readFileSync(...args);
   };
   return { ...actual, readFileSync, default: { ...actual, readFileSync } };
 });
@@ -32,6 +35,6 @@ describe('documentation tools on an unreadable bundled file', () => {
     const result = await client.callTool({ name, arguments: args });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toEqual({ code: 'access-or-upstream-failure' });
-    expect(result.content[0].text).toBe('A documentation file could not be read (ENOENT).');
+    expect(result.content).toHaveProperty('0.text', 'A documentation file could not be read (ENOENT).');
   });
 });

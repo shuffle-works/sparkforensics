@@ -17,6 +17,7 @@ const LOGS = EXTERNAL_DIR
 
 // The fields this change adds or redefines, per finding, as each surface reads them.
 // Through JSON, as the export and the CLI/MCP output carry them.
+/** @param {{ recommendation?: string | null, remediation?: readonly unknown[], impactEstimate?: unknown }} f */
 const shared = (f) => JSON.parse(JSON.stringify({
   recommendation: f.recommendation ?? null,
   remediation: f.remediation ?? [],
@@ -27,6 +28,7 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
   it('the dashboard, HTML export, CLI report and MCP tools read one remediation and impact figure per finding', async () => {
     let withRemediation = 0;
     let withCoreTime = 0;
+    if (!EXTERNAL_DIR) throw new Error('corpus directory missing');
     for (const file of LOGS) {
       const path = join(EXTERNAL_DIR, file);
       // Dashboard: the run useIngest installs, which analyzeRun builds.
@@ -41,12 +43,15 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
       // CLI json and markdown path, and MCP diagnose_run.
       const { json } = buildEvidenceReport(appModel);
       const { runId } = await resolveOrCreateRun({ source: { path } });
-      const mcp = diagnoseRun(runId, { minBand: 'info' }).findings;
+      // The default full view lists full rows; the filter narrows the type to them.
+      const mcp = diagnoseRun(runId, { minBand: 'info' }).findings.filter((row) => 'remediation' in row);
 
-      for (const [surface, rows] of [['cli', json.findings], ['mcp', mcp]]) {
+      /** @type {[string, typeof mcp][]} */
+      const surfaces = [['cli', json.findings], ['mcp', mcp]];
+      for (const [surface, rows] of surfaces) {
         expect(rows.length, `${file} ${surface}`).toBe(dashboard.size);
         for (const row of rows) {
-          expect(shared(row), `${file} ${surface} ${row.type} ${row.id}`).toEqual(dashboard.get(row.id));
+          expect(shared(row), `${file} ${surface} ${row.type} ${row.id}`).toEqual(dashboard.get(row.id ?? undefined));
         }
       }
       expect(exportedFindings, file).toEqual(dashboard);
@@ -56,9 +61,11 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
       const cliById = new Map(json.findings.map((r) => [r.id, r]));
       const mcpById = new Map(mcp.map((r) => [r.id, r]));
       [...catalog, ...config].forEach((f) => {
+        if (f.id === undefined) throw new Error(`${file}: finding ${f.type} has no id`);
         const { board, meaning } = interpretation.savings[f.id];
         if (board == null || f.impactEstimate?.wallClock) return;
-        for (const [surface, row] of [['cli', cliById.get(f.id)], ['mcp', mcpById.get(f.id)]]) {
+        for (const [surface, row] of /** @type {const} */ ([['cli', cliById.get(f.id)], ['mcp', mcpById.get(f.id)]])) {
+          if (!row) throw new Error(`${file} ${surface}: no row for ${f.id}`);
           expect({ impact: row.impact, impactMeaning: row.impactMeaning }, `${file} ${surface} ${f.type} ${f.id}`)
             .toEqual({ impact: board, impactMeaning: meaning });
         }
@@ -87,6 +94,7 @@ const METRIC_LOGS = [
 // share. The comparison of a run with itself exposes its totals as baseline values.
 describe.each(METRIC_LOGS)('surface parity: %s', (path) => {
   it.skipIf(!path)('reads one figure per name across metrics, report and comparison', async () => {
+    if (!path) throw new Error('corpus log missing');
     const { appModel, catalog } = analyzeRun((await collectRun(path)).appModel);
     const metrics = computeRunMetrics(appModel);
     const { json: report } = buildEvidenceReport(appModel);
@@ -103,7 +111,7 @@ describe.each(METRIC_LOGS)('surface parity: %s', (path) => {
     expect(byKey.outputBytes).toEqual(metrics.data.outputBytes);
     expect(byKey.taskCount).toEqual(metrics.shape.taskCount);
     expect(byKey.allocatedCoreHours).toEqual(metrics.allocation.coreHours);
-    if (metrics.shape.taskCount) expect(byKey.failedTaskRate).toBeCloseTo(metrics.shape.failedTasks / metrics.shape.taskCount, 10);
+    if (metrics.shape.taskCount) expect(byKey.failedTaskRate).toBeCloseTo((metrics.shape.failedTasks ?? 0) / metrics.shape.taskCount, 10);
 
     // Run shape and status: the report's summary is the dashboard's and MCP's figure.
     expect(metrics.time.wallClockMs).toEqual(report.summary.runShape.wallClockMs);

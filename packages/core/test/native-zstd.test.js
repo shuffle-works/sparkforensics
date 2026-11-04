@@ -5,8 +5,10 @@ import { createNativeZstdDecoder, createThreadedZstdDecoder, nativeZstdAvailable
 const enc = new TextEncoder();
 const text = Array.from({ length: 400 }, (_, i) => `{"Event":"E${i}","v":"${'x'.repeat(i % 37)}€"}\n`).join('');
 // Spark-style: many small frames, one per flush.
+/** @type {Uint8Array[]} */
 const frames = [];
 for (let o = 0; o < text.length; o += 1000) frames.push(new Uint8Array(zstdCompressSync(enc.encode(text.slice(o, o + 1000)))));
+/** @param {Uint8Array[]} parts */
 const concat = (parts) => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let o = 0;
@@ -14,10 +16,20 @@ const concat = (parts) => {
   return out;
 };
 const multiFrame = concat(frames);
+/** @param {Uint8Array} payload */
 const skippable = (payload) => concat([new Uint8Array([0x50, 0x2a, 0x4d, 0x18, payload.length, 0, 0, 0]), payload]);
 
+/** @typedef {(onChunk: (chunk: Uint8Array) => void, opts?: { maxFrameBytes?: number, threadedMinFrameBytes?: number }) => { push(chunk: Uint8Array, final?: boolean): unknown }} DecoderFactory */
+
 // Awaits each push, as streamFile does: a no-op for the inline decoder.
+/**
+ * @param {DecoderFactory} createDecoder
+ * @param {Uint8Array} bytes
+ * @param {number} pushSize
+ * @param {{ maxFrameBytes?: number }} [opts]
+ */
 async function decode(createDecoder, bytes, pushSize, opts) {
+  /** @type {Uint8Array[]} */
   const out = [];
   const dec = createDecoder((c) => out.push(new Uint8Array(c)), opts);
   for (let o = 0; o < bytes.length; o += pushSize) await dec.push(bytes.subarray(o, o + pushSize), o + pushSize >= bytes.length);
@@ -26,8 +38,10 @@ async function decode(createDecoder, bytes, pushSize, opts) {
 
 // Compressed as a stream, as `zstd < log > log.zst` and Spark do: one frame with no declared
 // content size.
+/** @param {Uint8Array} bytes @returns {Promise<Uint8Array>} */
 function compressUnsized(bytes) {
   return new Promise((resolve) => {
+    /** @type {Uint8Array[]} */
     const parts = [];
     const z = createZstdCompress();
     z.on('data', (c) => parts.push(new Uint8Array(c)));
@@ -45,10 +59,11 @@ const garbageFrame = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x58, 0x45, 0
 
 // The threaded decoder sends every frame at least `threadedMinFrameBytes` long off the main
 // thread: 0 sends all of them, 150 roughly half of this stream's (~100-200 byte) frames.
+/** @type {[string, DecoderFactory][]} */
 const DECODERS = [
   ['createNativeZstdDecoder', createNativeZstdDecoder],
-  ['createThreadedZstdDecoder, every frame threaded', (onChunk, opts) => createThreadedZstdDecoder(onChunk, { threadedMinFrameBytes: 0, ...opts })],
-  ['createThreadedZstdDecoder, mixed', (onChunk, opts) => createThreadedZstdDecoder(onChunk, { threadedMinFrameBytes: 150, ...opts })],
+  ['createThreadedZstdDecoder, every frame threaded', (onChunk, opts = {}) => createThreadedZstdDecoder(onChunk, { threadedMinFrameBytes: 0, ...opts })],
+  ['createThreadedZstdDecoder, mixed', (onChunk, opts = {}) => createThreadedZstdDecoder(onChunk, { threadedMinFrameBytes: 150, ...opts })],
 ];
 
 // Node gained native zstd in 22.15/23.8; collect-run.ts only uses these decoders when it's there.
@@ -70,7 +85,9 @@ describe.skipIf(!nativeZstdAvailable).each(DECODERS)('%s', (_, createDecoder) =>
   // stream with no declared size), goes to fzstd from its first byte: never materialized whole.
   it('streams oversized frames through fzstd, with or without a declared content size', async () => {
     expect(await decode(createDecoder, multiFrame, 97, { maxFrameBytes: 500 })).toBe(text);
+    /** @type {Uint8Array} */
     const streamed = await new Promise((resolve) => {
+      /** @type {Uint8Array[]} */
       const parts = [];
       const z = createZstdCompress();
       z.on('data', (c) => parts.push(new Uint8Array(c)));
@@ -89,6 +106,7 @@ describe.skipIf(!nativeZstdAvailable).each(DECODERS)('%s', (_, createDecoder) =>
     let seed = 7;
     const noise = Uint8Array.from({ length: 1 << 20 }, () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 24);
     const frame = new Uint8Array(zstdCompressSync(noise));
+    /** @type {Uint8Array[]} */
     const out = [];
     const dec = createDecoder((c) => out.push(new Uint8Array(c)));
     const set = Uint8Array.prototype.set;
@@ -109,6 +127,7 @@ describe.skipIf(!nativeZstdAvailable).each(DECODERS)('%s', (_, createDecoder) =>
     const unsized = await compressUnsized(bigText);
     expect(unsized[4] >> 6).toBe(0); // no Frame_Content_Size field
     expect(unsized.length).toBeLessThan(256 * 1024);
+    /** @type {Uint8Array[]} */
     const out = [];
     const dec = createDecoder((c) => out.push(new Uint8Array(c)), { maxFrameBytes: 256 * 1024 });
     for (let o = 0; o < unsized.length; o += 4096) await dec.push(unsized.subarray(o, o + 4096), o + 4096 >= unsized.length);
@@ -139,6 +158,7 @@ describe.skipIf(!nativeZstdAvailable)('createThreadedZstdDecoder queue', () => {
     const noise = Uint8Array.from({ length: 8192 }, () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 24);
     const big = new Uint8Array(zstdCompressSync(noise));
     const smalls = Array.from({ length: 12 }, () => frames).flat();
+    /** @type {Uint8Array[]} */
     const out = [];
     const dec = createThreadedZstdDecoder((c) => out.push(new Uint8Array(c)), { threadedMinFrameBytes: big.length });
     await dec.push(concat([big, ...smalls]), false);
@@ -156,6 +176,7 @@ describe.skipIf(!nativeZstdAvailable)('createThreadedZstdDecoder queue', () => {
     const tick = () => { turn++; if (ticking) setImmediate(tick); };
     setImmediate(tick);
     const turns = new Set();
+    /** @type {Uint8Array[]} */
     const out = [];
     const dec = createThreadedZstdDecoder((c) => { turns.add(turn); out.push(new Uint8Array(c)); }, { threadedMinFrameBytes: 0, maxFrameBytes: 256 * 1024 });
     await dec.push(unsized, true);

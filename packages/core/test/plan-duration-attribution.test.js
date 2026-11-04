@@ -7,19 +7,35 @@ import {
   linkSegmentsToStages,
 } from '../src/plan-duration-attribution.js';
 
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+
 // Mirrors resolvePlanTree's real split shape (see event-handlers.ts): the
 // write half keeps children/metrics, detail=''; the read half wraps write,
 // keeps the original name/detail, metrics=[]. computeSegments cuts on
 // exchangeRole now, not a name regex, so every fixture below that needs to
 // exercise an Exchange boundary builds one of these instead of a bare
 // { name: 'Exchange...' } node (which never cuts: it carries no exchangeRole).
+/**
+ * @param {string} name
+ * @param {PlanNode[]} children
+ * @param {string} [detail]
+ * @returns {[PlanNode, PlanNode]}
+ */
 function splitExchange(name, children, detail = name) {
+  /** @type {PlanNode} */
   const write = { name, detail: '', metrics: [], children, exchangeRole: 'write' };
+  /** @type {PlanNode} */
   const read = { name, detail, metrics: [], children: [write], exchangeRole: 'read' };
   return [read, write];
 }
 
 // tree: root → exchange1 → mid → exchange2 → leaf  (2 exchanges = 3 segments)
+/**
+ * @param {string} name
+ * @param {PlanNode[]} [children]
+ * @param {NonNullable<PlanNode['metrics']>} [metrics]
+ * @returns {PlanNode}
+ */
 function node(name, children = [], metrics = []) { return { name, detail: '', metrics, children }; }
 function buildTree() {
   const leaf = node('LeafScan');
@@ -100,6 +116,12 @@ describe('attributeStageDurationToPlan', () => {
 });
 
 describe('computeSegments / zipSegmentsToStages', () => {
+  /**
+   * @param {string} name
+   * @param {PlanNode[]} [children]
+   * @param {NonNullable<PlanNode['metrics']>} [metrics]
+   * @returns {PlanNode}
+   */
   function node(name, children = [], metrics = []) { return { name, detail: '', metrics, children }; }
 
   it('assigns segment 0 to the root and increments only past an Exchange parent', () => {
@@ -118,7 +140,9 @@ describe('computeSegments / zipSegmentsToStages', () => {
   });
 
   it('cuts a new segment at the write half, keeping the read half in the parent segment', () => {
+    /** @type {PlanNode} */
     const write = { name: 'Exchange', detail: '', metrics: [], children: [node('Scan parquet')], exchangeRole: 'write' };
+    /** @type {PlanNode} */
     const read = { name: 'Exchange', detail: 'Exchange hashpartitioning', metrics: [], children: [write], exchangeRole: 'read' };
     const root = node('SortMergeJoin', [read]);
 
@@ -195,8 +219,11 @@ describe('computeSegments / zipSegmentsToStages', () => {
 });
 
 describe('linkSegmentsToStages', () => {
+  /** @param {string} name @param {PlanNode[]} [children] @returns {PlanNode} */
   function node(name, children = []) { return { name, detail: '', metrics: [], children }; }
+  /** @param {Map<number, import('../src/plan-duration-attribution.ts').SegmentStageLink>} links */
   const stageIdsOf = (links) => new Map([...links].map(([segment, link]) => [segment, link.stageId]));
+  /** @param {Map<number, import('../src/plan-duration-attribution.ts').SegmentStageLink>} links */
   const inheritedOf = (links) => new Set([...links].filter(([, link]) => link.inherited).map(([segment]) => segment));
 
   it('matches zipSegmentsToStages exactly when segment and stage counts are equal', () => {
@@ -268,12 +295,18 @@ describe('linkSegmentsToStages', () => {
     ]);
 
     const map = stageIdsOf(linkSegmentsToStages(segments, stagesById, [20, 10], segmentTopology));
+    /** @param {PlanNode} planNode */
+    const segmentOf = (planNode) => {
+      const segment = segOf.get(planNode);
+      if (segment === undefined) throw new Error(`no segment for ${planNode.name}`);
+      return segment;
+    };
 
-    expect(map.get(segOf.get(deep))).toBe(10);
-    expect(map.get(segOf.get(left))).toBe(20);
+    expect(map.get(segmentOf(deep))).toBe(10);
+    expect(map.get(segmentOf(left))).toBe(20);
     // right's numeric id is closest to deep's, but in the component tree it
     // is one edge closer to left's component via their shared root.
-    expect(map.get(segOf.get(right))).toBe(20);
+    expect(map.get(segmentOf(right))).toBe(20);
   });
 
   it('returns an empty map when there are no stages to pair against', () => {
@@ -321,8 +354,8 @@ describe('attributeStageDurationToPlanInclusive', () => {
 
   it('does not sum across a segment boundary (an Exchange write half stops the inclusive sum)', () => {
     const scan = node('Scan parquet', [], [{ name: 'time', value: 50, metricType: 'timing' }]);
-    const write = { ...node('Exchange', [scan], [{ name: 'time', value: 40, metricType: 'timing' }]), exchangeRole: 'write' };
-    const read = { ...node('Exchange', [write], []), exchangeRole: 'read' };
+    const write = { ...node('Exchange', [scan], [{ name: 'time', value: 40, metricType: 'timing' }]), exchangeRole: /** @type {const} */ ('write') };
+    const read = { ...node('Exchange', [write], []), exchangeRole: /** @type {const} */ ('read') };
     const join = node('SortMergeJoin', [read], [{ name: 'time', value: 10, metricType: 'timing' }]);
     const stagesById = new Map([[1, { submittedAt: 0, completedAt: 90 }], [2, { submittedAt: 90, completedAt: 180 }]]);
 

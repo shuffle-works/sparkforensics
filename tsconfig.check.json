@@ -12,6 +12,36 @@
     "docs-site/.vitepress/*.d.ts",
     "packages/cli/test/*.js",
     "packages/mcp/test/*.js",
-    "packages/server/test/*.js"
+    "packages/server/test/*.js",
+    "packages/core/test/*.js"
+  ],
+  "exclude": [
+    "packages/core/test/analyzer.test.js",
+    "packages/core/test/aqe-skew.test.js",
+    "packages/core/test/cli-budgets.test.js",
+    "packages/core/test/comparability.test.js",
+    "packages/core/test/detectors-plan.test.js",
+    "packages/core/test/evidence-report.test.js",
+    "packages/core/test/failure-advice.test.js",
+    "packages/core/test/finding-remediation.test.js",
+    "packages/core/test/impact-estimator.test.js",
+    "packages/core/test/large-log-scaling.test.js",
+    "packages/core/test/mcp-server-factory.test.js",
+    "packages/core/test/mcp-tools.test.js",
+    "packages/core/test/parser-worker.test.js",
+    "packages/core/test/plan-graph-model.test.js",
+    "packages/core/test/plan-summary.test.js",
+    "packages/core/test/proxy.test.js",
+    "packages/core/test/redact.test.js",
+    "packages/core/test/run-comparison.test.js",
+    "packages/core/test/run-metrics.test.js",
+    "packages/core/test/run-verdict.test.js",
+    "packages/core/test/shs-load.test.js",
+    "packages/core/test/spill-attribution.test.js",
+    "packages/core/test/stage-alignment.test.js",
+    "packages/core/test/tail-attribution.test.js",
+    "packages/core/test/task-hour-ranking.test.js",
+    "packages/core/test/under-broadcast.test.js",
+    "packages/core/test/zstd-worker.test.js"
   ]
 }

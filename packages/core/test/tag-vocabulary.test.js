@@ -19,6 +19,7 @@ describe('tag vocabulary doc coverage', () => {
       /^- Problem flagging:[\s\S]*?(?=\n- )/m
     );
     expect(bulletMatch).not.toBeNull();
+    if (!bulletMatch) throw new Error('Problem flagging bullet not found');
     const bullet = bulletMatch[0];
 
     const tagValues = new Set(Object.values(TYPE_TAG_MAP));

@@ -2,26 +2,44 @@ import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from '../src/nested-loop-join.js';
-import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
 
 // A 3000 x 3000 `a < b` join and a 3000 x 3000 cross join, generated on Spark 3.5.9 in local mode
 // (spark.sql.autoBroadcastJoinThreshold=-1 for the cross join) and trimmed to the two executions.
 const SPIKE_LOG = fileURLToPath(new URL('./fixtures/nested-loop-join-spark-3.5.9.ndjson', import.meta.url));
 
-const rows = (value) => [{ name: 'number of output rows', value, metricType: 'sum', executorSide: true }];
+/** @param {number} value */
+const rows = (value) => [{ name: 'number of output rows', value, metricType: 'sum', executorSide: /** @type {const} */ (true) }];
+/**
+ * @param {string} name
+ * @param {string} detail
+ * @param {import('../src/types.ts').PlanNode['metrics']} metrics
+ * @param {import('../src/types.ts').PlanNode[]} [children]
+ * @param {number[]} [stageIds]
+ * @returns {import('../src/types.ts').PlanNode}
+ */
 const plan = (name, detail, metrics, children = [], stageIds = [1]) => ({ id: `${name}-${detail}`, name, detail, metrics, children, stageIds });
+/** @param {number} value */
 const range = (value) => plan('Range', 'Range (0, 3000, step=1, splits=4)', rows(value));
 
-// BNLJ over a streamed Range and a BroadcastExchange (read half over its write half).
+/**
+ * BNLJ over a streamed Range and a BroadcastExchange (read half over its write half).
+ * @param {{ out: number, left: number, right: number, detail?: string }} rowCounts
+ */
 function bnlj({ out, left, right, detail = 'BroadcastNestedLoopJoin BuildRight, Inner, (a#2L < b#6L)' }) {
   const broadcastWrite = plan('BroadcastExchange', '', rows(right), [range(right)]);
   const broadcastRead = plan('BroadcastExchange', 'BroadcastExchange IdentityBroadcastMode', [], [broadcastWrite]);
   return plan('BroadcastNestedLoopJoin', detail, rows(out), [plan('Project', 'Project [id#0L AS a#2L]', [], [range(left)]), broadcastRead]);
 }
 
+/**
+ * @param {import('../src/types.ts').PlanNode} planTree
+ * @param {Record<string, unknown>} [stageOverrides]
+ * @param {number} [runMs]
+ */
 function findingsFor(planTree, stageOverrides = {}, runMs = 10_000) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
-  const stages = new Map([[1, makeStage({ sqlExecutionId: 1, completedAt: runMs, taskActiveMs: runMs, ...stageOverrides })]]);
+  const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1, completedAt: runMs, taskActiveMs: runMs, ...stageOverrides })]]);
   return analyzedRunFrom({ app: makeApp({ endTime: runMs }), stages, sql }).catalog.filter((f) => f.type === 'nestedLoopJoin');
 }
 
@@ -74,7 +92,7 @@ describe('nestedLoopJoin detector on a hand-built plan', () => {
     expect(f.remediation).toEqual([{ kind: 'code', hint: expect.stringContaining('equi-join key') }]);
     // The stage that runs the join takes the whole run: graded critical.
     expect(f.impactBand).toBe('critical');
-    expect(f.impactEstimate.estimateMethod).toBe('modeled');
+    expect(f.impactEstimate?.estimateMethod).toBe('modeled');
   });
 
   it('grades the finding by the stage time, so a join in a short stage stays info', () => {

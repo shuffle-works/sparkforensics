@@ -2,8 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs } from '../src/occupancy.js';
 import { mergeIntervals } from '../src/intervals.js';
 
+/**
+ * @param {number} id
+ * @param {Partial<import('../src/occupancy.ts').OccupancyStage>} opts
+ * @returns {import('../src/occupancy.ts').OccupancyStage}
+ */
 function stage(id, opts) {
   return { id, submittedAt: 0, completedAt: 0, ...opts };
+}
+
+/**
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('expected a value');
+  return value;
 }
 
 describe('computeOccupancyMs', () => {
@@ -146,7 +161,7 @@ describe('estimateSingleStage', () => {
   it('serial basis: gate >= 0.999 gives a point estimate at the clipped value', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 5000 })]]);
     const info = computeOccupancy(stages, 0);
-    const est = estimateSingleStage(1200, 0, stages, info);
+    const est = present(estimateSingleStage(1200, 0, stages, info));
     expect(est).toEqual({ basis: 'serial', wallClock: { low: 1200, high: 1200 } });
   });
 
@@ -156,7 +171,7 @@ describe('estimateSingleStage', () => {
       [1, stage(1, { submittedAt: 0, completedAt: 3000 })], // fully overlapping, equal weight -> gate 0.5 each
     ]);
     const info = computeOccupancy(stages, 0);
-    const est = estimateSingleStage(1200, 0, stages, info);
+    const est = present(estimateSingleStage(1200, 0, stages, info));
     expect(est.basis).toBe('contended');
     expect(est.wallClock.high).toBe(1200);
     expect(est.wallClock.low).toBe(600);
@@ -165,7 +180,7 @@ describe('estimateSingleStage', () => {
   it('applies the ceiling clip before gate-weighting', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9000 })]]);
     const info = computeOccupancy(stages, 0); // ceiling 9000, room 1000, gate 1 (solo)
-    const est = estimateSingleStage(3000, 0, stages, info);
+    const est = present(estimateSingleStage(3000, 0, stages, info));
     expect(est).toEqual({ basis: 'serial', wallClock: { low: 1000, high: 1000 } });
   });
 
@@ -173,22 +188,22 @@ describe('estimateSingleStage', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500 })]]);
     const info = computeOccupancy(stages, 0);
     // Plain clip: ceiling 9500 leaves 500ms. Tail claim of 9000: longest task after the fix 500, room 9500.
-    expect(estimateSingleStage(9000, 0, stages, info).wallClock.high).toBe(500);
-    expect(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true }).wallClock.high).toBe(9000);
+    expect(present(estimateSingleStage(9000, 0, stages, info)).wallClock.high).toBe(500);
+    expect(present(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true })).wallClock.high).toBe(9000);
   });
 
   it('shortensLongestTask: the core-work floor (executorRunTime / totalCores) still applies', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500, executorRunTime: 32000 })]]);
     const info = computeOccupancy(stages, 4); // coreWorkFloor 8000: room 2000
-    expect(info.get(0).coreWorkFloor).toBe(8000);
-    expect(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true }).wallClock.high).toBe(2000);
+    expect(present(info.get(0)).coreWorkFloor).toBe(8000);
+    expect(present(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true })).wallClock.high).toBe(2000);
   });
 
   it('shortensLongestTask: the core-work floor counts only the work the fix leaves', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500, executorRunTime: 32000 })]]);
     const info = computeOccupancy(stages, 4);
     // Removing 16000 of the 32000ms of task time halves the floor to 4000: room 6000.
-    const est = estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true, removedCoreWorkMs: 16000 });
+    const est = present(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true, removedCoreWorkMs: 16000 }));
     expect(est.wallClock.high).toBe(6000);
     expect(tailRemovedWorkMs({ stragglerExcessMs: 16000 }, 9000)).toBe(16000);
     expect(tailRemovedWorkMs({ stragglerExcessMs: 0 }, 9000)).toBe(9000);
@@ -198,7 +213,7 @@ describe('estimateSingleStage', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500 })]]);
     const info = computeOccupancy(stages, 4);
     // Floor max(9500 - 9000, 7000) = 7000: room 3000 of the 9000 claimed.
-    const est = estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true, longestTaskAfterFixMs: 7000 });
+    const est = present(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true, longestTaskAfterFixMs: 7000 }));
     expect(est.wallClock.high).toBe(3000);
     const tail = { taskDurationP50: 1000, stragglerCount: 2, longestNonStragglerMs: 3500 };
     expect(stragglerFixLongestTaskMs(tail)).toBe(3500);
@@ -232,7 +247,7 @@ describe('estimateMultiStage', () => {
     ]);
     const info = computeOccupancy(stages, 0);
     const waste = new Map([[0, 75000], [1, 75000]]);
-    const est = estimateMultiStage([0, 1], waste, stages, info);
+    const est = present(estimateMultiStage([0, 1], waste, stages, info));
     expect(est).toEqual({ basis: 'serial', wallClock: { low: 150000, high: 150000 } });
   });
 
@@ -245,7 +260,7 @@ describe('estimateMultiStage', () => {
     // Both claim their own full 9000ms duration as waste: naive sum would be 18000,
     // but the two stages' windows are identical, so the union is only 9000ms.
     const waste = new Map([[0, 9000], [1, 9000]]);
-    const est = estimateMultiStage([0, 1], waste, stages, info);
+    const est = present(estimateMultiStage([0, 1], waste, stages, info));
     expect(est.wallClock.high).toBe(9000); // capped, not 9000 (stage0) + 9000 (stage1)
     expect(est.wallClock.high).toBeLessThan(9000 + 4500); // proves the cap, not naive summing
     // The union cap forces low === high numerically, but both stages are individually

@@ -22,6 +22,7 @@ const START = 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart'
 const END = 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd';
 
 function logWithUnreadableStarts() {
+  /** @type {{ nodeName: string, simpleString: string, children: unknown[], metrics: never[] }} */
   let deep = { nodeName: 'Execute InsertIntoHadoopFsRelationCommand', simpleString: 'Execute InsertIntoHadoopFsRelationCommand /prod/t, false, Parquet', children: [], metrics: [] };
   for (let i = 0; i < 600; i++) deep = { nodeName: 'Project', simpleString: 'Project', children: [deep], metrics: [] };
   const ok = { nodeName: 'Execute InsertIntoHadoopFsRelationCommand', simpleString: 'Execute InsertIntoHadoopFsRelationCommand /sandbox/out, false, Parquet', children: [], metrics: [] };
@@ -38,6 +39,7 @@ function logWithUnreadableStarts() {
 }
 
 // The dashboard's wiring: worker messages -> routeMessage -> createModelCallbacks, nothing else.
+/** @param {string} path */
 async function ingestLikeTheDashboard(path) {
   const appModel = emptyAppModel();
   const callbacks = createModelCallbacks(appModel, { onProgress() {}, onDone() {}, onError() {} });

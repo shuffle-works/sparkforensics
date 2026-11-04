@@ -15,12 +15,21 @@ import { corpusLog } from './corpus-log.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT = join(HERE, 'fixtures', 'stage-alignment-coverage.json');
 
+/** @param {string | null} dir @param {string} [prefix] */
 const listed = (dir, prefix = '') => (dir
   ? readdirSync(dir).filter((f) => f.endsWith('.ndjson')).sort().map((f) => ({ name: `${prefix}${f}`, path: join(dir, f) }))
   : []);
 const LOGS = [...listed(corpusLog('.')), ...listed(corpusLog('external'), 'external/')];
 
+/** @type {Map<string, ReturnType<typeof comparedRun>>} */
 const snapshots = new Map();
+
+/** @param {string} name */
+const snapshotOf = (name) => {
+  const snap = snapshots.get(name);
+  if (!snap) throw new Error(`no snapshot for ${name}`);
+  return snap;
+};
 beforeAll(async () => {
   for (const { name, path } of LOGS) {
     const { appModel } = await collectRun(path);
@@ -28,7 +37,9 @@ beforeAll(async () => {
   }
 }, 120_000);
 
+/** @param {import('../src/stage-alignment.ts').StageAlignment} alignment */
 const pairsOf = (alignment) => alignment.pairs.map((p) => [p.baseStageIds[0], p.candStageIds[0]]);
+/** @param {number | null | undefined} x */
 const round = (x) => (x == null ? null : Math.round(x * 10_000) / 10_000);
 
 describe.skipIf(LOGS.length === 0)('stage aligner on the public corpus', () => {
@@ -51,7 +62,7 @@ describe.skipIf(LOGS.length === 0)('stage aligner on the public corpus', () => {
     for (let i = 0; i < names.length; i += 1) {
       for (const j of [i + 1, i + 7]) {
         if (j >= names.length) continue;
-        const a = snapshots.get(names[i]), b = snapshots.get(names[j]);
+        const a = snapshotOf(names[i]), b = snapshotOf(names[j]);
         const forward = alignStages(a, b), backward = alignStages(b, a);
         expect(pairsOf(backward).map(([x, y]) => [y, x]).sort((p, q) => p[0] - q[0] || p[1] - q[1])).toEqual(pairsOf(forward));
         expect(backward.unmatched).toEqual({ baseStageIds: forward.unmatched.candStageIds, candStageIds: forward.unmatched.baseStageIds });
@@ -114,12 +125,13 @@ describe.skipIf(LOGS.length === 0)('stage aligner on the public corpus', () => {
   describe('pairwise-* expected coverage', () => {
     const pairwise = LOGS.filter((l) => /^pairwise-\d+\.ndjson$/.test(l.name)).map((l) => l.name);
     const compute = () => {
+      /** @type {Record<string, object>} */
       const rows = {};
       for (let i = 0; i < pairwise.length; i += 1) {
         for (let j = i; j < pairwise.length; j += 1) {
           const result = compareRuns(
-            { label: 'baseline', snapshot: snapshots.get(pairwise[i]) },
-            { label: 'candidate', snapshot: snapshots.get(pairwise[j]) },
+            { label: 'baseline', snapshot: snapshotOf(pairwise[i]) },
+            { label: 'candidate', snapshot: snapshotOf(pairwise[j]) },
           );
           rows[`${pairwise[i]} -> ${pairwise[j]}`] = {
             pairs: result.stagePairs.length,

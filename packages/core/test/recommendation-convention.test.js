@@ -3,7 +3,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { auditConfig } from '../src/analyzer.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { recommendationParts } from '../src/finding-names.js';
-import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 import { corpusLog } from './corpus-log.js';
 
 // Every detector recommendation reads "<measurement>: <fix>". recommendationParts splits it at
@@ -20,11 +20,21 @@ const NO_MEASUREMENT = {
   stageFailed: 'the stage failure itself is the whole finding: there is no figure to quote, only where to look',
 };
 
-const executors = (n) => Array.from({ length: n }, (_, i) => ({ executorId: String(i), timestamp: 0, totalCores: 4 }));
-const failedJob = (id) => ({ id, result: 'JobFailed', succeeded: false, stageIds: [1], submissionTime: 0, completionTime: 1000 });
+/**
+ * @param {number} n
+ * @returns {import('../src/types.ts').ExecutorAddedEvent[]}
+ */
+const executors = (n) => Array.from({ length: n }, (_, i) => ({ kind: 'added', executorId: String(i), timestamp: 0, host: `host-${i}`, totalCores: 4, resourceProfileId: null }));
+/**
+ * @param {number} id
+ * @returns {import('../src/types.ts').Job}
+ */
+const failedJob = (id) => ({ id, result: 'JobFailed', succeeded: false, stageIds: [1], sqlExecutionId: null, exception: null, submissionTime: 0, completionTime: 1000 });
 
 // One analyze() call per case: detectors gate on each other and on runtime floors, so a case
 // carries only the stage that should trip its detector.
+/** @type {{ stage?: Partial<import('../src/types.ts').Stage>, app?: { endTime: number | undefined },
+ *   added?: import('../src/types.ts').ExecutorAddedEvent[], jobs?: import('../src/types.ts').Job[] }[]} */
 const SYNTHETIC_RUNS = [
   { stage: { taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() } },
   { stage: { taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400, tailAttribution: dataTail() } },
@@ -33,7 +43,7 @@ const SYNTHETIC_RUNS = [
   { stage: { inputBytes: GB, outputBytes: 50 * GB } },
   { stage: { taskCount: 3, executorRunTime: 100000, taskDurationP50: 1000, taskDurationMax: 2000 } },
   { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'skew', spillMemP50: MB, spillMemMax: GB, spillDiskP50: MB, spillDiskMax: GB } },
-  { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'shuffle' } },
+  { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'volume' } },
   { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'unclassified' } },
   { stage: { jvmGCTime: 5000, executorRunTime: 10000, gcPct: 50 } },
   { stage: { failedTasks: 30, failureReasons: [{ reason: 'boom: x', count: 30 }] } },
@@ -56,11 +66,11 @@ const CONFIG_APPS = [
 
 function syntheticFindings() {
   const analyzed = SYNTHETIC_RUNS.flatMap(({ app, stage, added = [], jobs = [] }) => {
-    const stages = new Map([[1, makeStage(stage)]]);
-    const jobMap = new Map(jobs.map((j) => [j.id, j]));
+    const stages = new Map([[1, makeTypedStage(stage)]]);
+    const jobMap = new Map(jobs.map((j) => /** @type {[number, import('../src/types.ts').Job]} */ ([j.id, j])));
     return analyzedRunFrom({ app: makeApp(app), stages, executors: { added: added, removed: [] }, jobs: jobMap }).catalog;
   });
-  return [...analyzed, ...CONFIG_APPS.flatMap((app) => auditConfig(makeApp(app), new Map([[1, makeStage()]])))];
+  return [...analyzed, ...CONFIG_APPS.flatMap((app) => auditConfig(makeApp(app), new Map([[1, makeTypedStage()]])))];
 }
 
 // The local log corpus is gitignored: the suite skips it on a checkout without logs.
@@ -69,6 +79,7 @@ const corpusFiles = CORPUS_DIR
   ? readdirSync(CORPUS_DIR).filter((n) => n.endsWith('.ndjson')).map((n) => `${CORPUS_DIR}/${n}`).filter((p) => statSync(p).isFile())
   : [];
 
+/** @param {import('../src/types.ts').Finding[]} findings */
 function expectConvention(findings) {
   const broken = [];
   for (const f of findings) {

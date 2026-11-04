@@ -1,12 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import { FAILURE_REASON_MAX_CHARS, quotesReasonOf, summarizeRunOutcome } from '../src/run-outcome.ts';
 
+/**
+ * @param {number} id
+ * @param {boolean} succeeded
+ * @param {number[]} stageIds
+ * @param {string} [exception]
+ * @returns {[number, import('../src/types.ts').Job]}
+ */
 function job(id, succeeded, stageIds, exception) {
-  return [id, { id, result: succeeded ? 'JobSucceeded' : 'JobFailed', succeeded, stageIds, exception }];
+  return [id, {
+    id, result: succeeded ? 'JobSucceeded' : 'JobFailed', succeeded, stageIds, exception,
+    submissionTime: null, sqlExecutionId: null, completionTime: null,
+  }];
 }
 
+/**
+ * @param {number} stageId
+ * @param {string} valueText
+ * @returns {import('../src/types.ts').Finding}
+ */
 function stageFailed(stageId, valueText) {
-  return { type: 'stageFailed', stageId, impactBand: 'critical', valueText, recommendation: 'Inspect.' };
+  return {
+    type: 'stageFailed', variant: 'stageFailure', stageId, impactBand: 'critical', valueText, recommendation: 'Inspect.',
+    numTasks: 1, memoryBytesSpilled: 0, failedTaskDetails: [],
+  };
 }
 
 describe('summarizeRunOutcome', () => {
@@ -25,14 +43,18 @@ describe('summarizeRunOutcome', () => {
   it('shortens a long first line and quotes nothing for a blank one', () => {
     const long = summarizeRunOutcome(new Map([job(1, false, [], 'x'.repeat(FAILURE_REASON_MAX_CHARS + 10))]), []);
     expect(long.reason).toHaveLength(FAILURE_REASON_MAX_CHARS);
-    expect(long.reason.endsWith('...')).toBe(true);
+    expect(long.reason?.endsWith('...')).toBe(true);
     expect(summarizeRunOutcome(new Map([job(1, false, [], '\nat Frame.run')]), []).reason).toBeNull();
   });
 });
 
 describe('quotesReasonOf', () => {
   it('ties a job-failure finding to the reason only when exactly one job failed', () => {
-    const jobFailure = { type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect.' };
+    /** @type {import('../src/types.ts').Finding} */
+    const jobFailure = {
+      type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect.',
+      failedJobs: 1, totalJobs: 1, failedTasks: 0, totalTasks: 0, avgJobDurationMs: 0, taskFailureRate: 0,
+    };
     const one = summarizeRunOutcome(new Map([job(1, false, [5])]), [stageFailed(5, 'Fetch failed')]);
     expect(quotesReasonOf(jobFailure, one)).toBe(true);
     const two = summarizeRunOutcome(new Map([job(1, false, [5]), job(2, false, [6])]), [stageFailed(5, 'Fetch failed')]);
