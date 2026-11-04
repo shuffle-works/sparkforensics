@@ -3,34 +3,43 @@ import { buildComparison } from '../src/run-comparison.js';
 import { comparisonVerdict } from '../src/comparison-verdict.js';
 import { comparisonOutput } from '../src/comparison-output.js';
 import { redactComparison } from '../src/redact.js';
-import { makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage } from './fixtures/stage-app-fixtures.js';
+
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {{ label: string } & import('../src/compared-run.ts').ComparedRunInput} LabeledRun */
+/** @typedef {{ id: string, wallMs: number, executors: number, taskMs: number, config?: Record<string, string> | null, stageName?: string, outputRows?: number | null, inputBytes?: number, outputBytes?: number | null, startTime?: number }} RunSpec */
 
 // A run of `executors` executors of 2 cores alive for the whole `wallMs` window, one stage that
 // holds `taskMs` of task time and the given data volume.
+/** @param {RunSpec} spec @returns {LabeledRun} */
 function run({ id, wallMs, executors, taskMs, config = {}, stageName = 'scan', outputRows = 1000, inputBytes = 5000, outputBytes = 2000, startTime = 0 }) {
-  const added = Array.from({ length: executors }, (_, i) => ({ executorId: String(i + 1), timestamp: startTime, totalCores: 2 }));
+  const added = Array.from({ length: executors }, (_, i) => ({ kind: /** @type {const} */ ('added'), executorId: String(i + 1), timestamp: startTime, host: `host-${i + 1}`, totalCores: 2, resourceProfileId: null }));
   return {
     label: id,
     catalog: [],
     appModel: {
+      // @ts-expect-error a log with no recorded Spark properties has no config
       app: { id, name: 'Job', startTime, endTime: startTime + wallMs, config },
-      stages: new Map([[1, makeStage({
+      stages: new Map([[1, makeTypedStage({
         id: 1, name: stageName, submittedAt: startTime, completedAt: startTime + wallMs,
+        // @ts-expect-error null marks an output figure the log never measured
         executorRunTime: taskMs, inputBytes, outputBytes, outputRecords: outputRows,
       })]]),
-      jobs: new Map(), sql: new Map(), executors: { added, removed: [] }, runAggregates: null,
+      jobs: new Map(), sql: new Map(), executors: { added, removed: [] }, runAggregates: null, evidenceAvailability: null,
     },
   };
 }
 
 const candRunWithExtraStage = () => {
   const cand = candRun();
-  cand.appModel.stages.set(2, makeStage({ id: 2, name: 'only here', executorRunTime: 1000 }));
+  cand.appModel.stages.set(2, makeTypedStage({ id: 2, name: 'only here', executorRunTime: 1000 }));
   return cand;
 };
 const SAME_CONF = { 'spark.sql.shuffle.partitions': '200', 'spark.executor.cores': '2' };
+/** @param {Partial<RunSpec>} [over] */
 const baseRun = (over = {}) => run({ id: 'run-a', wallMs: 100_000, executors: 4, taskMs: 400_000, config: SAME_CONF, ...over });
 // Fewer executors and less task time: slower overall, as a smaller allocation is.
+/** @param {Partial<RunSpec>} [over] */
 const candRun = (over = {}) => run({ id: 'run-b', wallMs: 150_000, executors: 2, taskMs: 300_000, config: SAME_CONF, ...over });
 
 describe('comparability', () => {
@@ -63,6 +72,7 @@ describe('comparability', () => {
   });
 
   it('lists configuration differences, leaving out identity keys, ignored keys and secrets', () => {
+    /** @param {Record<string, string>} over */
     const config = (over) => ({ ...SAME_CONF, ...over });
     const base = baseRun({ config: config({ 'spark.app.id': 'a', 'spark.out.path': '/x/1', 'spark.db.password': 'p1', 'spark.sql.shuffle.partitions': '200' }) });
     const cand = candRun({ config: config({ 'spark.app.id': 'b', 'spark.out.path': '/x/2', 'spark.db.password': 'p2', 'spark.sql.shuffle.partitions': '400', 'spark.extra': 'on' }) });
@@ -104,7 +114,7 @@ describe('comparability', () => {
 
   it('counts unmatched stages and refuses equivalence when the plans differ', () => {
     const plan = buildComparison(
-      baseRun(), { ...candRun(), appModel: { ...candRun().appModel, stages: new Map([[1, makeStage({ id: 1, name: 'x', executorRunTime: 1 })], [2, makeStage({ id: 2, name: 'only here', executorRunTime: 300_000 })]]) } },
+      baseRun(), { ...candRun(), appModel: { ...candRun().appModel, stages: new Map([[1, makeTypedStage({ id: 1, name: 'x', executorRunTime: 1 })], [2, makeTypedStage({ id: 2, name: 'only here', executorRunTime: 300_000 })]]) } },
     ).comparability.plan;
     expect(plan.equal).toBe(false);
     expect(plan.unmatched.baseline + plan.unmatched.candidate + plan.replanned).toBeGreaterThan(0);
@@ -171,6 +181,7 @@ describe('comparability', () => {
 });
 
 describe('caveats', () => {
+  /** @param {LabeledRun} base @param {LabeledRun} cand @param {import('../src/run-comparison.ts').CompareOptions} [opts] */
   const caveatsOf = (base, cand, opts) => buildComparison(base, cand, opts).comparability.caveats;
 
   it('flags mean executors that differ past the ratio, in either direction', () => {
@@ -195,20 +206,29 @@ describe('caveats', () => {
     expect(unmatchedStages).toEqual({ count: 1, of: 1, runtimeShare: 1 });
     expect(taskCount).toBeNull();
     expect(caveatsOf(baseRun(), cand, { caveatThresholds: { unmatchedShare: 1 } }).unmatchedStages).toBeNull();
-    const taskCounts = (counts) => (run) => { run.appModel.stages.get(1).taskCount = counts; return run; };
+    /** @param {number} counts */
+    const taskCounts = (counts) => (/** @type {LabeledRun} */ run) => {
+      const stage = run.appModel.stages.get(1);
+      if (!stage) throw new Error('Expected stage 1.');
+      stage.taskCount = counts;
+      return run;
+    };
     const change = caveatsOf(taskCounts(100)(baseRun()), taskCounts(60)(candRun())).taskCount;
     expect(change).toEqual({ baseline: 100, candidate: 60, change: -0.4 });
     expect(caveatsOf(taskCounts(100)(baseRun()), taskCounts(60)(candRun()), { caveatThresholds: { taskCountChange: 0.5 } }).taskCount).toBeNull();
   });
 
   it('counts the baseline stages a re-plan leaves over as unmatched', () => {
+    /** @param {string} name @param {string} detail @param {number[]} stageIds @returns {PlanNode} */
     const node = (name, detail, stageIds) => ({ name, detail, metrics: [], children: [], stageIds });
+    /** @param {string} id @param {{ id: number, name: string, nodes: PlanNode[], executorRunTime: number }[]} stageSpecs */
     const replanRun = (id, stageSpecs) => {
       const r = baseRun({ id });
+      /** @type {PlanNode[]} */
       const children = [];
       r.appModel.stages = new Map(stageSpecs.map(({ id: stageId, name, nodes, executorRunTime }) => {
         children.push(...nodes);
-        return [stageId, makeStage({ id: stageId, name, sqlExecutionId: 1, executorRunTime })];
+        return [stageId, makeTypedStage({ id: stageId, name, sqlExecutionId: 1, executorRunTime })];
       }));
       r.appModel.sql = new Map([[1, { id: 1, description: 'save at X.java:0', planTree: { name: 'Root', detail: '', metrics: [], children } }]]);
       return r;
@@ -248,6 +268,7 @@ describe('caveats', () => {
 
 describe('metric noise flag', () => {
   it('marks rows within the band without changing direction', () => {
+    /** @param {import('../src/run-comparison.ts').CompareOptions} [opts] */
     const rows = (opts) => Object.fromEntries(buildComparison(baseRun(), candRun({ taskMs: 404_000 }), opts).metrics.map((m) => [m.key, m]));
     expect(rows().executorRunTime).toMatchObject({ withinNoise: true, direction: 'regression' });
     expect(rows().wallClock).toMatchObject({ withinNoise: false, direction: 'regression' });

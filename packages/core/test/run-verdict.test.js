@@ -5,53 +5,68 @@ import {
 import { compareImpactBand, IMPACT_BANDS } from '../src/impact-band-order.ts';
 import { trimmedRecommendation } from '../src/finding-names.ts';
 import { isActionable } from '../src/recommendation-rollup.ts';
-import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
 
+/** @typedef {import('../src/types.ts').Finding} Finding */
+
+/** A finding literal carrying only the fields the ranking reads.
+ * @param {{ type: Finding['type'] } & Record<string, unknown>} fields
+ * @returns {Finding}
+ */
+function finding(fields) {
+  const partial = /** @type {Partial<Finding>} */ (fields);
+  return /** @type {Finding} */ (partial);
+}
+
+/** @param {Finding['type']} type @param {number | null} stageId @param {number} highSeconds @param {Record<string, unknown>} [extra] */
 function timed(type, stageId, highSeconds, extra = {}) {
-  return {
+  return finding({
     type, stageId, impactBand: 'warning', recommendation: `Fix ${type}.`,
     impactEstimate: { basis: 'serial', estimateMethod: 'measured', wallClock: { low: highSeconds * 1000, high: highSeconds * 1000 } },
     ...extra,
-  };
+  });
 }
 
-/** A finding with a wall-clock estimate given in ms and a band (critical by default). */
+/** A finding with a wall-clock estimate given in ms and a band (critical by default).
+ * @param {Finding['type']} type @param {number} stageId @param {number} highMs @param {Finding['impactBand']} [impactBand] */
 function timedMs(type, stageId, highMs, impactBand = 'critical') {
-  return {
+  return finding({
     type, impactBand, stageId, recommendation: `Fix ${type} in Stage ${stageId}.`,
     impactEstimate: { basis: 'serial', wallClock: { low: highMs, high: highMs }, estimateMethod: 'modeled' },
-  };
+  });
 }
 
+/** @param {Partial<import('../src/types.ts').AppModel>} [overrides] @returns {import('../src/types.ts').AppModel} */
 function appModel(overrides = {}) {
   return {
     app: makeApp(),
-    stages: new Map([[1, makeStage({ id: 1 })], [2, makeStage({ id: 2 })]]),
+    stages: new Map([[1, makeTypedStage({ id: 1 })], [2, makeTypedStage({ id: 2 })]]),
     executors: { added: [], removed: [] },
     jobs: new Map(),
     sql: new Map(),
     runAggregates: null,
+    evidenceAvailability: null,
     ...overrides,
   };
 }
 
 describe('rankBySavings', () => {
   it('ranks quantified savings first, then band, then widget display order', () => {
-    const unquantifiedInfoSkew = { type: 'skew', stageId: 4, impactBand: 'info', recommendation: 'r' };
-    const unquantifiedInfoSpill = { type: 'spill', stageId: 5, impactBand: 'info', recommendation: 'r' };
+    const unquantifiedInfoSkew = finding({ type: 'skew', stageId: 4, impactBand: 'info', recommendation: 'r' });
+    const unquantifiedInfoSpill = finding({ type: 'spill', stageId: 5, impactBand: 'info', recommendation: 'r' });
     const ranked = rankBySavings([unquantifiedInfoSkew, unquantifiedInfoSpill, timed('gc', 1, 5), timed('skew', 2, 30)]);
     const byDisplayOrder = ['skew', 'spill'].sort((a, b) => FINDING_DISPLAY_ORDER.indexOf(a) - FINDING_DISPLAY_ORDER.indexOf(b));
     expect(ranked.map((f) => f.type)).toEqual(['skew', 'gc', ...byDisplayOrder]);
   });
 
   it('skips a finding with no recommendation', () => {
-    expect(rankBySavings([{ type: 'skew', stageId: 1, impactBand: 'critical' }])).toEqual([]);
+    expect(rankBySavings([finding({ type: 'skew', stageId: 1, impactBand: 'critical' })])).toEqual([]);
   });
 });
 
 describe('buildNextSteps', () => {
   it('groups a single-stage sql finding with the per-stage findings of that stage', () => {
-    const smallFiles = { ...timed('smallFiles', null, 2), stageIds: [3] };
+    const smallFiles = finding({ ...timed('smallFiles', null, 2), stageIds: [3] });
     expect(locationKey(smallFiles).key).toBe('stage:3');
     const steps = buildNextSteps([timed('skew', 3, 1), smallFiles]);
     expect(steps).toHaveLength(1);
@@ -60,7 +75,7 @@ describe('buildNextSteps', () => {
   });
 
   it('puts a failure at a failed job stage first on a failed run', () => {
-    const stageFailed = { type: 'stageFailed', stageId: 2, impactBand: 'critical', valueText: 'boom', recommendation: 'Inspect.' };
+    const stageFailed = finding({ type: 'stageFailed', stageId: 2, impactBand: 'critical', valueText: 'boom', recommendation: 'Inspect.' });
     const steps = buildNextSteps([timed('skew', 1, 60), stageFailed], { failedJobStageIds: new Set([2]) });
     expect(steps.map((s) => s.lead.type)).toEqual(['stageFailed', 'skew']);
   });
@@ -68,7 +83,7 @@ describe('buildNextSteps', () => {
   it('folds findings that share a stage into one step led by the biggest win, one related entry per type', () => {
     const skew = timedMs('skew', 7, 2_400);
     const straggler = timedMs('straggler', 7, 2_300);
-    const secondStraggler = { ...timedMs('straggler', 7, 100), recommendation: 'Another straggler.' };
+    const secondStraggler = finding({ ...timedMs('straggler', 7, 100), recommendation: 'Another straggler.' });
     const spill = timedMs('spill', 3, 1_000, 'warning');
 
     const steps = buildNextSteps([spill, straggler, secondStraggler, skew]);
@@ -81,20 +96,20 @@ describe('buildNextSteps', () => {
   });
 
   it('keeps app-level findings of different types, and multi-stage plan findings, as separate places', () => {
-    expect(locationKey({ type: 'utilization', impactBand: 'info', stageId: null }).key).toBe('app:utilization');
-    expect(locationKey({ type: 'smallFiles', impactBand: 'info', stageIds: [4] })).toEqual({ key: 'stage:4', stageId: 4 });
-    expect(locationKey({ type: 'duplicatePlanSubtree', impactBand: 'info', stageIds: [2, 0] }))
+    expect(locationKey(finding({ type: 'utilization', impactBand: 'info', stageId: null })).key).toBe('app:utilization');
+    expect(locationKey(finding({ type: 'smallFiles', impactBand: 'info', stageIds: [4] }))).toEqual({ key: 'stage:4', stageId: 4 });
+    expect(locationKey(finding({ type: 'duplicatePlanSubtree', impactBand: 'info', stageIds: [2, 0] })))
       .toEqual({ key: 'stages:duplicatePlanSubtree:0,2', stageId: null });
-    expect(locationKey({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning', stageId: null }).key)
+    expect(locationKey(finding({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning', stageId: null })).key)
       .toBe('app:memoryUtilization:idleCores');
   });
 });
 
 describe('idle capacity in the next steps', () => {
-  const idleCores = {
+  const idleCores = finding({
     type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning',
     recommendation: '92% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
-  };
+  });
   const steps = () => buildNextSteps([timedMs('skew', 0, 64), idleCores]);
 
   it('keeps the savings order however much capacity sat idle', () => {
@@ -102,11 +117,11 @@ describe('idle capacity in the next steps', () => {
   });
 
   it('keeps a heap-sizing memoryUtilization finding and idleCores as separate steps', () => {
-    const heapOverProvisioned = {
+    const heapOverProvisioned = finding({
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, impactBand: 'warning',
       recommendation: 'Executors peaked at 20% of allocated heap: reduce spark.executor.memory.',
-    };
-    const both = buildNextSteps([timedMs('skew', 0, 64), heapOverProvisioned, { ...idleCores, impactBand: 'info' }]);
+    });
+    const both = buildNextSteps([timedMs('skew', 0, 64), heapOverProvisioned, finding({ ...idleCores, impactBand: 'info' })]);
     expect(both.map((step) => step.key)).toContain('app:memoryUtilization:idleCores');
     expect(both[0].lead.type).toBe('skew');
   });
@@ -114,7 +129,7 @@ describe('idle capacity in the next steps', () => {
   it('states the efficiency model idle share and notes it from the utilization thresholds', () => {
     const idleModel = appModel({
       app: { id: 'a', name: 'n', startTime: 0, endTime: 10_000 },
-      executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+      executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 4, resourceProfileId: null }], removed: [] },
       runAggregates: { busyCoreMs: 8_000, perStage: {} },
     });
     const note = "80% of the run's core time went unused, so the cluster may be larger than this job needs.";
@@ -127,10 +142,10 @@ describe('idle capacity in the next steps', () => {
 describe('buildRunVerdict', () => {
   it('leads with the failed jobs and quotes the reason in the copied step', () => {
     const jobs = new Map([
-      [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1] }],
-      [1, { id: 1, result: 'JobFailed', succeeded: false, stageIds: [2] }],
+      [0, { id: 0, submissionTime: null, sqlExecutionId: null, exception: null, completionTime: null, result: 'JobSucceeded', succeeded: true, stageIds: [1] }],
+      [1, { id: 1, submissionTime: null, sqlExecutionId: null, exception: null, completionTime: null, result: 'JobFailed', succeeded: false, stageIds: [2] }],
     ]);
-    const stageFailed = { type: 'stageFailed', stageId: 2, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
+    const stageFailed = finding({ type: 'stageFailed', stageId: 2, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' });
     const verdict = buildRunVerdict(appModel({ jobs }), [timed('skew', 1, 60), stageFailed]);
     expect(verdict.title).toBe('1 of 2 jobs failed in this run');
     expect(verdict.summary[0]).toBe('Fix the failure before tuning: the other findings cover only the work that ran.');
@@ -148,7 +163,7 @@ describe('buildRunVerdict', () => {
   });
 
   it('says what the finding count leaves out', () => {
-    const incompleteRun = { type: 'incompleteRun', impactBand: 'warning', recommendation: 'Capture the whole log.' };
+    const incompleteRun = finding({ type: 'incompleteRun', impactBand: 'warning', recommendation: 'Capture the whole log.' });
     const withNote = buildRunVerdict(appModel(), [timed('skew', 1, 2), incompleteRun]);
     expect(withNote.summary).toContain('1 finding in 1 place. The count leaves out 1 note on incomplete or missing log data.');
     const without = buildRunVerdict(appModel(), [timed('skew', 1, 2)]);
@@ -164,12 +179,13 @@ describe('buildRunVerdict', () => {
   });
 });
 
+/** @param {Finding['type']} type @param {number | null} stageId @param {number} coreMs @param {Record<string, unknown>} [extra] */
 function cored(type, stageId, coreMs, extra = {}) {
-  return {
+  return finding({
     type, stageId, impactBand: 'info', recommendation: `Fix ${type}.`,
     impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: coreMs, unit: 'coreMs' }, coreTimeMs: { low: coreMs, high: coreMs } },
     ...extra,
-  };
+  });
 }
 
 describe('buildCostLane', () => {
@@ -180,9 +196,9 @@ describe('buildCostLane', () => {
   });
 
   it('leaves out idle capacity, bytes-only, null and zero core-time findings', () => {
-    const idle = { ...cored('utilization', null, 5_000_000), impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 1.4, unit: 'coreHours', idle: true }, idleCoreTimeMs: { low: 5e6, high: 5e6 } } };
-    const bytes = { ...cored('stageShape', 4, 0), impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 9e9, unit: 'bytes' } } };
-    const nulled = { ...cored('straggler', 5, 1000), impactEstimate: { basis: 'serial', wallClock: { low: 1, high: 2 }, estimateMethod: 'measured', coreTimeMs: null } };
+    const idle = finding({ ...cored('utilization', null, 5_000_000), impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 1.4, unit: 'coreHours', idle: true }, idleCoreTimeMs: { low: 5e6, high: 5e6 } } });
+    const bytes = finding({ ...cored('stageShape', 4, 0), impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 9e9, unit: 'bytes' } } });
+    const nulled = finding({ ...cored('straggler', 5, 1000), impactEstimate: { basis: 'serial', wallClock: { low: 1, high: 2 }, estimateMethod: 'measured', coreTimeMs: null } });
     expect(buildCostLane([idle, bytes, nulled, cored('gc', 6, 0)])).toEqual([]);
   });
 
@@ -194,7 +210,7 @@ describe('buildCostLane', () => {
   });
 
   it('counts no info note as something to act on', () => {
-    const notes = [cored('gc', 2, 1_000), { type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    const notes = [cored('gc', 2, 1_000), finding({ type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' })];
     const verdict = buildRunVerdict(appModel(), notes);
     expect(verdict.eligible).toEqual([]);
     expect(verdict.steps).toEqual([]);
@@ -206,16 +222,17 @@ describe('buildCostLane', () => {
 });
 
 describe('buildRunIdleLine', () => {
+  /** @param {number} busyCoreMs */
   const model = (busyCoreMs) => appModel({
     app: makeApp({ startTime: 0, endTime: 3_600_000 }),
-    executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+    executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 4, resourceProfileId: null }], removed: [] },
     runAggregates: { busyCoreMs },
   });
 
   it('states the idle core time and its share of the allocation', () => {
     const line = buildRunIdleLine(model(3_600_000 * 3));
     expect(line).toMatchObject({ coreHours: 1, allocatedCoreHours: 4, pct: 25 });
-    expect(line.text).toBe('1.0 core-h (25%) of the allocation ran no task.');
+    expect(line?.text).toBe('1.0 core-h (25%) of the allocation ran no task.');
   });
 
   it('is null without an allocation or with none idle', () => {
@@ -231,18 +248,18 @@ describe('the shared ranking vocabulary', () => {
   });
 
   it('ties break by band, then widget display order', () => {
-    const skewInfo = { type: 'skew', impactBand: 'info' };
-    const spillWarning = { type: 'spill', impactBand: 'warning' };
-    const gcWarning = { type: 'gc', impactBand: 'warning' };
+    const skewInfo = finding({ type: 'skew', impactBand: 'info' });
+    const spillWarning = finding({ type: 'spill', impactBand: 'warning' });
+    const gcWarning = finding({ type: 'gc', impactBand: 'warning' });
     const ordered = [skewInfo, gcWarning, spillWarning].sort(compareFindingRank).map((f) => f.type);
     expect(ordered[2]).toBe('skew');
     expect(ordered.slice(0, 2)).toEqual(['spill', 'gc'].sort((a, b) => FINDING_DISPLAY_ORDER.indexOf(a) - FINDING_DISPLAY_ORDER.indexOf(b)));
   });
 
   it('reads a recommendation of only whitespace as none', () => {
-    expect(trimmedRecommendation({ type: 'skew', recommendation: '  fix it  ' })).toBe('fix it');
-    expect(trimmedRecommendation({ type: 'skew', recommendation: '   ' })).toBe('');
-    expect(trimmedRecommendation({ type: 'skew' })).toBe('');
-    expect(isRankable({ type: 'skew', impactBand: 'warning', recommendation: '   ' })).toBe(false);
+    expect(trimmedRecommendation(finding({ type: 'skew', recommendation: '  fix it  ' }))).toBe('fix it');
+    expect(trimmedRecommendation(finding({ type: 'skew', recommendation: '   ' }))).toBe('');
+    expect(trimmedRecommendation(finding({ type: 'skew' }))).toBe('');
+    expect(isRankable(finding({ type: 'skew', impactBand: 'warning', recommendation: '   ' }))).toBe(false);
   });
 });

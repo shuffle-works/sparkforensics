@@ -13,10 +13,70 @@ import { existsSync, createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+/** @typedef {import('../src/parser-messages.ts').ParserMessage} ParserMessage */
+/** @typedef {import('../src/event-schemas.ts').SparkEvent} SparkEvent */
+/** @typedef {import('../src/event-handlers.ts').ParserState} ParserState */
+/** @typedef {import('../src/types.ts').AppModel} AppModel */
+/** @typedef {Extract<SparkEvent, { Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart' }>} SqlStartEvent */
+/** @typedef {NonNullable<SqlStartEvent['sparkPlanInfo']>} PlanInfo */
+/** @typedef {import('../src/parser-messages.ts').ParserMessageOf<'stage'>} StageMessage */
+/** @typedef {Extract<SparkEvent, { Event: 'SparkListenerTaskEnd' }>} TaskEndEvent */
+/** @typedef {NonNullable<TaskEndEvent['Task End Reason']>} TaskEndReason */
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {{ 'Use Disk': boolean, 'Use Memory': boolean, Deserialized: boolean, Replication: number }} StorageLevel */
+
+/**
+ * The first catalog finding of `type`; fails the test when there is none.
+ * @template {Finding['type']} T
+ * @param {Finding[]} catalog
+ * @param {T} type
+ * @returns {Extract<Finding, { type: T }>}
+ */
+function firstOfType(catalog, type) {
+  const found = catalog.find(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
+  if (!found) throw new Error(`expected a ${type} finding`);
+  return found;
+}
+/** @typedef {import('../src/parser-worker.ts').ZstdDecoderFactory} ZstdDecoderFactory */
+/** @typedef {Parameters<typeof runParse>[0]} FileSource */
+
+/**
+ * The first emitted message of `type`; fails the test when there is none.
+ * @template {ParserMessage['type']} T
+ * @param {ParserMessage[]} messages
+ * @param {T} type
+ * @returns {Extract<ParserMessage, { type: T }>}
+ */
+function firstMessage(messages, type) {
+  return messageOf(type, messages.find((m) => m.type === type) ?? null);
+}
+
+/**
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('expected a value, got ' + value);
+  return value;
+}
+
+/**
+ * The message `processEvent` returned, narrowed to `type`; fails the test when it returned null or another type.
+ * @template {ParserMessage['type']} T
+ * @param {T} type
+ * @param {ParserMessage | null} msg
+ * @returns {Extract<ParserMessage, { type: T }>}
+ */
+function messageOf(type, msg) {
+  if (!msg || msg.type !== type) throw new Error(`expected a ${type} message, got ${msg ? msg.type : 'null'}`);
+  return /** @type {Extract<ParserMessage, { type: T }>} */ (msg);
+}
+
 // Compress NDJSON to a Zstandard frame with Node's built-in codec, then decode
 // it back through the vendored fzstd in the parser: a cross-implementation
 // check that mirrors real SHS logs written with spark.io.compression.codec=zstd.
-const zstdSync = (u8) => new Uint8Array(zstdCompressSync(u8));
+const zstdSync = (/** @type {Uint8Array} */ u8) => new Uint8Array(zstdCompressSync(u8));
 
 const enc = new TextEncoder();
 
@@ -108,19 +168,20 @@ describe('buildChunkDecoder', () => {
   it('skips a chunk-spanning physicalPlanDescription value, matching stripPlanDescription for any cut', () => {
     const alphabet = ['\\', '"', 'a', '€', '\n', ' ', '🚀'];
     let seed = 7;
-    const rand = (k) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed % k; };
+    const rand = (/** @type {number} */ k) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed % k; };
     const planText = () => Array.from({ length: 40 }, () => alphabet[rand(alphabet.length)]).join('');
-    const start = (id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":${id},"description":"q \\"x\\" €","physicalPlanDescription":${JSON.stringify(planText())},"sparkPlanInfo":{"nodeName":"N","simpleString":"a\\\\"},"time":1}`;
-    const update = (id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":${JSON.stringify(planText() + '\\')},"sparkPlanInfo":{"nodeName":"M"}}`;
+    const start = (/** @type {number} */ id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":${id},"description":"q \\"x\\" €","physicalPlanDescription":${JSON.stringify(planText())},"sparkPlanInfo":{"nodeName":"N","simpleString":"a\\\\"},"time":1}`;
+    const update = (/** @type {number} */ id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":${JSON.stringify(planText() + '\\')},"sparkPlanInfo":{"nodeName":"M"}}`;
     const unterminated = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":9,"physicalPlanDescription":"cut \\" off';
     const lines = [start(1), '{"Event":"SparkListenerJobEnd","physicalPlanDescription":"kept"}', update(1), unterminated, update(2), start(2)];
     const text = lines.join('\n') + '\n';
     const bytes = enc.encode(text);
     const expected = lines.map(stripPlanDescription);
     // The unterminated line (index 3) may come out whole or emptied; either way JSON.parse rejects it.
-    const terminated = (all) => all.filter((_, i) => i !== 3);
-    const decodeInChunks = (cuts) => {
+    const terminated = (/** @type {string[]} */ all) => all.filter((_, i) => i !== 3);
+    const decodeInChunks = (/** @type {number[]} */ cuts) => {
       const dec = buildChunkDecoder();
+      /** @type {string[]} */
       const got = [];
       let from = 0;
       for (const cut of [...cuts, bytes.length]) { got.push(...dec.decode(bytes.subarray(from, cut))); from = cut; }
@@ -145,10 +206,10 @@ describe('buildChunkDecoder', () => {
   });
 
   describe('Delta command arguments in the plan description', () => {
-    const startLine = (description) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"rootExecutionId":1,"description":"q","physicalPlanDescription":${JSON.stringify(description)},"sparkPlanInfo":{"nodeName":"Execute X","simpleString":"Execute X","children":[],"metadata":{},"metrics":[]},"time":1}`;
-    const described = (command, args, tail = '') =>
+    const startLine = (/** @type {string} */ description) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"rootExecutionId":1,"description":"q","physicalPlanDescription":${JSON.stringify(description)},"sparkPlanInfo":{"nodeName":"Execute X","simpleString":"Execute X","children":[],"metadata":{},"metrics":[]},"time":1}`;
+    const described = (/** @type {string} */ command, /** @type {string} */ args, tail = '') =>
       `== Physical Plan ==\nExecute ${command} (1)\n   +- ${command} (2)${tail}\n\n\n(1) Execute ${command}\nOutput: []\n\n(2) ${command}\nArguments: ${args}\n\n(3) Range\nArguments: 0, 10, 1\n`;
-    const keptOf = (line) => JSON.parse(stripPlanDescription(line)).physicalPlanDescription;
+    const keptOf = (/** @type {string} */ line) => JSON.parse(stripPlanDescription(line)).physicalPlanDescription;
 
     it('cuts the description of a Delta command to its own Arguments line', () => {
       const args = 'SubqueryAlias source, `spark_catalog`.`db`.`t`, "quoted\\" \\\\n", [Update [x]]';
@@ -180,16 +241,17 @@ describe('buildChunkDecoder', () => {
 
     it('records the root execution and the kept line on the execution, never a whole description', () => {
       const state = createState();
+      /** @type {(id: number, physicalPlanDescription: string) => SqlStartEvent} */
       const start = (id, physicalPlanDescription) => ({
-        Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, rootExecutionId: 4, time: 1, physicalPlanDescription,
+        Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, rootExecutionId: 4, time: 1, physicalPlanDescription, sparkPlanInfo: null,
       });
       processEvent(start(1, 'MergeIntoCommand\nArguments: a, b'), state);
       processEvent(start(2, described('MergeIntoCommand', 'a')), state);
       processEvent(start(3, ''), state);
       expect(state.sqlExecutions.get(1)).toMatchObject({ rootExecutionId: 4, commandArguments: 'MergeIntoCommand\nArguments: a, b' });
-      expect(state.sqlExecutions.get(2).commandArguments).toBeUndefined();
-      expect(state.sqlExecutions.get(3).commandArguments).toBeUndefined();
-      const noRoot = processEvent({ ...start(5, ''), rootExecutionId: undefined }, state);
+      expect(present(state.sqlExecutions.get(2)).commandArguments).toBeUndefined();
+      expect(present(state.sqlExecutions.get(3)).commandArguments).toBeUndefined();
+      const noRoot = messageOf('sql', processEvent({ ...start(5, ''), rootExecutionId: undefined }, state));
       expect('rootExecutionId' in noRoot.data).toBe(false);
     });
 
@@ -225,10 +287,10 @@ describe('buildChunkDecoder', () => {
       const save = 'org.apache.spark.sql.delta.sources.DeltaDataSource@1, [path=/t], Append';
       const short = startLine(described('SaveIntoDataSourceCommand', save));
       const long = startLine(described('SaveIntoDataSourceCommand', save, `\n${'x'.repeat(300 * 1024)}`));
-      for (const [line, cut, kept] of [
+      for (const [line, cut, kept] of /** @type {[string, number, string][]} */ ([
         [short, short.indexOf('Range') - 10, `SaveIntoDataSourceCommand\nArguments: ${save}`],
         [long, long.indexOf('Range') - 10, ''],
-      ]) {
+      ])) {
         const dec = buildChunkDecoder();
         const bytes = enc.encode(`${line}\n`);
         const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
@@ -238,12 +300,12 @@ describe('buildChunkDecoder', () => {
   });
 
   describe('Exchange inputs in the plan description', () => {
-    const block = (id, columns, planId) =>
+    const block = (/** @type {number} */ id, /** @type {number} */ columns, /** @type {number} */ planId) =>
       `(${id}) Exchange\nInput [${columns}]: [${Array.from({ length: columns }, (_, i) => `c${i}#${i}`).join(', ')}]\nArguments: hashpartitioning(c0#0, 200), ENSURE_REQUIREMENTS, [plan_id=${planId}]\n\n`;
     const described = (padding = '') =>
       `== Physical Plan ==\nAdaptiveSparkPlan (9)\n\n\n(1) Scan parquet db.t\nOutput [2]: [a#1, b#2]\n\n${block(4, 3, 53)}(5) Sort\nInput [3]: [a#1, b#2, c#3]\n\n${block(8, 128, 61)}${padding}`;
-    const updateLine = (description) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":1,"physicalPlanDescription":${JSON.stringify(description)},"sparkPlanInfo":{"nodeName":"AdaptiveSparkPlan"}}`;
-    const keptOf = (line) => JSON.parse(stripPlanDescription(line)).physicalPlanDescription;
+    const updateLine = (/** @type {string} */ description) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":1,"physicalPlanDescription":${JSON.stringify(description)},"sparkPlanInfo":{"nodeName":"AdaptiveSparkPlan"}}`;
+    const keptOf = (/** @type {string} */ line) => JSON.parse(stripPlanDescription(line)).physicalPlanDescription;
 
     it('cuts a description to the column count of each Exchange by plan_id', () => {
       expect(keptOf(updateLine(described()))).toBe('ExchangeInputs\n53 3\n61 128');
@@ -255,7 +317,7 @@ describe('buildChunkDecoder', () => {
     });
 
     it('reads a description up to the scan limit however its bytes are chunked, and none longer', () => {
-      const pad = (chars) => `(9) Filter\nCondition : ${'x'.repeat(chars)}\n`;
+      const pad = (/** @type {number} */ chars) => `(9) Filter\nCondition : ${'x'.repeat(chars)}\n`;
       for (const [line, kept] of [
         [updateLine(described(pad(1000))), 'ExchangeInputs\n53 3\n61 128'],
         [updateLine(described(pad(300 * 1024))), ''],
@@ -273,7 +335,7 @@ describe('buildChunkDecoder', () => {
 
     it('records the column counts of an execution until its plan resolves, from the start and from the latest update', () => {
       const state = createState();
-      const start = { Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, time: 1, physicalPlanDescription: 'ExchangeInputs\n53 3', sparkPlanInfo: { nodeName: 'Exchange', simpleString: 'Exchange x, [plan_id=53]', children: [], metadata: {}, metrics: [] } };
+      const start = /** @satisfies {SparkEvent} */ ({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, time: 1, physicalPlanDescription: 'ExchangeInputs\n53 3', sparkPlanInfo: { nodeName: 'Exchange', simpleString: 'Exchange x, [plan_id=53]', children: [], metadata: {}, metrics: [] } });
       processEvent(start, state);
       expect(state.exchangeColumns.get(1)).toEqual(new Map([[53, 3]]));
       processEvent({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate', executionId: 1, physicalPlanDescription: 'ExchangeInputs\n61 128', sparkPlanInfo: start.sparkPlanInfo }, state);
@@ -353,7 +415,7 @@ describe('processEvent: ApplicationStart', () => {
       'Spark Version': '3.4.0',
     }, s);
     expect(s.app).toMatchObject({ id: 'application_123_1', name: 'test-app', startTime: 1000, endTime: null, sparkVersion: '3.4.0', config: {} });
-    expect(s.app.resources.executor.memoryMB).toBeNull();
+    expect(present(s.app).resources?.executor.memoryMB).toBeNull();
     expect(msg).toEqual({ type: 'app', data: { ...s.app, rddInfo: new Map() } });
   });
 });
@@ -365,37 +427,37 @@ describe('processEvent: LogStart', () => {
     expect(logMsg).toBeNull();
     expect(s.pendingSparkVersion).toBe('3.5.3');
 
-    const appMsg = processEvent({
+    const appMsg = messageOf('app', processEvent({
       Event: 'SparkListenerApplicationStart',
       'App ID': 'app_1',
       'App Name': 'my-app',
       'Timestamp': 2000,
-    }, s);
+    }, s));
     expect(appMsg.data.sparkVersion).toBe('3.5.3');
   });
 
   it('ApplicationStart Spark Version field is used when LogStart is absent', () => {
     const s = createState();
-    const appMsg = processEvent({
+    const appMsg = messageOf('app', processEvent({
       Event: 'SparkListenerApplicationStart',
       'App ID': 'app_2',
       'App Name': 'my-app',
       'Timestamp': 3000,
       'Spark Version': '3.4.1',
-    }, s);
+    }, s));
     expect(appMsg.data.sparkVersion).toBe('3.4.1');
   });
 
   it('LogStart version takes precedence over ApplicationStart version', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerLogStart', 'Spark Version': '3.5.3' }, s);
-    const appMsg = processEvent({
+    const appMsg = messageOf('app', processEvent({
       Event: 'SparkListenerApplicationStart',
       'App ID': 'app_3',
       'App Name': 'my-app',
       'Timestamp': 4000,
       'Spark Version': '3.4.0',
-    }, s);
+    }, s));
     expect(appMsg.data.sparkVersion).toBe('3.5.3');
   });
 });
@@ -409,11 +471,11 @@ describe('processEvent: ApplicationEnd', () => {
       'App Name': 'end-test',
       'Timestamp': 1000,
     }, s);
-    const msg = processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 9999 }, s);
+    const msg = messageOf('app', processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 9999 }, s));
     expect(msg).not.toBeNull();
     expect(msg.type).toBe('app');
     expect(msg.data.endTime).toBe(9999);
-    expect(s.app.endTime).toBe(9999);
+    expect(present(s.app).endTime).toBe(9999);
   });
 
   it('returns null when app is not yet set', () => {
@@ -426,7 +488,7 @@ describe('processEvent: ApplicationEnd', () => {
     const state = createState();
     processEvent({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': { 'spark.eventLog.logStageExecutorMetrics': 'false' } }, state);
     processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'a', 'App Name': 'a', Timestamp: 1 }, state);
-    const end = processEvent({ Event: 'SparkListenerApplicationEnd', Timestamp: 5 }, state);
+    const end = messageOf('app', processEvent({ Event: 'SparkListenerApplicationEnd', Timestamp: 5 }, state));
 
     expect(end.data.evidenceInputs).toEqual({
       environmentUpdates: 1,
@@ -452,8 +514,8 @@ describe('processEvent: StageSubmitted', () => {
     }, s);
     expect(msg).toBeNull();
     expect(s.stages.has(5)).toBe(true);
-    expect(s.stages.get(5).submittedAt).toBe(2000);
-    expect(s.stages.get(5).taskAttempts.size).toBe(0);
+    expect(present(s.stages.get(5)).submittedAt).toBe(2000);
+    expect(present(present(s.stages.get(5)).taskAttempts).size).toBe(0);
   });
 
   it('counts every observed evidence source without retaining the source rows', () => {
@@ -498,48 +560,50 @@ describe('processEvent: ExecutorAdded', () => {
 
   it('captures Resource Profile Id nested in Executor Info (real Spark shape)', () => {
     const s = createState();
-    const msg = processEvent({
+    const msg = messageOf('executor', processEvent({
       Event: 'SparkListenerExecutorAdded',
       'Timestamp': 6000,
       'Executor ID': '2',
-      'Executor Info': { 'Host': 'host2', 'Total Cores': 5, 'Resources': {}, 'Resource Profile Id': 0 },
-    }, s);
-    expect(msg.data.resourceProfileId).toBe(0);
+      'Executor Info': { 'Host': 'host2', 'Total Cores': 5, 'Resource Profile Id': 0 },
+    }, s));
+    expect(msg.data.kind === 'added' ? msg.data.resourceProfileId : undefined).toBe(0);
   });
 });
 
 describe('processEvent: SQLExecutionStart', () => {
   it('stores sql execution and returns sql message', () => {
     const s = createState();
-    const msg = processEvent({
+    const msg = messageOf('sql', processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
       executionId: 7,
       description: 'select ...',
       time: 3000,
       physicalPlanDescription: 'FileScan parquet ...',
-    }, s);
+      sparkPlanInfo: null,
+    }, s));
     expect(s.sqlExecutions.has(7)).toBe(true);
     expect(msg.type).toBe('sql');
     expect(msg.data.id).toBe(7);
     // Nothing downstream reads the plan's text rendering, so it is never retained.
-    expect(msg.data.physicalPlanDescription).toBeUndefined();
+    expect(Reflect.get(msg.data, 'physicalPlanDescription')).toBeUndefined();
   });
 });
 
 describe('processEvent: SQLExecutionStart modifiedConfigs', () => {
+  /** @type {(extra: { modifiedConfigs?: Record<string, string> }) => SparkEvent} */
   const start = (extra) => ({
     Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
-    executionId: 7, description: 'q', time: 1, physicalPlanDescription: '', ...extra,
+    executionId: 7, description: 'q', time: 1, physicalPlanDescription: '', sparkPlanInfo: null, ...extra,
   });
 
   it('keeps the execution\'s session settings on the sql message', () => {
-    const msg = processEvent(start({ modifiedConfigs: { 'spark.sql.autoBroadcastJoinThreshold': '-1' } }), createState());
+    const msg = messageOf('sql', processEvent(start({ modifiedConfigs: { 'spark.sql.autoBroadcastJoinThreshold': '-1' } }), createState()));
     expect(msg.data.modifiedConfigs).toEqual({ 'spark.sql.autoBroadcastJoinThreshold': '-1' });
   });
 
   it('leaves the field off when the execution modified nothing, or the event has none', () => {
-    expect(processEvent(start({ modifiedConfigs: {} }), createState()).data.modifiedConfigs).toBeUndefined();
-    expect(processEvent(start({}), createState()).data.modifiedConfigs).toBeUndefined();
+    expect(messageOf('sql', processEvent(start({ modifiedConfigs: {} }), createState())).data.modifiedConfigs).toBeUndefined();
+    expect(messageOf('sql', processEvent(start({}), createState())).data.modifiedConfigs).toBeUndefined();
   });
 });
 
@@ -549,7 +613,7 @@ describe('processEvent: JobStart links stage to SQL execution', () => {
 
     processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
-      executionId: 10, description: 'test', time: 1000, physicalPlanDescription: '',
+      executionId: 10, description: 'test', time: 1000, physicalPlanDescription: '', sparkPlanInfo: null,
     }, s);
 
     processEvent({
@@ -568,8 +632,8 @@ describe('processEvent: JobStart links stage to SQL execution', () => {
       'Stage Info': { 'Stage ID': 19, 'Stage Name': 'shuffle', 'Details': '', 'Submission Time': 1200 },
     }, s);
 
-    expect(s.stages.get(18).sqlExecutionId).toBe(10);
-    expect(s.stages.get(19).sqlExecutionId).toBe(10);
+    expect(present(s.stages.get(18)).sqlExecutionId).toBe(10);
+    expect(present(s.stages.get(19)).sqlExecutionId).toBe(10);
   });
 
   it('leaves sqlExecutionId null for stages with no SQL execution', () => {
@@ -584,7 +648,7 @@ describe('processEvent: JobStart links stage to SQL execution', () => {
       Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': 0, 'Stage Name': 'collect', 'Details': '', 'Submission Time': 500 },
     }, s);
-    expect(s.stages.get(0).sqlExecutionId).toBeNull();
+    expect(present(s.stages.get(0)).sqlExecutionId).toBeNull();
   });
 });
 
@@ -595,6 +659,7 @@ describe('processEvent: unknown event', () => {
   // 15 types is silently ignored and never counted toward skippedLines.
   it('an unrecognized Event value is silently ignored, not counted as a skipped line', () => {
     const s = createState();
+    /** @type {ParserMessage | null} */
     let emitted = null;
     dispatchLine(JSON.stringify({ Event: 'SparkListenerUnknown' }), s, (msg) => { emitted = msg; });
     expect(s.skippedLines).toBe(0);
@@ -607,6 +672,7 @@ describe('processEvent: unknown event', () => {
   // DOES still count toward skippedLines.
   it('a known Event type that fails its own schema counts as a skipped line', () => {
     const s = createState();
+    /** @type {ParserMessage | null} */
     let emitted = null;
     dispatchLine(JSON.stringify({ Event: 'SparkListenerJobEnd' }), s, (msg) => { emitted = msg; });
     expect(s.skippedLines).toBe(1);
@@ -618,6 +684,7 @@ describe('processEvent: unknown event', () => {
   // dispatchLine's schema gate), it throws rather than returning null.
   it('processEvent itself throws via assertNever for a value outside the validated SparkEvent union', () => {
     const s = createState();
+    // @ts-expect-error SparkListenerUnknown is outside the SparkEvent union on purpose
     expect(() => processEvent({ Event: 'SparkListenerUnknown' }, s)).toThrow(/Unreachable case/);
   });
 
@@ -632,9 +699,11 @@ describe('processEvent: unknown event', () => {
     // Corrupt state to force a throw inside accumulateTask's
     // stage.taskAttempts.get(key), simulating a handler bug not bad input
     // (the TaskEnd event below is fully schema-valid).
-    s.stages.get(1).taskAttempts = { get() { throw new Error('simulated handler bug'); } };
+    // @ts-expect-error a taskAttempts that throws on get() is not a Map, on purpose
+    present(s.stages.get(1)).taskAttempts = { get() { throw new Error('simulated handler bug'); } };
 
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    /** @type {ParserMessage | null} */
     let emitted = null;
     dispatchLine(JSON.stringify({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
       'Task Info': { Index: 0, 'Launch Time': 0, 'Finish Time': 1 }, 'Task Metrics': {} }), s, (msg) => { emitted = msg; });
@@ -716,10 +785,10 @@ describe('processEvent: StageCompleted backfills a missing submission time', () 
   it('takes Submission Time from StageCompleted when StageSubmitted carried none (older Spark)', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 0 } }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 0, 'Submission Time': 1422981762069, 'Completion Time': 1422981762637 },
-    }, s);
+    }, s));
     expect(msg.data.submittedAt).toBe(1422981762069);
     expect(msg.data.completedAt - msg.data.submittedAt).toBe(568);
   });
@@ -727,16 +796,16 @@ describe('processEvent: StageCompleted backfills a missing submission time', () 
   it('keeps the StageSubmitted time when both events carry one', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 0, 'Submission Time': 1000 } }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 0, 'Submission Time': 1200, 'Completion Time': 5000 },
-    }, s);
+    }, s));
     expect(msg.data.submittedAt).toBe(1000);
   });
 });
 
 describe('computeTaskActiveMs', () => {
-  const tasks = (...pairs) => {
+  const tasks = (/** @type {[number, number][]} */ ...pairs) => {
     const arr = new Float64Array(pairs.length * FIELDS.STRIDE);
     pairs.forEach(([launch, finish], i) => {
       arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] = launch;
@@ -766,7 +835,7 @@ describe('computeTaskActiveMs', () => {
 
 describe('computeTailReplayRecoveryMs', () => {
   // [launch, duration] pairs, in task-array order.
-  const tasks = (...pairs) => {
+  const tasks = (/** @type {[number, number][]} */ ...pairs) => {
     const arr = new Float64Array(pairs.length * FIELDS.STRIDE);
     pairs.forEach(([launch, duration], i) => {
       arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] = launch;
@@ -793,7 +862,7 @@ describe('computeTailReplayRecoveryMs', () => {
     // 2 slots: the 1000ms task holds slot 0 while nine 100ms tasks run back to back on slot 1 (end
     // 900), so the stage ends at 1000. Capped at 100, the ten 100ms tasks split 5/5: end 500.
     // The P50/max estimate claimed max(1000 - 100, 900 / 2) = 900.
-    const arr = tasks([0, 1000], ...Array.from({ length: 9 }, (_, i) => [i * 100, 100]));
+    const arr = tasks([0, 1000], ...Array.from({ length: 9 }, (_, i) => /** @type {[number, number]} */ ([i * 100, 100])));
     expect(computeTailReplayRecoveryMs(arr, 100, 2)).toBe(500);
   });
 
@@ -864,8 +933,8 @@ describe('full stage cycle', () => {
       }, s);
     }
 
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 500 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 500 } }, s));
 
     expect(msg.type).toBe('stage');
     const d = msg.data;
@@ -894,8 +963,8 @@ describe('full stage cycle', () => {
       }
     }, s);
 
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 500 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 500 } }, s));
 
     expect('taskAttempts' in msg.data).toBe(false);
   });
@@ -916,10 +985,10 @@ describe('full stage cycle', () => {
       }
     }, s);
 
-    const stageCompletedEvent = { Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 500 } };
+    const stageCompletedEvent = /** @satisfies {SparkEvent} */ ({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 500 } });
 
-    const firstMsg = processEvent(stageCompletedEvent, s);
+    const firstMsg = messageOf('stage', processEvent(stageCompletedEvent, s));
     expect(firstMsg.type).toBe('stage');
 
     let secondMsg;
@@ -929,6 +998,7 @@ describe('full stage cycle', () => {
 });
 
 describe('stageType classification', () => {
+  /** @param {number} shuffleRead */
   function makeStage(shuffleRead) {
     const s = createState();
     processEvent({
@@ -946,7 +1016,7 @@ describe('stageType classification', () => {
         'Input Metrics': { 'Bytes Read': 0 }, 'Output Metrics': { 'Bytes Written': 0 },
       },
     }, s);
-    return processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 2, 'Completion Time': 200 } }, s);
+    return messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 2, 'Completion Time': 200 } }, s));
   }
 
   it('returns MAP when shuffleReadBytes is 0', () => {
@@ -965,7 +1035,7 @@ describe('processEvent: StageSubmitted populates new fields', () => {
       Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': 7, 'Stage Name': 'agg', 'Submission Time': 10, 'Parent IDs': [3, 5] },
     }, s);
-    const stage = s.stages.get(7);
+    const stage = present(s.stages.get(7));
     expect(stage.parentIds).toEqual([3, 5]);
     expect(stage.hostStats).toBeInstanceOf(Map);
     expect(stage.hostStats.size).toBe(0);
@@ -980,11 +1050,12 @@ describe('processEvent: StageSubmitted populates new fields', () => {
       Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 },
     }, s);
-    expect(s.stages.get(1).parentIds).toEqual([]);
+    expect(present(s.stages.get(1)).parentIds).toEqual([]);
   });
 });
 
 describe('accumulateTask: populates hostStats / speculativeTasks / failureReasons', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({
       Event: 'SparkListenerStageSubmitted',
@@ -1017,7 +1088,7 @@ describe('accumulateTask: populates hostStats / speculativeTasks / failureReason
       'Task Info': { 'Launch Time': 0, 'Finish Time': 50, 'Host': 'host-B' },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s));
     expect(msg.data.hostStats).toEqual(
       expect.arrayContaining([
         { host: 'host-A', taskCount: 2, totalDuration: 400 },
@@ -1041,7 +1112,7 @@ describe('accumulateTask: populates hostStats / speculativeTasks / failureReason
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100, 'Speculative': false },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.speculativeTasks).toBe(1);
   });
 
@@ -1069,7 +1140,7 @@ describe('accumulateTask: populates hostStats / speculativeTasks / failureReason
       'Task End Reason': { Reason: 'TaskKilled' },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.failedTasks).toBe(3);
     expect(msg.data.failureReasons).toEqual(
       expect.arrayContaining([
@@ -1095,19 +1166,20 @@ describe('processEvent: SQLExecution accumulator tracking', () => {
       executionId: 7, description: 'SELECT', time: 1000,
       physicalPlanDescription: '', sparkPlanInfo: planInfo,
     }, s);
-    expect(s.sqlExecutions.get(7).sparkPlanInfo).toEqual(planInfo);
+    expect(present(s.sqlExecutions.get(7)).sparkPlanInfo).toEqual(planInfo);
     expect(s.accumState.has(7)).toBe(true);
-    expect(s.accumState.get(7).size).toBe(0);
+    expect(present(s.accumState.get(7)).size).toBe(0);
   });
 
   it('SparkListenerSQLExecutionStart with no sparkPlanInfo stores null', () => {
     const s = createState();
+    // @ts-expect-error the key is omitted on purpose: a log line may lack sparkPlanInfo, which the parsed type requires
     processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
       executionId: 8, description: 'q', time: 1000,
       physicalPlanDescription: '',
     }, s);
-    expect(s.sqlExecutions.get(8).sparkPlanInfo).toBeNull();
+    expect(present(s.sqlExecutions.get(8)).sparkPlanInfo).toBeNull();
     expect(s.accumState.has(8)).toBe(false);
   });
 
@@ -1127,7 +1199,7 @@ describe('processEvent: SQLExecution accumulator tracking', () => {
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates',
       executionId: 5, accumUpdates: [[94, 5]],
     }, s);
-    const m = s.accumState.get(5);
+    const m = present(s.accumState.get(5));
     expect(m.get(94)).toBe(15); // 10 + 5
     expect(m.get(95)).toBe(20);
   });
@@ -1145,6 +1217,7 @@ describe('processEvent: SQLExecution accumulator tracking', () => {
 });
 
 describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
+  /** @param {number} executionId @param {PlanInfo} planInfo @returns {SparkEvent} */
   function makeExecStart(executionId, planInfo) {
     return {
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
@@ -1152,7 +1225,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
       sparkPlanInfo: planInfo,
     };
   }
-  const simplePlan = (name) => ({ nodeName: name, simpleString: name, children: [], metadata: {}, metrics: [] });
+  const simplePlan = (/** @type {string} */ name) => ({ nodeName: name, simpleString: name, children: [], metadata: {}, metrics: [] });
 
   it('overwrites sparkPlanInfo for a known execution, never retaining physicalPlanDescription', () => {
     const state = createState();
@@ -1163,9 +1236,9 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
       sparkPlanInfo: simplePlan('NewPlan'),
     }, state);
 
-    const exec = state.sqlExecutions.get(1);
-    expect(exec.sparkPlanInfo.nodeName).toBe('NewPlan');
-    expect(exec.physicalPlanDescription).toBeUndefined();
+    const exec = present(state.sqlExecutions.get(1));
+    expect(exec.sparkPlanInfo?.nodeName).toBe('NewPlan');
+    expect(Reflect.get(exec, 'physicalPlanDescription')).toBeUndefined();
   });
 
   it('last-write-wins across two successive updates for the same execution', () => {
@@ -1180,7 +1253,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
       executionId: 1, physicalPlanDescription: 'update 2', sparkPlanInfo: simplePlan('Update2'),
     }, state);
 
-    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Update2');
+    expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('Update2');
   });
 
   it('is silently discarded for an unseen executionId (out-of-order or truncated log)', () => {
@@ -1196,12 +1269,12 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
   it('sets hadAdaptiveUpdate to true on the execution record once updated, false before', () => {
     const state = createState();
     processEvent(makeExecStart(1, simplePlan('OldPlan')), state);
-    expect(state.sqlExecutions.get(1).hadAdaptiveUpdate).toBe(false);
+    expect(present(state.sqlExecutions.get(1)).hadAdaptiveUpdate).toBe(false);
     processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate',
       executionId: 1, sparkPlanInfo: simplePlan('New'),
     }, state);
-    expect(state.sqlExecutions.get(1).hadAdaptiveUpdate).toBe(true);
+    expect(present(state.sqlExecutions.get(1)).hadAdaptiveUpdate).toBe(true);
   });
 
   // Mutating state.sqlExecutions' in-memory object is not enough, the real worker posts a `sql` message
@@ -1212,19 +1285,19 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
   it('returns a fresh sql-type message reflecting hadAdaptiveUpdate: true, not null', () => {
     const state = createState();
     processEvent(makeExecStart(1, simplePlan('OldPlan')), state);
-    const result = processEvent({
+    const result = messageOf('sql', processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate',
       executionId: 1, physicalPlanDescription: 'new plan', sparkPlanInfo: simplePlan('NewPlan'),
-    }, state);
+    }, state));
 
     expect(result).not.toBeNull();
     expect(result.type).toBe('sql');
     expect(result.data.id).toBe(1);
-    expect(result.data.hadAdaptiveUpdate).toBe(true);
+    expect(Reflect.get(result.data, 'hadAdaptiveUpdate')).toBe(true);
     // The raw plan stays worker-side (the main thread reads the resolved sqlPlan tree instead).
-    expect(result.data.sparkPlanInfo).toBeNull();
-    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('NewPlan');
-    expect(result.data.physicalPlanDescription).toBeUndefined();
+    expect(Reflect.get(result.data, 'sparkPlanInfo')).toBeNull();
+    expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('NewPlan');
+    expect(Reflect.get(result.data, 'physicalPlanDescription')).toBeUndefined();
     // Shallow copy, not the same mutable reference the worker keeps mutating
     // (mirrors the real self.postMessage structured-clone boundary).
     expect(result.data).not.toBe(state.sqlExecutions.get(1));
@@ -1233,17 +1306,19 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
   it('preserves an existing sparkPlanInfo when the update event carries none (does not wipe it with null)', () => {
     const state = createState();
     processEvent(makeExecStart(1, simplePlan('OldPlan')), state);
-    const result = processEvent({
+    // @ts-expect-error the key is omitted on purpose: an update line may carry no sparkPlanInfo, which the parsed type requires
+    const result = messageOf('sql', processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate',
       executionId: 1, physicalPlanDescription: 'new plan',
-    }, state);
+    }, state));
 
-    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('OldPlan');
-    expect(result.data.sparkPlanInfo).toBeNull();
+    expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('OldPlan');
+    expect(Reflect.get(result.data, 'sparkPlanInfo')).toBeNull();
   });
 });
 
 describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({
       Event: 'SparkListenerStageSubmitted',
@@ -1260,10 +1335,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100, 'Host': 'h1' },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 },
-    }, s);
+    }, s));
     expect(Array.isArray(msg.data.hostStats)).toBe(true);
     expect(msg.data.hostStats[0]).toEqual({ host: 'h1', taskCount: 1, totalDuration: 100 });
     expect(Array.isArray(msg.data.failureReasons)).toBe(true);
@@ -1285,10 +1360,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
       'Task Info': { 'Launch Time': 0, 'Finish Time': 1000 },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 1100 },
-    }, s);
+    }, s));
     expect(msg.data.stragglerCount).toBe(1);
     // The straggler's excess over P50, the input to impact-estimator's tail claim.
     expect(msg.data.stragglerExcessMs).toBe(900);
@@ -1309,10 +1384,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
         'Task Metrics': {},
       }, s);
     }
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 },
-    }, s);
+    }, s));
     expect(msg.data.stragglerCount).toBe(0);
     expect(msg.data.tailReplayRecoveryMs).toBe(0);
   });
@@ -1327,10 +1402,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
         'Task Metrics': {},
       }, s);
     }
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 },
-    }, s);
+    }, s));
     expect(msg.data.stragglerCount).toBe(0);
   });
 
@@ -1345,10 +1420,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100, 'Speculative': true },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 },
-    }, s);
+    }, s));
     expect(msg.data.parentIds).toEqual([2, 4]);
     expect(msg.data.speculativeTasks).toBe(1);
   });
@@ -1364,10 +1439,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
         'Memory Bytes Spilled': 50, 'Disk Bytes Spilled': 10,
       },
     }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 },
-    }, s);
+    }, s));
     expect(msg.data.shuffleReadP50).toBe(200);
     expect(msg.data.shuffleReadP95).toBe(200);
     expect(msg.data.shuffleReadMax).toBe(200);
@@ -1392,18 +1467,19 @@ describe('finalizeStage: shuffle-read + spill quantiles on a real fixture (item 
         '"SparkListenerStageCompleted"',
       ]);
       const state = createState();
+      /** @type {StageMessage[]} */
       const stageMsgs = [];
       for (const line of lines) dispatchLine(line, state, m => { if (m.type === 'stage') stageMsgs.push(m); });
 
       expect(stageMsgs.length).toBeGreaterThan(0);
       const withTasks = stageMsgs.find(m => m.data.taskCount > 0);
       expect(withTasks).toBeTruthy();
-      const d = withTasks.data;
-      for (const field of [
+      const d = present(withTasks).data;
+      for (const field of /** @type {(keyof StageMessage['data'])[]} */ ([
         'shuffleReadP50', 'shuffleReadP95', 'shuffleReadMax',
         'spillMemP50', 'spillMemP95', 'spillMemMax',
         'spillDiskP50', 'spillDiskP95', 'spillDiskMax',
-      ]) {
+      ])) {
         expect(typeof d[field]).toBe('number');
       }
       expect(d.shuffleReadP50).toBeLessThanOrEqual(d.shuffleReadP95);
@@ -1417,6 +1493,7 @@ describe('finalizeStage: shuffle-read + spill quantiles on a real fixture (item 
 });
 
 describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
+  /** @param {number} executionId @param {PlanInfo} planInfo @returns {SparkEvent} */
   function makeExecStart(executionId, planInfo) {
     return {
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
@@ -1426,6 +1503,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     };
   }
 
+  /** @param {number} executionId @param {number} [time] @returns {SparkEvent} */
   function makeExecEnd(executionId, time = 2000) {
     return {
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd',
@@ -1451,7 +1529,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
       executionId: 1, accumUpdates: [[5, 1000], [10, 500]],
     }, s);
 
-    const msg = processEvent(makeExecEnd(1), s);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(1), s));
 
     expect(msg).not.toBeNull();
     expect(msg.type).toBe('sqlPlan');
@@ -1472,25 +1550,27 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     // Each message is cloned, as the browser worker's postMessage does, so the model never shares
     // the worker's own record.
     const s = createState();
+    /** @type {AppModel} */
     const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
     const handlers = createModelCallbacks(appModel, {});
-    const post = (msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
+    const post = (/** @type {ParserMessage | null} */ msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
     post(processEvent(makeExecStart(1, { nodeName: 'Project', simpleString: 'Project [id]', children: [], metadata: {}, metrics: [] }), s));
     post(processEvent(makeExecEnd(1), s));
     post(processEvent(makeExecEnd(1, 3000), s));
-    expect(appModel.sql.get(1).planTree?.name).toBe('Project');
+    expect(present(appModel.sql.get(1)).planTree?.name).toBe('Project');
   });
 
   it('resolves the new plan when a whole SQL execution (start and end) repeats', () => {
     const s = createState();
+    /** @type {AppModel} */
     const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
     const handlers = createModelCallbacks(appModel, {});
-    const post = (msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
+    const post = (/** @type {ParserMessage | null} */ msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
     post(processEvent(makeExecStart(1, { nodeName: 'Project', simpleString: 'Project [id]', children: [], metadata: {}, metrics: [] }), s));
     post(processEvent(makeExecEnd(1), s));
     post(processEvent(makeExecStart(1, { nodeName: 'Filter', simpleString: 'Filter', children: [], metadata: {}, metrics: [] }), s));
     post(processEvent(makeExecEnd(1, 3000), s));
-    expect(appModel.sql.get(1).planTree?.name).toBe('Filter');
+    expect(present(appModel.sql.get(1)).planTree?.name).toBe('Filter');
   });
 
   it('omits metrics whose accumulatorId has no value in accumState', () => {
@@ -1502,7 +1582,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     };
     processEvent(makeExecStart(2, planInfo), s);
     // no DriverAccumUpdates posted → accId 99 has no value
-    const msg = processEvent(makeExecEnd(2), s);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(2), s));
     expect(msg.data.planTree.metrics).toHaveLength(0);
   });
 
@@ -1519,9 +1599,9 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
       executionId: 4, description: 'q', time: 1000,
-      physicalPlanDescription: '',
+      physicalPlanDescription: '', sparkPlanInfo: null,
     }, s);
-    const msg = processEvent(makeExecEnd(4), s);
+    const msg = messageOf('sql', processEvent(makeExecEnd(4), s));
     expect(msg).not.toBeNull();
     expect(msg.type).toBe('sql');
     expect(msg.data.endTime).toBe(2000);
@@ -1531,7 +1611,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     const s = createState();
     const planInfo = { nodeName: '', simpleString: '', children: [], metadata: {}, metrics: [] };
     processEvent(makeExecStart(5, planInfo), s);
-    const msg = processEvent(makeExecEnd(5), s);
+    const msg = messageOf('sql', processEvent(makeExecEnd(5), s));
     expect(msg).not.toBeNull();
     expect(msg.type).toBe('sql');
     expect(msg.data.endTime).toBe(2000);
@@ -1539,13 +1619,14 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
 
   it('resolves deeply nested tree iteratively without stack overflow', () => {
     // 500-level deep chain
+    /** @type {PlanInfo} */
     let node = { nodeName: 'Leaf', simpleString: 'Leaf', children: [], metadata: {}, metrics: [] };
     for (let i = 0; i < 500; i++) {
       node = { nodeName: `Node${i}`, simpleString: `Node${i}`, children: [node], metadata: {}, metrics: [] };
     }
     const s = createState();
     processEvent(makeExecStart(6, node), s);
-    const msg = processEvent(makeExecEnd(6), s);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(6), s));
     expect(msg).not.toBeNull();
     let cur = msg.data.planTree;
     while (cur.children.length > 0) cur = cur.children[0];
@@ -1554,6 +1635,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
 });
 
 describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds', () => {
+  /** @param {number} executionId @param {PlanInfo} planInfo @returns {SparkEvent} */
   function makeExecStart(executionId, planInfo) {
     return {
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
@@ -1561,21 +1643,25 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds',
       sparkPlanInfo: planInfo,
     };
   }
+  /** @param {number} executionId @param {number} [time] @returns {SparkEvent} */
   function makeExecEnd(executionId, time = 2000) {
     return { Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId, time };
   }
+  /** @param {number} jobId @param {number[]} stageIds @param {number} executionId @returns {SparkEvent} */
   function makeJobStart(jobId, stageIds, executionId) {
     return {
       Event: 'SparkListenerJobStart', 'Job ID': jobId, 'Stage IDs': stageIds,
       Properties: { 'spark.sql.execution.id': String(executionId) },
     };
   }
+  /** @param {number} stageId @returns {SparkEvent} */
   function submitStage(stageId) {
     return {
       Event: 'SparkListenerStageSubmitted',
-      'Stage Info': { 'Stage ID': stageId, 'Stage Attempt ID': 0, 'Stage Name': 's', 'Number of Tasks': 1, 'Submission Time': 0 },
+      'Stage Info': { 'Stage ID': stageId, 'Stage Attempt ID': 0, 'Stage Name': 's', 'Submission Time': 0 },
     };
   }
+  /** @param {number} stageId @param {number[]} accumIds @returns {SparkEvent} */
   function taskEnd(stageId, accumIds) {
     return {
       Event: 'SparkListenerTaskEnd', 'Stage ID': stageId, 'Stage Attempt ID': 0,
@@ -1602,7 +1688,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds',
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates',
       executionId: 1, accumUpdates: [[5, 1000], [10, 500]],
     }, state);
-    const msg = processEvent(makeExecEnd(1), state);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(1), state));
 
     expect(msg.data.planTree.stageIds).toEqual([0]);
     expect(msg.data.planTree.children[0].stageIds).toEqual([0]);
@@ -1621,7 +1707,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds',
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates',
       executionId: 1, accumUpdates: [[99, 2048]],
     }, state);
-    const msg = processEvent(makeExecEnd(1), state);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(1), state));
 
     expect(msg.data.planTree.stageIds).toBeUndefined();
   });
@@ -1644,7 +1730,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds',
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates',
       executionId: 1, accumUpdates: [[7, 500]],
     }, state);
-    const msg = processEvent(makeExecEnd(1), state);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(1), state));
 
     expect(msg.data.planTree.stageIds).toBeUndefined();
   });
@@ -1668,7 +1754,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds',
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates',
       executionId: 1, accumUpdates: [[7, 500]],
     }, state);
-    const msg = processEvent(makeExecEnd(1), state);
+    const msg = messageOf('sqlPlan', processEvent(makeExecEnd(1), state));
 
     expect(msg.data.planTree.stageIds).toBeUndefined();
   });
@@ -1677,6 +1763,7 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution, stageIds',
 describe('dispatchLine', () => {
   it('parses a valid line and emits the processed message', () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     dispatchLine('{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"test","Timestamp":1}', state, msg => emitted.push(msg));
     expect(emitted).toHaveLength(1);
@@ -1685,6 +1772,7 @@ describe('dispatchLine', () => {
 
   it('increments skippedLines and emits nothing on malformed JSON', () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     dispatchLine('not json', state, msg => emitted.push(msg));
     expect(emitted).toHaveLength(0);
@@ -1696,14 +1784,15 @@ describe('dispatchLine', () => {
 
   it('resolves the same plan tree whether or not the line carries a physicalPlanDescription', () => {
     const plan = { nodeName: 'Scan', simpleString: 'Scan "t"', children: [], metrics: [] };
-    const run = (extra) => {
+    const run = (/** @type {Record<string, unknown>} */ extra) => {
       const state = createState();
+      /** @type {ParserMessage[]} */
       const emitted = [];
-      const emit = (m) => emitted.push(m);
+      const emit = (/** @type {ParserMessage} */ m) => emitted.push(m);
       dispatchLine(JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, description: 'q', ...extra, sparkPlanInfo: plan, time: 0 }), state, emit);
       dispatchLine(JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: 1, time: 5 }), state, emit);
       expect(state.skippedLines).toBe(0);
-      return emitted.find((m) => m.type === 'sqlPlan').data.planTree;
+      return firstMessage(emitted, 'sqlPlan').data.planTree;
     };
     expect(run({ physicalPlanDescription: '== Physical Plan ==\n* Scan "t" \\ "x\\"' })).toEqual(run({}));
   });
@@ -1712,7 +1801,7 @@ describe('dispatchLine', () => {
 // A TaskEnd in Spark's flat accumulable form skips parsing its Accumulables array (parseTaskEnd).
 describe('parseTaskEnd', () => {
   const SUBMIT = '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":7,"Stage Attempt ID":0,"Stage Name":"s","Number of Tasks":1,"Submission Time":0}}';
-  const taskEnd = (accumulables) => `{"Event":"SparkListenerTaskEnd","Stage ID":7,"Stage Attempt ID":0,"Task Type":"ResultTask","Task End Reason":{"Reason":"Success"},"Task Info":{"Task ID":1,"Index":0,"Launch Time":0,"Finish Time":100,"Failed":false,"Accumulables":[${accumulables}]},"Task Metrics":{"Executor Run Time":90}}`;
+  const taskEnd = (/** @type {string} */ accumulables) => `{"Event":"SparkListenerTaskEnd","Stage ID":7,"Stage Attempt ID":0,"Task Type":"ResultTask","Task End Reason":{"Reason":"Success"},"Task Info":{"Task ID":1,"Index":0,"Launch Time":0,"Finish Time":100,"Failed":false,"Accumulables":[${accumulables}]},"Task Metrics":{"Executor Run Time":90}}`;
   const FLAT = '{"ID":42,"Name":"number of output rows","Update":"1","Value":"1","Internal":true,"Count Failed Values":true,"Metadata":"sql"},{"ID":43,"Name":"internal.metrics.executorRunTime","Update":90,"Value":90,"Internal":true,"Count Failed Values":true}';
   const OTHER_SHAPES = [
     '{"ID":42,"Name":"internal.metrics.updatedBlockStatuses","Update":[{"Block ID":"rdd_1_0","Status":{"Memory Size":1}}],"Internal":true}',
@@ -1752,7 +1841,7 @@ describe('parseTaskEnd', () => {
   });
 
   it('records each stage\'s accumulator IDs whether or not they repeat from the previous task', () => {
-    const entry = (id) => `{"ID":${id},"Name":"m","Update":1,"Value":1}`;
+    const entry = (/** @type {number} */ id) => `{"ID":${id},"Name":"m","Update":1,"Value":1}`;
     const lines = [
       SUBMIT,
       taskEnd([entry(1), entry(2)].join(',')),
@@ -1780,14 +1869,15 @@ describe('parseTaskEnd', () => {
 
 // An open execution's AQE updates are held as text and only the last is parsed (deferAdaptiveUpdate).
 describe('dispatchLine: deferred AQE updates', () => {
-  const START = (id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, description: 'q', sparkPlanInfo: { nodeName: 'Initial', children: [], metrics: [] }, time: 0 });
-  const UPDATE = (id, nodeName) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":"p","sparkPlanInfo":${nodeName == null ? 'null' : JSON.stringify({ nodeName, children: [], metrics: [] })}}`;
-  const END = (id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: id, time: 5 });
-  const run = (lines) => {
+  const START = (/** @type {number} */ id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, description: 'q', sparkPlanInfo: { nodeName: 'Initial', children: [], metrics: [] }, time: 0 });
+  const UPDATE = (/** @type {number} */ id, /** @type {string | null} */ nodeName) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":"p","sparkPlanInfo":${nodeName == null ? 'null' : JSON.stringify({ nodeName, children: [], metrics: [] })}}`;
+  const END = (/** @type {number} */ id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: id, time: 5 });
+  const run = (/** @type {string[]} */ lines) => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     for (const line of lines) dispatchLine(line, state, (m) => emitted.push(m));
-    return { state, emitted, planRoot: emitted.find((m) => m.type === 'sqlPlan')?.data.planTree.name };
+    return { state, emitted, planRoot: emitted.flatMap((m) => (m.type === 'sqlPlan' ? [m.data.planTree.name] : []))[0] };
   };
 
   it('resolves the last update\'s plan and never parses the ones it superseded', () => {
@@ -1795,7 +1885,7 @@ describe('dispatchLine: deferred AQE updates', () => {
     const { state, planRoot } = run([START(1), malformed, UPDATE(1, 'Second'), UPDATE(1, 'Last'), END(1)]);
     expect(planRoot).toBe('Last');
     expect(state.skippedLines).toBe(0);
-    expect(state.sqlExecutions.get(1).hadAdaptiveUpdate).toBe(true);
+    expect(present(state.sqlExecutions.get(1)).hadAdaptiveUpdate).toBe(true);
   });
 
   it('keeps the previous plan when a later update carries none', () => {
@@ -1808,11 +1898,14 @@ describe('dispatchLine: deferred AQE updates', () => {
     for (const cut of [5, 130]) {
       const decoder = buildChunkDecoder();
       const state = createState();
+      /** @type {ParserMessage[]} */
       const emitted = [];
+      /** @type {boolean[]} */
       const seen = [];
       for (const line of lines) {
         const bytes = new TextEncoder().encode(`${line}\n`);
         for (const part of [bytes.subarray(0, cut), bytes.subarray(cut)]) {
+          /** @type {import('../src/event-handlers.ts').JoinedLine[]} */
           const joined = [];
           decoder.decode(part, joined).forEach((decoded, i) => {
             const parts = joined.find((j) => j.index === i);
@@ -1822,7 +1915,7 @@ describe('dispatchLine: deferred AQE updates', () => {
         }
       }
       expect(seen).toEqual(lines.filter((l) => l.length > cut).map(() => true)); // shorter lines aren't split
-      expect(emitted.find((m) => m.type === 'sqlPlan')?.data.planTree.name).toBe('Last');
+      expect(firstMessage(emitted, 'sqlPlan').data.planTree.name).toBe('Last');
       expect(state.skippedLines).toBe(0);
     }
   });
@@ -1830,18 +1923,18 @@ describe('dispatchLine: deferred AQE updates', () => {
   it('parses updates at once for an execution that already ended or was never started', () => {
     const { state } = run([START(1), END(1), UPDATE(1, 'Late'), UPDATE(2, 'Unknown')]);
     expect(state.pendingAdaptiveUpdates.size).toBe(0);
-    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Late');
+    expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('Late');
   });
 
   it('applies a never-ended execution\'s latest update at parse completion', () => {
     const appStart = '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":0}';
     const { state, emitted } = run([appStart, START(1), UPDATE(1, 'Latest')]);
-    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Initial');
+    expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('Initial');
     emitParseCompletion(state, (m) => emitted.push(m), 2);
-    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Latest');
-    const sqlMsgs = emitted.filter((m) => m.type === 'sql');
-    expect(sqlMsgs[sqlMsgs.length - 1].data.hadAdaptiveUpdate).toBe(true);
-    expect(emitted.findIndex((m) => m.type === 'sql' && m.data.hadAdaptiveUpdate)).toBeLessThan(emitted.findIndex((m) => m.type === 'done'));
+    expect(present(state.sqlExecutions.get(1)).sparkPlanInfo?.nodeName).toBe('Latest');
+    const sqlMsgs = emitted.flatMap((m) => (m.type === 'sql' ? [m] : []));
+    expect(Reflect.get(sqlMsgs[sqlMsgs.length - 1].data, 'hadAdaptiveUpdate')).toBe(true);
+    expect(emitted.findIndex((m) => m.type === 'sql' && Reflect.get(m.data, 'hadAdaptiveUpdate'))).toBeLessThan(emitted.findIndex((m) => m.type === 'done'));
   });
 });
 
@@ -1869,10 +1962,16 @@ describe('stripPlanDescription', () => {
   });
 });
 
+/**
+ * A fetch that answers with only the Response members the SHS loader reads.
+ * @param {Uint8Array} zipBytes
+ * @param {{ contentLength?: number, ok?: boolean, status?: number, jsonBody?: unknown, contentType?: string | null }} [options]
+ * @returns {typeof fetch}
+ */
 function fakeFetchReturning(zipBytes, { contentLength = zipBytes.length, ok = true, status = 200, jsonBody = null, contentType = null } = {}) {
-  return async () => ({
+  return /** @type {typeof fetch} */ (/** @type {unknown} */ (async () => ({
     ok, status,
-    headers: { get: (name) => {
+    headers: { get: (/** @type {string} */ name) => {
       const key = name.toLowerCase();
       if (key === 'content-length') return String(contentLength);
       if (key === 'content-type') return contentType;
@@ -1894,7 +1993,7 @@ function fakeFetchReturning(zipBytes, { contentLength = zipBytes.length, ok = tr
         };
       },
     },
-  });
+  })));
 }
 
 describe('runParseFromUrl', () => {
@@ -1908,6 +2007,7 @@ describe('runParseFromUrl', () => {
     const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"test","Timestamp":1}\n{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n';
     const zipBytes = zipSync({ 'application_test_1': strToU8(ndjson) });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
@@ -1922,13 +2022,14 @@ describe('runParseFromUrl', () => {
     const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"t","Timestamp":1}\n';
     const zipBytes = zipSync({ 'application_9_1': strToU8(ndjson) });
     const state = createState();
+    /** @type {Parameters<typeof fetch>[0] | null} */
     let calledUrl = null;
     await runParseFromUrl({
       baseUrl: 'http://shs.example:18080/shs/',
       appId: 'application_9_1',
       attemptId: 'attempt-2',
     }, state, {
-      fetchImpl: async (url) => { calledUrl = url; return fakeFetchReturning(zipBytes)(); },
+      fetchImpl: async (url) => { calledUrl = url; return fakeFetchReturning(zipBytes)(url); },
       emit: () => {},
     });
     expect(calledUrl).toBe('/shs-proxy?baseUrl=http%3A%2F%2Fshs.example%3A18080%2Fshs%2F&appId=application_9_1&attemptId=attempt-2');
@@ -1950,12 +2051,13 @@ describe('runParseFromUrl', () => {
 
     const zipBytes = zipSync({ 'application_test_2_1.lz4': framed });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('t');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('t');
   });
 
   it('decodes a gz-suffixed entry with gunzipSync before parsing', async () => {
@@ -1963,26 +2065,28 @@ describe('runParseFromUrl', () => {
     const gzipped = gzipSync(strToU8(ndjson));
     const zipBytes = zipSync({ 'application_test_4_1.gz': gzipped });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('t4');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('t4');
   });
 
   it('decodes a zstd-suffixed entry with fzstd before parsing', async () => {
     const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-z","App Name":"tz","Timestamp":1}\n{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n';
     const zipBytes = zipSync({ 'application_test_z_1.zstd': zstdSync(strToU8(ndjson)) });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('tz');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('tz');
   });
 
   it('decodes a zstd entry made of thousands of concatenated frames without a stack overflow', async () => {
@@ -2002,26 +2106,28 @@ describe('runParseFromUrl', () => {
 
     const zipBytes = zipSync({ 'application_test_zf_1.zstd': concatenated });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('tzf');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('tzf');
   });
 
   it('decodes a snappy-suffixed entry with decodeSnappyBlock before parsing', async () => {
     const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-s","App Name":"ts","Timestamp":1}\n{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n';
     const zipBytes = zipSync({ 'application_test_s_1.snappy': snappyRawBlock(strToU8(ndjson)) });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('ts');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('ts');
   });
 
   it('skips an appstatus entry alongside the real event log entry', async () => {
@@ -2031,13 +2137,14 @@ describe('runParseFromUrl', () => {
       application_test_3_1: strToU8(ndjson),
     });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('t3');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('t3');
   });
 
   it('applies reassembleRollingEntries (drops compacted-away files) when the SHS zip contains a rolling multi-file log', async () => {
@@ -2047,13 +2154,14 @@ describe('runParseFromUrl', () => {
       'events_3_app-r': strToU8('{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n'),
     });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('rolling');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('rolling');
     expect(state.skippedLines).toBe(0); // events_1 (below the compact's index) must never be parsed
   });
 
@@ -2063,6 +2171,7 @@ describe('runParseFromUrl', () => {
       'events_3_app-gap': strToU8('{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n'),
     });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await expect(runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(zipBytes),
@@ -2074,6 +2183,7 @@ describe('runParseFromUrl', () => {
 
   it('emits a typed local-server-unavailable error when the proxy route is absent', async () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(new Uint8Array(0), { ok: false, status: 404 }),
@@ -2084,6 +2194,7 @@ describe('runParseFromUrl', () => {
 
   it('emits local-server-unavailable when a dev/SPA host returns 200 text/html instead of a zip', async () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     const html = new TextEncoder().encode('<html></html>');
     await runParseFromUrl(validRequest, state, {
@@ -2095,6 +2206,7 @@ describe('runParseFromUrl', () => {
 
   it('passes a safe proxy code through without proxy details', async () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(new Uint8Array(0), {
@@ -2108,6 +2220,7 @@ describe('runParseFromUrl', () => {
 
   it('emits local-server-unavailable when the proxy fetch rejects', async () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: async () => { throw new TypeError('Failed to fetch'); },
@@ -2118,6 +2231,7 @@ describe('runParseFromUrl', () => {
 
   it('emits invalid-event-log for a malformed download', async () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFromUrl(validRequest, state, {
       fetchImpl: fakeFetchReturning(new Uint8Array([1, 2, 3, 4])),
@@ -2136,10 +2250,11 @@ describe('decodeShsArchive', () => {
       + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
     const zipBytes = zipSync({ 'eventlog': strToU8(ndjson) });
     const state = createState();
+    /** @type {ParserMessage[]} */
     const messages = [];
     await decodeShsArchive(zipBytes, state, (msg) => messages.push(msg));
-    const appMsg = messages.find((m) => m.type === 'app');
-    const doneMsg = messages.find((m) => m.type === 'done');
+    const appMsg = firstMessage(messages, 'app');
+    const doneMsg = firstMessage(messages, 'done');
     expect(appMsg.data.id).toBe('app-1');
     expect(doneMsg.data.skippedLines).toBe(0);
   });
@@ -2150,18 +2265,21 @@ describe('decodeShsArchive', () => {
       + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
     const zipBytes = zipSync({ 'eventlog.zstd': zstdSync(strToU8(ndjson)) });
     let built = 0;
+    /** @type {ZstdDecoderFactory} */
     const zstdDecoder = (onChunk) => {
       built++;
       return { push: (chunk) => onChunk(new Uint8Array(zstdDecompressSync(chunk))) };
     };
+    /** @type {ParserMessage[]} */
     const messages = [];
     await decodeShsArchive(zipBytes, createState(), (msg) => messages.push(msg), { zstdDecoder });
     expect(built).toBe(1);
-    expect(messages.find((m) => m.type === 'app').data.id).toBe('app-z');
+    expect(firstMessage(messages, 'app').data.id).toBe('app-z');
   });
 
   it('emits invalid-event-log on a corrupt zip', async () => {
     const state = createState();
+    /** @type {ParserMessage[]} */
     const messages = [];
     await decodeShsArchive(new Uint8Array([1, 2, 3, 4]), state, (msg) => messages.push(msg));
     expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/^Could not read the zip archive/) }]);
@@ -2174,9 +2292,11 @@ describe('decodeShsArchive', () => {
 describe('History Server zip archives', () => {
   const appId = 'application_0000000000000_0001';
   const sample = new Uint8Array(gunzipSync(readFileSync(fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url)))));
-  const withoutProgress = (messages) => messages.filter((m) => m.type !== 'progress');
+  const withoutProgress = (/** @type {ParserMessage[]} */ messages) => messages.filter((m) => m.type !== 'progress');
 
+  /** @param {FileSource} file @param {{ chunkSize?: number, zstdDecoder?: ZstdDecoderFactory }} [opts] */
   async function parse(file, opts = {}) {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(file, createState(), { emit: (m) => emitted.push(m), ...opts });
     return emitted;
@@ -2188,14 +2308,17 @@ describe('History Server zip archives', () => {
   function rollingEntries() {
     const parts = 11;
     const step = Math.ceil(sample.length / parts);
+    /** @type {Record<string, Uint8Array>} */
     const files = {};
     for (let i = 1; i <= parts; i++) files[`events_${i}_${appId}.zstd`] = zstdSync(sample.subarray((i - 1) * step, i * step));
     files[`appstatus_${appId}`] = new Uint8Array(0);
+    /** @type {Record<string, Uint8Array>} */
     const entries = { [`eventlog_v2_${appId}/`]: new Uint8Array(0) };
     for (const name of Object.keys(files).sort()) entries[`eventlog_v2_${appId}/${name}`] = files[name];
     return entries;
   }
 
+  /** @type {ParserMessage[]} */
   let expected;
   beforeAll(async () => {
     expected = withoutProgress(await parse(fakeFile(sample)));
@@ -2219,7 +2342,7 @@ describe('History Server zip archives', () => {
     expect(withoutProgress(emitted)).toEqual(expected);
     const pcts = emitted.filter((m) => m.type === 'progress').map((m) => m.pct);
     expect(pcts.length).toBeGreaterThan(0);
-    expect(pcts.every((p) => p >= 0 && p <= 1)).toBe(true);
+    expect(pcts.every((p) => p !== null && p >= 0 && p <= 1)).toBe(true);
   });
 
   it('runParse reassembles a rolling zip in index order, across mid-line part boundaries', async () => {
@@ -2230,7 +2353,9 @@ describe('History Server zip archives', () => {
 
   it('runParse awaits an asynchronous zstd decoder', async () => {
     const zip = historyServerZip(rollingEntries());
+    /** @type {ZstdDecoderFactory} */
     const zstdDecoder = (onChunk) => {
+      /** @type {Uint8Array[]} */
       const pending = [];
       return {
         async push(chunk, final) {
@@ -2248,6 +2373,7 @@ describe('History Server zip archives', () => {
   });
 
   it('decodeShsArchive reassembles a rolling zip under the eventlog_v2_ directory', async () => {
+    /** @type {ParserMessage[]} */
     const messages = [];
     await decodeShsArchive(historyServerZip(rollingEntries()), createState(), (m) => messages.push(m));
     expect(withoutProgress(messages)).toEqual(expected);
@@ -2286,6 +2412,7 @@ describe('History Server zip archives', () => {
   });
 
   it('rejects a zip holding two rolling attempts', async () => {
+    /** @type {Record<string, Uint8Array>} */
     const entries = {};
     for (const attempt of [1, 2]) {
       const dir = `eventlog_v2_${appId}_${attempt}/`;
@@ -2296,6 +2423,7 @@ describe('History Server zip archives', () => {
     const zip = historyServerZip(entries);
     const emitted = await parse(fakeFile(zip, `${appId}.zip`));
     expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(multiAttemptError) }]);
+    /** @type {ParserMessage[]} */
     const messages = [];
     await decodeShsArchive(zip, createState(), (m) => messages.push(m));
     expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(multiAttemptError) }]);
@@ -2314,6 +2442,7 @@ describe('History Server zip archives', () => {
   // A one-entry stored zip in zip64 form, as ZipOutputStream writes one past 4 GiB: every
   // 32-bit size/offset field is 0xFFFFFFFF and the real values sit in zip64 records. The
   // central directory's extra area puts an unrelated field before the zip64 one.
+  /** @param {string} name @param {Uint8Array} data */
   function zip64Archive(name, data) {
     const nameBytes = strToU8(name);
     const localExtra = 20, centralExtra = 9 + 28;
@@ -2322,7 +2451,7 @@ describe('History Server zip archives', () => {
     const zip64EocdOffset = cdOffset + cdSize;
     const out = new Uint8Array(zip64EocdOffset + 56 + 20 + 22);
     const v = new DataView(out.buffer);
-    const u64 = (at, n) => { v.setUint32(at, n % 2 ** 32, true); v.setUint32(at + 4, Math.floor(n / 2 ** 32), true); };
+    const u64 = (/** @type {number} */ at, /** @type {number} */ n) => { v.setUint32(at, n % 2 ** 32, true); v.setUint32(at + 4, Math.floor(n / 2 ** 32), true); };
     v.setUint32(0, 0x04034b50, true);
     v.setUint32(18, 0xffffffff, true); v.setUint32(22, 0xffffffff, true);
     v.setUint16(26, nameBytes.length, true); v.setUint16(28, localExtra, true);
@@ -2381,7 +2510,7 @@ describe('History Server zip archives', () => {
 
   it('reports a rolling part whose local header is missing', async () => {
     const zip = historyServerZip(rollingEntries());
-    const part = (await listZipEntries(fakeFile(zip))).find((e) => e.name.includes('/events_1_'));
+    const part = present((await listZipEntries(fakeFile(zip))).find((e) => e.name.includes('/events_1_')));
     zip[part.localHeaderOffset + 3] = 0;
     const emitted = await parse(fakeFile(zip));
     expect(emitted.at(-1)).toEqual({ type: 'error', message: `Could not decompress "${part.name}" in the zip archive: bad local header for "${part.name}"` });
@@ -2435,6 +2564,7 @@ describe('reassembleRollingEntries', () => {
 });
 
 describe('accumulateTask: task-attempt dedup', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({
       Event: 'SparkListenerStageSubmitted',
@@ -2442,10 +2572,11 @@ describe('accumulateTask: task-attempt dedup', () => {
     }, s);
   }
 
+  /** @param {number} stageId @param {number} attemptId @param {number} index @param {{ launch: number, finish: number, failed?: boolean, shuffleRead?: number }} options @returns {SparkEvent} */
   function taskEnd(stageId, attemptId, index, { launch, finish, failed = false, shuffleRead = 0 }) {
     return {
       Event: 'SparkListenerTaskEnd', 'Stage ID': stageId, 'Stage Attempt ID': attemptId,
-      'Task Info': { 'Index': index, 'Attempt': 0, 'Launch Time': launch, 'Finish Time': finish, 'Failed': failed, 'Killed': false },
+      'Task Info': { 'Index': index, 'Launch Time': launch, 'Finish Time': finish, 'Failed': failed, 'Killed': false },
       'Task End Reason': failed ? { Reason: 'FetchFailed' } : undefined,
       'Task Metrics': {
         'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0, 'Executor Run Time': finish - launch,
@@ -2461,7 +2592,7 @@ describe('accumulateTask: task-attempt dedup', () => {
     setupStage(s);
     processEvent(taskEnd(1, 0, 0, { launch: 0, finish: 100, failed: true, shuffleRead: 500 }), s);
     processEvent(taskEnd(1, 0, 0, { launch: 100, finish: 250, failed: false, shuffleRead: 800 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s));
 
     expect(msg.data.taskCount).toBe(1);
     expect(msg.data.failedTasks).toBe(0);
@@ -2475,7 +2606,7 @@ describe('accumulateTask: task-attempt dedup', () => {
     setupStage(s);
     processEvent(taskEnd(1, 0, 0, { launch: 0, finish: 100 }), s);
     processEvent(taskEnd(1, 0, 1, { launch: 0, finish: 150 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.taskCount).toBe(2);
     expect(msg.data.retryWasteMs).toBe(0);
   });
@@ -2493,7 +2624,7 @@ describe('accumulateTask: task-attempt dedup', () => {
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100 },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.taskCount).toBe(2);
   });
 
@@ -2508,6 +2639,7 @@ describe('accumulateTask: task-attempt dedup', () => {
 });
 
 describe('accumulateTask: retry vs. speculation waste classification', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({
       Event: 'SparkListenerStageSubmitted',
@@ -2515,11 +2647,12 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     }, s);
   }
 
+  /** @param {number} stageId @param {number} index @param {{ launch: number, finish: number, failed?: boolean, killed?: boolean, speculative?: boolean, taskId?: number, attemptNumber?: number }} options @returns {SparkEvent} */
   function specTaskEnd(stageId, index, { launch, finish, failed = false, killed = false, speculative = false, taskId = index, attemptNumber = 0 }) {
     return {
       Event: 'SparkListenerTaskEnd', 'Stage ID': stageId, 'Stage Attempt ID': 0,
       'Task Info': {
-        'Index': index, 'Attempt': 0, 'Task ID': taskId, 'Attempt Number': attemptNumber,
+        'Index': index, 'Task ID': taskId, 'Attempt Number': attemptNumber,
         'Launch Time': launch, 'Finish Time': finish,
         'Failed': failed, 'Killed': killed, 'Speculative': speculative,
       },
@@ -2540,7 +2673,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, speculative: false }), s);
     // ...speculative copy arrives later, killed because it lost the race.
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 120, killed: true, speculative: true }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
 
     expect(msg.data.speculationWasteMs).toBe(120);
     expect(msg.data.speculationWastedAttempts).toBe(1);
@@ -2555,7 +2688,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     // The original is killed because the copy won: speculation worked, so it is neither
     // speculation waste nor retry waste.
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 500, killed: true, speculative: false }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 600 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 600 } }, s));
 
     expect(msg.data.speculationWasteMs).toBe(0);
     expect(msg.data.speculationWastedAttempts).toBe(0);
@@ -2661,7 +2794,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, speculative: false }), s);
     processEvent(specTaskEnd(1, 0, { launch: 100, finish: 250, speculative: false }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s));
 
     expect(msg.data.retryWasteMs).toBe(100);
     expect(msg.data.wastedAttempts).toBe(1);
@@ -2674,7 +2807,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, speculative: false }), s);
     processEvent(specTaskEnd(1, 0, { launch: 100, finish: 180, failed: true, speculative: false }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s));
 
     expect(msg.data.retryWasteMs).toBe(80);
     expect(msg.data.speculationWasteMs).toBe(0);
@@ -2685,7 +2818,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, speculative: false, taskId: 7, attemptNumber: 0 }), s);
     processEvent(specTaskEnd(1, 0, { launch: 100, finish: 250, speculative: false, taskId: 7, attemptNumber: 1 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s));
 
     expect(msg.data.retryTaskSamples).toHaveLength(1);
     expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 7, attemptNumber: 0, reason: 'FetchFailed' });
@@ -2696,7 +2829,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, speculative: false, taskId: 9, attemptNumber: 0 }), s);
     processEvent(specTaskEnd(1, 0, { launch: 100, finish: 180, failed: true, speculative: false, taskId: 9, attemptNumber: 1 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s));
 
     expect(msg.data.retryTaskSamples).toHaveLength(1);
     expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 9, attemptNumber: 1 });
@@ -2712,10 +2845,12 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       setupStage(s);
       return s;
     }
-    const complete = (s, at) => processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': at } }, s);
+    const complete = (/** @type {ParserState} */ s, /** @type {number} */ at) => messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': at } }, s));
     // Collects the pre-done patch messages into an appModel holding the stage message posted at completion.
+    /** @param {ParserState} s @param {StageMessage} stageMsg */
     function finishParse(s, stageMsg) {
-      const appModel = { app: null, stages: new Map([[1, stageMsg.data]]), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+      /** @type {AppModel} */
+      const appModel = { app: null, stages: new Map([[1, stageMsg.data]]), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
       const cb = createModelCallbacks(appModel, {});
       emitParseCompletion(s, (m) => routeMessage(m, cb), 0);
       return appModel;
@@ -2792,7 +2927,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, speculative: false, taskId: 3 }), s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 120, killed: true, speculative: true, taskId: 3 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
 
     expect(msg.data.retryTaskSamples).toHaveLength(0);
   });
@@ -2804,7 +2939,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       processEvent(specTaskEnd(1, i, { launch: 0, finish: 100, failed: true, speculative: false, taskId: i, attemptNumber: 0 }), s);
       processEvent(specTaskEnd(1, i, { launch: 100, finish: 200, speculative: false, taskId: i, attemptNumber: 1 }), s);
     }
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s));
 
     expect(msg.data.wastedAttempts).toBe(25);
     expect(msg.data.retryTaskSamples).toHaveLength(20);
@@ -2812,6 +2947,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
 });
 
 describe('finalizeStage: failedTaskSamples', () => {
+  /** @param {number} id @param {{ 'Failure Reason'?: string }} [extra] @returns {SparkEvent} */
   function stageEnd(id, extra = {}) {
     return { Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': id, 'Completion Time': 300, ...extra } };
   }
@@ -2825,7 +2961,7 @@ describe('finalizeStage: failedTaskSamples', () => {
       'Task Info': { Index: 0, 'Task ID': 11, 'Attempt Number': 0, 'Launch Time': 0, 'Finish Time': 100, Failed: true, Host: 'h1', 'Executor ID': 'e1' },
       'Task Metrics': { 'Peak Execution Memory': 500, 'Memory Bytes Spilled': 0, 'Shuffle Write Metrics': { 'Shuffle Bytes Written': 0 } },
     }, s);
-    const msg = processEvent(stageEnd(1, { 'Failure Reason': 'Job aborted due to stage failure' }), s);
+    const msg = messageOf('stage', processEvent(stageEnd(1, { 'Failure Reason': 'Job aborted due to stage failure' }), s));
 
     expect(msg.data.failedTaskSamples).toHaveLength(1);
     expect(msg.data.failedTaskSamples[0]).toMatchObject({ taskId: 11, attemptNumber: 0, host: 'h1', executorId: 'e1', reason: 'ExecutorLostFailure' });
@@ -2839,7 +2975,7 @@ describe('finalizeStage: failedTaskSamples', () => {
       'Task Info': { Index: 0, 'Task ID': 1, 'Launch Time': 0, 'Finish Time': 100, Failed: false },
       'Task Metrics': {},
     }, s);
-    const msg = processEvent(stageEnd(1), s);
+    const msg = messageOf('stage', processEvent(stageEnd(1), s));
     expect(msg.data.failedTaskSamples).toHaveLength(0);
   });
 
@@ -2854,13 +2990,14 @@ describe('finalizeStage: failedTaskSamples', () => {
         'Task Metrics': {},
       }, s);
     }
-    const msg = processEvent(stageEnd(1), s);
+    const msg = messageOf('stage', processEvent(stageEnd(1), s));
     expect(msg.data.failedTasks).toBe(25);
     expect(msg.data.failedTaskSamples).toHaveLength(20);
   });
 });
 
 describe('finalizeStage: failureGroups', () => {
+  /** @param {number} index @param {TaskEndReason} endReason @param {{ Host?: string, 'Executor ID'?: string }} [extraInfo] @returns {SparkEvent} */
   function failedEnd(index, endReason, extraInfo = {}) {
     return {
       Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
@@ -2869,15 +3006,17 @@ describe('finalizeStage: failureGroups', () => {
       'Task Metrics': {},
     };
   }
+  /** @type {(description: string) => TaskEndReason} */
   const exception = (description) => ({
     Reason: 'ExceptionFailure', 'Class Name': 'java.lang.IllegalStateException', Description: description,
     'Full Stack Trace': `java.lang.IllegalStateException: ${description}\n\tat com.example.Job.run(Job.scala:10)`,
   });
+  /** @param {SparkEvent[]} events */
   function runStage(events) {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
     for (const e of events) processEvent(e, s);
-    return processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s).data;
+    return messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s)).data;
   }
 
   it('groups surviving failed tasks by distinct error, most frequent first, one excerpt each', () => {
@@ -2923,7 +3062,7 @@ describe('accumulateTask: locality', () => {
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { 'Index': 0, 'Launch Time': 0, 'Finish Time': 100, 'Locality': 'PROCESS_LOCAL' }, 'Task Metrics': {} }, s);
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { 'Index': 1, 'Launch Time': 0, 'Finish Time': 100, 'Locality': 'PROCESS_LOCAL' }, 'Task Metrics': {} }, s);
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { 'Index': 2, 'Launch Time': 0, 'Finish Time': 100, 'Locality': 'RACK_LOCAL' }, 'Task Metrics': {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     const stats = Object.fromEntries(msg.data.localityStats.map(l => [l.locality, l.count]));
     expect(stats.PROCESS_LOCAL).toBe(2);
     expect(stats.RACK_LOCAL).toBe(1);
@@ -2936,7 +3075,7 @@ describe('accumulateTask: peak execution memory', () => {
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { 'Index': 0, 'Launch Time': 0, 'Finish Time': 100 }, 'Task Metrics': { 'Peak Execution Memory': 1000 } }, s);
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { 'Index': 1, 'Launch Time': 0, 'Finish Time': 100 }, 'Task Metrics': { 'Peak Execution Memory': 5000 } }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.peakExecutionMemoryMax).toBe(5000);
   });
 
@@ -2944,7 +3083,7 @@ describe('accumulateTask: peak execution memory', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { 'Index': 0, 'Launch Time': 0, 'Finish Time': 100 }, 'Task Metrics': {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.peakExecutionMemoryMax).toBe(0);
   });
 });
@@ -2976,7 +3115,7 @@ describe('parseSparkMemoryMB', () => {
 });
 
 describe('processEvent: EnvironmentUpdate / config + resources', () => {
-  const envEvent = {
+  const envEvent = /** @satisfies {SparkEvent} */ ({
     Event: 'SparkListenerEnvironmentUpdate',
     'Spark Properties': {
       'spark.executor.memory': '10G',
@@ -2990,21 +3129,21 @@ describe('processEvent: EnvironmentUpdate / config + resources', () => {
       'spark.dynamicAllocation.enabled': 'true',
       'spark.shuffle.service.enabled': 'true',
     },
-  };
-  const appStart = { Event: 'SparkListenerApplicationStart', 'App ID': 'a', 'App Name': 'n', 'Timestamp': 1 };
+  });
+  const appStart = /** @satisfies {SparkEvent} */ ({ Event: 'SparkListenerApplicationStart', 'App ID': 'a', 'App Name': 'n', 'Timestamp': 1 });
 
   it('stashes config seen before ApplicationStart and applies it to app.config', () => {
     const s = createState();
     expect(processEvent(envEvent, s)).toBeNull();
-    const appMsg = processEvent(appStart, s);
-    expect(appMsg.data.config['spark.executor.memory']).toBe('10G');
-    expect(appMsg.data.config['spark.serializer']).toContain('Kryo');
+    const appMsg = messageOf('app', processEvent(appStart, s));
+    expect(appMsg.data.config?.['spark.executor.memory']).toBe('10G');
+    expect(appMsg.data.config?.['spark.serializer']).toContain('Kryo');
   });
 
   it('derives executor/driver resources (memory MB, cores, instances, flags)', () => {
     const s = createState();
     processEvent(envEvent, s);
-    const r = processEvent(appStart, s).data.resources;
+    const r = present(messageOf('app', processEvent(appStart, s)).data.resources);
     expect(r.executor.memoryMB).toBe(10240);
     expect(r.executor.memoryOverheadMB).toBe(2048);
     expect(r.executor.cores).toBe(5);
@@ -3023,7 +3162,7 @@ describe('processEvent: EnvironmentUpdate / config + resources', () => {
       Event: 'SparkListenerEnvironmentUpdate',
       'Spark Properties': { 'spark.executor.cores': 'auto', 'spark.executor.instances': 'auto' },
     }, s);
-    const r = processEvent(appStart, s).data.resources;
+    const r = present(messageOf('app', processEvent(appStart, s)).data.resources);
     expect(r.executor.cores).toBeNull();
     expect(r.executor.instances).toBeNull();
   });
@@ -3031,27 +3170,27 @@ describe('processEvent: EnvironmentUpdate / config + resources', () => {
   it('handles EnvironmentUpdate arriving after ApplicationStart (emits updated app)', () => {
     const s = createState();
     processEvent(appStart, s);
-    const msg = processEvent(envEvent, s);
+    const msg = messageOf('app', processEvent(envEvent, s));
     expect(msg.type).toBe('app');
-    expect(msg.data.config['spark.executor.cores']).toBe('5');
-    expect(s.app.resources.executor.memoryMB).toBe(10240);
+    expect(msg.data.config?.['spark.executor.cores']).toBe('5');
+    expect(present(s.app).resources?.executor.memoryMB).toBe(10240);
   });
 
   it('handles Spark Properties in legacy array-of-pairs form', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': [['spark.executor.cores', '3']] }, s);
-    const appMsg = processEvent(appStart, s);
-    expect(appMsg.data.config['spark.executor.cores']).toBe('3');
-    expect(appMsg.data.resources.executor.cores).toBe(3);
+    const appMsg = messageOf('app', processEvent(appStart, s));
+    expect(appMsg.data.config?.['spark.executor.cores']).toBe('3');
+    expect(appMsg.data.resources?.executor.cores).toBe(3);
   });
 
   it('app.config defaults to {} and resources fields to null with no EnvironmentUpdate', () => {
     const s = createState();
-    const appMsg = processEvent(appStart, s);
+    const appMsg = messageOf('app', processEvent(appStart, s));
     expect(appMsg.data.config).toEqual({});
-    expect(appMsg.data.resources.executor.memoryMB).toBeNull();
-    expect(appMsg.data.resources.executor.cores).toBeNull();
-    expect(appMsg.data.resources.dynamicAllocationEnabled).toBeNull();
+    expect(appMsg.data.resources?.executor.memoryMB).toBeNull();
+    expect(appMsg.data.resources?.executor.cores).toBeNull();
+    expect(appMsg.data.resources?.dynamicAllocationEnabled).toBeNull();
   });
 });
 
@@ -3059,23 +3198,23 @@ describe('processEvent: JobStart / JobEnd result capture', () => {
   it('records a job and captures a successful result', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 100, 'Stage IDs': [0, 1], Properties: {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 500, 'Job Result': { Result: 'JobSucceeded' } }, s);
+    const msg = messageOf('job', processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 500, 'Job Result': { Result: 'JobSucceeded' } }, s));
     expect(msg.type).toBe('job');
     expect(msg.data.id).toBe(0);
     expect(msg.data.result).toBe('JobSucceeded');
     expect(msg.data.succeeded).toBe(true);
     expect(msg.data.completionTime).toBe(500);
     expect(msg.data.stageIds).toEqual([0, 1]);
-    expect(s.jobs.get(0).succeeded).toBe(true);
+    expect(present(s.jobs.get(0)).succeeded).toBe(true);
   });
 
   it('captures a failed job result and its exception message', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 100, 'Stage IDs': [2] }, s);
-    const msg = processEvent({
+    const msg = messageOf('job', processEvent({
       Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 900,
       'Job Result': { Result: 'JobFailed', Exception: { Message: 'boom' } },
-    }, s);
+    }, s));
     expect(msg.data.result).toBe('JobFailed');
     expect(msg.data.succeeded).toBe(false);
     expect(msg.data.exception).toBe('boom');
@@ -3083,7 +3222,7 @@ describe('processEvent: JobStart / JobEnd result capture', () => {
 
   it('handles JobEnd with no preceding JobStart', () => {
     const s = createState();
-    const msg = processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 7, 'Completion Time': 200, 'Job Result': { Result: 'JobSucceeded' } }, s);
+    const msg = messageOf('job', processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 7, 'Completion Time': 200, 'Job Result': { Result: 'JobSucceeded' } }, s));
     expect(msg.type).toBe('job');
     expect(msg.data.id).toBe(7);
     expect(msg.data.stageIds).toEqual([]);
@@ -3094,11 +3233,11 @@ describe('processEvent: JobStart / JobEnd result capture', () => {
     const s = createState();
     processEvent({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
-      executionId: 10, description: 'x', time: 1, physicalPlanDescription: '',
+      executionId: 10, description: 'x', time: 1, physicalPlanDescription: '', sparkPlanInfo: null,
     }, s);
     processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 3, 'Stage IDs': [18], Properties: { 'spark.sql.execution.id': '10' } }, s);
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 18, 'Submission Time': 1 } }, s);
-    expect(s.stages.get(18).sqlExecutionId).toBe(10);
+    expect(present(s.stages.get(18)).sqlExecutionId).toBe(10);
   });
 });
 
@@ -3129,8 +3268,10 @@ describe('startJob: sqlExecStages incremental index', () => {
 // Stream a (possibly multi-GB) real fixture line-by-line, keeping only lines
 // matching one of `substrings`, so tests exercise real shapes without loading
 // the whole file into memory.
+/** @param {string} filePath @param {string[]} substrings */
 async function collectMatchingLines(filePath, substrings) {
   const rl = createInterface({ input: createReadStream(filePath), crlfDelay: Infinity });
+  /** @type {string[]} */
   const lines = [];
   for await (const line of rl) {
     if (substrings.some(s => line.includes(s))) lines.push(line);
@@ -3138,12 +3279,13 @@ async function collectMatchingLines(filePath, substrings) {
   return lines;
 }
 
+/** @param {Uint8Array | ArrayBuffer} bytes @param {string} [name] */
 function fakeFile(bytes, name = 'eventlog') {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   return {
     name,
     size: u8.length,
-    slice(start, end) {
+    slice(/** @type {number} */ start, /** @type {number} */ end) {
       const view = u8.subarray(start, end);
       return { async arrayBuffer() { return view.slice().buffer; } };
     },
@@ -3206,6 +3348,7 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
     concurrentGCCount: 0, concurrentGCTime: 0,
   };
 
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': id, 'Submission Time': 0 } }, s);
   }
@@ -3215,10 +3358,10 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
     setupStage(s);
     processEvent({
       Event: 'SparkListenerStageExecutorMetrics',
-      'Executor ID': '3', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Executor ID': '3', 'Stage ID': 1,
       'Executor Metrics': SAMPLE_METRICS,
     }, s);
-    expect(s.stages.get(1).executorMetrics.get('3')).toEqual(EXPECTED_CAMEL);
+    expect(present(s.stages.get(1)).executorMetrics.get('3')).toEqual(EXPECTED_CAMEL);
   });
 
   it('returns null; the event does not itself finalize the stage', () => {
@@ -3226,7 +3369,7 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
     setupStage(s);
     const msg = processEvent({
       Event: 'SparkListenerStageExecutorMetrics',
-      'Executor ID': '1', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Executor ID': '1', 'Stage ID': 1,
       'Executor Metrics': {},
     }, s);
     expect(msg).toBeNull();
@@ -3237,7 +3380,7 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
     const s = createState();
     expect(() => processEvent({
       Event: 'SparkListenerStageExecutorMetrics',
-      'Executor ID': '1', 'Stage ID': 999, 'Stage Attempt ID': 0,
+      'Executor ID': '1', 'Stage ID': 999,
       'Executor Metrics': { JVMHeapMemory: 1 },
     }, s)).not.toThrow();
   });
@@ -3247,10 +3390,10 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
     setupStage(s);
     processEvent({
       Event: 'SparkListenerStageExecutorMetrics',
-      'Executor ID': '1', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Executor ID': '1', 'Stage ID': 1,
       'Executor Metrics': { JVMHeapMemory: 1, SomeFutureMetricType: 999 },
     }, s);
-    expect(s.stages.get(1).executorMetrics.get('1')).toEqual({ jvmHeapMemory: 1 });
+    expect(present(s.stages.get(1)).executorMetrics.get('1')).toEqual({ jvmHeapMemory: 1 });
   });
 
   it('survives to the finalized stage message as a Map', () => {
@@ -3258,10 +3401,10 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
     setupStage(s);
     processEvent({
       Event: 'SparkListenerStageExecutorMetrics',
-      'Executor ID': '1', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Executor ID': '1', 'Stage ID': 1,
       'Executor Metrics': { JVMHeapMemory: 42 },
     }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 } }, s));
     expect(msg.data.executorMetrics).toBeInstanceOf(Map);
     expect(msg.data.executorMetrics.get('1')).toEqual({ jvmHeapMemory: 42 });
   });
@@ -3269,7 +3412,7 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
   it('the map stays empty when the event never appears (flag off, the common case)', () => {
     const s = createState();
     setupStage(s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 } }, s));
     expect(msg.data.executorMetrics.size).toBe(0);
   });
 
@@ -3279,18 +3422,18 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
   it('recovers metrics that arrive AFTER StageCompleted (the real event order) via collectStageExecutorMetrics', () => {
     const s = createState();
     setupStage(s);
-    const stageMsg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 } }, s);
+    const stageMsg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 100 } }, s));
     // The posted stage message is empty at completion time; this is the bug the re-post works around.
     expect(stageMsg.data.executorMetrics.size).toBe(0);
     // Metrics arrive afterwards, as in a real log.
     processEvent({
       Event: 'SparkListenerStageExecutorMetrics',
-      'Executor ID': '7', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Executor ID': '7', 'Stage ID': 1,
       'Executor Metrics': { JVMHeapMemory: 99 },
     }, s);
     const collected = collectStageExecutorMetrics(s);
     expect(collected.get(1)).toBeInstanceOf(Map);
-    expect(collected.get(1).get('7')).toEqual({ jvmHeapMemory: 99 });
+    expect(present(collected.get(1)).get('7')).toEqual({ jvmHeapMemory: 99 });
   });
 
   it('collectStageExecutorMetrics omits stages with no executor metrics (flag off)', () => {
@@ -3302,6 +3445,7 @@ describe('SparkListenerStageExecutorMetrics: executor peak/used memory (item B)'
 });
 
 // Frame one payload as a single RAW-method (0x10) Spark LZ4Block block.
+/** @param {Uint8Array} payload */
 function lz4RawBlock(payload) {
   const header = new Uint8Array(21);
   header.set([76, 90, 52, 66, 108, 111, 99, 107], 0); // "LZ4Block"
@@ -3316,15 +3460,17 @@ function lz4RawBlock(payload) {
 
 // Frame multiple payloads as literal-only blocks inside ONE xerial
 // SnappyOutputStream stream (single header, N length-prefixed blocks).
+/** @param {Uint8Array[]} payloads */
 function snappyRawBlocks(payloads) {
   const SNAPPY_MAGIC = [0x82, 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00];
-  const encodeVarint = (n) => {
+  const encodeVarint = (/** @type {number} */ n) => {
+    /** @type {number[]} */
     const bytes = [];
     while (n >= 0x80) { bytes.push((n & 0x7f) | 0x80); n >>>= 7; }
     bytes.push(n);
     return bytes;
   };
-  const literalBlock = (payload) => {
+  const literalBlock = (/** @type {Uint8Array} */ payload) => {
     const len = payload.length;
     const lenMinus1 = len - 1;
     let tag;
@@ -3359,20 +3505,23 @@ function snappyRawBlocks(payloads) {
   return out;
 }
 
+/** @param {Uint8Array} payload */
 function snappyRawBlock(payload) { return snappyRawBlocks([payload]); }
 
 describe('runParse: dropped-file path', () => {
   const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-d","App Name":"drop","Timestamp":1}\n{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n';
 
   it('parses a plain uncompressed dropped log', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(strToU8(ndjson)), createState(), { emit: m => emitted.push(m) });
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('drop');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('drop');
     expect(emitted.some(m => m.type === 'done')).toBe(true);
     expect(emitted.some(m => m.type === 'error')).toBe(false);
   });
 
   it('posts the final normalized app evidence payload immediately before done', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(strToU8(ndjson)), createState(), { emit: m => emitted.push(m) });
 
@@ -3387,9 +3536,10 @@ describe('runParse: dropped-file path', () => {
   });
 
   it('decompresses and parses a dropped gzip log', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(gzipSync(strToU8(ndjson)), 'eventlog.gz'), createState(), { emit: m => emitted.push(m) });
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('drop');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('drop');
     expect(emitted.some(m => m.type === 'error')).toBe(false);
   });
 
@@ -3408,20 +3558,22 @@ describe('runParse: dropped-file path', () => {
     expect(gz.length).toBeGreaterThan(64); // guarantees >1 read slice at chunkSize 64
 
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(gz, 'big.gz'), state, { emit: m => emitted.push(m), chunkSize: 64 });
 
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('streamed');
-    expect(emitted.find(m => m.type === 'app')?.data?.sparkVersion).toBe('3.5.3');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('streamed');
+    expect(firstMessage(emitted, 'app').data?.sparkVersion).toBe('3.5.3');
     expect(emitted.filter(m => m.type === 'job')).toHaveLength(400);
     expect(state.jobs.size).toBe(400);
   });
 
   it('decompresses and parses a dropped Spark LZ4Block log', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(lz4RawBlock(strToU8(ndjson)), 'eventlog.lz4'), createState(), { emit: m => emitted.push(m) });
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('drop');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('drop');
     expect(emitted.some(m => m.type === 'error')).toBe(false);
   });
 
@@ -3433,17 +3585,20 @@ describe('runParse: dropped-file path', () => {
     const both = new Uint8Array(b1.length + b2.length);
     both.set(b1, 0); both.set(b2, b1.length);
 
+    /** @type {ParserMessage[]} */
+
     const emitted = [];
     await runParse(fakeFile(both, 'multi.lz4'), createState(), { emit: m => emitted.push(m), chunkSize: 16 });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('multi');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('multi');
     expect(emitted.some(m => m.type === 'app' && m.data.endTime === 2)).toBe(true);
   });
 
   it('decompresses and parses a dropped Zstandard log', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(zstdSync(strToU8(ndjson)), 'eventlog.zstd'), createState(), { emit: m => emitted.push(m) });
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('drop');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('drop');
     expect(emitted.some(m => m.type === 'error')).toBe(false);
   });
 
@@ -3462,20 +3617,22 @@ describe('runParse: dropped-file path', () => {
     expect(zst.length).toBeGreaterThan(64); // guarantees >1 read slice at chunkSize 64
 
     const state = createState();
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(zst, 'big.zstd'), state, { emit: m => emitted.push(m), chunkSize: 64 });
 
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('streamed-z');
-    expect(emitted.find(m => m.type === 'app')?.data?.sparkVersion).toBe('3.5.3');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('streamed-z');
+    expect(firstMessage(emitted, 'app').data?.sparkVersion).toBe('3.5.3');
     expect(emitted.filter(m => m.type === 'job')).toHaveLength(400);
     expect(state.jobs.size).toBe(400);
   });
 
   it('decompresses and parses a dropped Snappy log', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(snappyRawBlock(strToU8(ndjson)), 'eventlog.snappy'), createState(), { emit: m => emitted.push(m) });
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('drop');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('drop');
     expect(emitted.some(m => m.type === 'error')).toBe(false);
   });
 
@@ -3484,14 +3641,16 @@ describe('runParse: dropped-file path', () => {
       strToU8('{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"multi","Timestamp":1}\n{"Event":"Spar'),
       strToU8('kListenerApplicationEnd","Timestamp":2}\n'),
     ]);
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(both, 'multi.snappy'), createState(), { emit: m => emitted.push(m), chunkSize: 16 });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('multi');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('multi');
     expect(emitted.some(m => m.type === 'app' && m.data.endTime === 2)).toBe(true);
   });
 
   it('emits an error for an empty dropped file', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(new Uint8Array(0)), createState(), { emit: m => emitted.push(m) });
     expect(emitted).toHaveLength(1);
@@ -3501,6 +3660,7 @@ describe('runParse: dropped-file path', () => {
   it('emits an error when a compressed file cannot be decompressed', async () => {
     // gzip magic but garbage body
     const bad = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff]);
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParse(fakeFile(bad, 'eventlog.gz'), createState(), { emit: m => emitted.push(m) });
     expect(emitted.some(m => m.type === 'error')).toBe(true);
@@ -3511,10 +3671,11 @@ describe('runParseFiles: rolling directory (multi-file, ordered)', () => {
   it('parses an ordered array of files as one continuous NDJSON stream', async () => {
     const f1 = fakeFile(strToU8('{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"rolling-dir","Timestamp":1}\n'), 'events_1_app');
     const f2 = fakeFile(strToU8('{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n'), 'events_2_app');
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFiles([f1, f2], createState(), { emit: m => emitted.push(m) });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('rolling-dir');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('rolling-dir');
     expect(emitted.some(m => m.type === 'app' && m.data.endTime === 2)).toBe(true);
     expect(emitted.some(m => m.type === 'done')).toBe(true);
   });
@@ -3522,22 +3683,25 @@ describe('runParseFiles: rolling directory (multi-file, ordered)', () => {
   it('keeps the NDJSON line-decoder alive across a file-roll boundary that splits a line', async () => {
     const f1 = fakeFile(strToU8('{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"split'), 'events_1_app');
     const f2 = fakeFile(strToU8('-name","Timestamp":1}\n'), 'events_2_app');
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFiles([f1, f2], createState(), { emit: m => emitted.push(m) });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('split-name');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('split-name');
   });
 
   it('decompresses each file with its own fresh decompressor instance (per-file gzip)', async () => {
     const f1 = fakeFile(gzipSync(strToU8('{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"gz-multi","Timestamp":1}\n')), 'events_1_app.gz');
     const f2 = fakeFile(gzipSync(strToU8('{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n')), 'events_2_app.gz');
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFiles([f1, f2], createState(), { emit: m => emitted.push(m) });
     expect(emitted.some(m => m.type === 'error')).toBe(false);
-    expect(emitted.find(m => m.type === 'app')?.data?.name).toBe('gz-multi');
+    expect(firstMessage(emitted, 'app').data?.name).toBe('gz-multi');
   });
 
   it('emits an error for an empty file list', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFiles([], createState(), { emit: m => emitted.push(m) });
     expect(emitted).toEqual([{ type: 'error', message: 'Rolling event-log directory contained no event files.' }]);
@@ -3548,13 +3712,15 @@ describe('runParseFiles: rolling directory (multi-file, ordered)', () => {
     // gzip magic but garbage body: sniffed as gz, fails during inflate.
     const bad = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff]);
     const f2 = fakeFile(bad, 'events_2_app.gz');
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFiles([f1, f2], createState(), { emit: m => emitted.push(m) });
-    expect(emitted.some(m => m.type === 'error' && m.message.includes('Could not decompress "events_2_app.gz"'))).toBe(true);
+    expect(emitted.some(m => m.type === 'error' && m.message?.includes('Could not decompress "events_2_app.gz"'))).toBe(true);
     expect(emitted.some(m => m.type === 'done')).toBe(false);
   });
 
   it('emits "not a Spark event log" when no file across the whole sequence contains ApplicationStart', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await runParseFiles(
       [fakeFile(strToU8('{"Event":"SparkListenerJobStart","Job ID":1}\n'), 'events_1_app')],
@@ -3589,7 +3755,7 @@ describe('taskStore retains launch/finish timestamps (stride migration)', () => 
       'Task Metrics': {} }, s);
     processEvent({ Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 2000 } }, s);
-    const arr = s.taskStore.get(1);
+    const arr = present(s.taskStore.get(1));
     expect(arr[FIELDS.LAUNCH_TIME]).toBe(1000);
     expect(arr[FIELDS.FINISH_TIME]).toBe(1500);
     expect(arr[FIELDS.DURATION]).toBe(500);
@@ -3597,6 +3763,7 @@ describe('taskStore retains launch/finish timestamps (stride migration)', () => 
 });
 
 describe('accumulateTask: per-task Executor CPU Time summed per stage', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({ Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': id, 'Submission Time': 0 } }, s);
@@ -3611,8 +3778,8 @@ describe('accumulateTask: per-task Executor CPU Time summed per stage', () => {
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100 },
       'Task Metrics': { 'Executor CPU Time': 700 } }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.executorCpuTime).toBe(1000);
   });
 
@@ -3622,17 +3789,18 @@ describe('accumulateTask: per-task Executor CPU Time summed per stage', () => {
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100 },
       'Task Metrics': {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.executorCpuTime).toBe(0);
   });
 });
 
 describe('accumulateTask: accumulator-to-stage capture', () => {
+  /** @param {ParserState} state @param {number} stageId */
   function submitAndStartStage(state, stageId) {
     processEvent({
       Event: 'SparkListenerStageSubmitted',
-      'Stage Info': { 'Stage ID': stageId, 'Stage Attempt ID': 0, 'Stage Name': 's', 'Number of Tasks': 1, 'Submission Time': 0 },
+      'Stage Info': { 'Stage ID': stageId, 'Stage Attempt ID': 0, 'Stage Name': 's', 'Submission Time': 0 },
     }, state);
   }
 
@@ -3646,7 +3814,7 @@ describe('accumulateTask: accumulator-to-stage capture', () => {
       'Task End Reason': { Reason: 'Success' },
       'Task Info': {
         'Launch Time': 0, 'Finish Time': 100, Index: 0,
-        Accumulables: [{ ID: 42, Update: '10', Value: '10' }, { ID: 43, Update: '5', Value: '5' }],
+        Accumulables: [{ ID: 42 }, { ID: 43 }],
       },
       'Task Metrics': {},
     }, state);
@@ -3685,6 +3853,7 @@ describe('accumulateTask: accumulator-to-stage capture', () => {
 });
 
 describe('finalizeStage: per-executor stage participation stats', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({ Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': id, 'Submission Time': 0 } }, s);
@@ -3702,8 +3871,8 @@ describe('finalizeStage: per-executor stage participation stats', () => {
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
       'Task Info': { 'Launch Time': 0, 'Finish Time': 50, 'Executor ID': 'exec-2' },
       'Task Metrics': {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s));
     expect(Array.isArray(msg.data.executorStats)).toBe(true);
     expect(msg.data.executorStats).toEqual(expect.arrayContaining([
       expect.objectContaining({ executorId: 'exec-1', taskCount: 2, totalDuration: 400, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 }),
@@ -3714,19 +3883,20 @@ describe('finalizeStage: per-executor stage participation stats', () => {
   it('accumulates the sum and M2 of ln(1 + duration) per executor', () => {
     const s = createState();
     setupStage(s);
-    const taskEnd = (exec, finish) => processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
-      'Task Info': { 'Index': taskEnd._i = (taskEnd._i ?? 0) + 1, 'Launch Time': 0, 'Finish Time': finish, 'Executor ID': exec },
+    let taskIndex = 0;
+    const taskEnd = (/** @type {string} */ exec, /** @type {number} */ finish) => processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
+      'Task Info': { 'Index': ++taskIndex, 'Launch Time': 0, 'Finish Time': finish, 'Executor ID': exec },
       'Task Metrics': {} }, s);
     [100, 300, 700].forEach((d) => taskEnd('exec-1', d));
     taskEnd('exec-2', 50);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 800 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 800 } }, s));
     const logs = [100, 300, 700].map(Math.log1p);
     const mean = logs.reduce((a, b) => a + b, 0) / 3;
-    const exec1 = msg.data.executorStats.find((e) => e.executorId === 'exec-1');
+    const exec1 = present(msg.data.executorStats.find((e) => e.executorId === 'exec-1'));
     expect(exec1.logDurationSum).toBeCloseTo(logs.reduce((a, b) => a + b, 0), 10);
     expect(exec1.logDurationM2).toBeCloseTo(logs.reduce((sum, x) => sum + (x - mean) ** 2, 0), 10);
-    const exec2 = msg.data.executorStats.find((e) => e.executorId === 'exec-2');
+    const exec2 = present(msg.data.executorStats.find((e) => e.executorId === 'exec-2'));
     expect(exec2.logDurationSum).toBeCloseTo(Math.log1p(50), 10);
     expect(exec2.logDurationM2).toBe(0); // a single task has no spread
   });
@@ -3737,8 +3907,8 @@ describe('finalizeStage: per-executor stage participation stats', () => {
     processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
       'Task Info': { 'Launch Time': 0, 'Finish Time': 100 },
       'Task Metrics': {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.executorStats).toEqual([]);
   });
 
@@ -3746,9 +3916,11 @@ describe('finalizeStage: per-executor stage participation stats', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    let taskIndex = 0;
+    /** @param {string} exec @param {number} input @param {number} sr @param {number} sw */
     function task(exec, input, sr, sw) {
       processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
-        'Task Info': { 'Index': task._i = (task._i ?? 0) + 1, 'Executor ID': exec,
+        'Task Info': { 'Index': ++taskIndex, 'Executor ID': exec,
           'Launch Time': 0, 'Finish Time': 100, 'Host': 'h1' },
         'Task Metrics': { 'Input Metrics': { 'Bytes Read': input },
           'Shuffle Read Metrics': { 'Remote Bytes Read': sr, 'Local Bytes Read': 0 },
@@ -3756,8 +3928,8 @@ describe('finalizeStage: per-executor stage participation stats', () => {
     }
     task('e1', 100, 10, 5);
     task('e1', 200, 20, 5);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     const e1 = msg.data.executorStats.find(e => e.executorId === 'e1');
     expect(e1).toMatchObject({ taskCount: 2, inputBytes: 300, shuffleReadBytes: 30, shuffleWriteBytes: 10 });
   });
@@ -3768,8 +3940,8 @@ describe('processEvent: job-level SQL execution ID', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 5,
       'Stage IDs': [1], Properties: { 'spark.sql.execution.id': '42' } }, s);
-    const msg = processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 5,
-      'Job Result': { Result: 'JobSucceeded' }, 'Completion Time': 900 }, s);
+    const msg = messageOf('job', processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 5,
+      'Job Result': { Result: 'JobSucceeded' }, 'Completion Time': 900 }, s));
     expect(msg.data.sqlExecutionId).toBe(42);
   });
 
@@ -3777,20 +3949,21 @@ describe('processEvent: job-level SQL execution ID', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 6,
       'Stage IDs': [1], Properties: {} }, s);
-    const msg = processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 6,
-      'Job Result': { Result: 'JobSucceeded' } }, s);
+    const msg = messageOf('job', processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 6,
+      'Job Result': { Result: 'JobSucceeded' } }, s));
     expect(msg.data.sqlExecutionId).toBeNull();
   });
 
   it('sqlExecutionId is null when JobEnd arrives with no prior JobStart', () => {
     const s = createState();
-    const msg = processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 7,
-      'Job Result': { Result: 'JobSucceeded' } }, s);
+    const msg = messageOf('job', processEvent({ Event: 'SparkListenerJobEnd', 'Job ID': 7,
+      'Job Result': { Result: 'JobSucceeded' } }, s));
     expect(msg.data.sqlExecutionId).toBeNull();
   });
 });
 
 describe('processEvent: stage-level failure reason', () => {
+  /** @param {ParserState} s @param {number} [id] */
   function setupStage(s, id = 1) {
     processEvent({ Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': id, 'Submission Time': 0 } }, s);
@@ -3799,17 +3972,17 @@ describe('processEvent: stage-level failure reason', () => {
   it('captures Stage Info Failure Reason as stageFailureReason', () => {
     const s = createState();
     setupStage(s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200,
-        'Failure Reason': 'Job aborted due to stage failure' } }, s);
+        'Failure Reason': 'Job aborted due to stage failure' } }, s));
     expect(msg.data.stageFailureReason).toBe('Job aborted due to stage failure');
   });
 
   it('stageFailureReason is null when Failure Reason absent', () => {
     const s = createState();
     setupStage(s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
     expect(msg.data.stageFailureReason).toBeNull();
   });
 });
@@ -3844,7 +4017,7 @@ describe('processEvent: app-level RDD-info map', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerApplicationStart',
       'App ID': 'app_r', 'App Name': 'r', 'Timestamp': 1 }, s);
-    const rdd = (cached, mem) => ({ 'RDD ID': 7, 'Name': 'blocks', 'Callsite': 'collect at utils.py:10',
+    const rdd = (/** @type {number} */ cached, /** @type {number} */ mem) => ({ 'RDD ID': 7, 'Name': 'blocks', 'Callsite': 'collect at utils.py:10',
       'Storage Level': { 'Use Memory': true },
       'Number of Partitions': 10, 'Number of Cached Partitions': cached,
       'Memory Size': mem, 'Disk Size': 0 });
@@ -3853,9 +4026,9 @@ describe('processEvent: app-level RDD-info map', () => {
     processEvent({ Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': 2, 'Submission Time': 0, 'RDD Info': [rdd(8, 200)] } }, s);
     expect(s.rddInfo.size).toBe(1);
-    expect(s.rddInfo.get(7).numCachedPartitions).toBe(8);
-    expect(s.rddInfo.get(7).memorySize).toBe(200);
-    expect(s.rddInfo.get(7).stageIds).toEqual(new Set([1, 2]));
+    expect(present(s.rddInfo.get(7)).numCachedPartitions).toBe(8);
+    expect(present(s.rddInfo.get(7)).memorySize).toBe(200);
+    expect(present(s.rddInfo.get(7)).stageIds).toEqual(new Set([1, 2]));
   });
 
   it('posts rddInfo with each entry\'s stageIds as a sorted array (not a Set) once the app ends', () => {
@@ -3868,13 +4041,13 @@ describe('processEvent: app-level RDD-info map', () => {
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0,
       'RDD Info': [{ 'RDD ID': 7, 'Name': 'blocks', 'Callsite': 'collect at utils.py:10',
         'Storage Level': {}, 'Number of Partitions': 1 }] } }, s);
-    const msg = processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 100 }, s);
-    expect(msg.data.rddInfo.get(7).stageIds).toEqual([1, 2]);
+    const msg = messageOf('app', processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 100 }, s));
+    expect(present(present(msg.data.rddInfo).get(7)).stageIds).toEqual([1, 2]);
   });
 
   it('keeps a previously observed non-zero size when a later resubmission reports zero', () => {
     const s = createState();
-    const rdd = (cached, mem, disk) => ({ 'RDD ID': 7, 'Name': 'blocks',
+    const rdd = (/** @type {number} */ cached, /** @type {number} */ mem, /** @type {number} */ disk) => ({ 'RDD ID': 7, 'Name': 'blocks',
       'Storage Level': { 'Use Memory': true },
       'Number of Partitions': 10, 'Number of Cached Partitions': cached,
       'Memory Size': mem, 'Disk Size': disk });
@@ -3884,8 +4057,8 @@ describe('processEvent: app-level RDD-info map', () => {
     // state again; Spark's own snapshot is legitimately 0 at that instant.
     processEvent({ Event: 'SparkListenerStageSubmitted',
       'Stage Info': { 'Stage ID': 2, 'Submission Time': 0, 'RDD Info': [rdd(0, 0, 0)] } }, s);
-    expect(s.rddInfo.get(7).numCachedPartitions).toBe(8);
-    expect(s.rddInfo.get(7).memorySize).toBe(200);
+    expect(present(s.rddInfo.get(7)).numCachedPartitions).toBe(8);
+    expect(present(s.rddInfo.get(7)).memorySize).toBe(200);
   });
 
   it('carries rddInfo on the ApplicationEnd message', () => {
@@ -3897,20 +4070,21 @@ describe('processEvent: app-level RDD-info map', () => {
         { 'RDD ID': 7, 'Name': 'blocks', 'Storage Level': { 'Use Memory': true },
           'Number of Partitions': 10, 'Number of Cached Partitions': 3,
           'Memory Size': 100, 'Disk Size': 0 } ] } }, s);
-    const endMsg = processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 999 }, s);
+    const endMsg = messageOf('app', processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 999 }, s));
     expect(endMsg.data.rddInfo).toBeInstanceOf(Map);
-    expect(endMsg.data.rddInfo.get(7).numCachedPartitions).toBe(3);
+    expect(present(present(endMsg.data.rddInfo).get(7)).numCachedPartitions).toBe(3);
   });
 
   it('counts stage references per RDD across StageSubmitted events', () => {
     const s = createState();
-    function submit(stageId, rddId) {
+    /** @param {number} stageId @param {number} rddId */
+  function submit(stageId, rddId) {
       processEvent({ Event: 'SparkListenerStageSubmitted',
         'Stage Info': { 'Stage ID': stageId, 'Submission Time': 0,
           'RDD Info': [{ 'RDD ID': rddId, 'Name': 'r', 'Storage Level': {} }] } }, s);
     }
     submit(1, 7); submit(2, 7); submit(3, 7);
-    expect(s.rddInfo.get(7).stageIds).toEqual(new Set([1, 2, 3]));
+    expect(present(s.rddInfo.get(7)).stageIds).toEqual(new Set([1, 2, 3]));
   });
 });
 
@@ -3919,6 +4093,7 @@ describe('processEvent: SparkListenerBlockUpdated', () => {
   const MEMORY_AND_DISK = { 'Use Disk': true, 'Use Memory': true, 'Deserialized': true, 'Replication': 1 };
   const ON_DISK = { 'Use Disk': true, 'Use Memory': false, 'Deserialized': true, 'Replication': 1 };
   const NONE = { 'Use Disk': false, 'Use Memory': false, 'Deserialized': false, 'Replication': 1 };
+  /** @type {(blockId: string, level: StorageLevel, mem: number, disk: number, executorId?: string) => SparkEvent} */
   const blockEvent = (blockId, level, mem, disk, executorId = '1') => ({
     Event: 'SparkListenerBlockUpdated',
     'Block Updated Info': {
@@ -3927,6 +4102,7 @@ describe('processEvent: SparkListenerBlockUpdated', () => {
     },
   });
   // Spark 2.3+ RDD Info: the storage level and partition count are real, the cache figures are 0.
+  /** @type {(s: ParserState, stageId: number, level: StorageLevel) => ParserMessage | null} */
   const submitWithRdd = (s, stageId, level) => processEvent({ Event: 'SparkListenerStageSubmitted',
     'Stage Info': { 'Stage ID': stageId, 'Submission Time': 0, 'RDD Info': [
       { 'RDD ID': 4, 'Name': 'cached', 'Storage Level': level, 'Number of Partitions': 10,
@@ -4003,7 +4179,7 @@ describe('processEvent: SparkListenerBlockUpdated', () => {
     const s = createState();
     submitWithRdd(s, 1, MEMORY_ONLY);
     submitWithRdd(s, 2, NONE);
-    expect(s.rddInfo.get(4).storageLevel).toMatchObject({ useMemory: false, useDisk: false });
+    expect(present(s.rddInfo.get(4)).storageLevel).toMatchObject({ useMemory: false, useDisk: false });
   });
 
   it('drops a removed executor\'s blocks, so a partition re-cached elsewhere is counted once', () => {
@@ -4028,7 +4204,7 @@ describe('processEvent: SparkListenerBlockUpdated', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'app_r', 'App Name': 'r', 'Timestamp': 1 }, s);
     processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
-    const msg = processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 100 }, s);
+    const msg = messageOf('app', processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 100 }, s));
     expect(msg.data.rddBlockUpdates).toBe(1);
   });
 
@@ -4065,11 +4241,11 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
         'Task Metrics': {},
       }, s);
     }
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 45300 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 45300 } }, s));
 
     const stages = new Map([[1, msg.data]]);
     const catalog = analyzedRunFrom({ app: null, stages }).catalog;
-    const finding = catalog.find((f) => f.type === 'retryWaste');
+    const finding = firstOfType(catalog, 'retryWaste');
     expect(finding).toBeDefined();
     expect(finding.retriedTaskDetails).toHaveLength(3);
     expect(finding.retriedTaskDetails[0]).toMatchObject({
@@ -4087,14 +4263,14 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
       'Task Info': { Index: 0, 'Task ID': 200, 'Attempt Number': 0, 'Launch Time': 0, 'Finish Time': 100, Failed: true, Host: 'worker-9.internal', 'Executor ID': 'exec-1' },
       'Task Metrics': { 'Peak Execution Memory': 100 },
     }, s);
-    const msg = processEvent({
+    const msg = messageOf('stage', processEvent({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200, 'Failure Reason': 'Job aborted due to stage failure' },
-    }, s);
+    }, s));
 
     const stages = new Map([[1, msg.data]]);
     const catalog = analyzedRunFrom({ app: null, stages }).catalog;
-    const finding = catalog.find((f) => f.type === 'stageFailed');
+    const finding = firstOfType(catalog, 'stageFailed');
     expect(finding).toBeDefined();
     expect(finding.failedTaskDetails).toEqual([
       { taskId: 200, attemptNumber: 0, host: 'worker-9.internal', executorId: 'exec-1', reason: 'ExecutorLostFailure', peakExecMem: 100, memSpilled: 0, shuffleWrite: 0 },
@@ -4103,17 +4279,19 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
 });
 
 describe('accumulateTask: executor metric peaks from TaskEnd', () => {
+  /** @type {(executorId: string, metrics: NonNullable<TaskEndEvent['Task Executor Metrics']> | undefined, stageId?: number) => SparkEvent} */
   const taskEnd = (executorId, metrics, stageId = 1) => ({
     Event: 'SparkListenerTaskEnd', 'Stage ID': stageId,
     'Task Info': { 'Launch Time': 0, 'Finish Time': 10, 'Executor ID': executorId },
     'Task Metrics': {},
     ...(metrics ? { 'Task Executor Metrics': metrics } : {}),
   });
-  const completion = (s) => {
+  const completion = (/** @type {ParserState} */ s) => {
     processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'app-1', 'App Name': 't', Timestamp: 0 }, s);
+    /** @type {ParserMessage[]} */
     const sent = [];
     emitParseCompletion(s, (m) => sent.push(m), 0);
-    return sent.find((m) => m.type === 'runAggregates').data.executorPeakMetrics;
+    return firstMessage(sent, 'runAggregates').data.executorPeakMetrics;
   };
 
   it('keeps the largest value of each metric per executor, in camelCase names', () => {
@@ -4165,8 +4343,9 @@ describe('reportParseFailure', () => {
       size: 100,
       slice: () => ({ arrayBuffer: () => Promise.reject(new DOMException('The requested file could not be read', 'NotReadableError')) }),
     };
+    /** @type {ParserMessage[]} */
     const emitted = [];
-    const emit = (m) => emitted.push(m);
+    const emit = (/** @type {ParserMessage} */ m) => emitted.push(m);
 
     await reportParseFailure(() => runParse(unreadable, createState(), { emit }), emit);
 
@@ -4174,12 +4353,14 @@ describe('reportParseFailure', () => {
   });
 
   it('reports a non-Error rejection', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await reportParseFailure(() => Promise.reject('plain string'), (m) => emitted.push(m));
     expect(emitted).toEqual([{ type: 'error', message: 'Could not read the event log: plain string' }]);
   });
 
   it('emits nothing when the task succeeds', async () => {
+    /** @type {ParserMessage[]} */
     const emitted = [];
     await reportParseFailure(async () => {}, (m) => emitted.push(m));
     expect(emitted).toEqual([]);

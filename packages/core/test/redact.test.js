@@ -1,16 +1,98 @@
 import { describe, it, expect } from 'vitest';
 import { redactReport, redactComparison, redactRunModel } from '../src/redact.js';
 
+/** @typedef {import('../src/types.ts').AppModel} AppModel */
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {import('../src/types.ts').Job} Job */
+/** @typedef {import('../src/types.ts').SqlExecution} SqlExecution */
+/** @typedef {import('../src/task-failure.ts').TaskFailureGroup} TaskFailureGroup */
+/** @typedef {ReturnType<typeof redactRunModel>} RedactedRun */
+
+/**
+ * A run as the export carries it, with each stage, job and SQL execution reduced to the fields a test sets.
+ * @typedef {{
+ *   schemaVersion?: number,
+ *   app: { id: string | null, name: string, sparkVersion: string, config: Record<string, string> } | null,
+ *   stages: (Partial<Stage> & { id: number })[],
+ *   jobs: (Partial<Job> & { id: number })[],
+ *   sql: (Partial<SqlExecution> & { id: number })[],
+ *   executors: AppModel['executors'],
+ *   runAggregates: null,
+ *   evidenceAvailability: null,
+ *   catalog: Finding[],
+ *   configFindings: Finding[],
+ *   skippedLines?: number,
+ * }} RunData
+ */
+
+/** @typedef {{ taskId: number, attemptNumber: number, host: string, executorId?: string }} TaskDetail */
+/**
+ * @typedef {{
+ *   id: string, type: string, stageId: number, host?: string, recommendation?: string, valueText?: string, metric?: string,
+ *   evidence?: { retriedTaskDetails?: TaskDetail[], failedTaskDetails?: TaskDetail[], failureGroups?: TaskFailureGroup[] },
+ * }} ReportFinding
+ */
+/**
+ * @typedef {{
+ *   schemaVersion: number,
+ *   summary: {
+ *     app: { id: string | null, name: string, sparkVersion: string },
+ *     outcome?: { failedJobs: number, totalJobs: number, failureReason: string, failureReasonStageId: number },
+ *   },
+ *   findings: ReportFinding[],
+ * }} Report
+ */
+
+/**
+ * A value the test expects to be there, so a missing one fails here rather than on a property read.
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('expected a value');
+  return value;
+}
+
+/**
+ * @template {Finding['type']} T
+ * @param {Finding | undefined} finding
+ * @param {T} type
+ * @returns {Extract<Finding, { type: T }>}
+ */
+function findingOfType(finding, type) {
+  if (finding?.type !== type) throw new Error(`expected a ${type} finding`);
+  return /** @type {Extract<Finding, { type: T }>} */ (finding);
+}
+
+/** @param {ReportFinding} finding */
+const evidenceOf = (finding) => present(finding.evidence);
+
+/** @param {RedactedRun} run */
+const appOf = (run) => present(run.appModel.app);
+/** @param {RedactedRun} run */
+const modifiedConfigsOf = (run) => present(present(run.appModel.sql.get(0)).modifiedConfigs);
+/** @param {RedactedRun} run */
+const configOf = (run) => present(appOf(run).config);
+
+/**
+ * @template {{ id: number }} T
+ * @param {T[]} items
+ * @returns {Map<number, T>}
+ */
 const byId = (items) => new Map(items.map((item) => [item.id, item]));
 
+/** @param {RunData} data */
 function redactRun(data) {
-  const appModel = {
+  const appModel = /** @type {AppModel} */ ({
     app: data.app, stages: byId(data.stages), jobs: byId(data.jobs), sql: byId(data.sql),
     executors: data.executors, runAggregates: data.runAggregates, evidenceAvailability: data.evidenceAvailability,
-  };
+  });
   return redactRunModel(appModel, data.catalog, data.configFindings);
 }
 
+/** @returns {Report} */
 function sampleReport() {
   return {
     schemaVersion: 1,
@@ -49,7 +131,7 @@ describe('redactReport', () => {
 
   it('nulls the app name when the app has no id to stand in for it', () => {
     const report = sampleReport();
-    report.summary.app.id = null;
+    present(report.summary.app).id = null;
     expect(redactReport(report).summary.app.name).toBeNull();
   });
 
@@ -154,8 +236,8 @@ describe('redactReport', () => {
     expect(serialized).not.toContain('worker-3.internal');
     expect(serialized).not.toContain('hadoop-dn-070.data.example.com');
     expect(serialized).not.toContain('worker-9.internal');
-    expect(out.findings[0].evidence.retriedTaskDetails[0].host).toMatch(/^host-\d+$/);
-    expect(out.findings[1].evidence.failedTaskDetails[0].host).toMatch(/^host-\d+$/);
+    expect(present(evidenceOf(out.findings[0]).retriedTaskDetails)[0].host).toMatch(/^host-\d+$/);
+    expect(present(evidenceOf(out.findings[1]).failedTaskDetails)[0].host).toMatch(/^host-\d+$/);
   });
 
   it('pseudonymizes a Spark application id embedded in free text, like redactComparison does', () => {
@@ -175,11 +257,13 @@ describe('redactReport', () => {
 });
 
 describe('failure groups', () => {
+  /** @returns {TaskFailureGroup} */
   const group = () => ({
     reason: 'ExceptionFailure', className: 'java.io.FileNotFoundException', count: 3, lossReason: null,
     message: '/warehouse/customers/part-0007 (No such file)',
     stackExcerpt: 'java.io.FileNotFoundException: /warehouse/customers/part-0007 (No such file)\n\tat com.example.Load.open(Load.scala:9)',
   });
+  /** @param {TaskFailureGroup} g */
   const expectScrubbed = (g) => {
     expect(g.message).toBe('[redacted]');
     expect(g.stackExcerpt).toBe('java.io.FileNotFoundException\n\tat com.example.Load.open(Load.scala:9)');
@@ -190,21 +274,22 @@ describe('failure groups', () => {
     const report = sampleReport();
     report.findings.push({ id: 'c', type: 'failures', stageId: 6, evidence: { failureGroups: [group()] } });
     const out = redactReport(report);
-    expectScrubbed(out.findings[2].evidence.failureGroups[0]);
+    expectScrubbed(present(evidenceOf(out.findings[2]).failureGroups)[0]);
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
-    expect(report.findings[2].evidence.failureGroups[0].message).toContain('/warehouse'); // input untouched
+    expect(present(evidenceOf(report.findings[2]).failureGroups)[0].message).toContain('/warehouse'); // input untouched
   });
 
   it('redactRunModel scrubs both the catalog finding and the stage record', () => {
+    /** @type {RunData} */
     const data = {
       schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
       stages: [{ id: 1, name: 's', failureGroups: [group()] }], jobs: [], sql: [],
       executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null,
-      catalog: [{ type: 'failures', stageId: 1, impactBand: 'warning', failureGroups: [group()] }], configFindings: [], skippedLines: 0,
+      catalog: [/** @type {Finding} */ ({ type: 'failures', stageId: 1, impactBand: 'warning', failureGroups: [group()] })], configFindings: [], skippedLines: 0,
     };
     const out = redactRun(data);
-    expectScrubbed(out.appModel.stages.get(1).failureGroups[0]);
-    expectScrubbed(out.catalog[0].failureGroups[0]);
+    expectScrubbed(present(present(out.appModel.stages.get(1)).failureGroups)[0]);
+    expectScrubbed(findingOfType(out.catalog[0], 'failures').failureGroups[0]);
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 
@@ -217,23 +302,24 @@ describe('failure groups', () => {
       evidence: { failedTaskDetails: [{ taskId: 1, attemptNumber: 0, host: 'worker-9.internal' }] },
     });
     const out = redactReport(report);
-    const finding = out.findings.find((f) => f.id === 'd');
+    const finding = present(out.findings.find((f) => f.id === 'd'));
     expect(finding.valueText).toBe('[redacted]');
     expect(finding.metric).toBe('stageFailureReason');
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
-    expect(report.findings.find((f) => f.id === 'd').valueText).toBe(REASON); // input untouched
+    expect(present(report.findings.find((f) => f.id === 'd')).valueText).toBe(REASON); // input untouched
   });
 
   it('redactReport replaces summary.outcome.failureReason', () => {
     const report = sampleReport();
     report.summary.outcome = { failedJobs: 1, totalJobs: 2, failureReason: REASON, failureReasonStageId: 7 };
     const out = redactReport(report);
-    expect(out.summary.outcome.failureReason).toBe('[redacted]');
-    expect(out.summary.outcome.failedJobs).toBe(1);
+    expect(present(out.summary.outcome).failureReason).toBe('[redacted]');
+    expect(present(out.summary.outcome).failedJobs).toBe(1);
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 
   it('redactRunModel replaces a failed job\'s exception, the outcome fallback reason', () => {
+    /** @type {RunData} */
     const data = {
       schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
       stages: [], jobs: [{ id: 1, stageIds: [], succeeded: false, result: 'JobFailed', exception: REASON }], sql: [],
@@ -241,21 +327,22 @@ describe('failure groups', () => {
       catalog: [], configFindings: [], skippedLines: 0,
     };
     const out = redactRun(data);
-    expect(out.appModel.jobs.get(1).exception).toBe('[redacted]');
+    expect(present(out.appModel.jobs.get(1)).exception).toBe('[redacted]');
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 
   it('redactRunModel replaces the failure reason on the catalog finding and the stage record', () => {
+    /** @type {RunData} */
     const data = {
       schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
       stages: [{ id: 1, name: 's', stageFailureReason: REASON }], jobs: [], sql: [],
       executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null,
-      catalog: [{ type: 'stageFailed', stageId: 1, impactBand: 'critical', metric: 'stageFailureReason', valueText: REASON }],
+      catalog: [/** @type {Finding} */ ({ type: 'stageFailed', stageId: 1, impactBand: 'critical', metric: 'stageFailureReason', valueText: REASON })],
       configFindings: [], skippedLines: 0,
     };
     const out = redactRun(data);
-    expect(out.appModel.stages.get(1).stageFailureReason).toBe('[redacted]');
-    expect(out.catalog[0].valueText).toBe('[redacted]');
+    expect(present(out.appModel.stages.get(1)).stageFailureReason).toBe('[redacted]');
+    expect(findingOfType(out.catalog[0], 'stageFailed').valueText).toBe('[redacted]');
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 
@@ -265,7 +352,7 @@ describe('failure groups', () => {
       { reason: 'ExecutorLostFailure', className: null, message: null, stackExcerpt: null, count: 1, lossReason: 'Container marked as failed on host: ip-10-5-5-5.ec2.internal' },
     ] } });
     const out = redactReport(report);
-    expect(out.findings[2].evidence.failureGroups[0].lossReason).toMatch(/^Container marked as failed on host: host-\d+$/);
+    expect(present(evidenceOf(out.findings[2]).failureGroups)[0].lossReason).toMatch(/^Container marked as failed on host: host-\d+$/);
   });
 });
 
@@ -322,6 +409,7 @@ describe('redactComparison', () => {
 });
 
 describe('redactRunModel', () => {
+  /** @returns {RunData} */
   function sampleExportData() {
     return {
       schemaVersion: 1,
@@ -342,16 +430,16 @@ describe('redactRunModel', () => {
       },
       runAggregates: null,
       evidenceAvailability: null,
-      catalog: [{ type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'retry app application_1690000000000_0001 failed' }],
-      configFindings: [{ type: 'configAudit', property: 'spark.executor.host', value: 'worker-3.internal', impactBand: 'info' }],
+      catalog: [/** @type {Finding} */ ({ type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'retry app application_1690000000000_0001 failed' })],
+      configFindings: [/** @type {Finding} */ ({ type: 'configAudit', property: 'spark.executor.host', valueText: 'worker-3.internal', impactBand: 'info' })],
       skippedLines: 0,
     };
   }
 
   it('pseudonymizes the app id everywhere it appears', () => {
     const out = redactRun(sampleExportData());
-    expect(out.appModel.app.id).toMatch(/app-\d+/);
-    expect(out.catalog[0].recommendation).toContain(out.appModel.app.id);
+    expect(appOf(out).id).toMatch(/app-\d+/);
+    expect(out.catalog[0].recommendation).toContain(appOf(out).id);
     expect(JSON.stringify(out)).not.toContain('application_1690000000000_0001');
   });
 
@@ -360,8 +448,8 @@ describe('redactRunModel', () => {
     data.sql = [{ id: 0, modifiedConfigs: { 'spark.myco.gateway.host': 'zebra-etl-node7', 'spark.sql.shuffle.partitions': '8' } }];
     const out = redactRun(data);
     expect(JSON.stringify(out)).not.toContain('zebra-etl-node7');
-    expect(out.appModel.sql.get(0).modifiedConfigs['spark.myco.gateway.host']).toBe('*********(redacted)');
-    expect(out.appModel.sql.get(0).modifiedConfigs['spark.sql.shuffle.partitions']).toBe('8');
+    expect(modifiedConfigsOf(out)['spark.myco.gateway.host']).toBe('*********(redacted)');
+    expect(modifiedConfigsOf(out)['spark.sql.shuffle.partitions']).toBe('8');
   });
 
   it('keeps no job-written text in per-query values: a bucket path under a key no detector reads is replaced', () => {
@@ -372,7 +460,7 @@ describe('redactRunModel', () => {
     } }];
     const out = redactRun(data);
     expect(JSON.stringify(out)).not.toContain('acme-prod-ledger');
-    const kept = out.appModel.sql.get(0).modifiedConfigs;
+    const kept = modifiedConfigsOf(out);
     expect(kept['spark.myco.output.bucket']).toBe('*********(redacted)');
     expect(kept['spark.sql.shuffle.partitions']).toBe('8');
     expect(kept['spark.sql.adaptive.autoBroadcastJoinThreshold']).toBe('-1');
@@ -383,19 +471,19 @@ describe('redactRunModel', () => {
   // would otherwise corrupt every string in the run.
   it("replaces the app name, and spark.app.name, with the app id's pseudonym", () => {
     const data = sampleExportData();
-    data.app.name = 'nightly-orders-rollup';
-    data.app.config['spark.app.name'] = 'nightly-orders-rollup';
+    present(data.app).name = 'nightly-orders-rollup';
+    present(data.app).config['spark.app.name'] = 'nightly-orders-rollup';
     const out = redactRun(data);
-    expect(out.appModel.app.name).toBe(out.appModel.app.id);
-    expect(out.appModel.app.config['spark.app.name']).toBe(out.appModel.app.id);
+    expect(appOf(out).name).toBe(appOf(out).id);
+    expect(configOf(out)['spark.app.name']).toBe(appOf(out).id);
     expect(JSON.stringify(out)).not.toContain('nightly-orders-rollup');
   });
 
   it('blanks spark.app.name when the app has no id, and skips a run without an app', () => {
     const noId = sampleExportData();
-    noId.app.id = null;
-    noId.app.config['spark.app.name'] = 'nightly-orders-rollup';
-    expect(redactRun(noId).appModel.app.config['spark.app.name']).toBe('');
+    present(noId.app).id = null;
+    present(noId.app).config['spark.app.name'] = 'nightly-orders-rollup';
+    expect(configOf(redactRun(noId))['spark.app.name']).toBe('');
     const noApp = sampleExportData();
     noApp.app = null;
     expect(redactRun(noApp).appModel.app).toBeNull();
@@ -403,10 +491,10 @@ describe('redactRunModel', () => {
 
   it('leaves text that merely contains the app name alone', () => {
     const data = sampleExportData();
-    data.app.name = 'at';
+    present(data.app).name = 'at';
     const out = redactRun(data);
-    expect(out.appModel.app.name).toBe(out.appModel.app.id);
-    expect(out.appModel.stages.get(1).name).toMatch(/^collect at /);
+    expect(appOf(out).name).toBe(appOf(out).id);
+    expect(present(out.appModel.stages.get(1)).name).toMatch(/^collect at /);
   });
 
   it("pseudonymizes an executor's literal host field, not just IP-shaped free text", () => {
@@ -422,39 +510,40 @@ describe('redactRunModel', () => {
       kind: 'removed', timestamp: 9, executorId: '1',
       reason: 'Container killed while reading s3://acme-prod-ledger/2026/q3 for customer 4471-ZEBRA',
     }];
-    data.catalog = [...data.catalog, { type: 'note', reason: 'kept-reason', impactBand: 'info' }];
+    // @ts-expect-error 'note' is a finding type no detector emits, so it is only a carrier for a field named reason
+    data.catalog = [...data.catalog, /** @type {Finding} */ ({ type: 'note', reason: 'kept-reason', impactBand: 'info' })];
     const out = redactRun(data);
     const json = JSON.stringify(out);
     expect(json).not.toContain('acme-prod-ledger');
     expect(json).not.toContain('4471-ZEBRA');
     expect(out.appModel.executors.removed[0].reason).toBe('[redacted]');
     expect(out.appModel.executors.removed[0].executorId).toBe('1');
-    expect(out.catalog[1].reason).toBe('kept-reason');
+    expect(out.catalog[1]).toMatchObject({ reason: 'kept-reason' });
   });
 
   it('pseudonymizes an IP-shaped host token embedded in a stage name', () => {
     const out = redactRun(sampleExportData());
-    expect(out.appModel.stages.get(1).name).toMatch(/host-\d+/);
-    expect(out.appModel.stages.get(1).name).not.toContain('ip-10-1-2-3.ec2.internal');
+    expect(present(out.appModel.stages.get(1)).name).toMatch(/host-\d+/);
+    expect(present(out.appModel.stages.get(1)).name).not.toContain('ip-10-1-2-3.ec2.internal');
   });
 
   it('reaches configFindings, not just catalog', () => {
     const out = redactRun(sampleExportData());
-    expect(out.configFindings[0].value).toMatch(/host-\d+/);
+    expect(findingOfType(out.configFindings[0], 'configAudit').valueText).toMatch(/host-\d+/);
   });
 
   it('does not mutate the input', () => {
     const input = sampleExportData();
     redactRun(input);
-    expect(input.app.id).toBe('application_1690000000000_0001');
+    expect(present(input.app).id).toBe('application_1690000000000_0001');
   });
 
   it('pseudonymizes plain-FQDN hosts living under host/hostname-suffixed app.config keys', () => {
     const out = redactRun(sampleExportData());
-    expect(out.appModel.app.config['spark.driver.host']).toMatch(/^host-\d+$/);
-    expect(out.appModel.app.config['spark.yarn.am.hostname']).toMatch(/^host-\d+$/);
+    expect(configOf(out)['spark.driver.host']).toMatch(/^host-\d+$/);
+    expect(configOf(out)['spark.yarn.am.hostname']).toMatch(/^host-\d+$/);
     // A config value that isn't under a host/hostname-suffixed key is left alone.
-    expect(out.appModel.app.config['spark.executor.instances']).toBe('4');
+    expect(configOf(out)['spark.executor.instances']).toBe('4');
     const serialized = JSON.stringify(out);
     expect(serialized).not.toContain('driver-7.internal.corp');
     expect(serialized).not.toContain('am-node-2.internal.corp');
@@ -466,6 +555,7 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
   const NAME_NODE = 'nn01.corp.example';
   const DB_HOST = 'db01.corp.example';
 
+  /** @returns {RunData} */
   function run() {
     return {
       app: {
@@ -481,12 +571,12 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
           'spark.sql.shuffle.partitions': '200',
         },
       },
-      stages: [{ id: 1, name: 'collect', hostStats: [{ host: 'worker-zz9', taskCount: 3, totalDuration: 10 }] }],
+      stages: [{ id: 1, name: 'collect', hostStats: /** @type {Stage['hostStats']} */ ([{ host: 'worker-zz9', taskCount: 3, totalDuration: 10 }]) }],
       jobs: [],
-      sql: [{
+      sql: [/** @type {Partial<SqlExecution> & { id: number }} */ ({
         id: 0,
         planNodes: [{ id: 1, detail: `JDBCRelation jdbc:postgresql://${DB_HOST}:5432/sales?user=${USER_NAME}&ssl=true` }],
-      }],
+      })],
       executors: { added: [], removed: [] },
       runAggregates: null,
       evidenceAvailability: null,
@@ -496,31 +586,34 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
   }
 
   // Stages, jobs and SQL executions come back as Maps, which JSON.stringify would print as {}.
+  /** @param {unknown} out */
   const flatten = (out) => JSON.stringify(out, (_, value) => (value instanceof Map ? [...value] : value));
   const serialized = () => flatten(redactRun(run()));
 
   it('pseudonymizes the host of a URL, whatever its scheme or shape', () => {
     const out = serialized();
     for (const host of [NAME_NODE, DB_HOST, 'master01']) expect(out).not.toContain(host);
-    expect(redactRun(run()).appModel.app.config['spark.eventLog.dir']).toMatch(/^hdfs:\/\/host-\d+:8020\/user\//);
+    expect(configOf(redactRun(run()))['spark.eventLog.dir']).toMatch(/^hdfs:\/\/host-\d+:8020\/user\//);
   });
 
   it('pseudonymizes the host of a URL inside a plan node detail and keeps the rest of the text', () => {
-    const detail = redactRun(run()).appModel.sql.get(0).planNodes[0].detail;
+    const execution = present(redactRun(run()).appModel.sql.get(0));
+    // @ts-expect-error planNodes is a fixture-only field, absent from SqlExecution, that redaction still reaches
+    const detail = execution.planNodes[0].detail;
     expect(detail).toMatch(/^JDBCRelation jdbc:postgresql:\/\/host-\d+:5432\/sales\?user=redacted-user&ssl=true$/);
   });
 
   it('scrubs the user name from a path, a user= value and a -Duser.name option', () => {
     const out = serialized();
     expect(out).not.toContain(USER_NAME);
-    const { config } = redactRun(run()).appModel.app;
+    const config = configOf(redactRun(run()));
     expect(config['spark.sql.warehouse.dir']).toMatch(/\/user\/redacted-user\/warehouse$/);
     expect(config['spark.executor.extraJavaOptions']).toBe('-Duser.name=redacted-user -Xmx2g');
   });
 
   it('scrubs credentials out of a URL authority', () => {
     const data = run();
-    data.app.config['spark.some.url'] = 'jdbc:mysql://bob:s3cret@db02.corp.example/app';
+    present(data.app).config['spark.some.url'] = 'jdbc:mysql://bob:s3cret@db02.corp.example/app';
     const out = flatten(redactRun(data));
     expect(out).not.toContain('bob');
     expect(out).not.toContain('s3cret');
@@ -529,12 +622,12 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
 
   it('reads a nested-scheme URL through to the inner host', () => {
     const data = run();
-    data.app.config['spark.master'] = 'k8s://https://kube-api.corp.example:6443';
-    data.app.config['spark.kubernetes.driver.podTemplateFile'] = 'k8s://https://carol@kube-api.corp.example:6443/t';
+    present(data.app).config['spark.master'] = 'k8s://https://kube-api.corp.example:6443';
+    present(data.app).config['spark.kubernetes.driver.podTemplateFile'] = 'k8s://https://carol@kube-api.corp.example:6443/t';
     data.stages[0].name = 'See https://docs.example/x';
     const out = redactRun(data);
-    expect(out.appModel.app.config['spark.master']).toMatch(/^k8s:\/\/https:\/\/host-\d+:6443$/);
-    expect(out.appModel.stages.get(1).name).toMatch(/^See https:\/\/host-\d+\/x$/);
+    expect(configOf(out)['spark.master']).toMatch(/^k8s:\/\/https:\/\/host-\d+:6443$/);
+    expect(present(out.appModel.stages.get(1)).name).toMatch(/^See https:\/\/host-\d+\/x$/);
     const text = flatten(out);
     expect(text).not.toContain('kube-api');
     expect(text).not.toContain('carol');
@@ -542,11 +635,11 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
 
   it('replaces a single-word URL host only in URL authority position', () => {
     const data = run();
-    data.app.config['spark.eventLog.dir'] = 's3a://data/logs';
+    present(data.app).config['spark.eventLog.dir'] = 's3a://data/logs';
     data.stages[0].name = 'scan data at s3a://data/in; metadata, raw_data, data.json, data.';
     const out = redactRun(data);
-    expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
-    expect(out.appModel.stages.get(1).name).toMatch(/^scan data at s3a:\/\/host-\d+\/in; metadata, raw_data, data\.json, data\.$/);
+    expect(configOf(out)['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
+    expect(present(out.appModel.stages.get(1)).name).toMatch(/^scan data at s3a:\/\/host-\d+\/in; metadata, raw_data, data\.json, data\.$/);
   });
 
   it('keeps a sentence period after a single-word URL host outside the host', () => {
@@ -558,29 +651,29 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
   });
 
   it.each(['shuffle', 'info', 'data'])('keeps enum fields and prose intact when the log dir bucket is %s', (bucket) => {
-    const finding = { type: 'skew', impactBand: 'info', cause: 'data', summary: `uneven ${bucket} assignment`, host: 'worker-zz9' };
+    const finding = /** @type {Finding} */ ({ type: 'skew', impactBand: 'info', cause: 'data', summary: `uneven ${bucket} assignment`, host: 'worker-zz9' });
     const data = run();
-    data.app.config['spark.eventLog.dir'] = `s3a://${bucket}/logs`;
+    present(data.app).config['spark.eventLog.dir'] = `s3a://${bucket}/logs`;
     data.catalog = [finding];
     const out = redactRun(data);
-    expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
+    expect(configOf(out)['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
     expect(out.catalog[0]).toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
     expect(redactReport({ findings: [finding], summary: { app: { id: null }, dir: `s3a://${bucket}/x` } }).findings[0])
       .toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
   });
 
   it('replaces a single-word config host:port host only in host:port or URL position', () => {
-    const finding = { type: 'shuffle', impactBand: 'info', summary: 'uneven shuffle assignment', host: 'worker-zz9' };
+    const finding = /** @type {Finding} */ ({ type: 'shuffle', impactBand: 'info', summary: 'uneven shuffle assignment', host: 'worker-zz9' });
     const data = run();
-    data.app.config['spark.yarn.historyServer.address'] = 'shuffle:18080';
-    data.app.config['spark.history.ui.url'] = 'http://shuffle/history';
+    present(data.app).config['spark.yarn.historyServer.address'] = 'shuffle:18080';
+    present(data.app).config['spark.history.ui.url'] = 'http://shuffle/history';
     data.stages[0].name = 'shuffle read from shuffle:18080';
     data.catalog = [finding];
     const out = redactRun(data);
-    const { config } = out.appModel.app;
-    const [, pseudonym] = config['spark.yarn.historyServer.address'].match(/^(host-\d+):18080$/);
+    const config = configOf(out);
+    const [, pseudonym] = present(config['spark.yarn.historyServer.address'].match(/^(host-\d+):18080$/));
     expect(config['spark.history.ui.url']).toBe(`http://${pseudonym}/history`);
-    expect(out.appModel.stages.get(1).name).toBe(`shuffle read from ${pseudonym}:18080`);
+    expect(present(out.appModel.stages.get(1)).name).toBe(`shuffle read from ${pseudonym}:18080`);
     expect(config['spark.sql.shuffle.partitions']).toBe('200');
     expect(out.catalog[0]).toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
   });
@@ -592,14 +685,14 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
 
   it('pseudonymizes a host that only a stage records in hostStats', () => {
     const out = redactRun(run());
-    expect(out.appModel.stages.get(1).hostStats[0].host).toMatch(/^host-\d+$/);
+    expect(present(out.appModel.stages.get(1)).hostStats[0].host).toMatch(/^host-\d+$/);
     expect(serialized()).not.toContain('worker-zz9');
   });
 
   it('leaves non-identifying config and a URL without an authority alone', () => {
     const data = run();
-    data.app.config['spark.local.dir'] = 'file:///tmp/spark';
-    const { config } = redactRun(data).appModel.app;
+    present(data.app).config['spark.local.dir'] = 'file:///tmp/spark';
+    const config = configOf(redactRun(data));
     expect(config['spark.executor.instances']).toBe('4');
     expect(config['spark.local.dir']).toBe('file:///tmp/spark');
   });
@@ -625,9 +718,9 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
   it('redacts 500 hosts across 20 000 stages in well under a second', () => {
     const hosts = Array.from({ length: 500 }, (_, i) => `worker-${i}.corp.example`);
     const data = run();
-    data.executors.added = hosts.map((host, i) => ({ kind: 'added', timestamp: 0, executorId: String(i), host, totalCores: 4, resourceProfileId: null }));
+    data.executors.added = hosts.map((host, i) => /** @type {AppModel['executors']['added'][number]} */ ({ kind: 'added', timestamp: 0, executorId: String(i), host, totalCores: 4, resourceProfileId: null }));
     data.stages = Array.from({ length: 20000 }, (_, i) => ({
-      id: i, name: `stage ${i} on ${hosts[i % 500]}`, hostStats: [{ host: hosts[(i * 7) % 500], taskCount: 1, totalDuration: 1 }],
+      id: i, name: `stage ${i} on ${hosts[i % 500]}`, hostStats: /** @type {Stage['hostStats']} */ ([{ host: hosts[(i * 7) % 500], taskCount: 1, totalDuration: 1 }]),
     }));
     const started = performance.now();
     const out = redactRun(data);

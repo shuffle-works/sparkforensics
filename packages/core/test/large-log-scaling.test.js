@@ -11,7 +11,10 @@ import { indexStagesBySqlExecution, stageIdsForSqlExec } from '../src/sql-stages
 import { computeTaskActiveMs, FIELDS } from '../src/stage-quantiles.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
+/** @typedef {{ launch: number, finish: number }} Interval */
+
 // Seeded generator so the randomized comparisons are reproducible.
+/** @param {number} seed */
 function rng(seed) {
   let s = seed;
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
@@ -19,6 +22,10 @@ function rng(seed) {
 
 const GIB = 1024 ** 3;
 
+/**
+ * @template T
+ * @param {() => T} fn
+ */
 function timed(fn) {
   const start = performance.now();
   const value = fn();
@@ -29,9 +36,18 @@ function timed(fn) {
 // about linearly: a quadratic site quadruples. Taking the best of a few runs and
 // allowing a small absolute floor keeps a slow or loaded machine from failing it.
 // Returns the value of the last run at 2n so the caller can check correctness.
+/**
+ * @template T
+ * @param {(size: number) => () => T} prepare
+ * @param {number} n
+ * @returns {T}
+ */
 function expectNearLinear(prepare, n) {
+  /** @param {number} size */
   const best = (size) => {
-    let fastest = Infinity, value;
+    let fastest = Infinity;
+    /** @type {T | undefined} */
+    let value;
     for (let run = 0; run < 3; run++) {
       const result = timed(prepare(size));
       fastest = Math.min(fastest, result.ms);
@@ -42,7 +58,7 @@ function expectNearLinear(prepare, n) {
   const small = best(n);
   const large = best(2 * n);
   expect(large.ms).toBeLessThan(3.5 * small.ms + 50);
-  return large.value;
+  return /** @type {T} */ (large.value);
 }
 
 describe('analyze() on a log with very many stages', () => {
@@ -77,11 +93,19 @@ describe('computeRunMetrics on a log with 200k stages', () => {
     for (let id = 0; id < 200_000; id++) {
       stages.set(id, makeStage({ id, name: `stage ${id % 50}`, peakExecutionMemoryMax: 100 + id }));
     }
-    const appModel = { app: makeApp(), stages, sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] } };
-    const metrics = computeRunMetrics(appModel);
+    /** @type {Partial<import('../src/types.ts').AppModel>} */
+    const partialModel = { app: makeApp(), stages, sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] } };
+    const metrics = computeRunMetrics(/** @type {import('../src/types.ts').AppModel} */ (partialModel));
     expect(metrics.data.peakExecutionMemoryBytes).toBe(100 + 199_999);
   }, 60_000);
 });
+
+/** @param {Interval[]} intervals */
+function coreCountHistogramOf(intervals) {
+  const series = computeCoreTimeSeries(intervals, { bucketBy: 'coreCount' });
+  if (series.mode !== 'coreCount') throw new Error(`Expected coreCount mode, got ${series.mode}.`);
+  return series.histogram;
+}
 
 describe('stage index by SQL execution', () => {
   it('lists the same stage ids as a scan per execution, in stage order', () => {
@@ -102,12 +126,13 @@ describe('coreCountHistogram', () => {
   it('matches the sweep-line histogram of computeCoreTimeSeries, including tied times', () => {
     const next = rng(11);
     for (let round = 0; round < 20; round++) {
+      /** @type {Interval[]} */
       const intervals = [];
       for (let i = 0; i < 300; i++) {
         const launch = Math.floor(next() * 400);
         intervals.push({ launch, finish: launch + 1 + Math.floor(next() * 60) });
       }
-      const expected = computeCoreTimeSeries(intervals, { bucketBy: 'coreCount' }).histogram;
+      const expected = coreCountHistogramOf(intervals);
       const actual = coreCountHistogram(
         Float64Array.from(intervals, (i) => i.launch),
         Float64Array.from(intervals, (i) => i.finish),
@@ -121,6 +146,7 @@ describe('coreCountHistogram', () => {
   });
 });
 
+/** @param {Interval[]} tasks */
 function packTasks(tasks) {
   const arr = new Float64Array(tasks.length * FIELDS.STRIDE);
   tasks.forEach(({ launch, finish }, i) => {
@@ -132,6 +158,7 @@ function packTasks(tasks) {
 }
 
 // The union length by merging sorted intervals, the definition computeTaskActiveMs documents.
+/** @param {Interval[]} tasks */
 function unionMs(tasks) {
   const intervals = tasks.filter((t) => t.launch > 0 && t.finish > t.launch).sort((a, b) => a.launch - b.launch);
   let total = 0, start = -Infinity, end = -Infinity;
@@ -149,6 +176,7 @@ describe('per-task aggregation without an object per task', () => {
   it('computeTaskActiveMs equals the merged-interval union, gaps and zero launches included', () => {
     const next = rng(23);
     for (let round = 0; round < 20; round++) {
+      /** @type {Interval[]} */
       const tasks = [];
       for (let i = 0; i < 200; i++) {
         const launch = Math.floor(next() * 1000);
@@ -161,8 +189,10 @@ describe('per-task aggregation without an object per task', () => {
   it('computeRunAggregates matches the interval-list histogram and per-stage sums', () => {
     const next = rng(31);
     const taskStore = new Map();
+    /** @type {Interval[]} */
     const intervals = [];
     for (let stage = 0; stage < 6; stage++) {
+      /** @type {Interval[]} */
       const tasks = [];
       for (let i = 0; i < 100; i++) {
         const launch = Math.floor(next() * 500);
@@ -173,7 +203,7 @@ describe('per-task aggregation without an object per task', () => {
       taskStore.set(stage, packTasks(tasks));
     }
     const result = computeRunAggregates(taskStore);
-    const expected = computeCoreTimeSeries(intervals, { bucketBy: 'coreCount' }).histogram;
+    const expected = coreCountHistogramOf(intervals);
     expect(result.coreHistogram).toEqual(expected);
     expect(result.peakConcurrentCores).toBe(expected.length - 1);
     expect(result.busyCoreMs).toBe(expected.reduce((sum, ms, k) => sum + k * ms, 0));
@@ -182,6 +212,7 @@ describe('per-task aggregation without an object per task', () => {
 });
 
 describe('API merge overlap detection', () => {
+  /** @param {[number, number][]} spans */
   function mergeRuns(spans) {
     // One run of consecutive execution ids per span; the id gap between runs splits them.
     const sql = new Map();
@@ -196,6 +227,7 @@ describe('API merge overlap detection', () => {
   it('flags exactly the runs whose start-time spans share a point with another run', () => {
     const next = rng(5);
     for (let round = 0; round < 30; round++) {
+      /** @type {[number, number][]} */
       const spans = [];
       for (let g = 0; g < 25; g++) {
         const lo = Math.floor(next() * 400);
@@ -212,7 +244,7 @@ describe('API merge overlap detection', () => {
 
   it('scales to tens of thousands of runs', () => {
     const value = expectNearLinear((size) => {
-      const sql = mergeRuns(Array.from({ length: size }, (_, g) => [g * 10, g * 10 + 5]));
+      const sql = mergeRuns(Array.from({ length: size }, (_, g) => /** @type {[number, number]} */ ([g * 10, g * 10 + 5])));
       return () => apiMergeWrites(sql);
     }, 30_000);
     expect(value).toHaveLength(60_000);
@@ -221,6 +253,9 @@ describe('API merge overlap detection', () => {
 });
 
 describe('executor removal drops its cached blocks', () => {
+  /** @typedef {Parameters<typeof recordBlockUpdate>[0]} BlockUpdatedEvent */
+
+  /** @param {number} rddId @param {number} partition @param {string} executor @param {number} memory @param {boolean} [resident] @returns {BlockUpdatedEvent} */
   function blockUpdate(rddId, partition, executor, memory, resident = true) {
     return {
       Event: 'SparkListenerBlockUpdated',
@@ -233,7 +268,15 @@ describe('executor removal drops its cached blocks', () => {
       },
     };
   }
+  /** @param {string} executorId @returns {Parameters<typeof removeExecutor>[0]} */
   const removal = (executorId) => ({ Event: 'SparkListenerExecutorRemoved', Timestamp: 1, 'Executor ID': executorId });
+
+  /** @param {ReturnType<typeof createState>} state @param {number} rddId */
+  function rddOf(state, rddId) {
+    const rdd = state.rddBlocks.get(rddId);
+    if (!rdd) throw new Error(`expected block state for rdd ${rddId}`);
+    return rdd;
+  }
 
   it('keeps blocks of other executors, including ids that end in the removed id', () => {
     const state = createState();
@@ -242,15 +285,15 @@ describe('executor removal drops its cached blocks', () => {
     recordBlockUpdate(blockUpdate(2, 0, '1', 40), state);
     recordBlockUpdate(blockUpdate(2, 0, '2', 80), state);
     removeExecutor(removal('1'), state);
-    expect([...state.rddBlocks.get(1).blocks.keys()]).toEqual(['1@11']);
-    expect(state.rddBlocks.get(1).memorySize).toBe(20);
-    expect([...state.rddBlocks.get(2).blocks.keys()]).toEqual(['0@2']);
-    expect(state.rddBlocks.get(2).memorySize).toBe(80);
-    expect(state.rddBlocks.get(2).replicasByPartition.get(0)).toBe(1);
+    expect([...rddOf(state, 1).blocks.keys()]).toEqual(['1@11']);
+    expect(rddOf(state, 1).memorySize).toBe(20);
+    expect([...rddOf(state, 2).blocks.keys()]).toEqual(['0@2']);
+    expect(rddOf(state, 2).memorySize).toBe(80);
+    expect(rddOf(state, 2).replicasByPartition.get(0)).toBe(1);
     // A block evicted before its executor leaves is not dropped twice.
     recordBlockUpdate(blockUpdate(1, 1, '11', 0, false), state);
     removeExecutor(removal('11'), state);
-    expect(state.rddBlocks.get(1).memorySize).toBe(0);
+    expect(rddOf(state, 1).memorySize).toBe(0);
   });
 
   it('removes thousands of executors without rescanning every block', () => {
@@ -272,6 +315,7 @@ describe('executor removal drops its cached blocks', () => {
 describe('parseSparkPlanInfoTree on a very wide node', () => {
   it('expands a 200k-child node in order, in linear time', () => {
     const width = 200_000;
+    /** @param {string | number} i */
     const leaf = (i) => ({ nodeName: `Scan ${i}`, simpleString: '', children: [], metadata: {}, metrics: [] });
     const tree = expectNearLinear((size) => {
       const raw = { ...leaf('root'), nodeName: 'Union', children: Array.from({ length: size }, (_, i) => leaf(i)) };

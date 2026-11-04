@@ -15,6 +15,25 @@ import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 // Helper lives at repo-root tests/helpers/: shared with tests/cli-sparkforensics-analyze.test.js.
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
 
+/** @typedef {import('../src/mcp-tools.ts').DiagnoseRunResult['findings'][number]} FindingRowOfEither */
+
+/**
+ * A value the test expects to be there, so a missing one fails here rather than on a property read.
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('expected a value');
+  return value;
+}
+
+/** The full-view row, which carries the impact estimate the compact row drops. @param {FindingRowOfEither | undefined} row */
+function fullRowOf(row) {
+  if (!row || !('impactEstimate' in row)) throw new Error('expected a full finding row');
+  return row;
+}
+
 function tmpEventLog() {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
   const path = join(dir, 'eventlog');
@@ -58,7 +77,7 @@ describe('resolveOrCreateRun (path source)', () => {
     try {
       const { runId, appModel } = await resolveOrCreateRun({ source: { path } });
       expect(typeof runId).toBe('string');
-      expect(appModel.app.id).toBe('app-1');
+      expect(present(appModel.app).id).toBe('app-1');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -97,7 +116,7 @@ describe('resolveOrCreateRun (path source)', () => {
     try {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const byId = await resolveOrCreateRun({ runId });
-      expect(byId.appModel.app.id).toBe('app-1');
+      expect(present(byId.appModel.app).id).toBe('app-1');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -116,10 +135,10 @@ describe('resolveOrCreateRun (path source)', () => {
   // A local file or folder that isn't a decodable event log reports the same code a History
   // Server archive that fails to decode does, with the decode message kept.
   it.each([
-    ['a file that is not an event log', (dir) => { const p = join(dir, 'notes.txt'); writeFileSync(p, 'not json\nat all\n'); return p; }],
-    ['a corrupt .gz', (dir) => { const p = join(dir, 'run.gz'); writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3, 4, 5, 6, 7])); return p; }],
-    ['a corrupt .zstd', (dir) => { const p = join(dir, 'run.zstd'); writeFileSync(p, Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 1, 2, 3, 4, 5, 6, 7])); return p; }],
-    ['a directory that is not a rolling event log', (dir) => { writeFileSync(join(dir, 'a.txt'), 'x'); return dir; }],
+    ['a file that is not an event log', (/** @type {string} */ dir) => { const p = join(dir, 'notes.txt'); writeFileSync(p, 'not json\nat all\n'); return p; }],
+    ['a corrupt .gz', (/** @type {string} */ dir) => { const p = join(dir, 'run.gz'); writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3, 4, 5, 6, 7])); return p; }],
+    ['a corrupt .zstd', (/** @type {string} */ dir) => { const p = join(dir, 'run.zstd'); writeFileSync(p, Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 1, 2, 3, 4, 5, 6, 7])); return p; }],
+    ['a directory that is not a rolling event log', (/** @type {string} */ dir) => { writeFileSync(join(dir, 'a.txt'), 'x'); return dir; }],
   ])('throws invalid-event-log for %s', async (_label, make) => {
     const dir = mkdtempSync(join(tmpdir(), 'sf-mcp-bad-'));
     try {
@@ -143,7 +162,7 @@ describe('resolveOrCreateRun (SHS source)', () => {
       { fetchImpl },
     );
     expect(typeof runId).toBe('string');
-    expect(appModel.app.id).toBe('app-shs');
+    expect(present(appModel.app).id).toBe('app-shs');
   });
 
   it('surfaces upstream-unreachable on a connection failure', async () => {
@@ -156,10 +175,8 @@ describe('resolveOrCreateRun (SHS source)', () => {
   });
 
   it('rejects an SHS archive whose declared content-length exceeds the cap', async () => {
-    const fetchImpl = async () => ({
-      ok: true, status: 200,
-      headers: { get: (n) => (n.toLowerCase() === 'content-length' ? String(10 * 1024) : null) },
-      body: new ReadableStream({ start(c) { c.close(); } }),
+    const fetchImpl = async () => new Response(new ReadableStream({ start(c) { c.close(); } }), {
+      status: 200, headers: { 'content-length': String(10 * 1024) },
     });
     await expect(resolveOrCreateRun(
       { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_4' } },
@@ -168,13 +185,9 @@ describe('resolveOrCreateRun (SHS source)', () => {
   });
 
   it('rejects a streamed SHS archive that exceeds the cap without a content-length', async () => {
-    const fetchImpl = async () => ({
-      ok: true, status: 200,
-      headers: { get: () => null },
-      body: new ReadableStream({
-        start(c) { c.enqueue(new Uint8Array(2048)); c.close(); },
-      }),
-    });
+    const fetchImpl = async () => new Response(new ReadableStream({
+      start(c) { c.enqueue(new Uint8Array(2048)); c.close(); },
+    }), { status: 200 });
     await expect(resolveOrCreateRun(
       { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_5' } },
       { fetchImpl, maxArchiveBytes: 1024 },
@@ -182,12 +195,8 @@ describe('resolveOrCreateRun (SHS source)', () => {
   });
 
   it('rejects with upstream-unreachable when the archive body stalls past the idle timeout', async () => {
-    const fetchImpl = async () => ({
-      ok: true, status: 200,
-      headers: { get: () => null },
-      // Emits one chunk then stalls forever: headers arrived, body went idle.
-      body: new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }),
-    });
+    // Emits one chunk then stalls forever: headers arrived, body went idle.
+    const fetchImpl = async () => new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 });
     await expect(resolveOrCreateRun(
       { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_6' } },
       { fetchImpl, idleTimeoutMs: 20 },
@@ -260,10 +269,10 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { recommendations, cleanChecks, notRunChecks } = diagnoseRun(runId);
       expect(Array.isArray(recommendations)).toBe(true);
       expect(Array.isArray(notRunChecks)).toBe(true);
-      for (const c of notRunChecks) expect(typeof c.reason).toBe('string');
+      for (const c of present(notRunChecks)) expect(typeof c.reason).toBe('string');
       expect(Array.isArray(cleanChecks)).toBe(true);
-      expect(cleanChecks.length).toBeGreaterThan(0);
-      for (const c of cleanChecks) {
+      expect(present(cleanChecks).length).toBeGreaterThan(0);
+      for (const c of present(cleanChecks)) {
         expect(typeof c.type).toBe('string');
         expect(typeof c.tag).toBe('string');
         expect(typeof c.thresholdSummary).toBe('string');
@@ -297,7 +306,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const { findings } = diagnoseRun(runId);
       if (findings.length > 0) {
-        const { finding } = getFindingEvidence(runId, findings[0].id);
+        const { finding } = getFindingEvidence(runId, present(findings[0].id));
         expect(finding.id).toBe(findings[0].id);
       }
       expect(() => getFindingEvidence(runId, 'not-a-real-id'))
@@ -314,11 +323,11 @@ describe('diagnoseRun / getFindingEvidence', () => {
     try {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const { findings } = diagnoseRun(runId);
-      const incomplete = findings.find((f) => f.type === 'incompleteRun');
+      const incomplete = fullRowOf(findings.find((f) => f.type === 'incompleteRun'));
       expect(incomplete).toBeDefined();
       expect(incomplete.impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none', coreTimeMs: null });
 
-      const { finding } = getFindingEvidence(runId, incomplete.id);
+      const { finding } = getFindingEvidence(runId, present(incomplete.id));
       expect(finding.impactEstimate).toEqual(incomplete.impactEstimate);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -344,9 +353,9 @@ describe('diagnoseRun / getFindingEvidence', () => {
       expect(plain.findings).toEqual(buildEvidenceReport(appModel).json.findings);
       expect(redacted.findings.length).toBeGreaterThan(0);
 
-      const evidenceRedacted = getFindingEvidence(runId, redacted.findings[0].id, { redact: true });
+      const evidenceRedacted = getFindingEvidence(runId, present(redacted.findings[0].id), { redact: true });
       expect(evidenceRedacted.finding).toEqual(directRedacted.findings[0]);
-      const evidencePlain = getFindingEvidence(runId, redacted.findings[0].id);
+      const evidencePlain = getFindingEvidence(runId, present(redacted.findings[0].id));
       expect(evidencePlain.finding).toEqual(buildEvidenceReport(appModel).json.findings[0]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -369,6 +378,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
     }
   });
 
+  /** @type {('summary' | 'evidenceAvailability' | 'detectors')[]} */
   const INCLUDE_KEYS = ['summary', 'evidenceAvailability', 'detectors'];
 
   it.each(INCLUDE_KEYS)('adds %s matching buildEvidenceReport\'s own json field when requested alone', async (key) => {
@@ -481,6 +491,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
   });
 
   describe('view, minBand, maxFindings and finding keys', () => {
+    /** @param {Parameters<typeof diagnoseRun>[1]} [opts] */
     async function diagnose(opts) {
       const { dir, path } = tmpEventLogWithFindings();
       try {
@@ -498,9 +509,9 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const straggler = first.findings.find((f) => f.type === 'straggler');
       // A stage's fingerprint is the key of its `metrics.stages` entry, so the two join without a table.
       const fingerprint = Object.keys(first.metrics.stages).find((k) => first.metrics.stages[k].stageIds.includes(1));
-      expect(straggler.key).toBe(`straggler|straggler|stage:${fingerprint}`);
+      expect(present(straggler).key).toBe(`straggler|straggler|stage:${fingerprint}`);
       // A run-level finding has no stage to name.
-      expect(first.findings.find((f) => f.type === 'memoryUtilization').key).toMatch(/^memoryUtilization\|[^|]+\|run$/);
+      expect(present(first.findings.find((f) => f.type === 'memoryUtilization')).key).toMatch(/^memoryUtilization\|[^|]+\|run$/);
     });
 
     it('lists one short row per finding and leaves out the check lists in the compact view', async () => {
@@ -524,20 +535,20 @@ describe('diagnoseRun / getFindingEvidence', () => {
         const { runId } = await resolveOrCreateRun({ source: { path } });
         const thresholds = parseThresholdOverrides({ straggler: { minTasks: 2 } });
         const { findings } = diagnoseRun(runId, { view: 'compact', thresholds });
-        expect(findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual({ minTasks: { value: 2, default: 10 } });
+        expect(present(findings.find((f) => f.type === 'straggler')).tunedThresholds).toEqual({ minTasks: { value: 2, default: 10 } });
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
     });
 
     it('puts the lead finding row in each verdict step, in the shape of the view', async () => {
-      for (const view of ['compact', 'full']) {
+      for (const view of /** @type {const} */ (['compact', 'full'])) {
         const result = await diagnose({ view });
         expect(result.verdict.steps.length).toBeGreaterThan(0);
         for (const step of result.verdict.steps) {
-          expect(step.leadFinding.id).toBe(step.leadFindingId);
-          expect(step.leadFinding.type).toBe(step.type);
-          expect('evidence' in step.leadFinding).toBe(view === 'full');
+          expect(present(step.leadFinding).id).toBe(step.leadFindingId);
+          expect(present(step.leadFinding).type).toBe(step.type);
+          expect('evidence' in present(step.leadFinding)).toBe(view === 'full');
         }
       }
     });
@@ -595,31 +606,31 @@ describe('getFindingDocumentation', () => {
     expect(doc.detectionDoc.title).toBe('Task skew');
     expect(doc.detectionDoc.content.length).toBeGreaterThan(0);
     expect(doc.tuningDoc).not.toBeNull();
-    expect(doc.tuningDoc.anchor).toBe('#bottleneck-skew');
-    expect(doc.tuningDoc.content.length).toBeGreaterThan(0);
+    expect(present(doc.tuningDoc).anchor).toBe('#bottleneck-skew');
+    expect(present(doc.tuningDoc).content.length).toBeGreaterThan(0);
   });
 
   it('resolves stageShape\'s tuning doc to the skew page it is a sub-anchor of', () => {
     const doc = getFindingDocumentation('stageShape');
     expect(doc.tuningDoc).not.toBeNull();
-    expect(doc.tuningDoc.anchor).toBe('#bottleneck-stage-shape');
+    expect(present(doc.tuningDoc).anchor).toBe('#bottleneck-stage-shape');
     // Same vendored content as skew's own tuning doc (one upstream page).
-    expect(doc.tuningDoc.content).toBe(getFindingDocumentation('skew').tuningDoc.content);
+    expect(present(doc.tuningDoc).content).toBe(present(getFindingDocumentation('skew').tuningDoc).content);
   });
 
   it('resolves speculationWaste\'s tuning doc to the straggler page its sub-anchor lives on', () => {
     const doc = getFindingDocumentation('speculationWaste');
-    expect(doc.tuningDoc.anchor).toBe('#bottleneck-speculation-waste');
-    expect(doc.tuningDoc.content).toBe(getFindingDocumentation('straggler').tuningDoc.content);
-    expect(doc.tuningDoc.content).toContain('{#bottleneck-speculation-waste}');
+    expect(present(doc.tuningDoc).anchor).toBe('#bottleneck-speculation-waste');
+    expect(present(doc.tuningDoc).content).toBe(present(getFindingDocumentation('straggler').tuningDoc).content);
+    expect(present(doc.tuningDoc).content).toContain('{#bottleneck-speculation-waste}');
   });
 
   it('falls back to the owning chapter for a sub-anchor hosted on a chapter page', () => {
     const doc = getFindingDocumentation('autoscalingChurn');
     expect(doc.tuningDoc).not.toBeNull();
-    expect(doc.tuningDoc.anchor).toBe('#bottleneck-autoscaling-churn');
-    expect(doc.tuningDoc.content).toBe(getReferenceDoc('#cluster-config').content);
-    expect(doc.tuningDoc.content).toContain('{#bottleneck-autoscaling-churn}');
+    expect(present(doc.tuningDoc).anchor).toBe('#bottleneck-autoscaling-churn');
+    expect(present(doc.tuningDoc).content).toBe(getReferenceDoc('#cluster-config').content);
+    expect(present(doc.tuningDoc).content).toContain('{#bottleneck-autoscaling-churn}');
   });
 
   it('returns tuningDoc: null for a type whose docAnchorForType is ambiguous', () => {
@@ -635,7 +646,7 @@ describe('getFindingDocumentation', () => {
     expect(doc.detectionDoc).toEqual(getFindingDocumentation('underBroadcast').detectionDoc);
     expect(doc.detectionDoc.tag).toBe('PLAN');
     expect(doc.tuningDoc).not.toBeNull();
-    expect(doc.tuningDoc.anchor).toBe('#bottleneck-broadcast-sizing');
+    expect(present(doc.tuningDoc).anchor).toBe('#bottleneck-broadcast-sizing');
     expect(doc.tuningDoc).toEqual(getFindingDocumentation('overBroadcast').tuningDoc);
   });
 
@@ -644,7 +655,7 @@ describe('getFindingDocumentation', () => {
     try {
       getFindingDocumentation('zetaSignal');
     } catch (err) {
-      expect(err.code).toBe('invalid-type');
+      expect(/** @type {{ code?: string }} */ (err).code).toBe('invalid-type');
     }
   });
 });
@@ -692,7 +703,7 @@ describe('getRunSummary', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const summary = getRunSummary(runId);
       expect(summary).toMatchObject({ failedJobs: 1, totalJobs: 2, failureReason: 'Job aborted: boom', failureReasonStageId: null });
-      expect(diagnoseRun(runId, { include: ['summary'] }).summary.outcome).toEqual({
+      expect(present(diagnoseRun(runId, { include: ['summary'] }).summary).outcome).toEqual({
         failedJobs: 1, totalJobs: 2, failureReason: 'Job aborted: boom', failureReasonStageId: null,
       });
       expect(diagnoseRun(runId, { markdown: true }).markdown).toContain("- Outcome: 1 of 2 jobs failed. Spark's recorded reason: Job aborted: boom");
@@ -773,7 +784,7 @@ describe('getRunSummary', () => {
       expect(getRunSummary(runId).app.name).toBe('orders-nightly-rollup');
       expect(getRunSummary(runId, { redact: true }).app.name).toBe('app-1');
       const report = diagnoseRun(runId, { redact: true, include: ['summary'], markdown: true });
-      expect(report.summary.app.name).toBe('app-1');
+      expect(present(report.summary).app.name).toBe('app-1');
       expect(JSON.stringify(report)).not.toContain('orders-nightly-rollup');
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -804,6 +815,7 @@ describe('getRunSummary', () => {
 // One stage, 10 tasks; the last task finishes at `stragglerFinishTime` (the
 // other 9 always finish at 100ms), so a high enough value trips the straggler
 // detector while a low one (matching the fast tasks) does not.
+/** @param {string} appId @param {string} stageName @param {number} stragglerFinishTime */
 function tmpEventLogWithStage(appId, stageName, stragglerFinishTime) {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
   const path = join(dir, 'eventlog');
@@ -829,6 +841,7 @@ function tmpEventLogWithStage(appId, stageName, stragglerFinishTime) {
   return { dir, path };
 }
 
+/** @param {string} appId @param {number} endTime */
 function tmpEventLogWithDuration(appId, endTime) {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
   const path = join(dir, 'eventlog');
@@ -847,7 +860,7 @@ describe('compareRuns', () => {
       expect(typeof result.baselineRunId).toBe('string');
       expect(typeof result.candidateRunId).toBe('string');
       expect(result.findings).toEqual({ introduced: [], resolved: [], changed: [] });
-      const wallClock = result.metrics.find((m) => m.key === 'wallClock');
+      const wallClock = present(result.metrics.find((m) => m.key === 'wallClock'));
       expect(wallClock.baseline).toBe(2000);
       expect(wallClock.candidate).toBe(1000);
       expect(wallClock.direction).toBe('improvement');
@@ -928,11 +941,11 @@ describe('compareRuns', () => {
     const candidate = tmpEventLogWithStage('app-b', 'collect at ip-10-1-2-3.ec2.internal.scala:42', 2000);
     try {
       const plain = await compareRuns({ source: { path: baseline.path } }, { source: { path: candidate.path } });
-      const introduced = plain.findings.introduced.find((f) => f.stages.length > 0);
+      const introduced = present(plain.findings.introduced.find((f) => f.stages.length > 0));
       expect(introduced.stages[0]).toContain('ip-10-1-2-3.ec2.internal');
 
       const redacted = await compareRuns({ source: { path: baseline.path } }, { source: { path: candidate.path } }, { redact: true });
-      const redactedIntroduced = redacted.findings.introduced.find((f) => f.rule === introduced.rule);
+      const redactedIntroduced = present(redacted.findings.introduced.find((f) => f.rule === introduced.rule));
       expect(redactedIntroduced.stages[0]).not.toContain('ip-10-1-2-3.ec2.internal');
       expect(redactedIntroduced.stages[0]).toMatch(/host-\d+/);
     } finally {
@@ -1213,6 +1226,7 @@ describe('budgets on a redacted comparison', () => {
     const baseline = tmpEventLogWithStage('app-a', 's1', 100);
     const candidate = tmpEventLogWithStage('app-b', 'collect at ip-10-1-2-3.ec2.internal.scala:42', 2000);
     try {
+      /** @param {string} path */
       const prepare = async (path) => {
         const run = await analyzedRunFrom(path);
         return { appModel: run.appModel, catalog: run.catalog };
@@ -1229,6 +1243,7 @@ describe('budgets on a redacted comparison', () => {
         maxRegressionPct: 0, regressionBudgets: COMPARISON_METRIC_KEYS.map((metric) => ({ metric, maxPct: 0 })).filter((b) => b.metric !== 'wallClock'),
         failOnIntroduced: 'all',
       };
+      /** @param {NonNullable<Parameters<typeof evaluateBudgets>[0]['comparison']>} comparison */
       const run = (comparison) => evaluateBudgets({ appModel: cand.appModel, catalog: cand.catalog, budgets, comparison });
       expect(run(redacted)).toEqual(run(raw));
       expect(run(raw).violated).toBe(true);
@@ -1241,6 +1256,7 @@ describe('budgets on a redacted comparison', () => {
 
 describe('skipped lines in MCP output', () => {
   // A complete log whose 6 TaskEnd lines are replaced by a truncated JSON fragment.
+  /** @param {string} path */
   function corruptLog(path) {
     const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
     let replaced = 0;
@@ -1257,7 +1273,7 @@ describe('skipped lines in MCP output', () => {
       if (damage) corruptLog(path);
       const { runId } = await resolveOrCreateRun({ source: { path } });
       expect(getRunSummary(runId).skippedLines).toBe(expected);
-      expect(diagnoseRun(runId, { include: ['summary'] }).summary.skippedLines).toBe(expected);
+      expect(present(diagnoseRun(runId, { include: ['summary'] }).summary).skippedLines).toBe(expected);
       const { results, violated, inconclusive } = await evaluateBudgetsForRun({ runId }, {});
       expect(results.some((r) => r.name === 'parse-incomplete')).toBe(damage);
       expect(violated).toBe(false);
@@ -1289,6 +1305,7 @@ describe('caller mistakes', () => {
     await expect(resolveOrCreateRun({})).rejects.toMatchObject({ code: 'invalid-argument' });
     await expect(compareRuns({ runId: 'a' }, { runId: 'b' }, { normalizePath: ['('] })).rejects.toMatchObject({ code: 'invalid-argument' });
     await expect(compareRuns({ runId: 'a' }, { runId: 'b' }, { ignoreConf: ['('] })).rejects.toMatchObject({ code: 'invalid-argument' });
+    // @ts-expect-error deliberately passes a stage quality no pair has
     await expect(evaluateBudgetsForRun({ runId: 'a' }, { stageQualities: ['regression'] })).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 });

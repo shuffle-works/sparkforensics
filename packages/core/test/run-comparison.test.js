@@ -1,8 +1,49 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeStageName, matchStages, stageIdentity } from '../src/run-comparison.js';
 
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {import('../src/types.ts').SparkAppInfo} SparkAppInfo */
+/** @typedef {import('../src/types.ts').SqlExecution} SqlExecution */
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/types.ts').Job} Job */
+/** @typedef {import('../src/compared-run.ts').ComparedRun} ComparedRun */
+/** @typedef {[number, Partial<Stage>][]} StageEntries */
+
+/**
+ * A run snapshot carrying only the parts the comparison reads; the rest is absent.
+ * @param {{ app?: Partial<SparkAppInfo> | null, stages?: Map<number, Partial<Stage>>, sql?: Map<number, Partial<SqlExecution>>, jobs?: Map<number, Partial<Job>>, catalog?: object[] }} parts
+ * @returns {ComparedRun}
+ */
+function asRun(parts) {
+  return /** @type {ComparedRun} */ (parts);
+}
+
+/** A value the test needs, so a missing one fails here rather than on a property read.
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('Expected a value.');
+  return value;
+}
+
+/** @param {string} executorId @returns {import('../src/types.ts').ExecutorAddedEvent} */
+function addedExecutor(executorId) {
+  return { kind: 'added', executorId, timestamp: 0, host: 'host-1', totalCores: 0, resourceProfileId: null };
+}
+
+/** A stage carrying only the fields the comparison reads.
+ * @param {Partial<Stage>} fields
+ * @returns {Stage}
+ */
+function stageOf(fields) {
+  return /** @type {Stage} */ (fields);
+}
+
+/** @param {StageEntries} stages @param {Partial<SparkAppInfo>} [app] */
 function snap(stages, app = { name: 'App A' }) {
-  return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] };
+  return asRun({ app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] });
 }
 
 describe('normalizeStageName', () => {
@@ -14,10 +55,12 @@ describe('normalizeStageName', () => {
   });
 });
 
+/** @param {number} execId @param {PlanNode} planTree @param {Partial<SparkAppInfo>} [app] */
 function planSnap(execId, planTree, app = { name: 'App A' }) {
-  return { app, stages: new Map(), sql: new Map([[execId, { planTree }]]), jobs: new Map(), catalog: [] };
+  return asRun({ app, stages: new Map(), sql: new Map([[execId, { planTree }]]), jobs: new Map(), catalog: [] });
 }
 
+/** @param {string} relation @returns {PlanNode} */
 function scan(relation) {
   return { name: `Scan parquet ${relation}`, detail: '', metrics: [], children: [] };
 }
@@ -25,17 +68,21 @@ function scan(relation) {
 describe('stageIdentity (plan-tree structural identity)', () => {
   it('distinguishes two plans that share a node-name multiset but nest differently', () => {
     // Join(Filter(ScanA), ScanB) vs Filter(Join(ScanA, ScanB)): same node-name multiset, different tree shape.
+    /** @type {PlanNode} */
     const filterA = { name: 'Filter', detail: 'isnotnull(id#1)', metrics: [], children: [scan('mx.a')] };
+    /** @type {PlanNode} */
     const joinNested = {
       name: 'SortMergeJoin', detail: '[id#1], [id#2], Inner', metrics: [], children: [filterA, scan('mx.b')],
     };
+    /** @type {PlanNode} */
     const joinFlat = {
       name: 'SortMergeJoin', detail: '[id#1], [id#2], Inner', metrics: [], children: [scan('mx.a'), scan('mx.b')],
     };
+    /** @type {PlanNode} */
     const filterWrapping = { name: 'Filter', detail: 'isnotnull(id#1)', metrics: [], children: [joinFlat] };
 
-    const stageA = { name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { name: 'Exchange 1', sqlExecutionId: 2 };
+    const stageA = stageOf({ name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ name: 'Exchange 1', sqlExecutionId: 2 });
     const snapA = planSnap(1, joinNested);
     const snapB = planSnap(2, filterWrapping);
 
@@ -43,14 +90,16 @@ describe('stageIdentity (plan-tree structural identity)', () => {
   });
 
   it('distinguishes two structurally identical joins on different columns', () => {
+    /** @type {PlanNode} */
     const joinOnId = {
       name: 'SortMergeJoin', detail: '[id#1], [id#2], Inner', metrics: [], children: [scan('mx.a'), scan('mx.b')],
     };
+    /** @type {PlanNode} */
     const joinOnName = {
       name: 'SortMergeJoin', detail: '[name#7], [name#8], Inner', metrics: [], children: [scan('mx.a'), scan('mx.b')],
     };
-    const stageA = { name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { name: 'Exchange 1', sqlExecutionId: 2 };
+    const stageA = stageOf({ name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ name: 'Exchange 1', sqlExecutionId: 2 });
 
     expect(stageIdentity(stageA, planSnap(1, joinOnId))).not.toBe(
       stageIdentity(stageB, planSnap(2, joinOnName))
@@ -58,18 +107,20 @@ describe('stageIdentity (plan-tree structural identity)', () => {
   });
 
   it('matches the same logical join despite AQE build-side, plan_id, and codegen noise differing across runs', () => {
+    /** @type {PlanNode} */
     const baseJoin = {
       name: 'BroadcastHashJoin',
       detail: '[id#1], [id#2], Inner, BuildLeft, plan_id=5, [codegen id : 12]',
       metrics: [], children: [scan('mx.a'), scan('mx.b')],
     };
+    /** @type {PlanNode} */
     const candJoin = {
       name: 'BroadcastHashJoin',
       detail: '[id#91], [id#42], Inner, BuildRight, plan_id=200, [codegen id : 3]',
       metrics: [], children: [scan('mx.a'), scan('mx.b')],
     };
-    const stageA = { name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { name: 'Exchange 1', sqlExecutionId: 2 };
+    const stageA = stageOf({ name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ name: 'Exchange 1', sqlExecutionId: 2 });
 
     expect(stageIdentity(stageA, planSnap(1, baseJoin))).toBe(
       stageIdentity(stageB, planSnap(2, candJoin))
@@ -81,14 +132,16 @@ describe('stageIdentity (plan-tree structural identity)', () => {
     // node-boundary encoding uses, so it must not collide with a
     // boundary-shifted node. Text stays lowercase so normalizeStageName's
     // name-only lowercasing does not itself break the collision.
+    /** @type {PlanNode} */
     const realisticScan = {
       name: 'scan parquet mx.a', detail: 'readschema: struct<id:bigint,name:string>', metrics: [], children: [],
     };
+    /** @type {PlanNode} */
     const boundaryShiftedScan = {
       name: 'scan parquet mx.a<readschema: struct', detail: 'id:bigint,name:string>', metrics: [], children: [],
     };
-    const stageA = { name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { name: 'Exchange 1', sqlExecutionId: 2 };
+    const stageA = stageOf({ name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ name: 'Exchange 1', sqlExecutionId: 2 });
 
     expect(stageIdentity(stageA, planSnap(1, realisticScan))).not.toBe(
       stageIdentity(stageB, planSnap(2, boundaryShiftedScan))
@@ -101,12 +154,14 @@ describe('stageIdentity (plan-tree structural identity)', () => {
     // length grows ~2^depth and blows up to megabytes or RangeError on the
     // 20-60+ deep chains real plans produce. Guard that a 40-deep chain still
     // computes quickly and stays short.
+    /** @type {PlanNode} */
     let leaf = { name: 'Scan parquet mx.a', detail: 'ReadSchema: struct<id:bigint>', metrics: [], children: [] };
+    /** @type {PlanNode} */
     let root = leaf;
     for (let i = 0; i < 40; i++) {
       root = { name: `Project ${i}`, detail: `[col${i}#${i}]`, metrics: [], children: [root] };
     }
-    const stage = { name: 'Exchange 1', sqlExecutionId: 1 };
+    const stage = stageOf({ name: 'Exchange 1', sqlExecutionId: 1 });
     const snap = planSnap(1, root);
 
     const start = performance.now();
@@ -121,14 +176,19 @@ describe('stageIdentity (plan-tree structural identity)', () => {
     // A self-join: two Exchange stages under one SQL execution, same normalized
     // name, each reading a different relation. Real Spark attributes each node
     // to the stage(s) whose task accumulables fed its metrics (`node.stageIds`).
+    /** @type {PlanNode} */
     const scanA = { name: 'Scan parquet mx.a', detail: '', metrics: [], children: [], stageIds: [1] };
+    /** @type {PlanNode} */
     const exchangeA = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [scanA], stageIds: [1] };
+    /** @type {PlanNode} */
     const scanB = { name: 'Scan parquet mx.b', detail: '', metrics: [], children: [], stageIds: [2] };
+    /** @type {PlanNode} */
     const exchangeB = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [scanB], stageIds: [2] };
+    /** @type {PlanNode} */
     const join = { name: 'SortMergeJoin', detail: 'self-join', metrics: [], children: [exchangeA, exchangeB] };
     const snapshot = planSnap(1, join);
-    const stageA = { id: 1, name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { id: 2, name: 'Exchange 2', sqlExecutionId: 1 };
+    const stageA = stageOf({ id: 1, name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ id: 2, name: 'Exchange 2', sqlExecutionId: 1 });
 
     expect(normalizeStageName(stageA.name)).toBe(normalizeStageName(stageB.name)); // same normalized name
     expect(stageIdentity(stageA, snapshot)).not.toBe(stageIdentity(stageB, snapshot));
@@ -137,8 +197,8 @@ describe('stageIdentity (plan-tree structural identity)', () => {
   it('falls back to whole-tree identity when no node carries stage attribution (no stageIds anywhere)', () => {
     // Mirrors every other test in this block: hand-built plan nodes with no
     // `stageIds` field at all. Must behave as a plain stage pair.
-    const stageA = { id: 1, name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { id: 2, name: 'Exchange 2', sqlExecutionId: 1 };
+    const stageA = stageOf({ id: 1, name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ id: 2, name: 'Exchange 2', sqlExecutionId: 1 });
     const snapshot = planSnap(1, { name: 'Exchange', detail: 'x', metrics: [], children: [] });
 
     expect(stageIdentity(stageA, snapshot)).toBe(stageIdentity(stageB, snapshot));
@@ -147,14 +207,19 @@ describe('stageIdentity (plan-tree structural identity)', () => {
 
 describe('stageIdentity: Exchange split tree shape', () => {
   it('still distinguishes two same-named stages sharing one SQL execution when the plan uses split Exchange pairs (issue #166 case, re-verified post-split)', () => {
+    /** @type {PlanNode} */
     const writeA = { name: 'Exchange', detail: '', metrics: [], children: [{ name: 'Scan parquet mx.a', detail: '', metrics: [], children: [], stageIds: [1] }], stageIds: [1], exchangeRole: 'write' };
+    /** @type {PlanNode} */
     const readA = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [writeA], stageIds: [1], exchangeRole: 'read' };
+    /** @type {PlanNode} */
     const writeB = { name: 'Exchange', detail: '', metrics: [], children: [{ name: 'Scan parquet mx.b', detail: '', metrics: [], children: [], stageIds: [2] }], stageIds: [2], exchangeRole: 'write' };
+    /** @type {PlanNode} */
     const readB = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [writeB], stageIds: [2], exchangeRole: 'read' };
+    /** @type {PlanNode} */
     const join = { name: 'SortMergeJoin', detail: 'self-join', metrics: [], children: [readA, readB] };
     const snapshot = planSnap(1, join);
-    const stageA = { id: 1, name: 'Exchange 1', sqlExecutionId: 1 };
-    const stageB = { id: 2, name: 'Exchange 2', sqlExecutionId: 1 };
+    const stageA = stageOf({ id: 1, name: 'Exchange 1', sqlExecutionId: 1 });
+    const stageB = stageOf({ id: 2, name: 'Exchange 2', sqlExecutionId: 1 });
 
     expect(normalizeStageName(stageA.name)).toBe(normalizeStageName(stageB.name));
     expect(stageIdentity(stageA, snapshot)).not.toBe(stageIdentity(stageB, snapshot));
@@ -162,13 +227,15 @@ describe('stageIdentity: Exchange split tree shape', () => {
 
   it('produces the same identity for two structurally identical split-shaped trees (baseline vs. candidate of the same query)', () => {
     const buildTree = () => {
+      /** @type {PlanNode} */
       const write = { name: 'Exchange', detail: '', metrics: [], children: [{ name: 'Scan parquet t', detail: '', metrics: [], children: [], stageIds: [1] }], stageIds: [1], exchangeRole: 'write' };
+      /** @type {PlanNode} */
       const read = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [write], stageIds: [1], exchangeRole: 'read' };
       return { name: 'SortMergeJoin', detail: 'inner', metrics: [], children: [read] };
     };
     const baseline = planSnap(1, buildTree());
     const candidate = planSnap(1, buildTree());
-    const stage = { id: 1, name: 'Exchange 1', sqlExecutionId: 1 };
+    const stage = stageOf({ id: 1, name: 'Exchange 1', sqlExecutionId: 1 });
 
     expect(stageIdentity(stage, baseline)).toBe(stageIdentity(stage, candidate));
   });
@@ -214,12 +281,17 @@ describe('matchStages', () => {
   });
 
   it('never records a collision for a same-run duplicatePlanSubtree pair when node-level attribution distinguishes them (issue #166 root cause)', () => {
+    /** @type {PlanNode} */
     const scanA = { name: 'Scan parquet mx.a', detail: '', metrics: [], children: [], stageIds: [1] };
+    /** @type {PlanNode} */
     const exchangeA = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [scanA], stageIds: [1] };
+    /** @type {PlanNode} */
     const scanB = { name: 'Scan parquet mx.b', detail: '', metrics: [], children: [], stageIds: [2] };
+    /** @type {PlanNode} */
     const exchangeB = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [scanB], stageIds: [2] };
+    /** @type {PlanNode} */
     const join = { name: 'SortMergeJoin', detail: 'self-join', metrics: [], children: [exchangeA, exchangeB] };
-    const run = {
+    const run = asRun({
       app: { name: 'A' },
       stages: new Map([
         [1, { id: 1, name: 'Exchange 1', sqlExecutionId: 1 }],
@@ -227,7 +299,7 @@ describe('matchStages', () => {
       ]),
       sql: new Map([[1, { planTree: join }]]),
       catalog: [],
-    };
+    });
 
     const m = matchStages(run, run); // self-compare: identical copy of one run against itself
     expect(m.coverage).toBe(1);
@@ -244,11 +316,13 @@ describe('matchStages', () => {
 
 import { metricDeltas, COMPARISON_METRIC_KEYS, NEUTRAL_METRIC_KEYS } from '../src/run-comparison.js';
 
+/** @param {Partial<Stage>} [over] */
 function stageFull(over) {
   return { name: 'Exchange 1', sqlExecutionId: null, submittedAt: 0, completedAt: 1000,
            taskDurationMax: 100, taskCount: 10, failedTasks: 0, memoryBytesSpilled: 0, ...over };
 }
-function fullSnap(stages, app) { return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }; }
+/** @param {StageEntries} stages @param {Partial<SparkAppInfo>} app */
+function fullSnap(stages, app) { return asRun({ app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }); }
 
 describe('metricDeltas', () => {
   it('emits exactly COMPARISON_METRIC_KEYS, in order', () => {
@@ -276,7 +350,7 @@ describe('metricDeltas', () => {
   it('renders Unavailable with a reason when spill inputs are absent in a run', () => {
     const base = fullSnap([[1, stageFull({ memoryBytesSpilled: undefined })]], { name: 'A', startTime: 0, endTime: 1 });
     const cand = fullSnap([[1, stageFull({ memoryBytesSpilled: 500 })]], { name: 'A', startTime: 0, endTime: 1 });
-    const spill = metricDeltas(base, cand).find((m) => m.key === 'shuffleSpill');
+    const spill = present(metricDeltas(base, cand).find((m) => m.key === 'shuffleSpill'));
     expect(spill.baseline).toBeNull();
     expect(spill.direction).toBe('unavailable');
     expect(spill.unavailableReason).toMatch(/spill/i);
@@ -287,17 +361,17 @@ describe('metricDeltas', () => {
     const unmatched = stageFull({ name: 'Solo 1', memoryBytesSpilled: 900 });
     const base = fullSnap([[1, matched], [2, unmatched]], { name: 'A', startTime: 0, endTime: 10 });
     const cand = fullSnap([[1, stageFull({ memoryBytesSpilled: 100 })]], { name: 'A', startTime: 0, endTime: 10 });
-    const spill = metricDeltas(base, cand).find((m) => m.key === 'shuffleSpill');
+    const spill = present(metricDeltas(base, cand).find((m) => m.key === 'shuffleSpill'));
     expect(spill.baseline).toBe(1000); // 100 + 900, not just the matched 100
   });
 
   it('adds whole-run disk-spill, GC, IO-bytes, run-time, task-count and executor-count metrics', () => {
     const base = fullSnap([[1, stageFull({ diskBytesSpilled: 2000, jvmGCTime: 300, inputBytes: 5000, outputBytes: 1000, executorRunTime: 8000, taskCount: 10 })]],
                           { name: 'A', startTime: 0, endTime: 10 });
-    base.executors = { added: [{ id: 'e1' }, { id: 'e2' }], removed: [] };
+    base.executors = { added: [addedExecutor('e1'), addedExecutor('e2')], removed: [] };
     const cand = fullSnap([[1, stageFull({ diskBytesSpilled: 500, jvmGCTime: 100, inputBytes: 5000, outputBytes: 1000, executorRunTime: 6000, taskCount: 10 })]],
                           { name: 'A', startTime: 0, endTime: 10 });
-    cand.executors = { added: [{ id: 'e1' }], removed: [] };
+    cand.executors = { added: [addedExecutor('e1')], removed: [] };
     const byKey = Object.fromEntries(metricDeltas(base, cand).map((m) => [m.key, m]));
     expect(byKey.diskSpill.baseline).toBe(2000);
     expect(byKey.diskSpill.candidate).toBe(500);
@@ -311,9 +385,10 @@ describe('metricDeltas', () => {
   });
 
   it('compares executor CPU time (ms) and allocated core-hours, lower being better', () => {
+    /** @param {number} cores @param {number | null} removedAt */
     const exec = (cores, removedAt) => ({
-      added: [{ kind: 'added', executorId: 'e1', timestamp: 0, totalCores: cores }],
-      removed: removedAt == null ? [] : [{ kind: 'removed', executorId: 'e1', timestamp: removedAt }],
+      added: [{ ...addedExecutor('e1'), totalCores: cores }],
+      removed: removedAt == null ? [] : [{ kind: /** @type {const} */ ('removed'), executorId: 'e1', timestamp: removedAt, reason: '' }],
     });
     const base = fullSnap([[1, stageFull({ executorCpuTime: 8e9 })]], { name: 'A', startTime: 0, endTime: 7_200_000 });
     base.executors = exec(4, null); // 4 cores to the 2h application end = 8 core-hours
@@ -355,7 +430,7 @@ describe('metricDeltas', () => {
   it('renders executor-count Unavailable when a snapshot has no executor events', () => {
     const base = fullSnap([[1, stageFull({})]], { name: 'A', startTime: 0, endTime: 10 }); // no .executors
     const cand = fullSnap([[1, stageFull({})]], { name: 'A', startTime: 0, endTime: 10 });
-    const ex = metricDeltas(base, cand).find((m) => m.key === 'executorsAdded');
+    const ex = present(metricDeltas(base, cand).find((m) => m.key === 'executorsAdded'));
     expect(ex.baseline).toBeNull();
     expect(ex.direction).toBe('unavailable');
   });
@@ -364,10 +439,10 @@ describe('metricDeltas', () => {
     // More input/output/tasks/executors is more work, not worse work, so neutral not regression.
     const base = fullSnap([[1, stageFull({ inputBytes: 5000, outputBytes: 1000, taskCount: 10 })]],
                           { name: 'A', startTime: 0, endTime: 10 });
-    base.executors = { added: [{ id: 'e1' }], removed: [] };
+    base.executors = { added: [addedExecutor('e1')], removed: [] };
     const cand = fullSnap([[1, stageFull({ inputBytes: 8000, outputBytes: 2000, taskCount: 20 })]],
                           { name: 'A', startTime: 0, endTime: 10 });
-    cand.executors = { added: [{ id: 'e1' }, { id: 'e2' }], removed: [] };
+    cand.executors = { added: [addedExecutor('e1'), addedExecutor('e2')], removed: [] };
     const byKey = Object.fromEntries(metricDeltas(base, cand).map((m) => [m.key, m]));
     expect(byKey.inputBytes.direction).toBe('neutral');
     expect(byKey.outputBytes.direction).toBe('neutral');
@@ -380,8 +455,9 @@ describe('metricDeltas', () => {
 
 import { findingsDelta } from '../src/run-comparison.js';
 
+/** @param {StageEntries} stages @param {object[]} catalog @param {Partial<SparkAppInfo>} [app] */
 function catSnap(stages, catalog, app = { name: 'A' }) {
-  return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog };
+  return asRun({ app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog });
 }
 
 describe('findingsDelta (finding identity)', () => {
@@ -408,6 +484,7 @@ describe('findingsDelta (finding identity)', () => {
   });
 
   it('labels each row with the stage names from the side the findings are on', () => {
+    /** @type {StageEntries} */
     const stages = [[10, { name: 'Exchange 10' }], [11, { name: 'Sort 11' }]];
     const base = catSnap([], []);
     const cand = catSnap(stages, [
@@ -465,8 +542,10 @@ describe('findingsDelta (finding identity)', () => {
 
 import { compareRuns } from '../src/run-comparison.js';
 
-const B = (stages, app) => ({ label: 'base.log', snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } });
-const C = (stages, app) => ({ label: 'cand.log', snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } });
+/** @param {StageEntries} stages @param {Partial<SparkAppInfo>} app */
+const B = (stages, app) => ({ label: 'base.log', snapshot: asRun({ app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }) });
+/** @param {StageEntries} stages @param {Partial<SparkAppInfo>} app */
+const C = (stages, app) => ({ label: 'cand.log', snapshot: asRun({ app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }) });
 
 describe('compareRuns', () => {
   it('sets low confidence (not unavailable) when app names differ, still computing metrics', () => {
@@ -496,6 +575,7 @@ describe('compareRuns', () => {
   });
 
   it('reports full coverage comparing a run against an identical copy of itself, even with same-run identity collisions (issue #166)', () => {
+    /** @type {StageEntries} */
     const stages = [
       [1, { name: 'Filter 1', sqlExecutionId: null }],
       [2, { name: 'Filter 2', sqlExecutionId: null }], // collides with stage 1 after normalization
@@ -508,7 +588,9 @@ describe('compareRuns', () => {
 });
 
 describe('compareRuns confidence', () => {
-  const run = (catalog, app, label, stages = []) => ({ label, snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog } });
+  /** @param {object[]} catalog @param {Partial<SparkAppInfo>} app @param {string} label @param {StageEntries} [stages] */
+  const run = (catalog, app, label, stages = []) => ({ label, snapshot: asRun({ app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog }) });
+  /** @param {string} name @returns {StageEntries} */
   const timed = (name) => [[1, { name, sqlExecutionId: null, executorRunTime: 100 }]];
 
   it("is 'low' (never 'unavailable') when application names differ", () => {
@@ -527,11 +609,12 @@ describe('compareRuns confidence', () => {
     expect(m.runtimeCoverage).toBeNull();
     expect(m.reason).toMatch(/no executor run time/i);
     expect(m.findings.resolved).toHaveLength(1);        // spill/warn present in base, absent in cand
-    expect(m.metrics.find((x) => x.key === 'wallClock').delta).toBe(10);
+    expect(present(m.metrics.find((x) => x.key === 'wallClock')).delta).toBe(10);
   });
 
   it('labels each stage pair without the call-site directories and carries no raw name', () => {
     const name = 'collect at /hadoop/yarn/local/usercache/some-user/appcache/application_0000000000000_0001/etl.py:42';
+    /** @type {StageEntries} */
     const stages = [[1, { name, sqlExecutionId: null, executorRunTime: 50 }]];
     const m = compareRuns(B(stages, { name: 'JobX' }), C(stages, { name: 'JobX' }));
     expect(m.stagePairs).toHaveLength(1);
@@ -540,6 +623,7 @@ describe('compareRuns confidence', () => {
   });
 
   it("is 'insufficient' when stages exist but none recorded run time", () => {
+    /** @type {StageEntries} */
     const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null }]];
     const m = compareRuns(run([], { name: 'JobX' }, 'base', stages), run([], { name: 'JobX' }, 'cand', stages));
     expect(m.matchedCoverage).toBe(1);
@@ -547,12 +631,13 @@ describe('compareRuns confidence', () => {
   });
 
   it("is 'ok' when names match and most stages pair off (high coverage)", () => {
+    /** @type {StageEntries} */
     const stages = [
       [1, { name: 'Exchange 1', sqlExecutionId: null, executorRunTime: 50 }],
       [2, { name: 'Filter 1', sqlExecutionId: null, executorRunTime: 50 }],
     ];
-    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
-    const c = { label: 'cand', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
+    const b = { label: 'base', snapshot: asRun({ app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }) };
+    const c = { label: 'cand', snapshot: asRun({ app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }) };
     const m = compareRuns(b, c);
     expect(m.matchedCoverage).toBe(1);
     expect(m.confidence).toBe('ok');
@@ -562,15 +647,13 @@ describe('compareRuns confidence', () => {
   it("is 'low' when names match but stage coverage is poor, and explains why", () => {
     // Base has 4 stages of 100 run time, candidate shares only 1 identity with it: the pair holds
     // 200 of the 800 total, so runtime coverage is 0.25 (below the 0.9 gate).
-    const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
-    b.snapshot.stages = new Map([
+    const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base', [
       [1, { name: 'Shared 1', sqlExecutionId: null, executorRunTime: 100 }],
       [2, { name: 'BaseOnly 1', sqlExecutionId: null, executorRunTime: 100 }],
       [3, { name: 'BaseOnly 2', sqlExecutionId: null, executorRunTime: 100 }],
       [4, { name: 'BaseOnly 3', sqlExecutionId: null, executorRunTime: 100 }],
     ]);
-    const c = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'cand');
-    c.snapshot.stages = new Map([
+    const c = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'cand', [
       [11, { name: 'Shared 2', sqlExecutionId: null, executorRunTime: 100 }],
       [12, { name: 'CandOnly 1', sqlExecutionId: null, executorRunTime: 100 }],
       [13, { name: 'CandOnly 2', sqlExecutionId: null, executorRunTime: 100 }],
@@ -585,9 +668,10 @@ describe('compareRuns confidence', () => {
   });
 
   it("still reports 'low' with a name-mismatch reason when names differ even if coverage happens to be high", () => {
+    /** @type {StageEntries} */
     const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null, executorRunTime: 100 }]];
-    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
-    const c = { label: 'cand', snapshot: { app: { name: 'JobY' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
+    const b = { label: 'base', snapshot: asRun({ app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }) };
+    const c = { label: 'cand', snapshot: asRun({ app: { name: 'JobY' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }) };
     const m = compareRuns(b, c);
     expect(m.matchedCoverage).toBe(1);
     expect(m.confidence).toBe('low');
@@ -618,7 +702,7 @@ describe('metricDeltas: failed-task rate with absent failedTasks (bug C2)', () =
   it('renders Unavailable, not a false 0/unchanged, when failedTasks is absent in both runs', () => {
     const base = fullSnap([[1, stageFull({ failedTasks: undefined, taskCount: 10 })]], { name: 'A', startTime: 0, endTime: 1 });
     const cand = fullSnap([[1, stageFull({ failedTasks: undefined, taskCount: 10 })]], { name: 'A', startTime: 0, endTime: 1 });
-    const fr = metricDeltas(base, cand).find((m) => m.key === 'failedTaskRate');
+    const fr = present(metricDeltas(base, cand).find((m) => m.key === 'failedTaskRate'));
     expect(fr.baseline).toBeNull();
     expect(fr.candidate).toBeNull();
     expect(fr.direction).toBe('unavailable');
@@ -628,6 +712,7 @@ describe('metricDeltas: failed-task rate with absent failedTasks (bug C2)', () =
 
 describe('compareRuns per-stage summaries', () => {
   it('exposes id, name, and per-field metrics for every stage on both sides', () => {
+    /** @param {Partial<Stage>} over */
     const s = (over) => stageFull({ submittedAt: 0, completedAt: 1000, diskBytesSpilled: 40, jvmGCTime: 5,
       inputBytes: 700, outputBytes: 200, executorRunTime: 900, taskCount: 8, failedTasks: 1, ...over });
     const m = compareRuns(
@@ -673,6 +758,7 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('prints metric deltas and data volume in readable units with the percent change', () => {
+    /** @param {number} spill @param {number} input @param {number} gc @param {number} skewMax @returns {[number, Partial<Stage>]} */
     const stage = (spill, input, gc, skewMax) => [1, {
       name: 'X 1', submittedAt: 0, completedAt: 6_436_487, executorRunTime: 3_789_976_275, jvmGCTime: gc,
       memoryBytesSpilled: spill, inputBytes: input, taskDurationMax: skewMax,
@@ -691,6 +777,7 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('keeps the unchanged label on an exact zero change', () => {
+    /** @type {[number, Partial<Stage>]} */
     const stage = [1, { name: 'X 1', submittedAt: 0, completedAt: 100, executorRunTime: 80 }];
     const md = renderComparisonMarkdown(compareRuns(B([stage], { name: 'A' }), C([stage], { name: 'A' })));
     expect(md).toContain('- Wall-clock duration: 100ms -> 100ms (0.0%, unchanged)');
@@ -716,17 +803,19 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('escapes a run label and a differing property key, which a log controls', () => {
-    const snap = (app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] } });
+    /** @param {Partial<SparkAppInfo>} app @param {string} label */
+    const snap = (app, label) => ({ label, snapshot: asRun({ app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] }) });
     const b = snap({ name: 'JobX', config: { 'spark.a[x](https://evil.example)': '1' } }, 'base\n# Fourth title');
     const c = snap({ name: 'JobX', config: { 'spark.a[x](https://evil.example)': '2' } }, '[cand](https://evil.example)');
-    const md = renderComparisonMarkdown(compareRuns(b, c), { title: 'T', sentences: [] });
+    const md = renderComparisonMarkdown(compareRuns(b, c), { title: 'T', tone: 'unknown', sentences: [] });
     expect(md.split('\n').filter((line) => line.startsWith('# '))).toEqual([]);
     expect(md).toContain('Baseline: base # Fourth title · Candidate: \\[cand\\](https://evil.example)');
     expect(md).not.toMatch(/(?<!\\)\[x\]/);
   });
 
   it('lists one bullet per introduced/resolved finding', () => {
-    const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
+    /** @param {object[]} catalog @param {Partial<SparkAppInfo>} app @param {string} label */
+    const run = (catalog, app, label) => ({ label, snapshot: asRun({ app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog }) });
     const b = run([{ type: 'spill', impactBand: 'warning' }], { name: 'JobX' }, 'base');
     const c = run([{ type: 'gc', impactBand: 'critical' }], { name: 'JobX' }, 'cand');
     const md = renderComparisonMarkdown(compareRuns(b, c));
@@ -735,7 +824,8 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('lists a re-banded finding under Changed findings, not under introduced or resolved', () => {
-    const run = (catalog, label) => ({ label, snapshot: { app: { name: 'JobX' }, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
+    /** @param {object[]} catalog @param {string} label */
+    const run = (catalog, label) => ({ label, snapshot: asRun({ app: { name: 'JobX' }, stages: new Map(), sql: new Map(), jobs: new Map(), catalog }) });
     const b = run([{ type: 'skew', rule: 'skew', impactBand: 'critical' }], 'base');
     const c = run([{ type: 'skew', rule: 'skew', impactBand: 'warning' }], 'cand');
     const md = renderComparisonMarkdown(compareRuns(b, c));
@@ -745,9 +835,10 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('opens with the comparison verdict, naming the baseline and the candidate', () => {
+    /** @param {Map<number, Partial<Job>>} jobs @param {string} label */
     const run = (jobs, label) => ({
       label,
-      snapshot: { app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs, catalog: [] },
+      snapshot: asRun({ app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs, catalog: [] }),
     });
     const failed = new Map([
       [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [] }],
@@ -766,9 +857,10 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('skips the label line when the labels are just the role names', () => {
+    /** @param {string} label */
     const run = (label) => ({
       label,
-      snapshot: { app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] },
+      snapshot: asRun({ app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] }),
     });
     const result = compareRuns(run('baseline'), run('candidate'));
     const md = renderComparisonMarkdown(result, comparisonVerdict(result));

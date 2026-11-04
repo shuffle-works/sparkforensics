@@ -1,10 +1,61 @@
 import { describe, it, expect } from 'vitest';
 import { buildEvidenceReport, toFindingsFilter } from '../src/evidence-report.js';
-import { makeStage, dataTail } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, dataTail } from './fixtures/stage-app-fixtures.js';
 import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 
+/** @typedef {import('../src/types.ts').AppModel} AppModel */
+/** @typedef {import('../src/types.ts').SparkAppInfo} SparkAppInfo */
+/** @typedef {import('../src/evidence-report.ts').FindingRow} FindingRow */
+/** @typedef {import('../src/types.ts').Job} Job */
+/** @typedef {import('../src/evidence-report.ts').EvidenceReportJson} EvidenceReportJson */
+/** @typedef {AppModel & { app: SparkAppInfo }} FixtureModel */
+
+/**
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('expected a value');
+  return value;
+}
+
+/**
+ * The first row of a type, or undefined.
+ * @template {FindingRow['type']} T
+ * @param {FindingRow[]} rows
+ * @param {T} type
+ */
+function rowOfType(rows, type) {
+  return rows.find(/** @returns {r is Extract<FindingRow, { type: T }>} */ (r) => r.type === type);
+}
+
+/**
+ * The detector catalog a report embeds.
+ * @param {EvidenceReportJson} json
+ * @returns {import('../src/detector-catalog.ts').DetectorCatalogEntry[]}
+ */
+function detectorsOf(json) {
+  if (!Array.isArray(json.detectors)) throw new Error('expected a detector catalog');
+  return json.detectors;
+}
+
+/** @typedef {import('../src/detectors/index.ts').SlowHostMeanTimeEvidence | import('../src/detectors/index.ts').SlowHostDurationShareEvidence} ByHostEvidence */
+/** @typedef {Extract<FindingRow, { type: 'slowHost' }> & { evidence: ByHostEvidence }} ByHostRow */
+
+/**
+ * A slowHost row that names a host; the multiDim variant names an executor instead.
+ * @param {FindingRow} r
+ * @returns {r is ByHostRow}
+ */
+const isByHostRow = (r) => r.type === 'slowHost' && 'host' in r.evidence;
+
+/** @param {FindingRow} r */
+const isDataUnavailable = (r) => 'dataUnavailable' in r.evidence && r.evidence.dataUnavailable === true;
+
+/** @returns {FixtureModel} */
 function fixture() {
   return {
     app: {
@@ -12,8 +63,8 @@ function fixture() {
       startTime: 0, endTime: 5000, sparkVersion: '3.4.0', config: {},
     },
     stages: new Map([
-      [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })],   // skew critical
-      [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })], // shuffle critical
+      [1, makeTypedStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })],   // skew critical
+      [2, makeTypedStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })], // shuffle critical
     ]),
     executors: { added: [], removed: [] },
     sql: new Map(),
@@ -30,9 +81,9 @@ describe('buildEvidenceReport', () => {
   it('leaves an undefined finding field out of the evidence instead of printing "undefined"', () => {
     // 64 MB spilled clears no spill-magnitude tier, so the spill finding's spillMagnitude is undefined.
     const fx = fixture();
-    fx.stages.set(3, makeStage({ id: 3, memoryBytesSpilled: 64 * 1024 * 1024 }));
+    fx.stages.set(3, makeTypedStage({ id: 3, memoryBytesSpilled: 64 * 1024 * 1024 }));
     const { markdown, json } = buildEvidenceReport(fx);
-    const spill = json.findings.find((f) => f.type === 'spill');
+    const spill = present(rowOfType(json.findings, 'spill'));
     expect(spill).toBeTruthy();
     expect('spillMagnitude' in spill.evidence).toBe(false);
     expect(markdown).not.toContain('undefined');
@@ -66,9 +117,9 @@ describe('buildEvidenceReport', () => {
   it('surfaces confidence/validation when the detector emits them', () => {
     const fx = fixture();
     // A low-confidence spill finding carries confidence + validationRequired.
-    fx.stages.set(3, makeStage({ id: 3, memoryBytesSpilled: 100 * 1024 * 1024 }));
+    fx.stages.set(3, makeTypedStage({ id: 3, memoryBytesSpilled: 100 * 1024 * 1024 }));
     const { json } = buildEvidenceReport(fx);
-    const spill = json.findings.find((r) => r.type === 'spill');
+    const spill = present(rowOfType(json.findings, 'spill'));
     expect(spill.confidence).toBeTruthy();
     expect(spill.validationRequired).toBeTruthy();
   });
@@ -88,7 +139,7 @@ describe('buildEvidenceReport', () => {
     }]]);
 
     const { json, markdown } = buildEvidenceReport(fx);
-    const row = json.findings.find((r) => r.type === 'smallFiles');
+    const row = present(rowOfType(json.findings, 'smallFiles'));
 
     expect(row).toBeTruthy();
     expect(row.evidence).not.toHaveProperty('planNodeIds');
@@ -99,21 +150,22 @@ describe('buildEvidenceReport', () => {
 
   it('publishes only the type\'s declared evidence fields: stageShape\'s estimator-only totalCores stays out', () => {
     const fx = fixture();
-    fx.app.resources = { executor: { cores: 4 } };
-    const executorStats = Array.from({ length: 4 }, (_, i) => ({
+    // Only the executor core count is read.
+    fx.app.resources = /** @type {import('../src/types.ts').AppResources} */ ({ executor: { cores: 4 } });
+    const executorStats = /** @type {import('../src/types.ts').Stage['executorStats']} */ (Array.from({ length: 4 }, (_, i) => ({
       executorId: `e${i}`, taskCount: 1, totalDuration: 1000, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0,
-    }));
-    fx.stages.set(3, makeStage({ id: 3, taskCount: 2, executorStats, submittedAt: 0, completedAt: 4000 }));
-    const row = buildEvidenceReport(fx).json.findings.find((r) => r.type === 'stageShape' && r.evidence.rule === 'lowParallelism');
+    })));
+    fx.stages.set(3, makeTypedStage({ id: 3, taskCount: 2, executorStats, submittedAt: 0, completedAt: 4000 }));
+    const row = present(buildEvidenceReport(fx).json.findings.find((r) => r.type === 'stageShape' && r.evidence.rule === 'lowParallelism'));
     expect(row).toBeTruthy();
     expect(row.evidence).toEqual({ rule: 'lowParallelism' });
   });
 
   it('carries a text-valued finding\'s value in valueText, keeping value numeric-or-null', () => {
     const fx = fixture();
-    fx.stages.set(3, makeStage({ id: 3, stageFailureReason: 'FetchFailed: lost executor' }));
+    fx.stages.set(3, makeTypedStage({ id: 3, stageFailureReason: 'FetchFailed: lost executor' }));
     const { json, markdown } = buildEvidenceReport(fx);
-    const row = json.findings.find((r) => r.type === 'stageFailed');
+    const row = present(rowOfType(json.findings, 'stageFailed'));
     expect(row.value).toBeNull();
     expect(row.valueText).toBe('FetchFailed: lost executor');
     expect(row.evidence).not.toHaveProperty('valueText');
@@ -130,8 +182,8 @@ describe('buildEvidenceReport', () => {
   it('embeds the detector catalog so thresholds/versions travel with the report', () => {
     const { json } = buildEvidenceReport(fixture());
     expect(Array.isArray(json.detectors)).toBe(true);
-    expect(json.detectors.length).toBeGreaterThan(0);
-    for (const d of json.detectors) {
+    expect(detectorsOf(json).length).toBeGreaterThan(0);
+    for (const d of detectorsOf(json)) {
       expect(typeof d.type).toBe('string');
       expect(typeof d.version).toBe('number');
       expect(typeof d.scope).toBe('string');
@@ -144,10 +196,10 @@ describe('buildEvidenceReport', () => {
     const { json } = buildEvidenceReport(fixture());
     // A per-task array could serialize under any key, so scan every array for
     // task-shaped objects rather than trusting literal key names.
-    const isTaskShaped = (o) =>
+    const isTaskShaped = (/** @type {unknown} */ o) =>
       o !== null && typeof o === 'object' &&
       ['taskId', 'attemptId', 'launchTime'].some((k) => k in o);
-    const walk = (node) => {
+    const walk = (/** @type {unknown} */ node) => {
       if (Array.isArray(node)) {
         expect(node.some(isTaskShaped), 'report must not embed task-shaped records').toBe(false);
         node.forEach(walk);
@@ -206,12 +258,12 @@ describe('buildEvidenceReport', () => {
 
   it('surfaces impactEstimate as a first-class FindingRow column, not buried in evidence', () => {
     const { json } = buildEvidenceReport(fixture());
-    const findingWithEstimate = json.findings.find((f) => f.impactEstimate != null);
+    const findingWithEstimate = present(json.findings.find((f) => f.impactEstimate != null));
     expect(findingWithEstimate).toBeDefined();
     expect(findingWithEstimate.impactEstimate).toHaveProperty('basis');
     expect(findingWithEstimate.impactEstimate).toHaveProperty('estimateMethod');
     // wallClock is null for 'resourceOnly'/'informational' findings, {low, high} otherwise
-    const { wallClock } = findingWithEstimate.impactEstimate;
+    const { wallClock } = present(findingWithEstimate.impactEstimate);
     if (wallClock !== null) {
       expect(typeof wallClock.low).toBe('number');
       expect(typeof wallClock.high).toBe('number');
@@ -229,7 +281,7 @@ describe('buildEvidenceReport', () => {
     const renderable = withEstimate.filter((f) => f.impact != null);
     expect(renderable.length).toBeGreaterThan(0);
     for (const f of renderable) {
-      expect(markdown).toContain(`- impact: ${f.impact}${f.impactMeaning ? ` ${f.impactMeaning}` : ''} (estimateMethod: ${f.impactEstimate.estimateMethod})`);
+      expect(markdown).toContain(`- impact: ${f.impact}${f.impactMeaning ? ` ${f.impactMeaning}` : ''} (estimateMethod: ${present(f.impactEstimate).estimateMethod})`);
     }
     const impactLines = markdown.split('\n').filter((l) => l.startsWith('- impact:'));
     expect(impactLines.length).toBe(renderable.length);
@@ -260,17 +312,17 @@ describe('buildEvidenceReport', () => {
       { host: badHost, taskCount: 20, totalDuration: 600000 },
     ];
     const fx = fixture();
-    fx.stages.set(9, makeStage({ id: 9, taskCount: 80, hostStats }));
+    fx.stages.set(9, makeTypedStage({ id: 9, taskCount: 80, hostStats }));
 
     const raw = buildEvidenceReport(fx).json;
-    const slowRaw = raw.findings.find((r) => r.type === 'slowHost' && r.evidence?.host === badHost);
+    const slowRaw = raw.findings.find((r) => isByHostRow(r) && r.evidence.host === badHost);
     expect(slowRaw, 'fixture must emit a slowHost with the host in evidence.host').toBeTruthy();
 
     const { markdown, json } = buildEvidenceReport(fx, { redact: true });
     const serialized = JSON.stringify(json);
     expect(serialized).not.toContain(badHost);
     expect(markdown).not.toContain(badHost);
-    const slow = json.findings.find((r) => r.type === 'slowHost' && r.stageId === 9);
+    const slow = present(json.findings.filter(isByHostRow).find((r) => r.stageId === 9));
     expect(slow.evidence.host).toMatch(/host-\d+$/);
     expect(slow.recommendation).not.toContain(badHost);
   });
@@ -278,7 +330,7 @@ describe('buildEvidenceReport', () => {
   describe('log-controlled text in the Markdown', () => {
     // Prints as a second H1, a live link and an HTML tag when inserted as written.
     const HOSTILE = 'etl\n# Second title\n[click](https://evil.example/x) <img src=x onerror=alert(1)>';
-    const lineStarts = (markdown) => markdown.split('\n');
+    const lineStarts = (/** @type {string} */ markdown) => markdown.split('\n');
 
     it('keeps an app name on one line and cannot open a heading, a link or a tag', () => {
       const fx = fixture();
@@ -298,7 +350,7 @@ describe('buildEvidenceReport', () => {
 
     it('escapes a failure message, which a log from another team controls', () => {
       const fx = fixture();
-      fx.stages.set(7, makeStage({
+      fx.stages.set(7, makeTypedStage({
         id: 7, taskCount: 100, failedTasks: 30,
         failureReasons: [{ reason: 'ExceptionFailure', count: 30 }],
         failureGroups: [{
@@ -323,7 +375,7 @@ describe('buildEvidenceReport', () => {
   describe('failures finding', () => {
     const failingFixture = () => {
       const fx = fixture();
-      fx.stages.set(7, makeStage({
+      fx.stages.set(7, makeTypedStage({
         id: 7, taskCount: 100, failedTasks: 30,
         failureReasons: [{ reason: 'ExceptionFailure', count: 30 }],
         failureGroups: [{
@@ -358,7 +410,7 @@ describe('buildEvidenceReport', () => {
         expect(typeof row.actionLabel).toBe('string');
         expect(row.actionLabel.length).toBeGreaterThan(0);
       }
-      const skew = json.findings.find((r) => r.type === 'skew');
+      const skew = present(rowOfType(json.findings, 'skew'));
       expect(skew.actionLabel).toBe('Fix task skew');
     });
 
@@ -376,8 +428,8 @@ describe('buildEvidenceReport', () => {
   function fixtureWithVariety() {
     const fx = fixture();
     fx.app.config = { 'spark.executor.memory': '4g' };
-    fx.stages.set(3, makeStage({
-      id: 3, taskCount: 1, executorStats: [{}, {}, {}],
+    fx.stages.set(3, makeTypedStage({
+      id: 3, taskCount: 1, executorStats: /** @type {import('../src/types.ts').Stage['executorStats']} */ ([{}, {}, {}]),
       taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 100,
     }));
     return fx;
@@ -439,7 +491,7 @@ describe('buildEvidenceReport', () => {
       expect(kinds.slice(0, firstNonTimeIdx).every((k) => k === 'time')).toBe(true);
       const timeRows = json.recommendations.filter((r) => r.kind === 'time');
       for (let i = 1; i < timeRows.length; i++) {
-        expect(timeRows[i - 1].recoverableMsHigh).toBeGreaterThanOrEqual(timeRows[i].recoverableMsHigh);
+        expect(timeRows[i - 1].recoverableMsHigh).toBeGreaterThanOrEqual(present(timeRows[i].recoverableMsHigh));
       }
     });
 
@@ -454,7 +506,7 @@ describe('buildEvidenceReport', () => {
 
     it('picks actionLabel/findingIds from the group\'s representative (best-ranked) member', () => {
       const { json } = buildEvidenceReport(fixture());
-      const skewRow = json.recommendations.find((r) => r.type === 'skew');
+      const skewRow = present(json.recommendations.find((r) => r.type === 'skew'));
       expect(skewRow.actionLabel).toBe('Fix task skew');
       expect(skewRow.findingIds).toHaveLength(1);
     });
@@ -492,14 +544,14 @@ describe('buildEvidenceReport', () => {
 
     it('moves every per-stage check to notRunChecks when no stage finished', () => {
       const fx = fixture();
-      fx.stages = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
+      fx.stages = new Map([[1, makeTypedStage({ id: 1, completedAt: undefined })]]);
       const { json, markdown } = buildEvidenceReport(fx);
       const notRun = json.notRunChecks.map((c) => c.type);
       // A per-stage type either fired on the unfinished stage or could not run; none passed.
       for (const type of ['skew', 'spill', 'stageFailed', 'straggler']) expect(notRun).toContain(type);
       const clean = json.cleanChecks.map((c) => c.type);
       for (const type of PER_STAGE_CHECK_TYPES) expect(clean).not.toContain(type);
-      expect(json.notRunChecks.find((c) => c.type === 'skew').reason).toMatch(/No stage in this log recorded an end/);
+      expect(present(json.notRunChecks.find((c) => c.type === 'skew')).reason).toMatch(/No stage in this log recorded an end/);
       expect(json.summary.clean).toBe(false);
       expect(markdown).toContain(`## Not checked on this log (${json.notRunChecks.length})`);
       expect(markdown).toContain('- [SKEW] skew: No stage in this log recorded an end');
@@ -523,7 +575,7 @@ describe('buildEvidenceReport', () => {
       const { json, markdown } = buildEvidenceReport(fx);
       const s = json.summary;
       expect(json.findings.some((f) => f.type === 'incompleteRun')).toBe(true);
-      expect(s.actionableFindingCount).toBe(json.findings.filter((f) => f.type !== 'incompleteRun' && f.evidence.dataUnavailable !== true && f.impactBand !== 'info').length);
+      expect(s.actionableFindingCount).toBe(json.findings.filter((f) => f.type !== 'incompleteRun' && !isDataUnavailable(f) && f.impactBand !== 'info').length);
       expect(s.actionableFindingCount).toBeLessThan(s.findingCount);
       expect(s.actionableImpactBandCounts.info).toBe(0);
       const sum = s.actionableImpactBandCounts.critical + s.actionableImpactBandCounts.warning;
@@ -534,8 +586,8 @@ describe('buildEvidenceReport', () => {
     it('reports the run outcome in the summary and as a Markdown header line', () => {
       const fx = fixture();
       fx.jobs = new Map([
-        [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1] }],
-        [1, { id: 1, result: 'JobSucceeded', succeeded: true, stageIds: [2] }],
+        [0, /** @type {Job} */ ({ id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1] })],
+        [1, /** @type {Job} */ ({ id: 1, result: 'JobSucceeded', succeeded: true, stageIds: [2] })],
       ]);
       const { json, markdown } = buildEvidenceReport(fx);
       expect(json.summary.outcome).toEqual({ failedJobs: 0, totalJobs: 2, failureReason: null, failureReasonStageId: null });
@@ -546,8 +598,8 @@ describe('buildEvidenceReport', () => {
 
     it('gives no failure stage when a failed stage attempt was retried and every job succeeded', () => {
       const fx = fixture();
-      fx.stages.set(2, makeStage({ id: 2, stageFailureReason: 'FetchFailed: lost executor' }));
-      fx.jobs = new Map([[0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1, 2] }]]);
+      fx.stages.set(2, makeTypedStage({ id: 2, stageFailureReason: 'FetchFailed: lost executor' }));
+      fx.jobs = new Map([[0, /** @type {Job} */ ({ id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1, 2] })]]);
       const { json } = buildEvidenceReport(fx);
       expect(json.findings.some((f) => f.type === 'stageFailed')).toBe(true);
       expect(json.summary.outcome).toEqual({ failedJobs: 0, totalJobs: 1, failureReason: null, failureReasonStageId: null });
@@ -564,7 +616,7 @@ describe('buildEvidenceReport', () => {
       expect(markdown).toMatch(/- Peak busy cores: \d/);
       // No stage recorded an end: Efficiency is not measured, as the Scorecard says.
       const unfinished = fixture();
-      unfinished.stages = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
+      unfinished.stages = new Map([[1, makeTypedStage({ id: 1, completedAt: undefined })]]);
       expect(buildEvidenceReport(unfinished).json.summary.runShape.efficiencyPct).toBeNull();
     });
 
@@ -629,7 +681,7 @@ describe('buildEvidenceReport', () => {
     });
 
     it('keeps a SQL finding on exactly the filtered stage, and drops one spanning several stages', () => {
-      const withSql = (stageIds) => {
+      const withSql = (/** @type {number[]} */ stageIds) => {
         const readNode = {
           id: 'node-1', name: 'Scan parquet', detail: '', children: [], stageIds,
           metrics: [
@@ -644,7 +696,7 @@ describe('buildEvidenceReport', () => {
         }]]);
         return fx;
       };
-      const smallFilesAt = (stageIds, stageId) => buildEvidenceReport(withSql(stageIds), { findingsFilter: { stageId } })
+      const smallFilesAt = (/** @type {number[]} */ stageIds, /** @type {number} */ stageId) => buildEvidenceReport(withSql(stageIds), { findingsFilter: { stageId } })
         .json.findings.some((r) => r.type === 'smallFiles');
       expect(smallFilesAt([2], 2)).toBe(true);
       expect(smallFilesAt([2], 1)).toBe(false);
@@ -696,24 +748,24 @@ describe('buildEvidenceReport: tuned thresholds', () => {
 
   it('labels the tuned finding, the tuned clean check, the catalog row and the summary', () => {
     const { json } = buildEvidenceReport(fixture(), { thresholds });
-    const skew = json.findings.find((f) => f.type === 'skew');
+    const skew = present(rowOfType(json.findings, 'skew'));
     expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
     expect(skew.validationRequired).toContain('estimate is unvalidated');
     // 2 GiB shuffled, under the tuned 4 GiB floor: shuffle becomes a clean check measured against it.
     expect(json.findings.some((f) => f.type === 'shuffle')).toBe(false);
-    expect(json.cleanChecks.find((c) => c.type === 'shuffle').tunedThresholds)
+    expect(present(json.cleanChecks.find((c) => c.type === 'shuffle')).tunedThresholds)
       .toEqual({ minBytes: { value: 4 * 1024 * 1024 * 1024, default: 50 * 1024 * 1024 } });
-    expect(json.cleanChecks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
-    expect(json.detectors.find((d) => d.type === 'skew').thresholds.ratioWarn).toBe(2);
-    expect(Object.keys(json.summary.tunedThresholds)).toEqual(['skew', 'shuffle']);
+    expect(present(json.cleanChecks.find((c) => c.type === 'spill')).tunedThresholds).toBeUndefined();
+    expect(present(present(detectorsOf(json).find((d) => d.type === 'skew')).thresholds).ratioWarn).toBe(2);
+    expect(Object.keys(present(json.summary.tunedThresholds))).toEqual(['skew', 'shuffle']);
     for (const f of json.findings.filter((f) => f.type !== 'skew')) expect(f.tunedThresholds, f.type).toBeUndefined();
   });
 
   it('labels a clean check with its suppressor\'s tuned thresholds', () => {
     const { json } = buildEvidenceReport(fixture(), { thresholds: parseThresholdOverrides({ slowHost: { minHosts: 4 } }) });
     const checks = [...json.cleanChecks, ...json.notRunChecks];
-    expect(checks.find((c) => c.type === 'stageSlowness').tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
-    expect(checks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
+    expect(present(checks.find((c) => c.type === 'stageSlowness')).tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(present(checks.find((c) => c.type === 'spill')).tunedThresholds).toBeUndefined();
   });
 
   it('keeps default and tuned reports of one appModel apart, redacted or not', () => {
@@ -721,7 +773,7 @@ describe('buildEvidenceReport: tuned thresholds', () => {
     expect(buildEvidenceReport(fx).json.findings.some((f) => f.type === 'shuffle')).toBe(true);
     expect(buildEvidenceReport(fx, { thresholds }).json.findings.some((f) => f.type === 'shuffle')).toBe(false);
     expect(buildEvidenceReport(fx, { redact: true }).json.summary.tunedThresholds).toBeUndefined();
-    expect(buildEvidenceReport(fx, { redact: true, thresholds }).json.summary.tunedThresholds.skew).toBeTruthy();
+    expect(buildEvidenceReport(fx, { redact: true, thresholds }).json.summary.tunedThresholds?.skew).toBeTruthy();
     expect(buildEvidenceReport(fx).json.summary.tunedThresholds).toBeUndefined();
   });
 
@@ -753,7 +805,7 @@ describe('buildEvidenceReport skipped lines', () => {
 });
 
 describe('buildEvidenceReport info notes and slow hosts', () => {
-  const slowHostStats = (slow) => [
+  const slowHostStats = (/** @type {string} */ slow) => [
     { host: 'host-a', taskCount: 20, totalDuration: 200000 },
     { host: 'host-b', taskCount: 20, totalDuration: 200000 },
     { host: 'host-c', taskCount: 20, totalDuration: 200000 },
@@ -763,16 +815,16 @@ describe('buildEvidenceReport info notes and slow hosts', () => {
   function slowHostRun() {
     const fx = fixture();
     // The same host lags in two stages.
-    for (const id of [7, 8]) fx.stages.set(id, makeStage({ id, taskCount: 80, hostStats: slowHostStats('host-slow') }));
+    for (const id of [7, 8]) fx.stages.set(id, makeTypedStage({ id, taskCount: 80, hostStats: slowHostStats('host-slow') }));
     return fx;
   }
 
   it('lists a host that lags in several stages once, with its stages and their evidence', () => {
     const { json, markdown } = buildEvidenceReport(slowHostRun());
-    const rows = json.findings.filter((f) => f.type === 'slowHost' && f.evidence.host === 'host-slow');
+    const rows = json.findings.filter(isByHostRow).filter((f) => f.evidence.host === 'host-slow');
     expect(rows).toHaveLength(2);
     expect(markdown.match(/^### Slow Executor Host · \w+ \(host host-slow\)$/gm)).toHaveLength(1);
-    const stageLine = (r) => `  - stage ${r.stageId}: ${r.impactBand}, hostMeanRatio ${r.value} · hostMeanMs ${r.evidence.hostMeanMs}, hostTaskShare ${r.evidence.hostTaskShare}`;
+    const stageLine = (/** @type {ByHostRow} */ r) => `  - stage ${r.stageId}: ${r.impactBand}, hostMeanRatio ${r.value} · hostMeanMs ${r.evidence.hostMeanMs}, hostTaskShare ${r.evidence.hostTaskShare}`;
     expect(markdown).toContain(`- stages:\n${rows.map(stageLine).join('\n')}\n`);
     expect(markdown).not.toMatch(/^### Slow Executor Host · \w+ \(stage \d+\)$/m);
   });
@@ -807,7 +859,7 @@ describe('buildEvidenceReport info notes and slow hosts', () => {
 
   it('counts a note a type filter would keep, not one it drops anyway', () => {
     const fx = slowHostRun();
-    const infoOfType = (type) => buildEvidenceReport(fx).json.findings.filter((f) => f.impactBand === 'info' && f.type === type).length;
+    const infoOfType = (/** @type {FindingRow['type']} */ type) => buildEvidenceReport(fx).json.findings.filter((f) => f.impactBand === 'info' && f.type === type).length;
     const { notesHidden } = buildEvidenceReport(fx, { findingsFilter: toFindingsFilter(undefined, ['slowHost']) });
     expect(notesHidden).toBe(infoOfType('slowHost'));
   });

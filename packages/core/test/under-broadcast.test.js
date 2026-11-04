@@ -7,26 +7,44 @@ const KiB = 1024;
 const MiB = 1024 * KiB;
 const GiB = 1024 * MiB;
 
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/types.ts').Finding} Finding */
+
 // A shuffle exchange read half over the write half that carries the metrics, as the parser builds it.
+/** @param {number} bytes @param {string} id @returns {PlanNode} */
 const shuffle = (bytes, id) => ({
   name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 200)', id: `r${id}`, exchangeRole: 'read', metrics: [],
   children: [{ name: 'Exchange', detail: '', id: `w${id}`, exchangeRole: 'write', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] }],
 });
 // A join side as AQE prints it: Sort over a materialized query stage over the exchange.
+/** @param {number} bytes @param {string} id @returns {PlanNode} */
 const side = (bytes, id) => ({
   name: 'Sort', detail: '', metrics: [], children: [{ name: 'ShuffleQueryStage', detail: '', metrics: [], children: [shuffle(bytes, id)] }],
 });
+/** @param {string} joinType @param {number} leftBytes @param {number} rightBytes @returns {PlanNode} */
 const join = (joinType, leftBytes, rightBytes) => ({
   name: 'SortMergeJoin', detail: `SortMergeJoin [a#1L], [b#2L], ${joinType}`, metrics: [],
   children: [side(leftBytes, 'L'), side(rightBytes, 'R')],
 });
+/** @param {PlanNode} child @returns {PlanNode} */
 const aqe = (child) => ({ name: 'AdaptiveSparkPlan', detail: '', metrics: [], children: [child] });
 
+/** @typedef {{ config?: Record<string, string>, modifiedConfigs?: Record<string, string>, sparkVersion?: string, thresholds?: import('../src/detectors.ts').ThresholdOverrides }} FindingsOptions */
+
+/**
+ * @template {Finding['type']} T
+ * @param {T} type
+ * @param {PlanNode} planTree
+ * @param {FindingsOptions} [options]
+ */
 function findingsOf(type, planTree, { config, modifiedConfigs, sparkVersion = '3.5.3', thresholds } = {}) {
-  const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree, modifiedConfigs }]]);
+  const sql = new Map([[1, /** @type {import('../src/types.ts').SqlExecution} */ ({ id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree, modifiedConfigs })]]);
   return analyzedRunFrom({ app: makeApp({ config, sparkVersion }), sql }, { thresholds }).catalog
-    .filter((f) => f.type === type);
+    .filter(/** @returns {f is Extract<Finding, { type: T }>} */ (f) => f.type === type);
 }
+/** The conf key each remediation names; a code remediation has none. @param {Finding} finding */
+const remediationKeys = (finding) => (finding.remediation ?? []).map((r) => (r.kind === 'conf' ? r.key : undefined));
+/** @param {PlanNode} planTree @param {FindingsOptions} [opts] */
 const under = (planTree, opts) => findingsOf('underBroadcast', planTree, opts);
 
 describe('underBroadcast: join type decides which side can be broadcast', () => {
@@ -122,6 +140,7 @@ describe('underBroadcast: sides without a size of their own', () => {
   });
 
   it('skips a reused exchange side even when the exchange it reuses is logged beneath it', () => {
+    /** @param {number} bytes @param {string} id @returns {PlanNode} */
     const reused = (bytes, id) => ({ name: 'Sort', detail: '', metrics: [], children: [{ name: 'ReusedExchange', detail: '', metrics: [], children: [shuffle(bytes, id)] }] });
     expect(under(join('Inner', 5 * MiB, 20 * GiB))).toHaveLength(1);
     expect(under({ ...join('Inner', 0, 0), children: [reused(5 * MiB, 'L'), side(20 * GiB, 'R')] })).toHaveLength(0);
@@ -160,14 +179,14 @@ describe('underBroadcast: effective broadcast threshold', () => {
   it('falls back to the static threshold under AQE when the adaptive one is unset, and names the static key', () => {
     const [f] = under(plan(), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1m' } });
     expect(f.broadcastThreshold).toBe('limits');
-    expect(f.remediation[0].key).toBe('spark.sql.autoBroadcastJoinThreshold');
+    expect(remediationKeys(f)[0]).toBe('spark.sql.autoBroadcastJoinThreshold');
   });
 
   it('names the adaptive key when it is the one below the side', () => {
     const config = { 'spark.sql.autoBroadcastJoinThreshold': '64m', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '1m' };
     const [f] = under(plan(), { config });
     expect(f.broadcastThreshold).toBe('limits');
-    expect(f.remediation[0].key).toBe('spark.sql.adaptive.autoBroadcastJoinThreshold');
+    expect(remediationKeys(f)[0]).toBe('spark.sql.adaptive.autoBroadcastJoinThreshold');
     expect(f.recommendation).toContain('spark.sql.adaptive.autoBroadcastJoinThreshold');
     expect(coreFindingGenericRecommendation(f)).toContain('raising spark.sql.adaptive.autoBroadcastJoinThreshold');
   });
@@ -273,6 +292,7 @@ describe('underBroadcast: size floor and over-broadcast ceiling', () => {
 });
 
 describe('overBroadcast: effective broadcast threshold', () => {
+  /** @param {number} bytes @returns {PlanNode} */
   const broadcast = (bytes) => ({
     name: 'BroadcastHashJoin', detail: 'BroadcastHashJoin [a#1L], [b#2L], Inner, BuildRight', metrics: [],
     children: [side(20 * GiB, 'L'), { name: 'BroadcastExchange', detail: '', id: 'bx', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] }],
@@ -299,7 +319,7 @@ describe('overBroadcast: effective broadcast threshold', () => {
     const config = { 'spark.sql.autoBroadcastJoinThreshold': '4g', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '-1' };
     const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
     expect(f.broadcastThreshold).toBe('limits');
-    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.autoBroadcastJoinThreshold']);
+    expect(remediationKeys(f)).toEqual(['spark.sql.autoBroadcastJoinThreshold']);
   });
 
   it('calls it hint-forced under AQE only when both thresholds are below the broadcast', () => {
@@ -320,7 +340,7 @@ describe('overBroadcast: effective broadcast threshold', () => {
   it('names both keys when both admitted the broadcast', () => {
     const config = { 'spark.sql.autoBroadcastJoinThreshold': '4g', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '2g' };
     const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
-    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.autoBroadcastJoinThreshold', 'spark.sql.adaptive.autoBroadcastJoinThreshold']);
+    expect(remediationKeys(f)).toEqual(['spark.sql.autoBroadcastJoinThreshold', 'spark.sql.adaptive.autoBroadcastJoinThreshold']);
     expect(coreFindingGenericRecommendation(f)).toContain('misconfigured spark.sql.autoBroadcastJoinThreshold or spark.sql.adaptive.autoBroadcastJoinThreshold');
   });
 
@@ -329,7 +349,7 @@ describe('overBroadcast: effective broadcast threshold', () => {
     const write = { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', metrics: [], children: [aqe(broadcast(1.5 * GiB))] };
     const [f] = findingsOf('overBroadcast', write, { config });
     expect(f.broadcastThreshold).toBe('limits');
-    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.adaptive.autoBroadcastJoinThreshold']);
+    expect(remediationKeys(f)).toEqual(['spark.sql.adaptive.autoBroadcastJoinThreshold']);
   });
 
   it('keeps the static threshold for a plan that is not adaptive', () => {

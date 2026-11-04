@@ -2,17 +2,55 @@ import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
 
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {Partial<Finding> & Record<string, unknown>} MinimalFinding */
+/**
+ * @typedef {Partial<Omit<Stage, 'executorStats' | 'retryTaskSamples'>> & {
+ *   executorStats?: Partial<Stage['executorStats'][number]>[],
+ *   retryTaskSamples?: Partial<Stage['retryTaskSamples'][number]>[],
+ * }} MinimalStage
+ */
+/** @typedef {Map<number, MinimalStage>} MinimalStages */
+
+/**
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('expected a value');
+  return value;
+}
+
+/** @param {MinimalFinding} f */
+const impactOf = (f) => present(f.impactEstimate);
+/** @param {MinimalFinding} f */
+const wallClockOf = (f) => present(impactOf(f).wallClock);
+/** @param {MinimalFinding} f */
+const rawWasteOf = (f) => present(impactOf(f).rawWaste);
+
 // estimateImpact reads analyze()'s one occupancy sweep: build it here the way analyze() does.
 // coreTimeMs is covered by impact-core-time.test.js; dropped here so these assertions stay about
-// the wall-clock and raw figures.
+// the wall-clock and raw figures. Findings and stages are minimal literals: only the fields the
+// estimator reads.
+/**
+ * @param {MinimalFinding[]} findings
+ * @param {MinimalStages} stages
+ * @param {number} [totalCores]
+ */
 function estimate(findings, stages, totalCores = 0) {
-  estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
-  for (const f of findings) if (f.impactEstimate) delete f.impactEstimate.coreTimeMs;
+  const full = /** @type {Finding[]} */ (findings);
+  const fullStages = /** @type {Map<number, Stage>} */ (stages);
+  estimateImpact(full, { stages: fullStages, totalCores, occupancy: computeOccupancy(fullStages, totalCores) });
+  for (const f of findings) if (f.impactEstimate) delete impactOf(f).coreTimeMs;
   return findings;
 }
 
 describe('estimateImpact: skeleton', () => {
   it('returns the same findings array reference, unmodified for an unrecognized type', () => {
+    /** @type {MinimalFinding[]} */
+    // @ts-expect-error a type no detector declares
     const findings = [{ type: 'not-a-real-detector', impactBand: 'info' }];
     const stages = new Map();
     const result = estimate(findings, stages);
@@ -24,6 +62,7 @@ describe('estimateImpact: skeleton', () => {
 describe('estimateImpact: measured group A', () => {
   it('retryWaste: a solo stage (gate 1) gets a serial point estimate at its own retryWasteMs', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
@@ -40,9 +79,10 @@ describe('estimateImpact: measured group A', () => {
       [0, { id: 0, submittedAt: 0, completedAt: 50000, parentIds: [] }],
       [1, { id: 1, submittedAt: 0, completedAt: 3000, parentIds: [], retryWasteMs: 1200 }],
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'retryWaste', stageId: 1, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.basis).toBe('contended');
     expect(est.wallClock).toEqual({ low: 600, high: 1200 });
     expect(est.rawWaste).toEqual({ value: 1200, unit: 'ms' });
@@ -56,6 +96,7 @@ describe('estimateImpact: measured group A', () => {
       id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [],
       retryWasteMs: 146_000, wastedAttempts: 4, retryTaskSamples: samples, peakConcurrentTasks: 40,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 146_000, impactBand: 'warning' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
@@ -65,25 +106,27 @@ describe('estimateImpact: measured group A', () => {
   });
 
   it('retryWaste: one task failing again and again claims its whole chain, and unsampled attempts the sum', () => {
-    const at = (retryTaskSamples, wastedAttempts) => {
+    const at = (/** @type {{ attemptNumber: number }[]} */ retryTaskSamples, /** @type {number} */ wastedAttempts) => {
       const stages = new Map([[0, {
         id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [],
         retryWasteMs: 90_000, wastedAttempts, retryTaskSamples, peakConcurrentTasks: 40,
       }]]);
+      /** @type {MinimalFinding[]} */
       const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 90_000, impactBand: 'warning' }];
       estimate(findings, stages);
-      return findings[0].impactEstimate;
+      return impactOf(findings[0]);
     };
     // Attempts 0, 1, 2 of one task ran one after another: 3 x 30s.
-    expect(at([0, 1, 2].map((attemptNumber) => ({ attemptNumber })), 3).wallClock.high).toBe(90_000);
+    expect(present(at([0, 1, 2].map((attemptNumber) => ({ attemptNumber })), 3).wallClock).high).toBe(90_000);
     // 25 wasted attempts but only 20 sampled (the cap): the chain isn't known.
     const capped = at(Array.from({ length: 20 }, () => ({ attemptNumber: 0 })), 25);
-    expect(capped.wallClock.high).toBe(90_000);
+    expect(present(capped.wallClock).high).toBe(90_000);
     expect(capped.estimateMethod).toBe('measured');
   });
 
   it('speculationWaste: claims the stage\'s losing-copy time as core time, with no wall-clock', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], speculationWasteMs: 800 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'speculationWaste', stageId: 0, metric: 'speculationWasteMs', value: 800, impactBand: 'info' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
@@ -93,6 +136,7 @@ describe('estimateImpact: measured group A', () => {
   });
 
   it('coldStart: reports a serial point estimate unconditionally (app-scoped, no stage lookup, can never overlap a stage)', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'coldStart', stageId: null, metric: 'startupGapSeconds', value: 12, impactBand: 'warning' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
@@ -107,12 +151,13 @@ describe('estimateImpact: gc', () => {
       id: 0, submittedAt: 0, completedAt: 25000, parentIds: [],
       jvmGCTime: 100000, executorRunTime: 100000, // 4-way average concurrency (100000/25000)
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'gc', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.estimateMethod).toBe('modeled');
     expect(est.basis).toBe('serial');
-    expect(est.wallClock.high).toBeCloseTo(25000, 0);
+    expect(present(est.wallClock).high).toBeCloseTo(25000, 0);
     expect(est.rawWaste).toEqual({ value: 100000, unit: 'coreMs' });
   });
 
@@ -120,6 +165,7 @@ describe('estimateImpact: gc', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 25000, parentIds: [], jvmGCTime: 2000, executorRunTime: 100000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'gc', stageId: 0, direction: 'low', impactBand: 'info' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none', stageTaskMs: 100_000 });
@@ -127,6 +173,7 @@ describe('estimateImpact: gc', () => {
 
   it('reports resourceOnly (not a wall-clock claim) when executorRunTime is zero (guards divide-by-zero)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [], jvmGCTime: 0, executorRunTime: 0 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'gc', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
@@ -146,9 +193,10 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 50, taskDurationP50: 1000, taskDurationP95: 4000, taskDurationMax: 9000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     // Raw claim P95-P50 = 3000; floor 6000 leaves 4000ms of room, so the claim fits whole.
     expect(est.wallClock).toEqual({ low: 3000, high: 3000 });
     expect(est.basis).toBe('serial');
@@ -160,9 +208,10 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 5, taskDurationP50: 1000, taskDurationP95: 1500, taskDurationMax: 9000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     // Raw claim max-P50 = 8000; floor is P50 (1000), room 9000 (a taskDurationMax
     // floor of 9000 would leave only 1000).
     expect(est.wallClock).toEqual({ low: 8000, high: 8000 });
@@ -171,10 +220,11 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
 
   it('straggler: reconstructs max-P50, floored at P50 rather than at the straggler itself', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 7000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
     estimate(findings, stages);
     // Raw claim max-P50 = 6000, room above the P50 floor is 9000: min(6000, 9000) = 6000.
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 6000, high: 6000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 6000, high: 6000 });
   });
 
   it('straggler: claims the straggler down to the longest task the fix leaves, not to P50', () => {
@@ -184,9 +234,10 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 7000,
       stragglerCount: 1, stragglerExcessMs: 6000, peakConcurrentTasks: 4, longestNonStragglerMs: 3500,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 3500, high: 3500 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 3500, high: 3500 });
   });
 
   it('skew: floored at the longest task the fix leaves, the same as straggler on that stage', () => {
@@ -197,13 +248,14 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       taskDurationP50: 10_000, taskDurationP95: 39_000, taskDurationMax: 100_000,
       stragglerCount: 1, stragglerExcessMs: 90_000, peakConcurrentTasks: 4, longestNonStragglerMs: 39_000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [
       { type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' },
       { type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' },
     ];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 61_000, high: 61_000 });
-    expect(findings[1].impactEstimate.wallClock).toEqual({ low: 61_000, high: 61_000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 61_000, high: 61_000 });
+    expect(impactOf(findings[1]).wallClock).toEqual({ low: 61_000, high: 61_000 });
   });
 
   it('straggler: the stage\'s core work spread over every core still caps the claim', () => {
@@ -212,10 +264,11 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 9000, executorRunTime: 44000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
     estimate(findings, stages, 4);
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 1000, high: 1000 });
-    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 8000, unit: 'ms' });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 1000, high: 1000 });
+    expect(impactOf(findings[0]).rawWaste).toEqual({ value: 8000, unit: 'ms' });
   });
 
   // A bimodal stage (hundreds of tasks over 4x P50) recovers its tasks' summed excess spread over
@@ -226,18 +279,21 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       taskDurationP50: 6000, taskDurationP95: 30_000, taskDurationMax: 80_000,
       stragglerExcessMs: 14_500_000, peakConcurrentTasks: 29,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [
       { type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' },
       { type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' },
     ];
     estimate(findings, stages);
     // 14_500_000 / 29 = 500_000, over max-P50 (74_000) and P95-P50 (24_000).
-    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 500_000, unit: 'ms' });
-    expect(findings[1].impactEstimate.rawWaste).toEqual({ value: 500_000, unit: 'ms' });
+    expect(impactOf(findings[0]).rawWaste).toEqual({ value: 500_000, unit: 'ms' });
+    expect(impactOf(findings[1]).rawWaste).toEqual({ value: 500_000, unit: 'ms' });
   });
 
   it('stageShape with an unrecognized rule: leaves impactEstimate unset (null, not undefined, internally)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 500, taskDurationMax: 8000 }]]);
+    /** @type {MinimalFinding[]} */
+    // @ts-expect-error a rule stageShape does not declare
     const findings = [{ type: 'stageShape', rule: 'someOtherRule', stageId: 0, impactBand: 'warning' }];
     const result = estimate(findings, stages);
     expect(result[0].impactEstimate).toBeUndefined();
@@ -247,32 +303,36 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
 describe('estimateImpact: slowHost duration-based variants (no taskDurationMax set, so ceiling is 0 and the clip is a no-op)', () => {
   it('hostMeanRatio branch: excess duration of the slow host over the stage median', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 2000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'slowHost', stageId: 0, metric: 'hostMeanRatio', value: 3, hostMeanMs: 6000, impactBand: 'warning' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 4000, high: 4000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 4000, high: 4000 });
   });
 
   it('durationShare variant: same reconstruction, from hostMeanMs rather than the 0-1 share in `value`', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'slowHost', stageId: 0, variant: 'durationShare',
       metric: 'hostDurationShare', value: 0.82, hostMeanMs: 5000, impactBand: 'warning',
     }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 4000, high: 4000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 4000, high: 4000 });
   });
 
   it('multiDim variant, taskTime dimension: execMaxValue is a genuine per-executor average duration', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1500 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'slowHost', stageId: 0, variant: 'multiDim', dimension: 'taskTime',
       metric: 'execMaxMedianRatio', value: 3.7, execMaxValue: 5500, impactBand: 'warning',
     }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 4000, high: 4000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 4000, high: 4000 });
   });
 
   it('multiDim variant, byte-based dimensions: informational, no absolute ms figure', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'slowHost', stageId: 0, variant: 'multiDim', dimension: 'inputBytes',
       metric: 'execMaxMedianRatio', value: 3.2, execMaxValue: 900_000_000, impactBand: 'info',
@@ -289,6 +349,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       [1, { id: 1, submittedAt: 2000, completedAt: 5000, parentIds: [0] }], // 3000ms
       [2, { id: 2, submittedAt: 5000, completedAt: 9000, parentIds: [1] }], // 4000ms
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'duplicatePlanSubtree', stageIds: [1, 2],
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
@@ -311,21 +372,22 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       [4, { id: 4, parentIds: [2, 3], submittedAt: 12000, completedAt: 13000 }], // C, dur 1000
     ]);
     // 10 occurrences => 9/10 of each contributing stage's time is redundant.
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'duplicatePlanSubtree', stageIds: [2, 3],
       metric: 'subtreeOccurrences', value: 10, impactBand: 'warning',
     }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     // Per-stage: B1 gate = 8000/9000 (occupies [3000,5000] jointly with B2,
     // then alone [5000,12000]); waste 8100 -> {low: 7200, high: 8100}.
     // B2 gate = 1000/2000 (occupies half its own span); waste 1800 ->
     // {low: 900, high: 1800}. Naive sum: high 9900, low 8100. The union of
     // [3000,12000] and [3000,5000] is [3000,12000] = 9000ms, which caps the
     // naive high-sum down to 9000.
-    expect(est.wallClock.high).toBe(9000);
-    expect(est.wallClock.high).toBeLessThan(8100 + 1800); // proves the union cap, not naive summing
-    expect(est.wallClock.low).toBe(8100);
+    expect(present(est.wallClock).high).toBe(9000);
+    expect(present(est.wallClock).high).toBeLessThan(8100 + 1800); // proves the union cap, not naive summing
+    expect(present(est.wallClock).low).toBe(8100);
     expect(est.basis).toBe('contended');
   });
 
@@ -334,13 +396,14 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       [0, { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [] }],
       [1, { id: 1, submittedAt: 100_000, completedAt: 200_000, parentIds: [0] }],
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'duplicatePlanSubtree', stageIds: [0, 1],
       metric: 'subtreeOccurrences', value: 4, impactBand: 'warning',
     }];
     estimate(findings, stages);
     // 3/4 of 200_000ms total span is waste; both stages solo and non-overlapping.
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 150_000, high: 150_000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 150_000, high: 150_000 });
   });
 
   it('the minimum 2 occurrences claims exactly half, and a malformed occurrence count claims nothing quantifiable', () => {
@@ -348,12 +411,15 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       [0, { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [] }],
       [1, { id: 1, submittedAt: 100_000, completedAt: 200_000, parentIds: [0] }],
     ]);
+    /** @type {MinimalFinding[]} */
     const twice = [{
       type: 'duplicatePlanSubtree', stageIds: [0, 1],
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
     }];
     estimate(twice, stages);
-    expect(twice[0].impactEstimate.wallClock).toEqual({ low: 100_000, high: 100_000 });
+    expect(impactOf(twice[0]).wallClock).toEqual({ low: 100_000, high: 100_000 });
+
+    /** @type {MinimalFinding[]} */
 
     const malformed = [{ type: 'duplicatePlanSubtree', stageIds: [0, 1], impactBand: 'warning' }];
     estimate(malformed, stages);
@@ -366,6 +432,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       [1, { id: 1, submittedAt: 10_000, completedAt: 20_000, parentIds: [0] }], // unrelated
       [2, { id: 2, submittedAt: 20_000, completedAt: 30_000, parentIds: [1] }], // unrelated
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'duplicatePlanSubtree', stageIds: [0], // already narrowed
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
@@ -373,7 +440,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
 
     estimate(findings, stages);
 
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 5_000, high: 5_000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 5_000, high: 5_000 });
   });
 
   // stageShares (the repeated operators' share of each stage) and task-active time replace whole
@@ -385,19 +452,22 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       [1, { id: 1, submittedAt: 10_000, completedAt: 40_000, parentIds: [0], taskActiveMs: 6_000 }], // mostly waiting
       [2, { id: 2, submittedAt: 40_000, completedAt: 50_000, parentIds: [1], taskActiveMs: 10_000 }], // no share
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'duplicatePlanSubtree', stageIds: [0, 1, 2], stageShares: { 0: 0.5, 1: 1 }, occurrencesIdentical: true,
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
     }];
     estimate(findings, stages);
     // 1/2 redundant x (10_000 x 0.5 + 6_000 x 1) = 2_500 + 3_000.
-    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 5_500, unit: 'ms' });
-    expect(findings[0].impactEstimate.wallClock.high).toBe(5_500);
+    expect(impactOf(findings[0]).rawWaste).toEqual({ value: 5_500, unit: 'ms' });
+    expect(wallClockOf(findings[0]).high).toBe(5_500);
   });
 
   it('claims nothing for repeats with differing details or with no attributable stage', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10_000, parentIds: [] }]]);
+    /** @type {MinimalFinding[]} */
     const differing = [{ type: 'duplicatePlanSubtree', stageIds: [0], stageShares: { 0: 1 }, occurrencesIdentical: false, value: 2, impactBand: 'info' }];
+    /** @type {MinimalFinding[]} */
     const unattributed = [{ type: 'duplicatePlanSubtree', stageIds: [0], stageShares: {}, occurrencesIdentical: true, value: 2, impactBand: 'info' }];
     estimate(differing, stages);
     estimate(unattributed, stages);
@@ -409,32 +479,34 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
 describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, solo stage: numbers unaffected by the redesign)', () => {
   it('shuffle: bytes / assumed throughput (parser fallback tier)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], shuffleReadBytes: 1_250_000_000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.estimateMethod).toBe('modeled');
     expect(est.basis).toBe('serial');
-    expect(est.wallClock.high).toBeGreaterThan(0);
+    expect(present(est.wallClock).high).toBeGreaterThan(0);
     expect(est.rawWaste).toEqual({ value: 1_250_000_000, unit: 'bytes' });
   });
 
   it('shuffle: the link model is capped at the fetch wait the tasks measured, in wall-clock', () => {
     // 5 GB over one 125 MB/s link models 40s; the tasks blocked 80,000 core-ms on fetches at an
     // average concurrency of 8 (800,000 core-ms over 100s): 10s measured, which the claim can't exceed.
-    const at = (fetchWaitTime) => {
+    const at = (/** @type {number} */ fetchWaitTime) => {
       const stages = new Map([[0, {
         id: 0, submittedAt: 0, completedAt: 100000, parentIds: [],
         shuffleReadBytes: 5_000_000_000, executorRunTime: 800_000, fetchWaitTime,
       }]]);
+      /** @type {MinimalFinding[]} */
       const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }];
       estimate(findings, stages);
-      return findings[0].impactEstimate;
+      return impactOf(findings[0]);
     };
-    expect(at(80_000).wallClock.high).toBeCloseTo(10_000, 6);
+    expect(present(at(80_000).wallClock).high).toBeCloseTo(10_000, 6);
     expect(at(80_000).estimateMethod).toBe('measured');
-    expect(at(0).wallClock.high).toBe(0);
+    expect(present(at(0).wallClock).high).toBe(0);
     // More fetch wait than the model: the model stays the ceiling.
-    expect(at(800_000).wallClock.high).toBeCloseTo(40_000, 6);
+    expect(present(at(800_000).wallClock).high).toBeCloseTo(40_000, 6);
     expect(at(800_000).estimateMethod).toBe('modeled');
     expect(at(80_000).rawWaste).toEqual({ value: 5_000_000_000, unit: 'bytes' });
   });
@@ -444,12 +516,13 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
       id: 0, submittedAt: 0, completedAt: 100000, parentIds: [],
       diskBytesSpilled: 200_000_000, memoryBytesSpilled: 900_000_000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.estimateMethod).toBe('modeled');
-    expect(est.wallClock.high).toBeGreaterThan(0);
-    expect(est.wallClock.high).toBeLessThan(900_000_000 / 1000);
+    expect(present(est.wallClock).high).toBeGreaterThan(0);
+    expect(present(est.wallClock).high).toBeLessThan(900_000_000 / 1000);
     expect(est.rawWaste).toEqual({ value: 200_000_000, unit: 'bytes' });
   });
 
@@ -459,11 +532,12 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
       id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], executorStats,
       shuffleReadBytes: 5_000_000_000, diskBytesSpilled: 8_000_000_000, memoryBytesSpilled: 10_000_000_000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    expect(findings[1].impactEstimate.assumptions)
+    expect(impactOf(findings[1]).assumptions)
       .toBe('assumes 200 MB/s per executor over 75 executors for disk spill, plus 60% of the stage\'s task time as serialization and sort CPU (50% per pass of its read bytes through disk spill, capped at 60%); GC is not counted');
-    expect(findings[0].impactEstimate.assumptions).toMatch(/^assumes 125 MB\/s per executor over 75 executors; counts network transfer only/);
+    expect(impactOf(findings[0]).assumptions).toMatch(/^assumes 125 MB\/s per executor over 75 executors; counts network transfer only/);
   });
 
   it('shuffle and spill: the byte volume is spread over every executor that ran the stage, one link/disk each', () => {
@@ -472,13 +546,14 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
       id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], executorStats,
       shuffleReadBytes: 5_000_000_000, diskBytesSpilled: 8_000_000_000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
     // 5 GB over 4 x 125 MB/s = 10s (one shared link would claim 40s); 8 GB over 4 x 200 MB/s = 10s,
     // plus the spill CPU cap of 60% of the 100s stage.
-    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(10000, 6);
-    expect(findings[1].impactEstimate.wallClock.high).toBeCloseTo(10000 + 60000, 6);
-    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 5_000_000_000, unit: 'bytes' });
+    expect(wallClockOf(findings[0]).high).toBeCloseTo(10000, 6);
+    expect(wallClockOf(findings[1]).high).toBeCloseTo(10000 + 60000, 6);
+    expect(impactOf(findings[0]).rawWaste).toEqual({ value: 5_000_000_000, unit: 'bytes' });
   });
 });
 
@@ -491,20 +566,22 @@ describe('estimateImpact: stageSlowness', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 22 * min, parentIds: [], taskCount: 2, taskActiveMs: 20 * min, taskDurationMax: 20 * min, shuffleReadBytes: 1e9,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages, 16);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.estimateMethod).toBe('modeled');
-    expect(est.wallClock.high).toBeCloseTo(17.5 * min, 6);
+    expect(present(est.wallClock).high).toBeCloseTo(17.5 * min, 6);
   });
 
   it('a stage that already ran more tasks than cores gets nothing from more partitions', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 40 * min, parentIds: [], taskCount: 500, taskActiveMs: 40 * min, shuffleReadBytes: 1e9,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages, 16);
-    expect(findings[0].impactEstimate.wallClock.high).toBe(0);
+    expect(wallClockOf(findings[0]).high).toBe(0);
   });
 
   it('time the stage sat open with no task running is queueing, not recoverable by partitioning', () => {
@@ -512,21 +589,23 @@ describe('estimateImpact: stageSlowness', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 30 * min, parentIds: [], taskCount: 1, taskActiveMs: 2000, taskDurationMax: 2000, inputBytes: 1e6,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages, 16);
-    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(2000 * (15 / 16), 6);
+    expect(wallClockOf(findings[0]).high).toBeCloseTo(2000 * (15 / 16), 6);
   });
 
   // A 1-task stage that read no bytes, its only task running 27 minutes; cpuMs sets the task's
   // executorCpuTime (Spark reports nanoseconds).
-  const oneTaskStage = (cpuMs, extra = {}) => new Map([[0, {
+  const oneTaskStage = (/** @type {number} */ cpuMs, /** @type {Partial<Stage>} */ extra = {}) => new Map([[0, {
     id: 0, submittedAt: 0, completedAt: 27 * min, parentIds: [], taskCount: 1, taskActiveMs: 27 * min, taskDurationMax: 27 * min,
     executorRunTime: 27 * min, executorCpuTime: cpuMs * 1e6, inputBytes: 0, shuffleReadBytes: 0, ...extra,
   }]]);
-  const claimFor = (stages) => {
+  const claimFor = (/** @type {MinimalStages} */ stages) => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages, 16);
-    return findings[0].impactEstimate.wallClock.high;
+    return wallClockOf(findings[0]).high;
   };
 
   it('tasks idle on an external system (a JDBC read on 5s of CPU in 27 minutes) claim nothing', () => {
@@ -556,6 +635,7 @@ describe('estimateImpact: stageSlowness', () => {
 
   it('without a cluster core count there is no headroom figure: informational', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 20 * min, parentIds: [], taskCount: 2 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
@@ -565,17 +645,19 @@ describe('estimateImpact: stageSlowness', () => {
 describe('estimateImpact: partitionSizing, tinyTask', () => {
   it('maxPartitionTooBig rule: shuffleReadMax / throughput', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], shuffleReadMax: 500_000_000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'partitionSizing', rule: 'maxPartitionTooBig', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThan(0);
+    expect(wallClockOf(findings[0]).high).toBeGreaterThan(0);
   });
 
   it('shufflePartitionSkew rule: (max - p50) / throughput', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], shuffleReadMax: 500_000_000, shuffleReadP50: 100_000_000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'partitionSizing', rule: 'shufflePartitionSkew', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
     const expectedMs = ((500_000_000 - 100_000_000) / 125_000_000) * 1000;
-    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(expectedMs, 0);
+    expect(wallClockOf(findings[0]).high).toBeCloseTo(expectedMs, 0);
   });
 
   it('lowShuffleParallelism rule: derives its own target task count', () => {
@@ -583,20 +665,23 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       id: 0, submittedAt: 0, completedAt: 100000, parentIds: [],
       shuffleReadBytes: 2_000_000_000, taskCount: 4,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThanOrEqual(0);
+    expect(wallClockOf(findings[0]).high).toBeGreaterThanOrEqual(0);
   });
 
   describe('lowShuffleParallelism: the claim shortens the stage\'s longest task', () => {
     // 4 tasks read 1.5 GiB (target 12 tasks) over a 60 s stage: the serial waste is 40 s.
     const GiB = 1024 ** 3;
+    /** @param {number} taskDurationMax */
     function lowParStage(taskDurationMax) {
       return new Map([[0, {
         id: 0, submittedAt: 0, completedAt: 60_000, parentIds: [], taskCount: 4, shuffleReadBytes: 1.5 * GiB,
         taskDurationMax, executorRunTime: 4 * taskDurationMax,
       }]]);
     }
+    /** @returns {MinimalFinding[]} */
     const lowPar = () => [{ type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, impactBand: 'warning' }];
 
     it('keeps the claim when the longest task nearly fills the stage', () => {
@@ -604,10 +689,10 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       // 4/12 of 59.97 s, so the claim is the 39.98 s it sheds.
       const findings = lowPar();
       estimate(findings, lowParStage(59_970), 100);
-      const { rawWaste, wallClock, estimateMethod } = findings[0].impactEstimate;
-      expect(rawWaste.unit).toBe('ms');
-      expect(rawWaste.value).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
-      expect(wallClock.high).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
+      const { rawWaste, wallClock, estimateMethod } = impactOf(findings[0]);
+      expect(present(rawWaste).unit).toBe('ms');
+      expect(present(rawWaste).value).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
+      expect(present(wallClock).high).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
       expect(estimateMethod).toBe('modeled');
     });
 
@@ -617,17 +702,17 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       // stage by 4/12 would claim.
       const findings = lowPar();
       estimate(findings, lowParStage(20_000), 100);
-      const { rawWaste, wallClock } = findings[0].impactEstimate;
-      expect(rawWaste.value).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
-      expect(wallClock.high).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
-      expect(60_000 - wallClock.high).toBeCloseTo(40_000 + 20_000 * 4 / 12, 6);
+      const { rawWaste, wallClock } = impactOf(findings[0]);
+      expect(present(rawWaste).value).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
+      expect(present(wallClock).high).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
+      expect(60_000 - present(wallClock).high).toBeCloseTo(40_000 + 20_000 * 4 / 12, 6);
     });
 
     it('is still floored at the stage\'s core work spread over its cores', () => {
       // 4 x 59.97 s of task time over 8 cores cannot finish in under 29.985 s, split or not.
       const findings = lowPar();
       estimate(findings, lowParStage(59_970), 8);
-      expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(60_000 - 4 * 59_970 / 8, 6);
+      expect(wallClockOf(findings[0]).high).toBeCloseTo(60_000 - 4 * 59_970 / 8, 6);
     });
 
     it('stays capped by the stage window', () => {
@@ -638,19 +723,20 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       }]]);
       const findings = lowPar();
       estimate(findings, stages, 8);
-      const { wallClock, rawWaste } = findings[0].impactEstimate;
-      expect(wallClock.high).toBeLessThanOrEqual(rawWaste.value);
-      expect(wallClock.high).toBeLessThanOrEqual(1_500 - 1_490 * 4 / 12);
+      const { wallClock, rawWaste } = impactOf(findings[0]);
+      expect(present(wallClock).high).toBeLessThanOrEqual(present(rawWaste).value);
+      expect(present(wallClock).high).toBeLessThanOrEqual(1_500 - 1_490 * 4 / 12);
     });
   });
 
   it('tinyTask: excess task count beyond a coalesce-to-1/10th target, at the assumed overhead when unmeasured', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], taskCount: 1000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.estimateMethod).toBe('modeled');
-    expect(est.wallClock.high).toBe(900 * 50); // (1000 - round(1000/10)) excess tasks * 50ms
+    expect(present(est.wallClock).high).toBe(900 * 50); // (1000 - round(1000/10)) excess tasks * 50ms
     expect(est.rawWaste).toEqual({ value: 900 * 50, unit: 'ms' });
   });
 
@@ -661,11 +747,12 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskCount: 1000, executorRunTime: 60000,
       executorStats: [{ executorId: '1', totalDuration: 40000 }, { executorId: '2', totalDuration: 40000 }],
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.estimateMethod).toBe('measured');
-    expect(est.wallClock.high).toBeCloseTo(2250, 6);
+    expect(present(est.wallClock).high).toBeCloseTo(2250, 6);
   });
 
   it('tinyTask: a mostly-idle stage never claims more wall-clock than the overhead it removes', () => {
@@ -675,9 +762,10 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       id: 0, submittedAt: 0, completedAt: 600000, parentIds: [], taskCount: 400, executorRunTime: 6000,
       executorStats: [{ executorId: '1', totalDuration: 8000 }],
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(1800, 6);
+    expect(wallClockOf(findings[0]).high).toBeCloseTo(1800, 6);
   });
 });
 
@@ -687,6 +775,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
       [0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [] }],
       [1, { id: 1, submittedAt: 5000, completedAt: 9000, parentIds: [0] }],
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'smallFiles', stageIds: [0, 1], metric: 'avgFileSizeBytes', value: 1024, fileCount: 500, impactBand: 'warning' }];
     estimate(findings, stages);
     // 500 * 10ms = 5000ms total, 2500 per stage, both solo and non-overlapping.
@@ -699,16 +788,19 @@ describe('estimateImpact: Plan Advisor trio', () => {
   // Reading tasks open their files in parallel; a write's job commit moves them one by one.
   it('smallFiles: a read spreads its per-file cost over the stage\'s peak concurrent tasks, a write stays serial', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], peakConcurrentTasks: 50 }]]);
+    /** @type {MinimalFinding[]} */
     const read = [{ type: 'smallFiles', direction: 'read', stageIds: [0], metric: 'avgFileSizeBytes', value: 1024, fileCount: 5000, impactBand: 'warning' }];
+    /** @type {MinimalFinding[]} */
     const write = [{ type: 'smallFiles', direction: 'write', stageIds: [0], metric: 'avgFileSizeBytes', value: 1024, fileCount: 5000, impactBand: 'warning' }];
     estimate(read, stages);
     estimate(write, stages);
     // 5000 files x 10ms = 50_000ms of opens; over 50 slots, 1_000ms.
-    expect(read[0].impactEstimate.rawWaste).toEqual({ value: 1_000, unit: 'ms' });
-    expect(write[0].impactEstimate.rawWaste).toEqual({ value: 50_000, unit: 'ms' });
+    expect(impactOf(read[0]).rawWaste).toEqual({ value: 1_000, unit: 'ms' });
+    expect(impactOf(write[0]).rawWaste).toEqual({ value: 50_000, unit: 'ms' });
   });
 
   it('smallFiles: resourceOnly when not stage-mappable, still reports the magnitude as rawWaste', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'smallFiles', stageIds: [], metric: 'avgFileSizeBytes', value: 1024, fileCount: 500, impactBand: 'warning' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
@@ -718,6 +810,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
   });
 
   it('overBroadcast/underBroadcast: resourceOnly when not stage-mappable, magnitude kept as rawWaste', () => {
+    /** @type {MinimalFinding[]} */
     const over = [{ type: 'overBroadcast', metric: 'broadcastBytes', value: 250_000_000, impactBand: 'warning' }];
     estimate(over, new Map());
     expect(over[0].impactEstimate).toEqual({
@@ -725,12 +818,15 @@ describe('estimateImpact: Plan Advisor trio', () => {
       rawWaste: { value: 2000, unit: 'ms' },
     });
 
+    /** @type {MinimalFinding[]} */
+
     const under = [{ type: 'underBroadcast', stageIds: [], metric: 'smallerSideBytes', value: 125_000_000, impactBand: 'warning' }];
     estimate(under, new Map());
-    expect(under[0].impactEstimate.rawWaste).toEqual({ value: 1000, unit: 'ms' });
+    expect(impactOf(under[0]).rawWaste).toEqual({ value: 1000, unit: 'ms' });
   });
 
   it('a zero-magnitude, non-stage-mappable finding is informational, no rawWaste', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'smallFiles', stageIds: [], metric: 'avgFileSizeBytes', value: 1024, fileCount: 0, impactBand: 'info' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
@@ -738,6 +834,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
 
   it('overBroadcast: stage-mappable: the ceiling now caps the claim at the stage\'s own duration, fixing the historical overclaim bug', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [] }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'overBroadcast', stageIds: [0], metric: 'broadcastBytes', value: 700_000_000, impactBand: 'warning' }];
     estimate(findings, stages);
     // Raw claim: 700_000_000 / 125_000_000 * 1000 = 5600ms, more than the
@@ -750,6 +847,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
 
   it('underBroadcast: stage-mappable, same duration cap applies', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [] }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'underBroadcast', stageIds: [0],
       metric: 'smallerSideBytes', value: 700_000_000, largerSideBytes: 900_000_000, impactBand: 'warning',
@@ -767,15 +865,17 @@ describe('estimateImpact: Plan Advisor trio', () => {
       [0, { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [] }],
       [1, { id: 1, submittedAt: 100_000, completedAt: 200_000, parentIds: [0] }],
     ]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'smallFiles', stageIds: [0, 1], metric: 'avgFileSizeBytes', value: 1024, fileCount: 4000, impactBand: 'warning' }];
     estimate(findings, stages);
     // 4000 * 10ms = 40_000ms total, both stages solo and non-overlapping.
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 40_000, high: 40_000 });
+    expect(impactOf(findings[0]).wallClock).toEqual({ low: 40_000, high: 40_000 });
   });
 });
 
 describe('estimateImpact: cost-only group A', () => {
   it('memoryUtilization wasteModel variant: resourceOnly, passes through the existing wastedMBSeconds as rawWaste', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'memoryUtilization', variant: 'wasteModel', metric: 'wastedMBSeconds', value: 12345, impactBand: 'warning' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
@@ -785,12 +885,15 @@ describe('estimateImpact: cost-only group A', () => {
   });
 
   it('memoryUtilization: an unrecognized variant is informational, no rawWaste', () => {
+    /** @type {MinimalFinding[]} */
+    // @ts-expect-error a variant memoryUtilization does not declare
     const findings = [{ type: 'memoryUtilization', variant: 'bandTooSmall', impactBand: 'info' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
   it('memoryUtilization idleCores: resourceOnly, idle rate * allocated memory-seconds, in MB-seconds', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
       idleRateFraction: 0.75, allocatedMBSeconds: 9_830_400,
@@ -803,6 +906,7 @@ describe('estimateImpact: cost-only group A', () => {
   });
 
   it('memoryUtilization idleCores: informational when the allocated memory-time is missing', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
       idleRateFraction: 0.75, allocatedMBSeconds: null,
@@ -812,6 +916,7 @@ describe('estimateImpact: cost-only group A', () => {
   });
 
   it('memoryUtilization memoryBand heapOverProvisioned: resourceOnly, unused heap held by every executor while alive, in MB-seconds', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
       executorId: '3', metric: 'heapUsedRatio', value: 25, impactBand: 'info',
@@ -825,6 +930,7 @@ describe('estimateImpact: cost-only group A', () => {
   });
 
   it('memoryUtilization memoryBand dataUnavailable: no rule, no inputs, informational', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'memoryUtilization', variant: 'memoryBand', metric: 'memoryBand',
       dataUnavailable: true, impactBand: 'info',
@@ -834,6 +940,7 @@ describe('estimateImpact: cost-only group A', () => {
   });
 
   it('utilization: resourceOnly, idle core-hours from the real utilizationFraction, no assumed constant', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{
       type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning',
       appDurationMs: 3_600_000, totalCores: 10, allocatedCoreMs: 10 * 3_600_000,
@@ -847,31 +954,35 @@ describe('estimateImpact: cost-only group A', () => {
   });
 
   it('utilization: a missing allocatedCoreMs falls back to informational', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'measured' });
   });
 
   it('coreLocality: resourceOnly, modeled network-fetch penalty as extra core-time, not wall-clock', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'coreLocality', nonLocalTaskCount: 40, impactBand: 'info' }];
     estimate(findings, new Map());
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.basis).toBe('resourceOnly');
     expect(est.wallClock).toBeNull();
     expect(est.estimateMethod).toBe('modeled');
-    expect(est.rawWaste.unit).toBe('coreMs');
-    expect(est.rawWaste.value).toBeGreaterThan(0);
+    expect(present(est.rawWaste).unit).toBe('coreMs');
+    expect(present(est.rawWaste).value).toBeGreaterThan(0);
   });
 
   it('autoscalingChurn: resourceOnly, modeled executor-hours waste, converted to core-hours', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'autoscalingChurn', shortLivedExecutorCount: 8, impactBand: 'warning' }];
     estimate(findings, new Map());
-    expect(findings[0].impactEstimate.basis).toBe('resourceOnly');
-    expect(findings[0].impactEstimate.rawWaste.unit).toBe('coreHours');
-    expect(findings[0].impactEstimate.rawWaste.value).toBeGreaterThan(0);
+    expect(impactOf(findings[0]).basis).toBe('resourceOnly');
+    expect(rawWasteOf(findings[0]).unit).toBe('coreHours');
+    expect(rawWasteOf(findings[0]).value).toBeGreaterThan(0);
   });
 
   it('configAudit: informational, no rawWaste', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'configAudit', rule: 'shuffle-service', impactBand: 'info' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
@@ -880,19 +991,22 @@ describe('estimateImpact: cost-only group A', () => {
 
 describe('estimateImpact: cost-only group B', () => {
   it('jobFailureRate: resourceOnly, failedJobs * avgJobDurationMs', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'jobFailureRate', failedJobs: 3, avgJobDurationMs: 5000, impactBand: 'warning' }];
     estimate(findings, new Map());
-    expect(findings[0].impactEstimate.basis).toBe('resourceOnly');
-    expect(findings[0].impactEstimate.rawWaste.value).toBeGreaterThan(0);
+    expect(impactOf(findings[0]).basis).toBe('resourceOnly');
+    expect(rawWasteOf(findings[0]).value).toBeGreaterThan(0);
   });
 
   it('jobFailureRate: a null-derived avgJobDurationMs of 0 stays resourceOnly (rawWaste always attached) but with value 0', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'jobFailureRate', failedJobs: 3, avgJobDurationMs: 0, impactBand: 'warning' }];
     estimate(findings, new Map());
-    expect(findings[0].impactEstimate.rawWaste.value).toBe(0);
+    expect(rawWasteOf(findings[0]).value).toBe(0);
   });
 
   it('cachingOpportunity: unconditionally resourceOnly, no stage-mappable branch', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'cachingOpportunity', totalReadBytes: 1_000_000_000, executionIds: [3, 5, 8], impactBand: 'info' }];
     estimate(findings, new Map());
     // The scanned bytes and the query count, not a time: a time here read as the run's biggest saving.
@@ -904,20 +1018,23 @@ describe('estimateImpact: cost-only group B', () => {
   });
 
   it('cacheUtilization: resourceOnly, uncached-or-spilled bytes / re-read throughput', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'cacheUtilization', memorySize: 100, diskSize: 900, numCachedPartitions: 8, numPartitions: 10, impactBand: 'warning' }];
     estimate(findings, new Map());
-    expect(findings[0].impactEstimate.basis).toBe('resourceOnly');
-    expect(findings[0].impactEstimate.rawWaste.unit).toBe('ms');
+    expect(impactOf(findings[0]).basis).toBe('resourceOnly');
+    expect(rawWasteOf(findings[0]).unit).toBe('ms');
   });
 
   it('cacheUtilization storageUnobserved: missing evidence, informational', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, value: 2, impactBand: 'info' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 
-  for (const type of ['stageFailed', 'failures', 'incompleteRun']) {
+  for (const type of /** @type {const} */ (['stageFailed', 'failures', 'incompleteRun'])) {
     it(`${type}: informational, no rawWaste`, () => {
+      /** @type {MinimalFinding[]} */
       const findings = [{ type, impactBand: 'critical' }];
       estimate(findings, new Map());
       expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
@@ -926,17 +1043,19 @@ describe('estimateImpact: cost-only group B', () => {
 
   it('stageShape lowParallelism rule: resourceOnly, idle core-time, real data', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskCount: 2 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'warning' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     expect(est.basis).toBe('resourceOnly');
     expect(est.estimateMethod).toBe('measured');
-    expect(est.rawWaste.unit).toBe('coreMs');
-    expect(est.rawWaste.value).toBe((10 - 2) * 10000);
+    expect(present(est.rawWaste).unit).toBe('coreMs');
+    expect(present(est.rawWaste).value).toBe((10 - 2) * 10000);
   });
 
   it('stageShape dataExplosion rule: resourceOnly, excess output bytes, no ms figure', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], inputBytes: 1000, outputBytes: 9000 }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageShape', rule: 'dataExplosion', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
@@ -950,9 +1069,10 @@ describe('estimateImpact: cost-only group B', () => {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 5, taskDurationP50: 500, taskDurationMax: 8000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' }];
     estimate(findings, stages);
-    const est = findings[0].impactEstimate;
+    const est = impactOf(findings[0]);
     // idleCoreMs = max(0, min(totalCores, taskCount) - 1) * (taskDurationMax - taskDurationP50)
     //            = (min(10, 5) - 1) * (8000 - 500) = 4 * 7500 = 30000.
     expect(est).toEqual({
@@ -962,19 +1082,22 @@ describe('estimateImpact: cost-only group B', () => {
   });
 
   it('stageShape taskStageSkew rule: clips the idle figure to the run idle core-ms', () => {
+    /** @type {MinimalStages} */
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 5, taskDurationP50: 500, taskDurationMax: 8000,
     }]]);
-    const run = (runIdleCoreMs) => {
+    const run = (/** @type {number | null} */ runIdleCoreMs) => {
+      /** @type {MinimalFinding[]} */
       const findings = [{ type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' }];
-      estimateImpact(findings, { stages, totalCores: 0, occupancy: computeOccupancy(stages, 0), runIdleCoreMs });
-      return findings[0].impactEstimate;
+      const fullStages = /** @type {Map<number, Stage>} */ (stages);
+      estimateImpact(/** @type {Finding[]} */ (findings), { stages: fullStages, totalCores: 0, occupancy: computeOccupancy(fullStages, 0), runIdleCoreMs });
+      return impactOf(findings[0]);
     };
     expect(run(12000).rawWaste).toEqual({ value: 12000, unit: 'coreMs', idle: true });
     expect(run(12000).estimateMethod).toBe('modeled');
-    expect(run(90000).rawWaste.value).toBe(30000);
-    expect(run(null).rawWaste.value).toBe(30000);
+    expect(present(run(90000).rawWaste).value).toBe(30000);
+    expect(present(run(null).rawWaste).value).toBe(30000);
   });
 
   it('stageShape taskStageSkew rule: clamps to 0 idle core-ms when totalCores is missing/small (never negative)', () => {
@@ -982,12 +1105,14 @@ describe('estimateImpact: cost-only group B', () => {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 5, taskDurationP50: 500, taskDurationMax: 8000,
     }]]);
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 1, impactBand: 'info' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate.rawWaste.value).toBe(0);
+    expect(rawWasteOf(findings[0]).value).toBe(0);
   });
 
   it('slowHost multiDim byte-based dimensions: informational', () => {
+    /** @type {MinimalFinding[]} */
     const findings = [{ type: 'slowHost', variant: 'multiDim', dimension: 'inputBytes', stageId: 0, impactBand: 'info' }];
     estimate(findings, new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [] }]]));
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
@@ -1004,6 +1129,7 @@ describe('estimateImpact: totalCores wiring', () => {
     // a different totalCores changes the result iff the context's totalCores reaches computeCeiling.
     const stage = { id: 0, submittedAt: 0, completedAt: 10_000, parentIds: [], executorRunTime: 40_000, retryWasteMs: 20_000 };
     const stages = new Map([[0, stage]]);
+    /** @returns {MinimalFinding[]} */
     const finding = () => [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 20_000, impactBand: 'warning' }];
 
     // totalCores 0: ceiling 0, room = 10_000; the 20_000ms

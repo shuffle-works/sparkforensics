@@ -6,6 +6,16 @@ import { evaluateBudgets } from '../src/cli/budgets.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 import { collectRun } from '../src/cli/collect-run.ts';
 
+/** @typedef {import('../src/types.ts').AppModel} AppModel */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+
+// The budgets read only a few stage fields, so a fixture supplies just those.
+/** @param {[number, Partial<Stage>][]} entries */
+function stageMap(entries) {
+  return /** @type {Map<number, Stage>} */ (new Map(entries));
+}
+
+/** @param {string[]} lines */
 async function parsedAppModel(lines) {
   const dir = mkdtempSync(join(tmpdir(), 'sf-budgets-'));
   const path = join(dir, 'eventlog');
@@ -13,17 +23,20 @@ async function parsedAppModel(lines) {
   try { return (await collectRun(path)).appModel; } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+/** @param {Record<string, unknown>} [overrides] */
 function baseAppModel(overrides = {}) {
-  return {
+  /** @type {Partial<AppModel>} */
+  const base = {
     app: { id: 'a', name: 'n', startTime: 0, endTime: 10_000 },
     stages: new Map(),
-    executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+    executors: { added: [/** @type {AppModel['executors']['added'][number]} */ ({ executorId: '1', timestamp: 0, totalCores: 4 })], removed: [] },
     runAggregates: { busyCoreMs: 30_000, perStage: { 1: { taskCount: 10, totalTaskDurationSum: 30_000 } } },
-    evidenceAvailability: {
+    evidenceAvailability: /** @type {AppModel['evidenceAvailability']} */ ({
+      schemaVersion: 1,
       entries: [{ key: 'taskCoreTime', state: 'present', reasonCode: 'observed' }],
-    },
-    ...overrides,
+    }),
   };
+  return /** @type {AppModel} */ ({ ...base, ...overrides });
 }
 
 describe('evaluateBudgets', () => {
@@ -61,7 +74,7 @@ describe('evaluateBudgets', () => {
 
   it('reports both violated and inconclusive when the run has one of each', () => {
     const appModel = baseAppModel({ app: { id: 'a', name: 'n', startTime: 0, endTime: null } });
-    appModel.stages = new Map([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 5 * 1024 ** 3 }]]);
+    appModel.stages = stageMap([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 5 * 1024 ** 3 }]]);
     const { violated, inconclusive } = evaluateBudgets({
       appModel, catalog: [], budgets: { maxRuntimeMs: 1, maxSpillGb: 1 },
     });
@@ -70,7 +83,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('reports run-complete inconclusive with no budgets set when the catalog has an incompleteRun finding', () => {
-    const catalog = [{ type: 'incompleteRun', impactBand: 'warning', recommendation: 'No ApplicationEnd.' }];
+    const catalog = [/** @type {import('../src/types.ts').Finding} */ ({ type: 'incompleteRun', impactBand: 'warning', recommendation: 'No ApplicationEnd.' })];
     const { results, violated, inconclusive } = evaluateBudgets({ appModel: baseAppModel(), catalog, budgets: {} });
     expect(results).toEqual([{ name: 'run-complete', status: 'inconclusive', detail: 'No ApplicationEnd.' }]);
     expect(violated).toBe(false);
@@ -80,7 +93,7 @@ describe('evaluateBudgets', () => {
   const GB = 1024 ** 3;
 
   it('flags a spill violation from the stage spill figures', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 5 * GB }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 5 * GB }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSpillGb: 1 },
     });
@@ -90,7 +103,7 @@ describe('evaluateBudgets', () => {
 
   it('flags a spill violation on a short stage the spill detector floors out of the catalog', () => {
     // 200 GB spilled by a 20 s stage in a 10 h run: no spill finding, but the run broke the budget.
-    const stages = new Map([[1, { id: 1, taskCount: 10, submittedAt: 0, completedAt: 20_000, memoryBytesSpilled: 200 * GB }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 10, submittedAt: 0, completedAt: 20_000, memoryBytesSpilled: 200 * GB }]]);
     const appModel = baseAppModel({ app: { id: 'a', name: 'n', startTime: 0, endTime: 36_000_000 }, stages });
     const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxSpillGb: 1 } });
     expect(violated).toBe(true);
@@ -99,7 +112,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('passes spill when the peak stage spill is within budget', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 0.5 * GB }], [2, { id: 2, taskCount: 10, memoryBytesSpilled: 0 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 0.5 * GB }], [2, { id: 2, taskCount: 10, memoryBytesSpilled: 0 }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSpillGb: 1 },
     });
@@ -116,7 +129,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('flags a skew violation from real stage metrics', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 420, taskDurationMax: 420 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 420, taskDurationMax: 420 }]]);
     const appModel = baseAppModel({ stages });
     const { results, violated } = evaluateBudgets({
       appModel, catalog: [], budgets: { maxSkewRatio: 2 },
@@ -129,7 +142,7 @@ describe('evaluateBudgets', () => {
   // check misses budgets stricter than 3; recompute the true ratio from stage
   // metrics to flag a 2.9 ratio against a 2.5 budget.
   it('flags a skew violation below the detector\'s own ratioWarn floor (regression)', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 290, taskDurationMax: 290 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 290, taskDurationMax: 290 }]]);
     const appModel = baseAppModel({ stages });
     const { results, violated } = evaluateBudgets({
       appModel, catalog: [], budgets: { maxSkewRatio: 2.5 },
@@ -140,7 +153,7 @@ describe('evaluateBudgets', () => {
 
   it('measures skew with the same tuned minTasksForP95 the skew finding uses', () => {
     // 50 tasks: P95/median 1.5 under the default minTasksForP95 (20), max/median 10 once it is 100.
-    const stages = new Map([[1, { id: 1, taskCount: 50, taskDurationP50: 100, taskDurationP95: 150, taskDurationMax: 1000 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 50, taskDurationP50: 100, taskDurationP95: 150, taskDurationMax: 1000 }]]);
     const appModel = baseAppModel({ stages });
     const budgets = { maxSkewRatio: 5 };
     expect(evaluateBudgets({ appModel, catalog: [], budgets }).violated).toBe(false);
@@ -151,14 +164,14 @@ describe('evaluateBudgets', () => {
   });
 
   it('passes skew when the true ratio is within budget', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 150, taskDurationMax: 150 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 150, taskDurationMax: 150 }]]);
     const appModel = baseAppModel({ stages });
     const { violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxSkewRatio: 2 } });
     expect(violated).toBe(false);
   });
 
   it('ignores a stage with no task-duration median instead of reporting a NaN peak', () => {
-    const stages = new Map([
+    const stages = stageMap([
       [1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 1000, taskDurationMax: 1000 }],
       [2, { id: 2 }],
     ]);
@@ -171,7 +184,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('reports skew inconclusive when every stage lacks a usable ratio', () => {
-    const stages = new Map([[1, { id: 1 }], [2, { id: 2, taskCount: 20, taskDurationP50: 100 }]]);
+    const stages = stageMap([[1, { id: 1 }], [2, { id: 2, taskCount: 20, taskDurationP50: 100 }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSkewRatio: 5 },
     });
@@ -188,7 +201,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('reports skew inconclusive when no stage has a measurable p50', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 20, taskDurationP50: 0, taskDurationP95: 0, taskDurationMax: 0 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 20, taskDurationP50: 0, taskDurationP95: 0, taskDurationMax: 0 }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSkewRatio: 2 },
     });
@@ -197,7 +210,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('flags a failed-task-rate violation from the summed stage task counts', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 60, failedTasks: 20 }], [2, { id: 2, taskCount: 40, failedTasks: 20 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 60, failedTasks: 20 }], [2, { id: 2, taskCount: 40, failedTasks: 20 }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
     });
@@ -207,6 +220,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('flags retried task failures when every job succeeded and no jobFailureRate finding fired', async () => {
+    /** @param {number} index @param {number} attemptNumber @param {boolean} failed */
     const taskEnd = (index, attemptNumber, failed) => JSON.stringify({
       Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
       'Task Info': { 'Task ID': index * 10 + attemptNumber, Index: index, 'Attempt Number': attemptNumber, 'Launch Time': 0, 'Finish Time': 100, Failed: failed, Killed: false, Speculative: false },
@@ -230,7 +244,7 @@ describe('evaluateBudgets', () => {
   });
 
   it('flags a failed-task rate that rounds to 0% against a zero budget', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 3000, failedTasks: 1 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 3000, failedTasks: 1 }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 0 },
     });
@@ -241,14 +255,14 @@ describe('evaluateBudgets', () => {
 
   it('reports failed-task-rate inconclusive when no stage ran a task', () => {
     const { results, violated } = evaluateBudgets({
-      appModel: baseAppModel({ stages: new Map([[1, { id: 1, taskCount: 0 }]]) }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
+      appModel: baseAppModel({ stages: stageMap([[1, { id: 1, taskCount: 0 }]]) }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
     });
     expect(violated).toBe(false);
     expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'inconclusive' });
   });
 
   it('passes failed-task-rate when the task failure rate is within budget', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 100, failedTasks: 5 }]]);
+    const stages = stageMap([[1, { id: 1, taskCount: 100, failedTasks: 5 }]]);
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
     });
@@ -270,7 +284,7 @@ describe('evaluateBudgets', () => {
     // Executor 1 leaves at 5s as its same-size replacement joins: 4 cores are ever concurrent,
     // so 20s of busy core time is 50%, not the 25% a sum of every addition would give.
     const appModel = baseAppModel({
-      stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 10_000 }]]),
+      stages: stageMap([[1, { id: 1, submittedAt: 0, completedAt: 10_000 }]]),
       executors: {
         added: [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 5_000, totalCores: 4 }],
         removed: [{ executorId: '1', timestamp: 5_000 }],
@@ -291,17 +305,19 @@ describe('evaluateBudgets', () => {
     expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'inconclusive' });
   });
 
+  /** @param {Record<string, unknown>} [overrides] */
   function baseComparison(overrides = {}) {
-    return {
+    /** @type {Partial<import('../src/run-comparison.ts').CompareRunsResult>} */
+    const base = {
       baselineLabel: 'baseline', candidateLabel: 'candidate',
       confidence: 'ok', reason: null, matchedCoverage: 1,
-      metrics: [
+      metrics: /** @type {import('../src/run-comparison.ts').MetricDeltaRow[]} */ ([
         { key: 'wallClock', label: 'Wall-clock duration', baseline: 10_000, candidate: 12_000, delta: 2_000, direction: 'regression' },
-      ],
+      ]),
       findings: { introduced: [], resolved: [], changed: [] },
       stageSkew: [], baseStages: [], candStages: [],
-      ...overrides,
     };
+    return /** @type {import('../src/run-comparison.ts').CompareRunsResult} */ ({ ...base, ...overrides });
   }
 
   it('flags a max-regression violation when the metric regressed beyond budget', () => {
@@ -497,7 +513,7 @@ describe('evaluateBudgets parse-incomplete', () => {
 
   it('flags a damaged baseline and names it, with a clean candidate', () => {
     const appModel = baseAppModel({ skippedLines: 0 });
-    const { results, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: { baselineSkippedLines: 6 } });
+    const { results, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: /** @type {import('../src/run-comparison.ts').CompareRunsResult} */ ({ baselineSkippedLines: 6 }) });
     expect(results).toEqual([{ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') }]);
     expect(results[0].detail).not.toContain('candidate');
     expect(inconclusive).toBe(true);
@@ -505,7 +521,7 @@ describe('evaluateBudgets parse-incomplete', () => {
 
   it('names both runs in one row when both lost lines', () => {
     const appModel = baseAppModel({ skippedLines: 1 });
-    const { results } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: { baselineSkippedLines: 2 } });
+    const { results } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: /** @type {import('../src/run-comparison.ts').CompareRunsResult} */ ({ baselineSkippedLines: 2 }) });
     expect(results).toHaveLength(1);
     expect(results[0].detail).toContain('candidate 1 line, baseline 2 lines');
   });

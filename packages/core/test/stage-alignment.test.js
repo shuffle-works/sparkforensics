@@ -5,43 +5,68 @@ import {
 } from '../src/stage-alignment.js';
 import { stageIdentity, compareRuns } from '../src/run-comparison.js';
 
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/compared-run.ts').ComparedRun} ComparedRun */
+/** @typedef {Partial<Stage> & { id: number, nodes?: PlanNode[] | null }} StageSpec */
+/** @typedef {{ id: number, description?: string, stages: StageSpec[] }} ExecutionSpec */
+
+/** A value the test needs, so a missing one fails here rather than on a property read.
+ * @template T
+ * @param {T | null | undefined} value
+ * @returns {T}
+ */
+function present(value) {
+  if (value == null) throw new Error('Expected a value.');
+  return value;
+}
+
 // All names, paths and ids below are synthetic.
 
+/** @param {string} name @param {string} detail @param {number[]} stageIds @param {PlanNode[]} [children] @returns {PlanNode} */
 const node = (name, detail, stageIds, children = []) => ({ name, detail, metrics: [], children, stageIds });
 
 // One SQL execution (id 1) per snapshot; `plans` maps a stage id to the plan nodes it ran.
+/** @param {StageSpec[]} stageSpecs @param {import('../src/types.ts').SparkAppInfo} [app] @returns {ComparedRun} */
 function snapshotOf(stageSpecs, app = { name: 'job' }) {
+  /** @type {Map<number, Stage>} */
   const stages = new Map();
+  /** @type {Map<number, import('../src/types.ts').SqlExecution>} */
   const sql = new Map();
   for (const spec of stageSpecs) {
     const { id, name = `Stage ${id}`, nodes = null, sqlExecutionId = nodes ? 1 : null, ...figures } = spec;
-    stages.set(id, { id, name, sqlExecutionId, executorRunTime: 100, ...figures });
-    if (nodes) {
+    stages.set(id, /** @type {Stage} */ ({ id, name, sqlExecutionId, executorRunTime: 100, ...figures }));
+    if (nodes && sqlExecutionId !== null) {
       const existing = sql.get(sqlExecutionId)?.planTree;
       const children = [...(existing?.children ?? []), ...nodes];
       sql.set(sqlExecutionId, { id: sqlExecutionId, description: 'save at X.java:0', planTree: { name: 'Root', detail: '', metrics: [], children } });
     }
   }
-  return { app, stages, sql, jobs: new Map(), catalog: [], executors: { added: [], removed: [] } };
+  return { app, stages, sql, jobs: new Map(), catalog: [], executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null };
 }
 
 // Several SQL executions in submission order. `executions`: [{ id, description, stages: [spec] }]; each
 // stage's plan nodes sit under that execution's own plan root.
+/** @param {ExecutionSpec[]} executions @param {import('../src/types.ts').SparkAppInfo} [app] @returns {ComparedRun} */
 function snapshotOfExecutions(executions, app = { name: 'job' }) {
+  /** @type {Map<number, Stage>} */
   const stages = new Map();
+  /** @type {Map<number, import('../src/types.ts').SqlExecution>} */
   const sql = new Map();
   for (const { id, description = 'save at X.java:0', stages: specs } of executions) {
+    /** @type {PlanNode[]} */
     const children = [];
     for (const spec of specs) {
       const { id: stageId, name = `Stage ${stageId}`, nodes = [], ...figures } = spec;
-      stages.set(stageId, { id: stageId, name, sqlExecutionId: id, executorRunTime: 100, ...figures });
-      children.push(...nodes);
+      stages.set(stageId, /** @type {Stage} */ ({ id: stageId, name, sqlExecutionId: id, executorRunTime: 100, ...figures }));
+      children.push(...(nodes ?? []));
     }
     sql.set(id, { id, description, planTree: { name: 'Root', detail: '', metrics: [], children } });
   }
-  return { app, stages, sql, jobs: new Map(), catalog: [], executors: { added: [], removed: [] } };
+  return { app, stages, sql, jobs: new Map(), catalog: [], executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null };
 }
 
+/** @param {import('../src/stage-alignment.ts').StageAlignment} alignment */
 const pairsOf = (alignment) => alignment.pairs.map((p) => [p.baseStageIds[0], p.candStageIds[0]]);
 const normalize = comparisonDetailNormalizer();
 
@@ -111,12 +136,13 @@ describe('caller-supplied normalize patterns', () => {
 });
 
 describe('alignStages: a pair of runs differing in one volatile token still pairs', () => {
+  /** @param {number} stageId @param {string} detail */
   const scan = (stageId, detail) => node('Scan parquet', detail, [stageId]);
 
   it('pairs a write stage whose output directory is random per run', () => {
     const base = snapshotOf([{ id: 3, name: 'save at X.java:0', nodes: [node('Execute InsertIntoHadoopFsRelationCommand', 'hdfs://ns/staging/aB3xYz/out.parquet, Overwrite', [3])] }]);
     const cand = snapshotOf([{ id: 9, name: 'save at X.java:0', nodes: [node('Execute InsertIntoHadoopFsRelationCommand', 'hdfs://ns/staging/Qr7mTn/out.parquet, Overwrite', [9])] }]);
-    expect(stageIdentity(base.stages.get(3), base)).not.toBe(stageIdentity(cand.stages.get(9), cand)); // the exact key splits them
+    expect(stageIdentity(present(base.stages.get(3)), base)).not.toBe(stageIdentity(present(cand.stages.get(9)), cand)); // the exact key splits them
     expect(pairsOf(alignStages(base, cand))).toEqual([[3, 9]]);
   });
 
@@ -127,7 +153,7 @@ describe('alignStages: a pair of runs differing in one volatile token still pair
   ])('pairs stages differing only in %s', (_label, baseDetail, candDetail) => {
     const base = snapshotOf([{ id: 1, name: 'Exchange 1', nodes: [node('Filter', baseDetail, [1])] }]);
     const cand = snapshotOf([{ id: 5, name: 'Exchange 2', nodes: [node('Filter', candDetail, [5])] }]);
-    expect(stageIdentity(base.stages.get(1), base)).not.toBe(stageIdentity(cand.stages.get(5), cand));
+    expect(stageIdentity(present(base.stages.get(1)), base)).not.toBe(stageIdentity(present(cand.stages.get(5)), cand));
     const result = alignStages(base, cand);
     expect(pairsOf(result)).toEqual([[1, 5]]);
     expect(result.pairs[0]).toMatchObject({ quality: 'exact', score: 1 });
@@ -140,10 +166,11 @@ describe('alignStages: a pair of runs differing in one volatile token still pair
       { id: 2, name: 'Exchange 2', nodes: [node('Filter', 'amount#1 > 7', [2])] },
     ]);
     const normalizer = comparisonDetailNormalizer();
-    expect(comparisonIdentity(base.stages.get(1), base, normalizer)).not.toBe(comparisonIdentity(base.stages.get(2), base, normalizer));
+    expect(comparisonIdentity(present(base.stages.get(1)), base, normalizer)).not.toBe(comparisonIdentity(present(base.stages.get(2)), base, normalizer));
   });
 
   it('applies a caller pattern to a path the built-in patches do not recognise', () => {
+    /** @param {string} variant */
     const detail = (variant) => `Location: [/sandbox/session-9/${variant}/batch-4/out]`;
     const base = snapshotOf([{ id: 1, name: 'save at X.java:0', nodes: [scan(1, detail('baseline'))] }]);
     const cand = snapshotOf([{ id: 2, name: 'save at X.java:0', nodes: [scan(2, detail('c07b'))] }]);
@@ -188,7 +215,7 @@ describe('alignStages: a pair of runs differing in one volatile token still pair
       { id: 1, name: 'Exchange 1', nodes: [node('Exchange', 'hashpartitioning(k#1, 200)', [1])] },
       { id: 2, name: 'collect at Y.java:0', nodes: [node('Window', 'row_number() over (partition by z#9)', [2])] },
     ]);
-    for (const snap of [base, cand]) snap.sql.get(1).description = 'save at X.java:0';
+    for (const snap of [base, cand]) present(snap.sql.get(1)).description = 'save at X.java:0';
     const result = alignStages(base, cand);
     expect(pairsOf(result)).toEqual([[1, 1]]);
     expect(result.replanned).toEqual([]);
@@ -206,9 +233,11 @@ describe('alignStages: a pair of runs differing in one volatile token still pair
 });
 
 describe('alignStages: executions align first', () => {
+  /** @param {number} count @param {number} [first] @returns {ExecutionSpec[]} */
   const loop = (count, first = 1) => Array.from({ length: count }, (_, i) => ({
     id: i, stages: [{ id: first + i, name: 'collect at X.java:0', nodes: [scan(first + i, 'Location: [/data/in]')] }],
   }));
+  /** @param {number} stageId @param {string} detail */
   const scan = (stageId, detail) => node('Scan parquet', detail, [stageId]);
 
   it('pairs 14 iterations of a loop that ran 14 times in one run and 15 in the other', () => {
@@ -231,6 +260,7 @@ describe('alignStages: executions align first', () => {
   });
 
   it('keeps pairing across an execution one run has and the other lacks', () => {
+    /** @param {number} id @param {number} stageId @param {string} col @returns {ExecutionSpec} */
     const q = (id, stageId, col) => ({ id, description: `save at job.py:${id}`, stages: [{ id: stageId, nodes: [node('Filter', `${col}#1 > 1`, [stageId])] }] });
     const base = snapshotOfExecutions([q(0, 1, 'a'), q(1, 2, 'b'), q(2, 3, 'c')]);
     const cand = snapshotOfExecutions([q(0, 1, 'a'), q(2, 2, 'c')]);
@@ -241,6 +271,7 @@ describe('alignStages: executions align first', () => {
 
   it('scores executions on call site, description and plan structure, not on description alone', () => {
     // Two executions share a generic description; only their plans tell them apart.
+    /** @param {number} id @param {number} stageId @param {string} op @returns {ExecutionSpec} */
     const e = (id, stageId, op) => ({ id, description: 'save at NativeMethodAccessorImpl.java:0', stages: [{ id: stageId, nodes: [node(op, `${op.toLowerCase()}#1`, [stageId])] }] });
     const base = snapshotOfExecutions([e(0, 1, 'Sort'), e(1, 2, 'Window')]);
     const cand = snapshotOfExecutions([e(0, 1, 'Window'), e(1, 2, 'Sort')]);
@@ -249,6 +280,7 @@ describe('alignStages: executions align first', () => {
   });
 
   it('still pairs when the candidate drops most executions: 100 against 30, all 30 matching', () => {
+    /** @param {number} i @param {number} stageId @returns {ExecutionSpec} */
     const q = (i, stageId) => ({ id: i, description: `save at q${i}.py:0`, stages: [{ id: stageId, name: `s${i}`, nodes: [node('Filter', `c${i}#1 > 1`, [stageId])] }] });
     const base = snapshotOfExecutions(Array.from({ length: 100 }, (_, i) => q(i, i)));
     const cand = snapshotOfExecutions(Array.from({ length: 30 }, (_, i) => q(i, i)));
@@ -257,6 +289,7 @@ describe('alignStages: executions align first', () => {
     expect(result.pairs).toHaveLength(30);
     // The 70 dropped executions are unmatched baseline stages; run time decides the confidence.
     expect(result.unmatched.baseStageIds).toHaveLength(70);
+    /** @param {number} n @returns {ExecutionSpec[]} */
     const heavy = (n) => Array.from({ length: n }, (_, i) => ({ ...q(i, i), stages: [{ ...q(i, i).stages[0], executorRunTime: i < 30 ? 1000 : 1 }] }));
     const compared = compareRuns({ label: 'b', snapshot: snapshotOfExecutions(heavy(100)) }, { label: 'c', snapshot: snapshotOfExecutions(heavy(30)) });
     expect(compared.runtimeCoverage).toBeGreaterThan(0.9);
@@ -264,7 +297,9 @@ describe('alignStages: executions align first', () => {
   });
 
   it('pairs no stage when the runs share too little SQL work to be one job', () => {
+    /** @param {number} stageId @param {PlanNode[]} extra @returns {StageSpec} */
     const generic = (stageId, extra) => ({ id: stageId, name: 'count at NativeMethodAccessorImpl.java:0', nodes: [node('HashAggregate', 'keys=[], functions=[count(1)]', [stageId]), ...extra] });
+    /** @param {number} id @param {number} stageId @param {string} tag @returns {ExecutionSpec} */
     const lonely = (id, stageId, tag) => ({ id, description: `save at ${tag}.py:1`, stages: [{ id: stageId, nodes: [node('Project', `${tag}_col#1`, [stageId])] }] });
     const shared = { id: 5, description: 'count at NativeMethodAccessorImpl.java:0', stages: [generic(9, [])] };
     const base = snapshotOfExecutions([lonely(0, 1, 'a'), lonely(1, 2, 'b'), lonely(2, 3, 'c'), shared]);
@@ -276,6 +311,7 @@ describe('alignStages: executions align first', () => {
   });
 
   it('reports the bounded form when the alignment table is too large to run in full', () => {
+    /** @param {number} n @returns {ExecutionSpec[]} */
     const many = (n) => Array.from({ length: n }, (_, i) => ({ id: i, description: `save at q${i % 7}.py:0`, stages: [{ id: i, name: `s${i % 7}`, nodes: [node('Filter', `c${i % 7}#1 > 1`, [i])] }] }));
     const result = alignStages(snapshotOfExecutions(many(1100)), snapshotOfExecutions(many(1100)));
     expect(result.executionAlignment).toMatchObject({ baseExecutions: 1100, pairedExecutions: 1100, bounded: true, accepted: true });
@@ -285,6 +321,7 @@ describe('alignStages: executions align first', () => {
 
 describe('alignStages: stages inside an aligned execution pair', () => {
   it('pairs two of three identical self-join subtrees against two', () => {
+    /** @param {number[]} ids @returns {StageSpec[]} */
     const sub = (ids) => ids.map((id) => ({ id, name: 'Exchange', nodes: [node('Exchange', 'hashpartitioning(k#1, 200)', [id])] }));
     const result = alignStages(snapshotOf(sub([1, 2, 3])), snapshotOf(sub([1, 2])));
     expect(pairsOf(result)).toEqual([[1, 1], [2, 2]]);
@@ -294,6 +331,7 @@ describe('alignStages: stages inside an aligned execution pair', () => {
   });
 
   it('pairs a stage whose grouping columns come in another order as structural', () => {
+    /** @param {string[]} cols @param {number} gid */
     const agg = (cols, gid) => node('Expand', `[[${cols.join(', ')}, ${gid}]], [${cols.join(', ')}, gid#${gid}]`, [1]);
     const base = snapshotOf([{ id: 1, name: 'Exchange 1', nodes: [agg(['region#1', 'sku#2'], 5)] }]);
     const cand = snapshotOf([{ id: 1, name: 'Exchange 1', nodes: [agg(['sku#7', 'region#9'], 8)] }]);
@@ -320,6 +358,7 @@ describe('alignStages: stages inside an aligned execution pair', () => {
   });
 
   it('pairs stages without attributed plan nodes by position inside their execution, by name', () => {
+    /** @param {number[]} ids @param {string} name @returns {StageSpec[]} */
     const noNodes = (ids, name) => ids.map((id) => ({ id, name, nodes: [] }));
     const base = snapshotOfExecutions([{ id: 0, stages: [...noNodes([1, 2], 'save at X.java:0'), { id: 3, name: 'collect at Y.java:0' }] }]);
     const cand = snapshotOfExecutions([{ id: 0, stages: [...noNodes([5, 6], 'save at X.java:0'), { id: 7, name: 'collect at Y.java:0' }] }]);
@@ -327,7 +366,7 @@ describe('alignStages: stages inside an aligned execution pair', () => {
     expect(pairsOf(result)).toEqual([[1, 5], [2, 6], [3, 7]]);
     // Same name and the same whole-plan fallback key: exact. A different plan on one side: positional.
     expect(result.pairs.map((p) => p.quality)).toEqual(['exact', 'exact', 'exact']);
-    cand.sql.get(0).planTree.children.push(node('Extra', 'x', [99]));
+    present(present(cand.sql.get(0)).planTree).children.push(node('Extra', 'x', [99]));
     const positional = alignStages(base, cand).pairs;
     expect(positional.map((p) => p.quality)).toEqual(['aligned', 'aligned', 'aligned']);
     expect(positional.every((p) => p.score === 0.5)).toBe(true);
@@ -340,6 +379,7 @@ describe('alignStages: stages inside an aligned execution pair', () => {
   });
 
   it('separates stages outside any SQL execution by their call-site text', () => {
+    /** @param {number} id @param {string} details @returns {StageSpec} */
     const rdd = (id, details) => ({ id, name: 'map at job.py:1', details, sqlExecutionId: null });
     const base = snapshotOf([rdd(1, 'job.py:10 in load'), rdd(2, 'job.py:20 in join')]);
     const cand = snapshotOf([rdd(1, 'job.py:20 in join'), rdd(2, 'job.py:10 in load')]);
@@ -348,6 +388,7 @@ describe('alignStages: stages inside an aligned execution pair', () => {
 });
 
 describe('alignStages: pairing properties', () => {
+  /** @param {number[]} ids */
   const build = (ids) => snapshotOf(ids.map((id, i) => ({ id, name: `Exchange ${i}`, nodes: [node('Filter', `col#${i} > 1`, [id])], executorRunTime: 10 * (i + 1) })));
 
   it('pairs a run with itself, every stage with itself, at full runtime coverage', () => {
@@ -370,7 +411,7 @@ describe('alignStages: pairing properties', () => {
     const forward = alignStages(a, b), backward = alignStages(b, a);
     expect(pairsOf(backward).map(([x, y]) => [y, x]).sort((p, q) => p[0] - q[0])).toEqual(pairsOf(forward));
     expect(forward.unmatched.candStageIds).toEqual(backward.unmatched.baseStageIds);
-    expect(forward.runtimeCoverage).toBeCloseTo(backward.runtimeCoverage);
+    expect(forward.runtimeCoverage).toBeCloseTo(present(backward.runtimeCoverage));
   });
 
   it('is deterministic: two runs of the matcher give identical output', () => {
@@ -404,10 +445,12 @@ describe('alignStages: pairing properties', () => {
 });
 
 describe('alignStages: pair deltas count every attempt', () => {
+  /** @param {Partial<Stage>} over */
   const figures = (over) => ({
     executorRunTime: 100, executorCpuTime: 2_000_000, memoryBytesSpilled: 10, diskBytesSpilled: 5,
     inputBytes: 1000, outputBytes: 500, shuffleReadBytes: 40, shuffleWriteBytes: 30, ...over,
   });
+  /** @param {Partial<import('../src/types.ts').StageAttemptTotals>} over */
   const attempt = (over) => ({
     taskCount: 1, failedTasks: 1, wastedAttempts: 0, jvmGCTime: 0, outputRecords: null, peakExecutionMemoryMax: 0,
     ...figures({}), durationMs: 10, ...over,
@@ -425,7 +468,7 @@ describe('alignStages: pair deltas count every attempt', () => {
     expect(pair.deltas.executorRunTime).toEqual({ baseline: 100, candidate: 107, delta: 7 });
     expect(pair.deltas.shuffleReadBytes).toEqual({ baseline: 40, candidate: 120, delta: 80 });
     // The stage record itself is untouched: detectors still read the latest attempt.
-    expect(cand.stages.get(1).executorRunTime).toBe(60);
+    expect(present(cand.stages.get(1)).executorRunTime).toBe(60);
   });
 
   it('reports CPU time in ms and null where no stage recorded it', () => {
@@ -446,17 +489,19 @@ describe('alignStages: pair deltas count every attempt', () => {
     const run = snapshotOf([{ id: 1, ...figures({ executorRunTime: 60 }), earlierAttempts: attempt({ executorRunTime: 40 }) }]);
     const result = compareRuns({ label: 'b', snapshot: run }, { label: 'c', snapshot: run });
     expect(result.stagePairs[0].deltas.executorRunTime.baseline)
-      .toBe(result.metrics.find((m) => m.key === 'executorRunTime').baseline);
+      .toBe(present(result.metrics.find((m) => m.key === 'executorRunTime')).baseline);
   });
 });
 
 describe('Delta bookkeeping stages', () => {
+  /** @param {number} stageId @param {number} [files] */
   const logScan = (stageId, files = 4) => node('Scan parquet ', `FileScan parquet [commitInfo#1,add#2] Location: DeltaLogFileIndex(${files} paths)[hdfs://ns/t/_delta_log]`, [stageId]);
+  /** @param {number} stageId */
   const tableScan = (stageId) => node('Scan parquet spark_catalog.db.sales', 'FileScan parquet spark_catalog.db.sales[a#1] Location: PreparedDeltaFileIndex(2 paths)[x]', [stageId]);
 
   it('flags a stage whose scans only read the Delta log', () => {
     const run = snapshotOf([{ id: 1, nodes: [logScan(1), node('Filter', 'isnotnull(add#2)', [1])] }]);
-    expect(isDeltaBookkeepingStage(run.stages.get(1), run.sql)).toBe(true);
+    expect(isDeltaBookkeepingStage(present(run.stages.get(1)), run.sql)).toBe(true);
   });
 
   it('does not flag a stage that also reads a real table, has no scan, or has no attributed nodes', () => {
@@ -466,7 +511,7 @@ describe('Delta bookkeeping stages', () => {
       { id: 3 },
       { id: 4, nodes: [tableScan(4)] },
     ]);
-    for (const id of [1, 2, 3, 4]) expect(isDeltaBookkeepingStage(run.stages.get(id), run.sql)).toBe(false);
+    for (const id of [1, 2, 3, 4]) expect(isDeltaBookkeepingStage(present(run.stages.get(id)), run.sql)).toBe(false);
   });
 
   it('keeps bookkeeping stages out of the pairs, the unmatched lists and the coverage', () => {
@@ -494,7 +539,7 @@ describe('over-merge: comparisonIdentity does not fuse stages that stageIdentity
       { id: 2, name: 'Exchange 2', nodes: [node('SortMergeJoin', '[name#7], [name#8], Inner', [2])] },
     ]);
     const normalizer = comparisonDetailNormalizer();
-    const keys = new Set([1, 2].map((id) => comparisonIdentity(run.stages.get(id), run, normalizer)));
+    const keys = new Set([1, 2].map((id) => comparisonIdentity(present(run.stages.get(id)), run, normalizer)));
     expect(keys.size).toBe(2);
   });
 });

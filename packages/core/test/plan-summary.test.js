@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { describePlanNode, summarizePlanTree, scanRelationId } from '../src/plan-summary.js';
 
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+
+/** @param {string} name @param {string} detail @param {PlanNode[]} [children] @returns {PlanNode} */
 const node = (name, detail, children = []) => ({ name, detail, metrics: [], children });
+
+/** The description of a node the test expects describePlanNode to recognize. @param {PlanNode} planNode */
+function described(planNode) {
+  const description = describePlanNode(planNode);
+  if (!description) throw new Error('expected a node description');
+  return description;
+}
 
 describe('summarizePlanTree: FileScan parquet', () => {
   it('extracts path, format, columns, pushed filters', () => {
@@ -66,7 +76,9 @@ describe('summarizePlanTree: Exchange', () => {
   });
 
   it('counts a split Exchange pair once, gated on exchangeRole "read"', () => {
+    /** @type {PlanNode} */
     const write = { ...node('Exchange', ''), exchangeRole: 'write' };
+    /** @type {PlanNode} */
     const read = { ...node('Exchange', 'Exchange hashpartitioning(store_id#1, 200)'), exchangeRole: 'read', children: [write] };
     const tree = node('Union', 'Union', [read]);
     const r = summarizePlanTree(tree);
@@ -86,9 +98,9 @@ describe('summarizePlanTree: Exchange', () => {
 
 describe('describePlanNode: Exchange classification', () => {
   it('classifies a write half, a read half, and a ReusedExchange as exchange kind', () => {
-    expect(describePlanNode({ ...node('Exchange', 'Exchange hashpartitioning(a#1, 10)'), exchangeRole: 'read' }).kind).toBe('exchange');
-    expect(describePlanNode({ ...node('Exchange', ''), exchangeRole: 'write' }).kind).toBeNull(); // write half carries no parseable detail
-    expect(describePlanNode(node('ReusedExchange', 'ReusedExchange [a#1]')).kind).toBe('exchange');
+    expect(described({ ...node('Exchange', 'Exchange hashpartitioning(a#1, 10)'), exchangeRole: 'read' }).kind).toBe('exchange');
+    expect(described({ ...node('Exchange', ''), exchangeRole: 'write' }).kind).toBeNull(); // write half carries no parseable detail
+    expect(described(node('ReusedExchange', 'ReusedExchange [a#1]')).kind).toBe('exchange');
   });
 });
 
@@ -207,7 +219,7 @@ describe('scanRelationId', () => {
 describe('describePlanNode', () => {
   it('returns the full scan fields for a FileScan node', () => {
     const n = node('Scan parquet', 'FileScan parquet [order_id#1,store_id#2] Batched: true, DataFilters: [isnotnull(store_id#2)], Format: Parquet, Location: InMemoryFileIndex(1 paths)[hdfs://cluster/warehouse/orders], PushedFilters: [IsNotNull(store_id)], ReadSchema: struct<order_id:int>');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('scan');
     expect(d.path).toBe('orders');
     expect(d.format).toBe('parquet');
@@ -218,7 +230,7 @@ describe('describePlanNode', () => {
 
   it('returns the full join fields for a SortMergeJoin node', () => {
     const n = node('SortMergeJoin', 'SortMergeJoin [store_id#1, date#2], [store_id#3, date#4], Inner');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('join');
     expect(d.joinType).toBe('SortMergeJoin');
     expect(d.leftKeys).toContain('store_id');
@@ -228,17 +240,17 @@ describe('describePlanNode', () => {
 
   it('flags a Cross join type as both a join and a warning', () => {
     const n = node('SortMergeJoin', 'SortMergeJoin [a#1], [b#2], Cross');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('join');
     expect(d.warning?.type).toBe('crossJoin');
   });
 
   it('returns the full agg fields for a final HashAggregate node', () => {
     const n = node('HashAggregate', 'HashAggregate(keys=[store_id#1], functions=[sum(amount#2)])');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('agg');
     expect(d.groupByKeys).toContain('store_id');
-    expect(d.aggregations.join(' ')).toContain('sum');
+    expect(d.aggregations?.join(' ')).toContain('sum');
   });
 
   it('returns null for a partial-aggregation pass', () => {
@@ -248,7 +260,7 @@ describe('describePlanNode', () => {
 
   it('returns the full exchange fields for a hash-partitioned Exchange node', () => {
     const n = node('Exchange', 'Exchange hashpartitioning(store_id#1, 200), ENSURE_REQUIREMENTS, [plan_id=42]');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('exchange');
     expect(d.partitioning).toBe('hash');
     expect(d.keys).toContain('store_id');
@@ -256,14 +268,14 @@ describe('describePlanNode', () => {
   });
 
   it('flags a CartesianProduct node as a warning with no kind', () => {
-    const d = describePlanNode(node('CartesianProduct', 'CartesianProduct'));
+    const d = described(node('CartesianProduct', 'CartesianProduct'));
     expect(d.kind).toBeNull();
     expect(d.warning?.type).toBe('crossJoin');
   });
 
   it('flags a long filter condition as a warning with no kind', () => {
     const long = 'a#1 = 1 OR '.repeat(100);
-    const d = describePlanNode(node('Filter', `Filter (${long})`));
+    const d = described(node('Filter', `Filter (${long})`));
     expect(d.kind).toBeNull();
     expect(d.warning?.type).toBe('longFilterCondition');
   });
@@ -273,7 +285,9 @@ describe('describePlanNode', () => {
   });
 
   it('returns null for a node with no name or detail, without throwing', () => {
+    // @ts-expect-error deliberately passes a node with no name or children
     expect(() => describePlanNode({})).not.toThrow();
+    // @ts-expect-error deliberately passes a node with no name or children
     expect(describePlanNode({})).toBeNull();
   });
 
@@ -283,13 +297,15 @@ describe('describePlanNode', () => {
   });
 
   it('returns null for undefined, without throwing', () => {
+    // @ts-expect-error deliberately passes undefined where a node or null is expected
     expect(() => describePlanNode(undefined)).not.toThrow();
+    // @ts-expect-error deliberately passes undefined where a node or null is expected
     expect(describePlanNode(undefined)).toBeNull();
   });
 
   it('extracts broadcast join keys', () => {
     const n = node('BroadcastHashJoin', 'BroadcastHashJoin [id#1], [id#2], Inner, BuildRight');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('join');
     expect(d.joinType).toBe('BroadcastHashJoin');
     expect(d.leftKeys).toEqual(['id']);
@@ -297,7 +313,7 @@ describe('describePlanNode', () => {
 
   it('extracts a range-partitioned Exchange node', () => {
     const n = node('Exchange', 'Exchange rangepartitioning(date#2 ASC NULLS FIRST, 100), ENSURE_REQUIREMENTS');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('exchange');
     expect(d.partitioning).toBe('range');
     expect(d.numPartitions).toBe(100);
@@ -305,7 +321,7 @@ describe('describePlanNode', () => {
 
   it('extracts a roundrobin-partitioned Exchange node', () => {
     const n = node('Exchange', 'Exchange RoundRobinPartitioning(50)');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('exchange');
     expect(d.partitioning).toBe('roundrobin');
     expect(d.numPartitions).toBe(50);
@@ -313,7 +329,7 @@ describe('describePlanNode', () => {
 
   it('extracts a single-partition Exchange node', () => {
     const n = node('Exchange', 'Exchange SinglePartition, ENSURE_REQUIREMENTS');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('exchange');
     expect(d.partitioning).toBe('single');
     expect(d.numPartitions).toBe(1);
@@ -321,7 +337,7 @@ describe('describePlanNode', () => {
 
   it('extracts table and sql from a Scan JDBCRelation node', () => {
     const n = node('Scan JDBCRelation', 'Scan JDBCRelation((SELECT id, name FROM dw.DIM_PRODUCT) SPARK_GEN_SUBQ_0) [numPartitions=1]');
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('scan');
     expect(d.format).toBe('jdbc');
     expect(d.path).toBe('dw.dim_product');
@@ -331,7 +347,7 @@ describe('describePlanNode', () => {
   it('pushes a delta scan using the catalog-qualified name (not the Location path)', () => {
     const detail = 'FileScan parquet spark_catalog.mx.t[c#1] Batched: true, Location: PreparedDeltaFileIndex[hdfs://192.0.2.10:8020/data/mx/t], PushedFilters: []';
     const n = node('Scan parquet spark_catalog.mx.t', detail);
-    const d = describePlanNode(n);
+    const d = described(n);
     expect(d.kind).toBe('scan');
     expect(d.format).toBe('delta');
     expect(d.path).toBe('mx.t');

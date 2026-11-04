@@ -7,6 +7,51 @@ import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+/** @typedef {Awaited<ReturnType<Client['callTool']>>} ToolResult */
+/**
+ * Output shape of each tool as the tests read it; the SDK types structuredContent as unknown.
+ * @typedef {{
+ *   diagnose_run: import('../src/mcp-tools.ts').DiagnoseRunResult,
+ *   compare_runs: Awaited<ReturnType<typeof import('../src/mcp-tools.ts').compareRuns>>,
+ *   get_run_summary: import('../src/mcp-tools.ts').RunSummary,
+ *   get_finding_evidence: ReturnType<typeof import('../src/mcp-tools.ts').getFindingEvidence>,
+ *   get_finding_documentation: import('../src/mcp-tools.ts').FindingDocumentation,
+ *   evaluate_budgets: Awaited<ReturnType<typeof import('../src/mcp-tools.ts').evaluateBudgetsForRun>>,
+ *   list_detectors: import('../src/detector-listing.ts').DetectorCatalogResult,
+ *   list_runs: import('../src/list-runs.ts').ListRunsResult,
+ *   error: { code: string },
+ * }} ToolOutputs
+ */
+
+/**
+ * @template {keyof ToolOutputs} N
+ * @param {N} _tool names the tool whose output shape the caller expects
+ * @param {ToolResult} result
+ * @returns {ToolOutputs[N]}
+ */
+function structuredOf(_tool, result) {
+  return /** @type {ToolOutputs[N]} */ (result.structuredContent);
+}
+
+/** Text of the first content block. @param {ToolResult} result */
+function textOf(result) {
+  const [first] = /** @type {{ type: string, text?: string }[]} */ (result.content);
+  if (first?.text === undefined) throw new Error('expected a text content block');
+  return first.text;
+}
+
+/**
+ * @template {{ type: string }} T
+ * @param {T[]} findings
+ * @param {string} type
+ * @returns {T}
+ */
+function findingOfType(findings, type) {
+  const found = findings.find((f) => f.type === type);
+  if (!found) throw new Error(`expected a ${type} finding`);
+  return found;
+}
+
 function tmpEventLog() {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-factory-'));
   const path = join(dir, 'eventlog');
@@ -42,6 +87,7 @@ function tmpEventLogWithFindings() {
   return { dir, path };
 }
 
+/** @param {import('@modelcontextprotocol/sdk/server/mcp.js').McpServer} server */
 async function connectedClient(server) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -61,11 +107,11 @@ describe('createMcpServer', () => {
     const client = await connectedClient(createMcpServer({ thresholds: { skew: { ratioWarn: 6 } } }));
     const all = await client.callTool({ name: 'list_detectors', arguments: {} });
     expect(all.isError).toBeFalsy();
-    expect(all.structuredContent.count).toBe(all.structuredContent.detectors.length);
+    expect(structuredOf('list_detectors', all).count).toBe(structuredOf('list_detectors', all).detectors.length);
     const one = await client.callTool({ name: 'list_detectors', arguments: { type: 'skew' } });
-    expect(one.structuredContent.detectors).toHaveLength(1);
-    expect(one.structuredContent.detectors[0].detectors[0].thresholds.ratioWarn).toBe(3);
-    expect(JSON.parse(one.content[0].text)).toEqual(one.structuredContent);
+    expect(structuredOf('list_detectors', one).detectors).toHaveLength(1);
+    expect(structuredOf('list_detectors', one).detectors[0].detectors[0].thresholds.ratioWarn).toBe(3);
+    expect(JSON.parse(textOf(one))).toEqual(one.structuredContent);
   });
 
   it('refuses a list_detectors type that is not in the catalog', async () => {
@@ -81,8 +127,8 @@ describe('createMcpServer', () => {
       const client = await connectedClient(server);
       const result = await client.callTool({ name: 'list_runs', arguments: { dir } });
       expect(result.isError).toBeFalsy();
-      expect(result.structuredContent.runs).toHaveLength(1);
-      expect(result.structuredContent.runs[0].appId).toBe('app-1');
+      expect(structuredOf('list_runs', result).runs).toHaveLength(1);
+      expect(structuredOf('list_runs', result).runs[0].appId).toBe('app-1');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -96,8 +142,8 @@ describe('createMcpServer', () => {
       const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
       expect(result.isError).toBe(true);
       expect(result.structuredContent).toEqual({ code: 'invalid-event-log' });
-      expect(result.content[0].text).toBe('The event log could not be read (EACCES).');
-      expect(result.content[0].text).not.toContain(dir);
+      expect(textOf(result)).toBe('The event log could not be read (EACCES).');
+      expect(textOf(result)).not.toContain(dir);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -108,7 +154,7 @@ describe('createMcpServer', () => {
     const client = await connectedClient(server);
     const result = await client.callTool({ name: 'list_runs', arguments: { dir: '/definitely/does/not/exist' } });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.code).toBe('directory-not-found');
+    expect(structuredOf('error', result).code).toBe('directory-not-found');
   });
 
   it('rejects list_runs given both dir and shsBaseUrl, instead of silently dropping one', async () => {
@@ -120,7 +166,7 @@ describe('createMcpServer', () => {
         name: 'list_runs', arguments: { dir, shsBaseUrl: 'http://shs:18080' },
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toMatch(/only one of dir or shsBaseUrl/);
+      expect(textOf(result)).toMatch(/only one of dir or shsBaseUrl/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -131,15 +177,15 @@ describe('createMcpServer', () => {
     // Nothing listens on port 1: a call that reaches the default server fails on the fetch, not on input validation.
     const withDefault = await connectedClient(createMcpServer({ defaultShsBaseUrl: 'http://127.0.0.1:1' }));
     const viaSource = await withDefault.callTool({ name: 'get_run_summary', arguments: { source: { appId } } });
-    expect(viaSource.content[0].text).toMatch(/SHS fetch failed/);
+    expect(textOf(viaSource)).toMatch(/SHS fetch failed/);
     const viaList = await withDefault.callTool({ name: 'list_runs', arguments: {} });
     expect(viaList.isError).toBe(true);
-    expect(viaList.content[0].text).not.toMatch(/Provide either dir or shsBaseUrl/);
+    expect(textOf(viaList)).not.toMatch(/Provide either dir or shsBaseUrl/);
 
     const without = await connectedClient(createMcpServer());
     const result = await without.callTool({ name: 'get_run_summary', arguments: { source: { appId } } });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/Input validation error/);
+    expect(textOf(result)).toMatch(/Input validation error/);
   });
 
   it('round-trips diagnose_run for a path source', async () => {
@@ -149,7 +195,7 @@ describe('createMcpServer', () => {
       const client = await connectedClient(server);
       const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
       expect(result.isError).toBeFalsy();
-      expect(result.structuredContent.findings).toBeDefined();
+      expect(structuredOf('diagnose_run', result).findings).toBeDefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -166,8 +212,8 @@ describe('createMcpServer', () => {
       const client = await connectedClient(createMcpServer({ generator }));
       expect(client.getServerVersion()).toMatchObject({ name: 'sparkforensics', version: '4.5.6' });
       const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
-      expect(result.structuredContent.generator).toEqual(generator);
-      expect(result.structuredContent.app).toEqual({ id: 'app-1', attemptId: '2' });
+      expect(structuredOf('diagnose_run', result).generator).toEqual(generator);
+      expect(structuredOf('diagnose_run', result).app).toEqual({ id: 'app-1', attemptId: '2' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -179,9 +225,9 @@ describe('createMcpServer', () => {
       const generator = { name: 'sparkforensics-mcp', version: '4.5.6', buildId: 'abc123' };
       const client = await connectedClient(createMcpServer({ generator }));
       const result = await client.callTool({ name: 'compare_runs', arguments: { sourceA: { path }, sourceB: { path } } });
-      expect(result.structuredContent.generator).toEqual(generator);
-      expect(result.structuredContent.baselineApp).toEqual({ id: 'app-1', attemptId: null });
-      expect(result.structuredContent.candidateApp).toEqual({ id: 'app-1', attemptId: null });
+      expect(structuredOf('compare_runs', result).generator).toEqual(generator);
+      expect(structuredOf('compare_runs', result).baselineApp).toEqual({ id: 'app-1', attemptId: null });
+      expect(structuredOf('compare_runs', result).candidateApp).toEqual({ id: 'app-1', attemptId: null });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -191,7 +237,7 @@ describe('createMcpServer', () => {
     const client = await connectedClient(createMcpServer());
     const { tools } = await client.listTools();
     for (const name of ['diagnose_run', 'compare_runs', 'evaluate_budgets']) {
-      expect(tools.find((t) => t.name === name).description).toMatch(/differs per server process/);
+      expect(tools.find((t) => t.name === name)?.description).toMatch(/differs per server process/);
     }
   });
 
@@ -200,7 +246,7 @@ describe('createMcpServer', () => {
     const client = await connectedClient(server);
     const result = await client.callTool({ name: 'get_run_summary', arguments: { runId: 'nonexistent' } });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.code).toBe('run-not-found');
+    expect(structuredOf('error', result).code).toBe('run-not-found');
   });
 
   it('round-trips get_finding_documentation for a known type', async () => {
@@ -208,8 +254,8 @@ describe('createMcpServer', () => {
     const client = await connectedClient(server);
     const result = await client.callTool({ name: 'get_finding_documentation', arguments: { type: 'skew' } });
     expect(result.isError).toBeFalsy();
-    expect(result.structuredContent.name).toBe('Task Skew');
-    expect(result.structuredContent.detectionDoc.content.length).toBeGreaterThan(0);
+    expect(structuredOf('get_finding_documentation', result).name).toBe('Task Skew');
+    expect(structuredOf('get_finding_documentation', result).detectionDoc.content.length).toBeGreaterThan(0);
   });
 
   it('maps an unknown type to isError + structuredContent.code invalid-type', async () => {
@@ -217,7 +263,7 @@ describe('createMcpServer', () => {
     const client = await connectedClient(server);
     const result = await client.callTool({ name: 'get_finding_documentation', arguments: { type: 'zetaSignal' } });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.code).toBe('invalid-type');
+    expect(structuredOf('error', result).code).toBe('invalid-type');
   });
 
   it('round-trips evaluate_budgets for a path source', async () => {
@@ -229,10 +275,10 @@ describe('createMcpServer', () => {
         name: 'evaluate_budgets', arguments: { source: { path }, maxRuntimeMs: 5000 },
       });
       expect(result.isError).toBeFalsy();
-      expect(result.structuredContent.results).toEqual([
+      expect(structuredOf('evaluate_budgets', result).results).toEqual([
         { name: 'max-runtime', status: 'pass', detail: 'Runtime 100ms within budget 5000ms.' },
       ]);
-      expect(result.structuredContent.violated).toBe(false);
+      expect(structuredOf('evaluate_budgets', result).violated).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -241,14 +287,15 @@ describe('createMcpServer', () => {
   describe('input validation', () => {
     // The SDK reports a schema failure as an isError result or a rejected call, depending on its
     // version; either way the message names the offending field.
+    /** @param {string} name @param {Record<string, unknown>} args */
     async function schemaError(name, args) {
       const client = await connectedClient(createMcpServer());
       try {
         const result = await client.callTool({ name, arguments: args });
         expect(result.isError).toBe(true);
-        return result.content[0].text;
+        return textOf(result);
       } catch (e) {
-        return e.message;
+        return e instanceof Error ? e.message : String(e);
       }
     }
 
@@ -295,7 +342,7 @@ describe('createMcpServer', () => {
       name: 'evaluate_budgets', arguments: { runId: 'nonexistent', maxRuntimeMs: 5000 },
     });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent.code).toBe('run-not-found');
+    expect(structuredOf('error', result).code).toBe('run-not-found');
   });
 
   it('accepts a redact param on diagnose_run, get_run_summary, compare_runs, and get_finding_evidence', async () => {
@@ -309,16 +356,16 @@ describe('createMcpServer', () => {
 
       const summary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path }, redact: true } });
       expect(summary.isError).toBeFalsy();
-      expect(summary.structuredContent.app.id).toBe('app-1');
+      expect(structuredOf('get_run_summary', summary).app.id).toBe('app-1');
 
       const compare = await client.callTool({
         name: 'compare_runs', arguments: { sourceA: { path }, sourceB: { path }, redact: true },
       });
       expect(compare.isError).toBeFalsy();
 
-      const findingId = diagnose.structuredContent.findings[0]?.id;
+      const findingId = structuredOf('diagnose_run', diagnose).findings[0]?.id;
       const evidence = await client.callTool({
-        name: 'get_finding_evidence', arguments: { runId: diagnose.structuredContent.runId, findingId, redact: true },
+        name: 'get_finding_evidence', arguments: { runId: structuredOf('diagnose_run', diagnose).runId, findingId, redact: true },
       });
       expect(evidence.isError).toBeFalsy();
     } finally {
@@ -334,16 +381,16 @@ describe('createMcpServer', () => {
 
       const plain = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
       expect(plain.isError).toBeFalsy();
-      expect('summary' in plain.structuredContent).toBe(false);
+      expect('summary' in structuredOf('diagnose_run', plain)).toBe(false);
 
       const included = await client.callTool({
         name: 'diagnose_run', arguments: { source: { path }, include: ['summary', 'evidenceAvailability', 'detectors'] },
       });
       expect(included.isError).toBeFalsy();
-      expect('summary' in included.structuredContent).toBe(true);
-      expect('evidenceAvailability' in included.structuredContent).toBe(true);
-      expect('detectors' in included.structuredContent).toBe(true);
-      expect(included.structuredContent.summary.stageCount).toBe(0);
+      expect('summary' in structuredOf('diagnose_run', included)).toBe(true);
+      expect('evidenceAvailability' in structuredOf('diagnose_run', included)).toBe(true);
+      expect('detectors' in structuredOf('diagnose_run', included)).toBe(true);
+      expect(structuredOf('diagnose_run', included).summary?.stageCount).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -363,10 +410,10 @@ describe('createMcpServer', () => {
         arguments: { source: { path }, type: ['straggler'], stageId: 1, impactBand: ['critical'] },
       });
       expect(filtered.isError).toBeFalsy();
-      expect(filtered.structuredContent.findings).toHaveLength(1);
-      expect(filtered.structuredContent.findings[0].type).toBe('straggler');
-      expect(filtered.structuredContent.recommendations).toEqual(full.structuredContent.recommendations);
-      expect(filtered.structuredContent.cleanChecks).toEqual(full.structuredContent.cleanChecks);
+      expect(structuredOf('diagnose_run', filtered).findings).toHaveLength(1);
+      expect(structuredOf('diagnose_run', filtered).findings[0].type).toBe('straggler');
+      expect(structuredOf('diagnose_run', filtered).recommendations).toEqual(structuredOf('diagnose_run', full).recommendations);
+      expect(structuredOf('diagnose_run', filtered).cleanChecks).toEqual(structuredOf('diagnose_run', full).cleanChecks);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -411,22 +458,22 @@ describe('createMcpServer', () => {
       const omittedResult = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, format: 'json' } });
       const mdResult = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, format: 'md' } });
 
-      expect(jsonResult.content[0].text).toBe(JSON.stringify(jsonResult.structuredContent));
-      expect(JSON.parse(jsonResult.content[0].text)).toEqual(jsonResult.structuredContent);
+      expect(textOf(jsonResult)).toBe(JSON.stringify(jsonResult.structuredContent));
+      expect(JSON.parse(textOf(jsonResult))).toEqual(jsonResult.structuredContent);
 
       expect(omittedResult.structuredContent).toEqual(jsonResult.structuredContent);
-      expect(omittedResult.content[0].text).toBe(jsonResult.content[0].text);
+      expect(textOf(omittedResult)).toBe(textOf(jsonResult));
 
-      expect(mdResult.content[0].text).toMatch(/^# Spark run evidence report/);
+      expect(textOf(mdResult)).toMatch(/^# Spark run evidence report/);
       expect(mdResult.structuredContent).toEqual({
-        runId: jsonResult.structuredContent.runId,
+        runId: structuredOf('diagnose_run', jsonResult).runId,
         runComplete: true,
-        title: jsonResult.structuredContent.verdict.title,
-        findingCount: jsonResult.structuredContent.findings.length,
+        title: structuredOf('diagnose_run', jsonResult).verdict.title,
+        findingCount: structuredOf('diagnose_run', jsonResult).findings.length,
         findingsOmitted: 0,
-        notesHidden: jsonResult.structuredContent.notesHidden,
-        recommendationCount: jsonResult.structuredContent.recommendations.length,
-        markdown: mdResult.content[0].text,
+        notesHidden: structuredOf('diagnose_run', jsonResult).notesHidden,
+        recommendationCount: structuredOf('diagnose_run', jsonResult).recommendations.length,
+        markdown: textOf(mdResult),
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -437,9 +484,9 @@ describe('createMcpServer', () => {
     const { dir, path } = tmpEventLogWithFindings();
     try {
       const client = await connectedClient(createMcpServer());
-      const byDefault = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } })).structuredContent;
-      const compact = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, view: 'compact' } })).structuredContent;
-      const full = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, view: 'full' } })).structuredContent;
+      const byDefault = structuredOf('diagnose_run', await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } }));
+      const compact = structuredOf('diagnose_run', await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, view: 'compact' } }));
+      const full = structuredOf('diagnose_run', await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, view: 'full' } }));
       expect(byDefault).toEqual(compact);
       expect(compact.view).toBe('compact');
       expect(full.view).toBe('full');
@@ -461,7 +508,8 @@ describe('createMcpServer', () => {
     const { dir, path } = tmpEventLogWithFindings();
     try {
       const client = await connectedClient(createMcpServer());
-      const call = async (args) => (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, ...args } })).structuredContent;
+      /** @param {Record<string, unknown>} args */
+      const call = async (args) => structuredOf('diagnose_run', await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, ...args } }));
       const all = await call({});
       const limited = await call({ maxFindings: 1 });
       expect(limited.findings).toHaveLength(1);
@@ -486,9 +534,9 @@ describe('createMcpServer', () => {
       });
 
       expect(mdResult.structuredContent).toEqual(jsonResult.structuredContent);
-      expect('markdown' in mdResult.structuredContent).toBe(false);
-      expect(mdResult.content[0].text).toMatch(/^\n## Comparison to baseline\n/);
-      expect(mdResult.content[0].text).not.toBe(JSON.stringify(mdResult.structuredContent));
+      expect('markdown' in structuredOf('compare_runs', mdResult)).toBe(false);
+      expect(textOf(mdResult)).toMatch(/^\n## Comparison to baseline\n/);
+      expect(textOf(mdResult)).not.toBe(JSON.stringify(mdResult.structuredContent));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -499,21 +547,21 @@ describe('createMcpServer', () => {
     const tuned = { straggler: { minTasks: { value: 2, default: 10 } } };
     try {
       const client = await connectedClient(createMcpServer({ thresholds: parseThresholdOverrides({ straggler: { minTasks: 2 } }) }));
-      const diagnosed = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, minBand: 'info' } })).structuredContent;
+      const diagnosed = structuredOf('diagnose_run', await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, minBand: 'info' } }));
       expect(diagnosed.tunedThresholds).toEqual(tuned);
-      expect(diagnosed.findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual(tuned.straggler);
-      expect(diagnosed.findings.find((f) => f.type === 'memoryUtilization').tunedThresholds).toBeUndefined();
+      expect(findingOfType(diagnosed.findings, 'straggler').tunedThresholds).toEqual(tuned.straggler);
+      expect(findingOfType(diagnosed.findings, 'memoryUtilization').tunedThresholds).toBeUndefined();
       const { runId } = diagnosed;
       const [finding] = diagnosed.findings.filter((f) => f.type === 'straggler');
-      const evidence = (await client.callTool({ name: 'get_finding_evidence', arguments: { runId, findingId: finding.id } })).structuredContent;
+      const evidence = structuredOf('get_finding_evidence', await client.callTool({ name: 'get_finding_evidence', arguments: { runId, findingId: finding.id } }));
       expect(evidence.finding.tunedThresholds).toEqual(tuned.straggler);
-      const compared = (await client.callTool({ name: 'compare_runs', arguments: { sourceA: { path }, sourceB: { path } } })).structuredContent;
+      const compared = structuredOf('compare_runs', await client.callTool({ name: 'compare_runs', arguments: { sourceA: { path }, sourceB: { path } } }));
       expect(compared.tunedThresholds).toEqual(tuned);
-      const budgets = (await client.callTool({ name: 'evaluate_budgets', arguments: { source: { path }, maxRuntimeMs: 1e9 } })).structuredContent;
+      const budgets = structuredOf('evaluate_budgets', await client.callTool({ name: 'evaluate_budgets', arguments: { source: { path }, maxRuntimeMs: 1e9 } }));
       expect(budgets.tunedThresholds).toEqual(tuned);
 
       const plain = await connectedClient(createMcpServer());
-      const untuned = (await plain.callTool({ name: 'diagnose_run', arguments: { source: { path } } })).structuredContent;
+      const untuned = structuredOf('diagnose_run', await plain.callTool({ name: 'diagnose_run', arguments: { source: { path } } }));
       expect(JSON.stringify(untuned)).not.toContain('tunedThresholds');
     } finally {
       rmSync(dir, { recursive: true, force: true });
