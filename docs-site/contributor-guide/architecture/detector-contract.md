@@ -1,8 +1,8 @@
 # Detector contract
 
 `packages/core/src/detectors.ts` assembles `DETECTORS`, the single source of Spark-optimization
-logic: one declarative entry per pattern, each declared in its family's module under
-`packages/core/src/detectors/` (see [Module layout](#module-layout)) and each carrying `type`, `scope`
+logic: one declarative entry per pattern, each declared in its own folder,
+`packages/core/src/detectors/<type>/detect.ts` (see [Module layout](#module-layout)) and each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, `version`, a
 `thresholds` object, an `emits` list, an optional `docAnchor` (every entry but
 `incompleteRun` sets one), optional `inScorecard`, `property` and
@@ -69,35 +69,50 @@ through the `Detector` type, a union over scopes with the thresholds type
 erased, `detect` left off and `estimate` taking any `Finding`, so switching
 on `scope` narrows the bound function `withThresholds()` returns.
 
-How a finding type is presented is registered once, in
-`FINDING_PRESENTATION` (`packages/core/src/finding-presentation.ts`), typed
+How a finding type is presented is registered once, in the `presentation` export of its
+folder's `presentation.ts`. `FINDING_PRESENTATION`
+(`packages/core/src/finding-presentation.ts`) assembles the rows, typed
 `{ [T in FindingType]: FindingPresentation<T> }` so the compiler requires
 exactly one row per emitted type. A row holds the type's `name`, board
 `tag`, `actionLabel(finding)`, `genericRecommendation(finding)` and
 `thresholdSummary(thresholds)`, each finding argument typed as that type's
 `Finding` member and `thresholds` as the emitting entry's own `thresholds`.
 `FINDING_NAMES`, `TYPE_TAG_MAP`, `getThresholdSummary`, `findingActionLabel`
-and `coreFindingGenericRecommendation` all read it. The table sits beside
-`DETECTORS` rather than on its entries because the HTML export renders
-names, tags and labels but may not reach `detectors.ts` (see
-[Run interpretation](./state-and-history.md#run-interpretation)); its
-import from `detectors.ts` is type-only. A detector's `scope` and `order`
+and `coreFindingGenericRecommendation` all read it. The rows sit beside
+the `DETECTORS` entries rather than on them because the HTML export renders
+names, tags and labels but may not reach `detectors.ts` or a folder's `detect.ts` (see
+[Run interpretation](./state-and-history.md#run-interpretation)); a
+`presentation.ts` imports detector code only as types, and the helpers its rows share are in
+`detectors/presentation-shared.ts`. A detector's `scope` and `order`
 reach renderers through `detectorInfoByType()` (`detector-docs.ts`), keyed
 by emitted type, which the run interpretation ships; the Alerts clean-check
 grouping reads `detectors[type].scope`.
 
-Each finding type has its own shape in `packages/core/src/finding-types.ts`:
-`Finding` is a union discriminated on `type`, and a compile-time check in
-`detectors.ts` fails when its members and `FindingType` differ. Each member
+Each finding type has its own shape in its folder's `detect.ts`:
+`finding-types.ts` assembles `Finding`, a union discriminated on `type`, from each folder's
+`Emits` (through its type-only `emits` export), and a compile-time check in `detectors.ts` fails when its members and
+`FindingType` differ. Each member
 splits into a `<Type>Evidence` interface, the fields the evidence report
-publishes (listed again in `EVIDENCE_KEYS` in `evidence-report.ts`, checked
+publishes (listed again in the folder's `evidenceKeys`, checked
 both ways), and fields declared only on `<Type>Finding`, which other core
 modules read but the report never publishes. `value` is always a magnitude;
 a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
-`valueText` instead. So a new detector type needs an `emits` entry, an
-`estimate()` on that entry that covers it, a `finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
-entry in `analyzer.ts`, a `FINDING_PRESENTATION` row and a view `REGISTRY`
-entry with its row model (see
+`valueText` instead. So a new detector type is one folder,
+`packages/core/src/detectors/<type>/`. Its `detect.ts` holds the `DETECTORS` entry (with its
+`emits` list and an `estimate()` that covers it), the finding members with their `Emits`,
+`evidenceKeys` and `idDiscriminators`; its `presentation.ts` holds the presentation row. Two
+index files list the folders, one entry each:
+
+- `detectors/index.ts`: the import of `detect.ts`, the `export type` line for its finding
+  members, and its place in the list, which is the render order. `detectors.ts` (`DETECTORS`),
+  `finding-meta.ts` (`EVIDENCE_KEYS` and `ID_DISCRIMINATORS`) and `finding-types.ts` (`Finding`,
+  `FindingEvidenceMap` and the member re-exports) read it.
+- `detectors/presentations.ts`: the import of `presentation.ts` and its place in the list.
+  `finding-presentation.ts` (`FINDING_PRESENTATION`) reads it.
+
+The `presentation.ts` also goes on `ALLOWED_EXPORT_CORE_MODULES` in
+`scripts/export-analysis-guard.mjs`, because the HTML export renders its row. The view adds
+a `REGISTRY` entry with its row model (see
 [Finding widget shell](./widget-rendering/finding-widget-shell.md)). The compiler
 reports each one that is missing. Tests and process, not the compiler, cover
 the rest: a new board tag goes in AGENTS.md's tag list
@@ -149,12 +164,13 @@ the render order, see [Widget rendering](./widget-rendering.md#widget-rendering-
 
 | Module | Holds |
 | --- | --- |
-| `speed-tasks.ts` | `skew`, `slowHost`, `straggler`, `speculationWaste` |
-| `speed-stages.ts` | `stageShape`, `shuffle`, `partitionSizing`, `spill`, `gc`, `stageSlowness`, `tinyTask`, `coldStart` |
-| `reliability.ts` | `stageFailed`, `failures`, `retryWaste`, `jobFailureRate` |
-| `cost.ts` | `utilization`, `rightSizing`, `memoryUtilization`, `cacheUtilization`, `coreLocality`, `autoscalingChurn`, `cachingOpportunity` |
-| `plan.ts` | `duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`, `pythonUdf`, `nestedLoopJoin`, `mergeRewrite`, `unprunedScan`, `joinKeyCast` |
-| `setup.ts` | `incompleteRun` and the three `configAudit` entries |
+| `<type>/detect.ts` | one folder per detector, named for its type in kebab-case (`slow-host/`): the `DETECTORS` entry, its finding members and `Emits` (with the type-only `emits` export), `evidenceKeys` and `idDiscriminators`. `config-audit/` holds the three `configAudit` entries and `broadcast-sizing/` the entry that emits `underBroadcast` and `overBroadcast` |
+| `<type>/presentation.ts` | the folder's `FINDING_PRESENTATION` row |
+| `index.ts` | every folder's `detect.ts` once, in render order, with its finding-member re-exports |
+| `presentations.ts` | every folder's `presentation.ts` once |
+| `presentation-shared.ts` | the helpers several presentation rows share |
+| `finding-bases.ts` | the finding columns every member extends (`FindingCore`, `NumericFinding`, `TextFinding`) and the plan-finding evidence |
+| `speculation.ts` | the speculation rule `slowHost`, `straggler` and `speculationWaste` share |
 | `types.ts` | `DetectorCtx`, `DetectorStage`, `DetectorConfigTarget`, `DetectorThresholds`, `DetectorScope`, `Detector`, `SkewThresholds` and the other detector-facing types |
 | `define.ts` | the `define*Detector` helpers and `mergeThresholds`, which resolves a caller's threshold overrides |
 | `conf.ts` | effective-conf readers: `effectiveConf`, `queryApp`, `stageApp`, `loggedAs`, `dynamicAllocationOff`, `hasStageOutsideSql` |
@@ -210,7 +226,7 @@ Two shared helpers back multiple detectors and reports. `packages/core/src/plan-
 `walkPlanTree(root, visit, {dedupe})` is the iterative pre-order plan-tree
 traversal used by the `detectors/` modules, `plan-summary.ts`,
 `plan-duration-attribution.ts`, `plan-dot.ts` and `plan-graph-model.ts`. `packages/core/src/core-count.ts` holds the shared core-count logic. Its
-`computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back the `detectors/cost.ts` entries,
+`computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back the cost detector folders,
 `efficiency-model.ts`'s zero-skew floor and the cluster size the `utilization` finding reports. The
 idle capacity the `utilization` and `memoryUtilization` entries, `efficiency-model.ts` and
 `wasted-core-hours.ts` measure against is the allocation (`allocatedCoreMs()` in `allocation.ts`,
@@ -246,13 +262,13 @@ The skew family's advice for a stage that reads a shuffle feeding a join comes f
 conditions Spark's `OptimizeSkewedJoin` checks (join shape, join type, thresholds, extra shuffle)
 and reads the thresholds through the same effective conf. It returns `null` when the plan cannot
 say, and the detector then keeps the general advice. A new case is a new `AqeSkewCase`, a row in
-`finding-presentation.ts`'s generic lines and a row in the user guide's `SKEW` table.
+`AQE_SKEW_GENERIC` (`detectors/presentation-shared.ts`) and a row in the user guide's `SKEW` table.
 
 ## Finding ids
 
 A finding's `id` is a stable hash of its `type`, its location (stage, SQL execution or audited
 config property), `metric`, `value` and the per-type discriminator fields in `ID_DISCRIMINATORS`
-(`packages/core/src/analyzer.ts`): the fields that tell apart sibling findings sharing a location
+(`packages/core/src/finding-meta.ts`, assembled from each folder's `idDiscriminators`): the fields that tell apart sibling findings sharing a location
 and metric. Reordering or renaming a discriminator slot changes every id and needs an
 `EVIDENCE_SCHEMA_VERSION` bump, and so does adding one to `DISCRIMINATOR_SLOTS`. A new slot goes
 in `APPENDED_SLOTS` instead: those are joined after the fixed slots only for the types that list
@@ -329,8 +345,8 @@ default-threshold analysis.
 
 `buildDetectorCatalog()` (`packages/core/src/detector-listing.ts`) returns one
 `DetectorCatalogRecord` per emitted finding type, with no run needed. A record
-joins the type's `DETECTORS` entries with its `FINDING_PRESENTATION` row in
-`finding-presentation.ts`, which also holds the outcome `family`
+joins the type's `DETECTORS` entries with its `FINDING_PRESENTATION` row
+(the folder's `presentation.ts`), which also holds the outcome `family`
 (`DETECTOR_FAMILIES` gives the order and labels), a one-sentence `pitch` with no
 figures or names, and the `region` marker. The fields are listed in the
 [`list_detectors` reference](../../user-guide/mcp-tools/list-detectors.md).

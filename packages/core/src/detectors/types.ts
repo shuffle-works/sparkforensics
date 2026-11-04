@@ -82,6 +82,9 @@ export type DetectorThresholds = Readonly<Record<string, number | readonly numbe
 
 export type DetectResult = Finding | Finding[] | null;
 
+/** The intersection of a union's members: the type of one object merged from a table per member. */
+export type UnionToIntersection<U> = (U extends unknown ? (u: U) => void : never) extends (i: infer I) => void ? I : never;
+
 // What each scope's detect() is handed. `thresholds` is the entry's own set, or the caller's
 // overrides merged over it (analyze()'s `thresholds` option). 'config' has no DetectorCtx:
 // auditConfig() runs those entries on the app alone.

@@ -59,7 +59,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
 
 - **Memory Utilization** (tag `MEM`): app-level card combining three
   sub-findings from the `memoryUtilization` DETECTORS entry
-  (`packages/core/src/detectors/cost.ts`): idle-cores rate (busy-core-time from the worker's
+  (`packages/core/src/detectors/memory-utilization/detect.ts`): idle-cores rate (busy-core-time from the worker's
   run-aggregates sweep vs. the run's allocated core time, `metrics.allocation.coreHours`), one heap band
   (the highest executor heap peak vs. allocated, from `executorHeapPeaks` in
   `packages/core/src/executor-peaks.ts`: a distinct `dataUnavailable` finding
@@ -75,7 +75,7 @@ The board widgets for caching opportunities, memory utilization and cache storag
   `UTIL`, `ExecutorUtilization.tsx`): a `reference`-region widget in its own
   right that renders only with an active finding.
 - **Cache Utilization** (tag `CSTOR`): app-level card driven by the
-  `cacheUtilization` DETECTORS entry (`packages/core/src/detectors/cost.ts`), evaluating two
+  `cacheUtilization` DETECTORS entry (`packages/core/src/detectors/cache-utilization/detect.ts`), evaluating two
   per-RDD proxies over `ctx.app.rddInfo` since Spark event logs carry no
   runtime block-access/read-count data. `rddInfo`'s cache figures come from
   `SparkListenerBlockUpdated` (`recordBlockUpdate` in `event-handlers.ts`,

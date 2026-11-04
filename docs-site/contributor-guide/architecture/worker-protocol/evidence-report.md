@@ -157,7 +157,7 @@ so the CLI (`packages/cli/bin/sparkforensics-analyze.mjs`) and the MCP tool (`di
 `packages/core/src/mcp-tools.ts`) get it too, not just the web markdown/JSON download.
 `FindingRow.actionLabel` is always present (a short imperative label like "Reduce shuffle
 size"), from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), which reads the
-type's `actionLabel` in `finding-presentation.ts` and falls back to the type's name. The
+type's `actionLabel` in its folder's `presentation.ts` and falls back to the type's name. The
 dashboard, the run verdict and the report rows all call it.
 `EvidenceReportJson.recommendations` is the same impact-ranked
 `buildRecommendationRollup` grouping (`packages/core/src/recommendation-rollup.ts`) that
@@ -183,9 +183,9 @@ host (or, for a per-executor row, one executor) as one entry with a line per sta
 (`groupSlowHosts`); the JSON rows stay one per stage.
 
 `Finding` is a union discriminated on `type`, one member per emitted
-finding type (`packages/core/src/finding-types.ts`), and a finding row's `evidence` is an
+finding type (`packages/core/src/finding-types.ts`, assembled from the detector folders), and a finding row's `evidence` is an
 explicit per-type projection. Each type's `<Type>Evidence` interface names its public fields,
-and `EVIDENCE_KEYS` in `evidence-report.ts` lists the same keys, checked both ways at compile
+and the folder's `evidenceKeys` (assembled into `EVIDENCE_KEYS` in `finding-meta.ts`) lists the same keys, checked both ways at compile
 time, so a field a detector adds only for another core module does not become report contract.
 Rows leave out these fields: `stageShape`'s `totalCores`; `utilization`'s `utilizationFraction`,
 `appDurationMs`, `totalCores` and `allocatedCoreMs`; `memoryUtilization`'s `idleRateFraction`, `allocatedMBSeconds`, `allocatedMB`,
@@ -228,7 +228,7 @@ produced this," not part of identity. See
 `packages/core/test/analyzer-finding-identity.test.js` for the decoupling proof.
 
 The discriminators are declared per finding type (`ID_DISCRIMINATORS` in
-`analyzer.ts`, each key checked against that type's fields) and joined in the
+`finding-meta.ts`, from each folder's `idDiscriminators`, each key checked against that type's fields) and joined in the
 fixed `DISCRIMINATOR_SLOTS` order. The `APPENDED_SLOTS` follow, only for the
 types that list them, so a new one leaves every other id unchanged
 (`joinKeyCast` lists `planNodeIds`). The value slot takes `value`, else
