@@ -4,7 +4,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
-import { store, emptyAppModel } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { runState } from './_shared/run';
 
 // Mirror the real useIngest contract for the SHS-parsing store flag: every

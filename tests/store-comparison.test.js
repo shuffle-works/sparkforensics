@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { store, emptyAppModel } from '../src/store/store';
+import { store } from '../src/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { runState } from './view/_shared/run';
 
 beforeEach(() => {

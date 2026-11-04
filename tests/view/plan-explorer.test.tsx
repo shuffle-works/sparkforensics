@@ -7,6 +7,7 @@ import { PlanExplorer } from '../../src/view/widgets/PlanExplorer';
 import { store } from '../../src/store/store';
 import type { AppModel, PlanNode } from '@sparkforensics/core/types';
 import { testStage } from './_shared/model';
+import { emptyAppModel } from '@sparkforensics/core/export';
 
 const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode => ({
   name,
@@ -17,13 +18,9 @@ const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode
 
 function makeAppModel(planTree: PlanNode | null, stageId = 1): AppModel {
   return {
-    app: null,
+    ...emptyAppModel(),
     stages: new Map([[stageId, testStage({ id: stageId, sqlExecutionId: 1 })]]),
-    executors: { added: [], removed: [] },
     sql: new Map([[1, { id: 1, planTree }]]),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
   };
 }
 

@@ -95,6 +95,19 @@ export function deserializeModel(data: SerializedModel): AppModel {
   };
 }
 
+/** A model with nothing parsed into it: the starting point of a parse and of a hand-built model. */
+export function emptyAppModel(): AppModel {
+  return {
+    app: null,
+    stages: new Map(),
+    executors: { added: [], removed: [] },
+    sql: new Map(),
+    jobs: new Map(),
+    runAggregates: null,
+    evidenceAvailability: null,
+  };
+}
+
 /** `cachedTaskData` is the task data fetched so far for a run that reads it from a worker: the run
  * itself holds no data, only the means to ask for it. */
 export function serializeRun(run: AnalyzedRun, cachedTaskData?: ReadonlyMap<StageId, TaskData>): SerializedRun {

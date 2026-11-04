@@ -5,7 +5,8 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { FindingOf } from '@sparkforensics/core/types';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
 import { defineFindingWidget, type FindingRowProps, type FindingWidgetModel } from '@/view/finding-widget';

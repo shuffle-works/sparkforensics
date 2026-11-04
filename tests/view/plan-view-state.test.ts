@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { resolvePlanTree } from '@/view/plan-tree';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { memoizedBuildPlanGraphModel, planViewReducer, type PlanView } from '@/view/PlanGraphRoute';
 
 const start: PlanView = { focusStageId: 7, requestedScope: 'segment', selectedNodeId: 'n1', center: { nodeId: null, token: 0 } };

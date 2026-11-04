@@ -1,0 +1,10 @@
+id: no-positional-analyze
+valid:
+  - "const run = analyzeRun(model);"
+  - "const run = await analyzedRunFrom(path);"
+  - "const report = analyze(path);"
+  - "const catalog = analyzedRunFrom({ app, stages }).catalog;"
+invalid:
+  - "const catalog = analyze(app, stages, [], []);"
+  - "const catalog = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);"
+  - "const catalog = analyze(makeApp(), new Map(), [], [], new Map(), sql, null, { thresholds });"

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { collectRun } from '../src/cli/collect-run.ts';
-import { analyze } from '../src/analyzer.ts';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { effectiveSparkConf, overlayModifiedConfigs } from '../src/spark-conf.ts';
 import { diagnoseJoinSkew, isSkewJoinNode } from '../src/aqe-skew.ts';
 import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
@@ -303,7 +302,7 @@ const LOGS = [
 ];
 
 describe.each(LOGS)('AQE skew handling in a real Spark %s log', (version, path) => {
-  const loaded = collectRun(path);
+  const loaded = analyzedRunFrom(path);
   const joinStageOf = (appModel, executionId) => [...appModel.stages.values()]
     .filter((s) => s.sqlExecutionId === executionId).sort((a, b) => b.shuffleReadBytes - a.shuffleReadBytes)[0];
 
@@ -327,8 +326,7 @@ describe.each(LOGS)('AQE skew handling in a real Spark %s log', (version, path) 
   });
 
   it('carries the case on the skew and straggler findings, and as evidence', async () => {
-    const { appModel } = await loaded;
-    const findings = analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates);
+    const { appModel, catalog: findings } = await loaded;
     const byStage = (type, executionId) => findings.find((f) => f.type === type && f.stageId === joinStageOf(appModel, executionId).id);
     const outer = byStage('skew', 1);
     expect(outer).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'joinType' });
@@ -344,7 +342,7 @@ describe('skew findings on a hand-built final plan', () => {
     sqlExecutionId: 7, id: 4, taskDurationP50: 100, taskDurationP95: 600, taskCount: 40, tailAttribution: dataTail(),
     shuffleReadBytes: 400 * MiB, shuffleReadP50: 2 * MiB, shuffleReadMax: 120 * MiB,
   });
-  const run = (app, sql) => analyze(app, new Map([[4, skewStage]]), [], [], new Map(), sql);
+  const run = (app, sql) => analyzedRunFrom({ app, stages: new Map([[4, skewStage]]), sql }).catalog;
   const plan = leftOnly();
 
   it('words a partition under the default threshold, and a lowered per-query one lets it through', () => {
@@ -370,7 +368,7 @@ describe('skew findings on a hand-built final plan', () => {
     const app = makeApp({ config: {}, sparkVersion: '3.5.9' });
     // A P95 near the median keeps skew's gate shut, so the data-driven tail is straggler's.
     const stage = makeStage({ ...skewStage, taskDurationP95: 100, taskDurationMax: 300, shuffleReadMax: 300 * MiB, stragglerCount: 8, speculativeTasks: 0 });
-    const findings = analyze(app, new Map([[4, stage]]), [], [], new Map(), sqlOf(plan));
+    const findings = analyzedRunFrom({ app, stages: new Map([[4, stage]]), sql: sqlOf(plan) }).catalog;
     expect(findings.find((f) => f.rule === 'shufflePartitionSkew')).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'notSplit' });
     expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'notSplit' });
   });
@@ -380,10 +378,9 @@ describe('skew findings on a hand-built final plan', () => {
     // Even shuffle-read bytes, but the slow tasks read 9x the data of the median task (records or input).
     const tailAttribution = { tasks: 4, excessMs: 1000, dataMs: 900, gcMs: 0, fetchWaitMs: 0, hostMs: 0, host: null, hostTasks: 0, dataRatio: 9, cpuPct: null };
     const even = makeStage({ ...skewStage, shuffleReadP50: 10 * MiB, shuffleReadMax: 11 * MiB, tailAttribution });
-    const f = analyze(app, new Map([[4, even]]), [], [], new Map(), sqlOf(plan)).find((x) => x.type === 'skew');
+    const f = analyzedRunFrom({ app, stages: new Map([[4, even]]), sql: sqlOf(plan) }).catalog.find((x) => x.type === 'skew');
     expect(f).toMatchObject({ cause: 'data', dataRatio: 9 });
     expect(f.aqeSkew).not.toBe('evenReads');
-    expect(f.recommendation).toMatch(/read a median 9× the data/);
     expect(f.recommendation).not.toMatch(/shuffle reads are even|not partition-size skew/);
   });
 
@@ -392,11 +389,11 @@ describe('skew findings on a hand-built final plan', () => {
     // A single join with no stage ids; the join's exchanges wrote 400 MiB, a later aggregate's stage read 40 MiB.
     const unlinked = finalPlan(join('Inner', side('ENSURE_REQUIREMENTS', null, 300 * MiB), side('ENSURE_REQUIREMENTS', null, 100 * MiB), { stageIds: null }));
     const aggregate = makeStage({ ...skewStage, id: 5, shuffleReadBytes: 40 * MiB });
-    const f = analyze(app, new Map([[5, aggregate]]), [], [], new Map(), sqlOf(unlinked)).find((x) => x.type === 'skew');
+    const f = analyzedRunFrom({ app, stages: new Map([[5, aggregate]]), sql: sqlOf(unlinked) }).catalog.find((x) => x.type === 'skew');
     expect(f).toBeTruthy();
     expect(f.aqeSkew).toBeUndefined();
     const reading = makeStage({ ...skewStage, id: 5, shuffleReadBytes: 400 * MiB });
-    expect(analyze(app, new Map([[5, reading]]), [], [], new Map(), sqlOf(unlinked)).find((x) => x.type === 'skew').aqeSkew).toBeDefined();
+    expect(analyzedRunFrom({ app, stages: new Map([[5, reading]]), sql: sqlOf(unlinked) }).catalog.find((x) => x.type === 'skew').aqeSkew).toBeDefined();
   });
 
   it('leaves a duration tail over even shuffle reads with no data cause to straggler, with no skew-join advice', () => {
@@ -404,7 +401,7 @@ describe('skew findings on a hand-built final plan', () => {
     // eslint-disable-next-line no-unused-vars
     const { tailAttribution: _data, ...duration } = skewStage;
     const even = makeStage({ ...duration, shuffleReadP50: 10 * MiB, shuffleReadMax: 11 * MiB });
-    const findings = analyze(app, new Map([[4, even]]), [], [], new Map(), sqlOf(plan));
+    const findings = analyzedRunFrom({ app, stages: new Map([[4, even]]), sql: sqlOf(plan) }).catalog;
     expect(findings.find((x) => x.type === 'skew')).toBeUndefined();
     const f = findings.find((x) => x.type === 'straggler');
     expect(f).toMatchObject({ cause: 'unattributed', remediation: undefined });

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
-import { collectRun } from '../src/cli/collect-run.ts';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { parseScanFilters } from '../src/plan-summary.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
 import { corpusLog } from './corpus-log.js';
@@ -23,7 +22,7 @@ function scanNode({ partitionFilters = '', dataFilters = 'isnotnull(k#1L), (k#1L
 
 function unprunedFindings(node, thresholds) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: node }]]);
-  return analyze(makeApp(), new Map(), [], [], new Map(), sql, null, { thresholds }).filter((f) => f.type === 'unprunedScan');
+  return analyzedRunFrom({ app: makeApp(), sql }, { thresholds }).catalog.filter((f) => f.type === 'unprunedScan');
 }
 
 describe('parseScanFilters', () => {
@@ -131,8 +130,8 @@ describe('unprunedScan', () => {
 // dev/log-corpus is a git submodule: the suite skips without it.
 
 async function corpusFindings(name, thresholds) {
-  const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
-  return analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, appModel.runAggregates, { thresholds })
+  const run = await analyzedRunFrom(corpusLog(`${name}.ndjson`), { thresholds });
+  return run.catalog
     .filter((f) => f.type === 'unprunedScan');
 }
 

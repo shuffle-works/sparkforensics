@@ -1,7 +1,7 @@
 import { interpretRun } from '@sparkforensics/core/analysis';
 import type { AnalyzedRun } from '@sparkforensics/core/analysis';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 
 export interface RunParts {
   appModel?: AppModel;

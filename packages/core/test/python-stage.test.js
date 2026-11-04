@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { isPythonStage } from '../src/python-stage.ts';
 import { tasksMostlyIdle } from '../src/impact-model.ts';
-import { analyze } from '../src/analyzer.ts';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 const sqlWith = (nodeName, stageId, execId = 1) => new Map([[execId, {
   id: execId,
@@ -57,7 +57,9 @@ describe('tasksMostlyIdle with Python plan nodes', () => {
         executorRunTime: 1_200_000, executorCpuTime: 1e6,
       });
       const added = Array.from({ length: 8 }, (_, i) => ({ kind: 'added', executorId: `${i}`, timestamp: 0, totalCores: 4 }));
-      const findings = analyze(makeApp({ endTime: 1_200_000 }), new Map([[4, stage]]), added, [], new Map(), sqlWith(nodeName, 4));
+      const findings = analyzedRunFrom({
+        app: makeApp({ endTime: 1_200_000 }), stages: new Map([[4, stage]]), executors: { added, removed: [] }, sql: sqlWith(nodeName, 4),
+      }).catalog;
       return findings.filter((f) => f.type === 'stageSlowness').map((f) => f.impactEstimate?.rawWaste?.value ?? 0);
     };
     const plain = run('Scan parquet');

@@ -3,7 +3,7 @@ import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { Finding } from '@sparkforensics/core/types';
 
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { ExecutorUtilization } from '@/view/widgets/ExecutorUtilization';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';

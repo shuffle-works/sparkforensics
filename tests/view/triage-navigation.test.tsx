@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { StrictMode } from 'react';
 
 import App from '@/App';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';

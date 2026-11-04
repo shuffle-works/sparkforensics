@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze, auditConfig } from '../src/analyzer.ts';
+import { auditConfig } from '../src/analyzer.ts';
 import { analyzeRun } from '../src/analyzed-run.ts';
 import { checkCoverage } from '../src/check-coverage.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
@@ -9,6 +9,7 @@ import { interpretRun } from '../src/run-interpretation.ts';
 import { computeRunShape } from '../src/run-shape.ts';
 import { buildRunVerdict, FINDING_DISPLAY_ORDER } from '../src/run-verdict.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 function timed(type, stageId, highMs, impactBand = 'warning') {
   return {
@@ -182,7 +183,7 @@ describe('interpretRun', () => {
     const model = appModel({
       stages: new Map([[1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 9_000, taskCount: 10 })]]),
     });
-    const catalog = analyze(model.app, model.stages, [], [], model.jobs, model.sql, null);
+    const catalog = analyzedRunFrom(model).catalog;
     const interpretation = interpretRun(model, catalog, auditConfig(model.app));
     const { json } = buildEvidenceReport(model, { markdown: false });
 
@@ -214,7 +215,7 @@ describe('interpretRun', () => {
       executors: { added, removed },
       runAggregates: { busyCoreMs: 100_000, perStage: { 1: { totalTaskDurationSum: 100_000, taskCount: 100 } } },
     });
-    const catalog = analyze(model.app, model.stages, added, removed, model.jobs, model.sql, model.runAggregates);
+    const catalog = analyzedRunFrom(model).catalog;
     const interpretation = interpretRun(model, catalog, []);
 
     const idleCores = catalog.find((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');

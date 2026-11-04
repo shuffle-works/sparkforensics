@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 
 import type { Finding } from '@sparkforensics/core/types';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { buildBoardLayout, resolveRoute } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';
 import { interpretationOf } from '@/view/interpretation';

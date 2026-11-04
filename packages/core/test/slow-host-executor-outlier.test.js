@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { makeStage, makeApp, executorRow } from './fixtures/stage-app-fixtures.js';
 
 // A deterministic spread of task durations around `centerMs`: `count` values whose ln runs evenly
@@ -28,7 +28,7 @@ function slowExecutorStage({ executors, tasksEach, logSpread, slowdown, centerMs
 }
 
 const taskTimeFindings = ({ app, stages }) =>
-  analyze(app, stages, [], []).filter((f) => f.type === 'slowHost' && f.variant === 'multiDim' && f.dimension === 'taskTime');
+  analyzedRunFrom({ app, stages }).catalog.filter((f) => f.type === 'slowHost' && f.variant === 'multiDim' && f.dimension === 'taskTime');
 
 describe('slowHost task time: an executor must stand out from the stage\'s own spread', () => {
   it('does not flag the slowest of 75 executors whose tasks vary as much as the gap (chance outlier)', () => {
@@ -111,7 +111,7 @@ describe('slowHost task time: an executor must stand out from the stage\'s own s
   it('keeps the byte dimensions on the plain ratio test', () => {
     const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 16, logSpread: 0.05, slowdown: 1 });
     stages.get(1).executorStats.forEach((e, i) => { e.inputBytes = i === 0 ? 200 * 1024 * 1024 : 20 * 1024 * 1024; delete e.logDurationM2; });
-    const found = analyze(app, stages, [], []).filter((f) => f.type === 'slowHost' && f.dimension === 'inputBytes');
+    const found = analyzedRunFrom({ app, stages }).catalog.filter((f) => f.type === 'slowHost' && f.dimension === 'inputBytes');
     expect(found).toHaveLength(1);
     expect(found[0].executorId).toBe('exec-0');
   });

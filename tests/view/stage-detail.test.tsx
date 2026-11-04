@@ -7,36 +7,27 @@ import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
 import type { TriageTarget } from '@/view/triage-target';
 import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { DocsProvider } from '@/view/DocsContext';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding, PlanNode, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';
+import { makeStage as makeCoreStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
 
 function makeStage(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 1,
+  return makeCoreStage({
     name: 'sql-scan-1',
     submittedAt: 1_000,
     completedAt: 5_000,
-    sqlExecutionId: null,
     taskCount: 10,
-    failedTasks: 0,
-    taskDurationP50: 100,
     taskDurationP95: 300,
     taskDurationMax: 400,
     inputBytes: 1024,
     outputBytes: 512,
-    shuffleReadBytes: 0,
-    shuffleWriteBytes: 0,
-    fetchWaitTime: 0,
-    memoryBytesSpilled: 0,
-    diskBytesSpilled: 0,
-    jvmGCTime: 0,
     executorRunTime: 4_000,
-    gcPct: 0,
     ...overrides,
-  };
+  });
 }
 
 function makeAppModel(

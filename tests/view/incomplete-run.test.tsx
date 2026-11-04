@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import { IncompleteRun } from '@/view/widgets/IncompleteRun';
 import type { Finding, FindingOf } from '@sparkforensics/core/types';

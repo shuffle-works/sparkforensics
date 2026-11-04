@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { test, expect, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { CachingOpportunity } from '@/view/widgets/CachingOpportunity';
 import type { Finding, TaskData } from '@sparkforensics/core/types';

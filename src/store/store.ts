@@ -1,21 +1,9 @@
 import { createStore } from 'zustand/vanilla';
 import { useStore as useZustand } from 'zustand';
-import { serializeRun, type ExportProvenance, type SerializedRun } from '@sparkforensics/core/export';
+import { emptyAppModel, serializeRun, type ExportProvenance, type SerializedRun } from '@sparkforensics/core/export';
 import type { AnalyzedRun } from '@sparkforensics/core/analysis';
 import { boardActions, initialBoard, type BoardActions, type BoardState } from '@/store/board';
 import type { AppModel, Finding, TaskData, StageId } from '@sparkforensics/core/types';
-
-export function emptyAppModel(): AppModel {
-  return {
-    app: null,
-    stages: new Map(),
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
-  };
-}
 
 /** What a view reads before any run is installed. */
 export const EMPTY_APP_MODEL: AppModel = emptyAppModel();

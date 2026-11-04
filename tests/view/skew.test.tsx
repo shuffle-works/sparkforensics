@@ -10,33 +10,20 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { Skew } from '@/view/widgets/Skew';
 import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
 import { runState } from './_shared/run';
+import { makeStage as makeCoreStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
 
 function makeStage(id: number, overrides: Record<string, unknown> = {}) {
-  return {
-    id,
-    name: `sql-scan-${id}`,
-    taskDurationP50: 100,
-    taskDurationP95: 500,
-    taskDurationMax: 900,
-    ...overrides,
-  };
+  return makeCoreStage({ id, name: `sql-scan-${id}`, taskDurationP95: 500, taskDurationMax: 900, ...overrides });
 }
 
 function makeAppModel(stageIds: number[]): AppModel {
   const stages = new Map<number, unknown>(stageIds.map((id) => [id, makeStage(id)]));
-  return {
-    app: null,
-    stages: stages as unknown as AppModel['stages'],
-    executors: { added: [], removed: [] },
-    sql: new Map(),
-    jobs: new Map(),
-    runAggregates: null,
-    evidenceAvailability: null,
-  };
+  return { ...emptyAppModel(), stages: stages as unknown as AppModel['stages'] };
 }
 
 function skewFinding(stageId: number, value: number, impactBand: Finding['impactBand'] = 'critical'): Finding {

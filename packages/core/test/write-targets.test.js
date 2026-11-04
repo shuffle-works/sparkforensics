@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { extractWriteTargets } from '../src/write-targets.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
-import { emptyAppModel } from '../src/cli/collect-run.ts';
+import { emptyAppModel } from '../src/run-serialization.ts';
 
 const fixture = (name) => JSON.parse(readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', name), 'utf8'));

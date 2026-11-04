@@ -1,7 +1,8 @@
 import { useMemo, type ReactNode } from 'react';
 
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types';
-import { emptyAppModel, store, useWidgetDensity } from '@/store/store';
+import { store, useWidgetDensity } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { InterpretationState } from '@/view/interpretation';
 import { BoardLayoutContext } from '@/view/BoardLayoutContext';
 import { buildBoardLayout, type BoardLayout, type FindingRowLayout, type LayoutCard } from '@/view/board-layout';

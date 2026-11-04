@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import App from '@/App';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { runState } from './_shared/run';
 

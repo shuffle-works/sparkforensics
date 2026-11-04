@@ -2,7 +2,8 @@
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';

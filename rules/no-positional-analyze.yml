@@ -1,0 +1,19 @@
+id: no-positional-analyze
+language: tsx
+severity: error
+message: The site calls analyze() with its positional model parts.
+note: |
+  analyze() takes the model's parts as separate arguments, so a change to its signature or to the
+  model edits every caller. Outside core source and the analyzer's own tests, build the run with
+  `analyzeRun(model)`, or `analyzedRunFrom(pathOrModel)` in a test, and read its `catalog`.
+rule:
+  kind: call_expression
+  pattern: analyze($_, $_, $$$)
+files:
+  - src/**
+  - tests/**
+  - dev/**
+  - packages/*/test/**
+ignores:
+  - packages/core/test/analyzer.test.js
+  - packages/core/test/analyzer-finding-identity.test.js

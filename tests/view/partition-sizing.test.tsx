@@ -8,7 +8,8 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { PartitionSizing } from '@/view/widgets/PartitionSizing';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 

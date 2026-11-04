@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { analyze } from '../src/analyzer.js';
-import { collectRun } from '../src/cli/collect-run.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from '../src/nested-loop-join.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
@@ -23,7 +22,7 @@ function bnlj({ out, left, right, detail = 'BroadcastNestedLoopJoin BuildRight, 
 function findingsFor(planTree, stageOverrides = {}, runMs = 10_000) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
   const stages = new Map([[1, makeStage({ sqlExecutionId: 1, completedAt: runMs, taskActiveMs: runMs, ...stageOverrides })]]);
-  return analyze(makeApp({ endTime: runMs }), stages, [], [], new Map(), sql).filter((f) => f.type === 'nestedLoopJoin');
+  return analyzedRunFrom({ app: makeApp({ endTime: runMs }), stages, sql }).catalog.filter((f) => f.type === 'nestedLoopJoin');
 }
 
 describe('parseNestedLoopJoin', () => {
@@ -126,11 +125,8 @@ describe('nestedLoopJoin detector on a hand-built plan', () => {
 
 describe('nestedLoopJoin detector on a generated Spark 3.5.9 log', () => {
   it('flags the 3000 x 3000 a < b join and the cross join, and not the equi join', async () => {
-    const { appModel } = await collectRun(SPIKE_LOG);
-    const findings = analyze(
-      appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-      appModel.jobs, appModel.sql, appModel.runAggregates,
-    ).filter((f) => f.type === 'nestedLoopJoin');
+    const run = await analyzedRunFrom(SPIKE_LOG);
+    const findings = run.catalog.filter((f) => f.type === 'nestedLoopJoin');
     expect(findings.map((f) => [f.nodeName, f.value, f.condition]).sort())
       .toEqual([
         ['BroadcastNestedLoopJoin', 4_498_500, '(a < b)'],

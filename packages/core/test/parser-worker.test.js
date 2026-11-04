@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks, computeTailReplayRecoveryMs } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, reportParseFailure, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
@@ -8,6 +7,7 @@ import { routeMessage } from '../src/ingest.ts';
 import { listZipEntries } from '../src/zip-archive.ts';
 import { historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { zstdCompressSync, zstdDecompressSync, gunzipSync } from 'node:zlib';
 import { existsSync, createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -2686,10 +2686,10 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       for (let i = 0; i < 6; i++) {
         processEvent(specTaskEnd(1, i, { launch: 500, finish: 22000, killed: true, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
       }
-      expect(analyze(null, new Map([[1, stageMsg.data]]), [], []).some((f) => f.type === 'speculationWaste')).toBe(false);
+      expect(analyzedRunFrom({ app: null, stages: new Map([[1, stageMsg.data]]) }).catalog.some((f) => f.type === 'speculationWaste')).toBe(false);
 
       const appModel = finishParse(s, stageMsg);
-      const finding = analyze(null, appModel.stages, [], []).find((f) => f.type === 'speculationWaste');
+      const finding = analyzedRunFrom({ app: null, stages: appModel.stages }).catalog.find((f) => f.type === 'speculationWaste');
       expect(finding).toMatchObject({ stageId: 1, value: 129000 });
     });
   });
@@ -3975,7 +3975,7 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
     const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 45300 } }, s);
 
     const stages = new Map([[1, msg.data]]);
-    const catalog = analyze(null, stages, [], [], new Map());
+    const catalog = analyzedRunFrom({ app: null, stages }).catalog;
     const finding = catalog.find((f) => f.type === 'retryWaste');
     expect(finding).toBeDefined();
     expect(finding.retriedTaskDetails).toHaveLength(3);
@@ -4000,7 +4000,7 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
     }, s);
 
     const stages = new Map([[1, msg.data]]);
-    const catalog = analyze(null, stages, [], [], new Map());
+    const catalog = analyzedRunFrom({ app: null, stages }).catalog;
     const finding = catalog.find((f) => f.type === 'stageFailed');
     expect(finding).toBeDefined();
     expect(finding.failedTaskDetails).toEqual([

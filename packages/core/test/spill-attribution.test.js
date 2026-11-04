@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { attributeSpill, describeSpillCause, exchangeWidth, spillToInputRatio } from '../src/spill-attribution.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 const TB = 1e12;
 const GB = 1e9;
@@ -44,7 +44,7 @@ function spillFinding(planTree, stageOverrides = {}, description = '') {
     id: 2, sqlExecutionId: 1, memoryBytesSpilled: 67.7 * TB, diskBytesSpilled: 20 * TB, shuffleReadBytes: 4 * TB,
     spillClassification: 'volume', spillMemMax: 5 * GB, spillDiskMax: 2 * GB, ...stageOverrides,
   })]]);
-  return analyze(makeApp(), stages, [], [], new Map(), sql).find((f) => f.type === 'spill');
+  return analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.find((f) => f.type === 'spill');
 }
 
 describe('attributeSpill', () => {

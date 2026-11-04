@@ -33,10 +33,11 @@ names, tables or paths in tracked files, commits or PR text. Use the neutral `pr
 ## Structure rules
 
 The structure rules are ast-grep rules that ban view code from reading its own
-rendered output and keep `packages/core/src/` inside its boundaries. Each rule
+rendered output, keep `packages/core/src/` inside its boundaries and keep tests
+and dev tools off the positional `analyze()` call. Each rule
 lives in `rules/` with its rule-test in `rule-tests/`. `npm run lint:structure`
-runs the rule-tests, then scans `src/` and `packages/core/src/` (`sgconfig.yml`
-is the config). CI runs it next to `npm run lint`.
+runs the rule-tests, then scans `src/`, `packages/core/src/`, `tests/`, `dev/` and
+the `test/` folder of each package (`sgconfig.yml` is the config). CI runs it next to `npm run lint`.
 
 Each rule's message names the remedy. A legitimate use gets a suppression on the
 line above it, `// ast-grep-ignore: <rule-id>`, with the reason in the comment
@@ -151,8 +152,9 @@ because `evidence-panels-not-empty.test.tsx` opens every log directly under `fix
 
 `dev/corpus-snapshot.json` records every finding (type, location, band,
 confidence, value, impact estimate) that the detectors produce on each
-public corpus log, plus its stage, SQL execution and skipped-line counts,
-with timings and memory left out so it is deterministic. CI's `core` job
+public corpus log, plus its config findings, the verdict's step order, the
+evidence keys each finding type publishes, and its stage, SQL execution and
+skipped-line counts, with timings and memory left out so it is deterministic. CI's `core` job
 re-analyzes the corpus and fails on any difference, printing the added,
 removed, re-banded and re-estimated findings and changed counts per log:
 
@@ -224,9 +226,11 @@ Record before and after numbers from these in the commit that changes a
 detector, threshold, estimate or the vendored fzstd.
 
 - `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...`
-  snapshots every finding (band, estimate) plus parse and analyze timings,
+  snapshots every finding and config finding (band, estimate), the verdict's
+  step order and the published evidence keys, plus parse and analyze timings,
   one child process per log. `--diff a.json b.json [--verbose]` shows the
-  findings added, removed or re-banded between two snapshots.
+  findings added, removed or re-banded between two snapshots, and any change
+  to the step order or evidence keys.
 - `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] [--verbose] <file|dir>...`
   scores skew and straggler against a task-level replay (precision, recall,
   estimate error). `--verbose` lists each miss, false positive and estimate
@@ -328,8 +332,11 @@ Before adding a widget test file, or a per-widget or per-detector test:
   boilerplate. A widget with a real difference (a `React.lazy`-loaded chunk, a
   custom row finder) keeps its own test.
 - `packages/core/test/fixtures/` holds the shared stage and app fixture
-  factories (`makeStage`/`makeApp`). Import them instead of pasting a local
-  copy into a new core test file.
+  factories (`makeStage`/`makeApp`) and `analyzedRunFrom(pathOrModel)`
+  (`analyzed-run.js`), which builds the analyzed run of a log path or of a model
+  holding only the parts a test needs; read the findings from its `catalog`.
+  `emptyAppModel()` comes from `@sparkforensics/core/export`. Import them instead
+  of pasting a local copy or calling `analyze()` positionally.
 - Before adding a small test file, check whether a sibling file's `describe`
   block already covers that surface. A detector-catalog shape check, for
   example, belongs in `analyzer.test.js`'s `detector contract` block.

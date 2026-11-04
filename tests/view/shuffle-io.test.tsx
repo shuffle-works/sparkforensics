@@ -9,7 +9,8 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { ShuffleIO } from '@/view/widgets/ShuffleIO';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding, PlanNode } from '@sparkforensics/core/types';
 import { installInterpretation } from './_shared/interpretation';
 

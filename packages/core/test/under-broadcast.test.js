@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 const KiB = 1024;
 const MiB = 1024 * KiB;
@@ -24,7 +24,7 @@ const aqe = (child) => ({ name: 'AdaptiveSparkPlan', detail: '', metrics: [], ch
 
 function findingsOf(type, planTree, { config, modifiedConfigs, sparkVersion = '3.5.3', thresholds } = {}) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree, modifiedConfigs }]]);
-  return analyze(makeApp({ config, sparkVersion }), new Map(), [], [], new Map(), sql, null, { thresholds })
+  return analyzedRunFrom({ app: makeApp({ config, sparkVersion }), sql }, { thresholds }).catalog
     .filter((f) => f.type === type);
 }
 const under = (planTree, opts) => findingsOf('underBroadcast', planTree, opts);

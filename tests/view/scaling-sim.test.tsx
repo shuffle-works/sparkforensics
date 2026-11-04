@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { ScalingSim, makespanYAxisDomain } from '@/view/widgets/ScalingSim';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Job } from '@sparkforensics/core/types';

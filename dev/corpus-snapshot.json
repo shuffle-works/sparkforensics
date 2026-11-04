@@ -138,7 +138,73 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:7",
+    "stage:1"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "diskSize",
+     "memorySize",
+     "numCachedPartitions",
+     "numPartitions",
+     "rddId",
+     "rddName",
+     "variant"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "duplicatePlanSubtree": [
+     "executionId",
+     "groupIndex",
+     "occurrencesIdentical",
+     "readsDifferentVersions",
+     "rootAction",
+     "rootName",
+     "sampleRelation",
+     "stageIds",
+     "stageShares",
+     "subtreeSize"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "cache-memory-only.ndjson",
@@ -263,7 +329,74 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:7",
+    "stage:10",
+    "stage:3"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "diskSize",
+     "memorySize",
+     "numCachedPartitions",
+     "numPartitions",
+     "rddId",
+     "rddName",
+     "variant"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "duplicatePlanSubtree": [
+     "executionId",
+     "groupIndex",
+     "occurrencesIdentical",
+     "readsDifferentVersions",
+     "rootAction",
+     "rootName",
+     "sampleRelation",
+     "stageIds",
+     "stageShares",
+     "subtreeSize"
+    ],
+    "skew": [
+     "cause",
+     "origin"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "delta-concurrent-merge.ndjson",
@@ -502,7 +635,74 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:5",
+    "stage:21",
+    "stage:53"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "operator",
+     "relation",
+     "relations",
+     "totalReadBytes",
+     "variant"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "mergeRewrite": [
+     "changedRows",
+     "executionId",
+     "filesAfter",
+     "filesBefore",
+     "partitionsScanned",
+     "partitionsTouched",
+     "rewrittenRows",
+     "rule",
+     "stageIds",
+     "target"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "underBroadcast": [
+     "broadcastThreshold",
+     "buildSide",
+     "executionId",
+     "joinType",
+     "largerSideBytes",
+     "stageIds"
+    ]
+   }
   },
   {
    "name": "delta-delete.ndjson",
@@ -579,7 +779,54 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:3",
+    "stage:11"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "delta-merge-api.ndjson",
@@ -716,7 +963,71 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:4",
+    "stage:14",
+    "stage:32"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "mergeRewrite": [
+     "changedRows",
+     "executionId",
+     "filesAfter",
+     "filesBefore",
+     "partitionsScanned",
+     "partitionsTouched",
+     "rewrittenRows",
+     "rule",
+     "stageIds",
+     "target"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "underBroadcast": [
+     "broadcastThreshold",
+     "buildSide",
+     "executionId",
+     "joinType",
+     "largerSideBytes",
+     "stageIds"
+    ]
+   }
   },
   {
    "name": "delta-merge-sql.ndjson",
@@ -868,7 +1179,74 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:4",
+    "stage:14",
+    "stage:32"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "mergeRewrite": [
+     "changedRows",
+     "executionId",
+     "filesAfter",
+     "filesBefore",
+     "partitionsScanned",
+     "partitionsTouched",
+     "rewrittenRows",
+     "rule",
+     "stageIds",
+     "target"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "underBroadcast": [
+     "broadcastThreshold",
+     "buildSide",
+     "executionId",
+     "joinType",
+     "largerSideBytes",
+     "stageIds"
+    ]
+   }
   },
   {
    "name": "delta-update.ndjson",
@@ -963,7 +1341,53 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:3",
+    "stage:11"
+   ],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "eventlog-lz4.lz4",
@@ -1013,7 +1437,43 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "eventlog-snappy.snappy",
@@ -1051,7 +1511,39 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "eventlog-zstd.zstd",
@@ -1089,7 +1581,39 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "failure-job.ndjson",
@@ -1169,7 +1693,68 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:1",
+    "app:jobFailureRate",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "jobFailureRate": [
+     "avgJobDurationMs",
+     "failedJobs",
+     "failedTasks",
+     "taskFailureRate",
+     "totalJobs",
+     "totalTasks"
+    ],
+    "memoryUtilization": [
+     "variant"
+    ],
+    "retryWaste": [
+     "memoryBytesSpilled",
+     "numTasks",
+     "retriedTaskDetails"
+    ],
+    "stageFailed": [
+     "failedTaskDetails",
+     "memoryBytesSpilled",
+     "numTasks",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "failure-killed-run.ndjson",
@@ -1189,7 +1774,40 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "incompleteRun": []
+   }
   },
   {
    "name": "failure-stage-abort.ndjson",
@@ -1296,7 +1914,82 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:0",
+    "app:jobFailureRate",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "failures": [
+     "dominantError",
+     "dominantReason",
+     "failedTasks",
+     "failureGroups",
+     "otherFailedTasks"
+    ],
+    "jobFailureRate": [
+     "avgJobDurationMs",
+     "failedJobs",
+     "failedTasks",
+     "taskFailureRate",
+     "totalJobs",
+     "totalTasks"
+    ],
+    "memoryUtilization": [
+     "variant"
+    ],
+    "retryWaste": [
+     "memoryBytesSpilled",
+     "numTasks",
+     "retriedTaskDetails"
+    ],
+    "stageFailed": [
+     "failedTaskDetails",
+     "memoryBytesSpilled",
+     "numTasks",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "failure-task-retry.ndjson",
@@ -1349,7 +2042,54 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:0",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "variant"
+    ],
+    "retryWaste": [
+     "memoryBytesSpilled",
+     "numTasks",
+     "retriedTaskDetails"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "pairwise-01.ndjson",
@@ -1630,7 +2370,102 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:9",
+    "stage:0"
+   ],
+   "evidenceKeys": {
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "variant"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "slowHost": [
+     "dimension",
+     "execMaxValue",
+     "executorCount",
+     "executorId",
+     "taskCount",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "speculationWaste": [],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillMagnitude",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "aqeSkew",
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "origin",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "pairwise-02.ndjson",
@@ -1833,7 +2668,82 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:9",
+    "app:coldStart"
+   ],
+   "evidenceKeys": {
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "coldStart": [
+     "dynamicAllocation"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "partitionSizing": [
+     "aqeSkew",
+     "origin",
+     "rule"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "slowHost": [
+     "dimension",
+     "execMaxValue",
+     "executorId",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillMagnitude",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "pairwise-03.ndjson",
@@ -1985,7 +2895,52 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "stage:6",
+    "app:coldStart"
+   ],
+   "evidenceKeys": {
+    "coldStart": [
+     "dynamicAllocation"
+    ],
+    "gc": [],
+    "partitionSizing": [
+     "aqeSkew",
+     "origin",
+     "rule"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "slowHost": [
+     "dimension",
+     "execMaxValue",
+     "executorCount",
+     "executorId",
+     "taskCount",
+     "variant"
+    ],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "pairwise-04.ndjson",
@@ -2107,7 +3062,65 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:5",
+    "stage:0",
+    "app:coldStart"
+   ],
+   "evidenceKeys": {
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "coldStart": [
+     "dynamicAllocation"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "pairwise-05.ndjson",
@@ -2256,7 +3269,55 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "stage:3",
+    "stage:0",
+    "app:coldStart"
+   ],
+   "evidenceKeys": {
+    "coldStart": [
+     "dynamicAllocation"
+    ],
+    "partitionSizing": [
+     "origin",
+     "rule"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "slowHost": [
+     "dimension",
+     "execMaxValue",
+     "executorId",
+     "variant"
+    ],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillMagnitude",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "origin",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "pairwise-06.ndjson",
@@ -2426,7 +3487,75 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:3",
+    "stage:2",
+    "stage:0"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "partitionSizing": [
+     "origin",
+     "rule"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "slowHost": [
+     "dimension",
+     "execMaxValue",
+     "executorCount",
+     "executorId",
+     "taskCount",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillMagnitude",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "pairwise-07.ndjson",
@@ -2593,7 +3722,85 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:5",
+    "stage:4",
+    "stage:2"
+   ],
+   "evidenceKeys": {
+    "cachingOpportunity": [
+     "executionIds",
+     "format",
+     "relation",
+     "totalReadBytes"
+    ],
+    "configAudit": [
+     "property"
+    ],
+    "gc": [],
+    "partitionSizing": [
+     "origin",
+     "rule"
+    ],
+    "shuffle": [
+     "partitions"
+    ],
+    "slowHost": [
+     "dimension",
+     "execMaxValue",
+     "executorId",
+     "variant"
+    ],
+    "spill": [
+     "exchanges",
+     "operators",
+     "reads",
+     "spillMagnitude",
+     "spillToInputRatio",
+     "sqlDescription",
+     "wideRows"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "spark-3.5-delta-baseline.ndjson",
@@ -2670,7 +3877,51 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "spark-3.5-iceberg-baseline.ndjson",
@@ -2732,7 +3983,47 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "spark-3.5-parquet-baseline.ndjson",
@@ -2797,7 +4088,51 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "spark-4.0-delta-baseline.ndjson",
@@ -2862,7 +4197,47 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "spark-4.0-iceberg-baseline.ndjson",
@@ -2924,7 +4299,47 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "spark-4.0-parquet-baseline.ndjson",
@@ -3001,7 +4416,54 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "spark-4.1-delta-baseline.ndjson",
@@ -3039,7 +4501,36 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "spark-4.1-iceberg-baseline.ndjson",
@@ -3101,7 +4592,43 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:6"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "spark-4.1-parquet-baseline.ndjson",
@@ -3193,7 +4720,58 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "spark-4.2-delta-baseline.ndjson",
@@ -3231,7 +4809,36 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "spark-4.2-parquet-baseline.ndjson",
@@ -3296,7 +4903,47 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.dynamicAllocation.maxExecutors|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:6",
+    "app:utilization"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "smallFiles": [
+     "direction",
+     "executionId",
+     "fileCount",
+     "nodeName",
+     "stageIds"
+    ],
+    "tinyTask": [
+     "reads"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-app-20161115172038-0000.ndjson",
@@ -3346,7 +4993,37 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-app-20161116163331-0000.ndjson",
@@ -3396,7 +5073,37 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-app-20180109111548-0000.ndjson",
@@ -3446,7 +5153,37 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-app-20200706201101-0003.ndjson",
@@ -3496,7 +5233,23 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "gc": [
+     "direction"
+    ],
+    "memoryUtilization": [
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-application_1516285256255_0012.ndjson",
@@ -3591,7 +5344,47 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-application_1553914137147_0018.ndjson",
@@ -3626,7 +5419,21 @@
       "unit": "mbSeconds"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "cacheUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "memoryUtilization": [
+     "executorId",
+     "heap",
+     "rule",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-application_1555004656427_0144.ndjson",
@@ -3676,7 +5483,21 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-application_1578436911597_0052.ndjson",
@@ -3726,7 +5547,21 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-application_1628109047826_1317105.ndjson",
@@ -3824,7 +5659,34 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:0",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "executorId",
+     "heap",
+     "rule",
+     "variant"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-failed-eventlog.ndjson",
@@ -3871,7 +5733,32 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "stage:13",
+    "app:jobFailureRate"
+   ],
+   "evidenceKeys": {
+    "jobFailureRate": [
+     "avgJobDurationMs",
+     "failedJobs",
+     "failedTasks",
+     "taskFailureRate",
+     "totalJobs",
+     "totalTasks"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "stageFailed": [
+     "failedTaskDetails",
+     "memoryBytesSpilled",
+     "numTasks",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1422981759269.ndjson",
@@ -3891,7 +5778,31 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1422981780767.ndjson",
@@ -3938,7 +5849,48 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:2",
+    "app:jobFailureRate"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "jobFailureRate": [
+     "avgJobDurationMs",
+     "failedJobs",
+     "failedTasks",
+     "taskFailureRate",
+     "totalJobs",
+     "totalTasks"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "stageFailed": [
+     "failedTaskDetails",
+     "memoryBytesSpilled",
+     "numTasks",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1425081759269.ndjson",
@@ -3958,7 +5910,31 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1426533911241.ndjson",
@@ -3978,7 +5954,31 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1426633911242.ndjson",
@@ -3998,7 +5998,31 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1430917381534.ndjson",
@@ -4048,7 +6072,43 @@
       "unit": "ms"
      }
     }
-   ]
+   ],
+   "configFindings": [
+    {
+     "key": "configAudit|spark.serializer|config|||||||||||",
+     "type": "configAudit",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ],
+   "verdictSteps": [
+    "stage:0"
+   ],
+   "evidenceKeys": {
+    "configAudit": [
+     "property"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "causeSharePct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "tinyTask": [
+     "reads"
+    ]
+   }
   },
   {
    "name": "external-local-1430917381535_1.ndjson",
@@ -4068,7 +6128,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1430917381535_2.ndjson",
@@ -4088,7 +6156,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-local-1430917381536.ndjson",
@@ -4156,7 +6232,31 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:0",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "variant"
+    ],
+    "stageShape": [
+     "rule"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-local-1642039451826.ndjson",
@@ -4206,7 +6306,21 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-low-shuffle-parallelism-eventlog.ndjson",
@@ -4226,7 +6340,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-memory-spill-skew-eventlog.ndjson",
@@ -4246,7 +6368,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-minimal-eventlog.ndjson",
@@ -4266,7 +6396,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-oversized-shuffle-eventlog.ndjson",
@@ -4286,7 +6424,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-real-spark-eventlog.ndjson",
@@ -4351,7 +6497,29 @@
       "unit": "coreHours"
      }
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [
+    "app:utilization",
+    "stage:0",
+    "app:memoryUtilization:idleCores"
+   ],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ],
+    "straggler": [
+     "cause",
+     "cpuPct",
+     "speculativeTasks",
+     "stragglerCount",
+     "unit"
+    ],
+    "utilization": [
+     "cpuUtilizationPct"
+    ]
+   }
   },
   {
    "name": "external-retry-waste-eventlog.ndjson",
@@ -4371,7 +6539,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-shuffle-skewed-eventlog.ndjson",
@@ -4391,7 +6567,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-skewed-eventlog.ndjson",
@@ -4411,7 +6595,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-speculation-heavy-eventlog.ndjson",
@@ -4431,7 +6623,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-spill-heavy-eventlog.ndjson",
@@ -4451,7 +6651,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-sql-duplicate-exchange-eventlog.ndjson",
@@ -4483,7 +6691,26 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "duplicatePlanSubtree": [
+     "executionId",
+     "groupIndex",
+     "occurrencesIdentical",
+     "readsDifferentVersions",
+     "rootName",
+     "sampleRelation",
+     "stageIds",
+     "stageShares",
+     "subtreeSize"
+    ],
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-sql-many-exchanges-eventlog.ndjson",
@@ -4503,7 +6730,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-tiny-tasks-eventlog.ndjson",
@@ -4523,7 +6758,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   },
   {
    "name": "external-worker-imbalanced-eventlog.ndjson",
@@ -4543,7 +6786,15 @@
      "wcHigh": null,
      "rawWaste": null
     }
-   ]
+   ],
+   "configFindings": [],
+   "verdictSteps": [],
+   "evidenceKeys": {
+    "memoryUtilization": [
+     "dataUnavailable",
+     "variant"
+    ]
+   }
   }
  ]
 }

@@ -2,7 +2,8 @@
 import { test, expect, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 
 vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),

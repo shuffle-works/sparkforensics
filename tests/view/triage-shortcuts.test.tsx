@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { store, emptyAppModel, selectAppModel, selectCatalog, selectConfigFindings } from '@/store/store';
+import { store, selectAppModel, selectCatalog, selectConfigFindings } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { buildBoardLayout } from '@/view/board-layout';
 import { emptySelection } from '@/view/finding-filter';
 import { interpretationOf } from '@/view/interpretation';

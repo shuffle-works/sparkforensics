@@ -7,7 +7,7 @@ vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage, close: vi.fn() }),
 }));
 
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 import { StageSlowness } from '@/view/widgets/StageSlowness';

@@ -2,7 +2,8 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 

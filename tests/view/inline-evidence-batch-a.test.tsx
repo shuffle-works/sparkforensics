@@ -9,7 +9,8 @@ vi.mock('@/view/StageDetailContext', () => ({
   useStageDetail: () => ({ stageId: null, openStage: vi.fn(), close: vi.fn() }),
 }));
 
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import { DocsProvider } from '@/view/DocsContext';
 import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import { GcPressure } from '@/view/widgets/GcPressure';

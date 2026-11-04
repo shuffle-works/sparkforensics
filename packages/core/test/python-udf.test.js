@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyze } from '../src/analyzer.js';
-import { collectRun } from '../src/cli/collect-run.ts';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { isBatchEvalPythonNode } from '../src/python-stage.ts';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
@@ -23,7 +22,7 @@ function run({ node = pythonNode('BatchEvalPython', 200 * MB, 50 * MB), duration
   const planTree = { id: 'root', name: 'Project', detail: '', children: [node] };
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: durationMs, stageIds: [1], planTree }]]);
   const stages = new Map([[1, makeStage({ sqlExecutionId: 1, completedAt: durationMs })]]);
-  return analyze(app, stages, [], [], new Map(), sql, null, { thresholds }).filter((f) => f.type === 'pythonUdf');
+  return analyzedRunFrom({ app, stages, sql }, { thresholds }).catalog.filter((f) => f.type === 'pythonUdf');
 }
 
 describe('pythonUdf', () => {
@@ -84,11 +83,10 @@ describe('pythonUdf', () => {
 
   // A log from apache/spark:3.5.9 running one Python UDF over 2M rows in local[2] (2.4 s of stage time).
   it('reads the executor-side Python metrics of a real log', async () => {
-    const { appModel } = await collectRun(FIXTURE);
-    const find = (thresholds) => analyze(appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed, appModel.jobs, appModel.sql, null, { thresholds })
+    const find = async (thresholds) => (await analyzedRunFrom(FIXTURE, { thresholds })).catalog
       .filter((f) => f.type === 'pythonUdf');
-    expect(find()).toEqual([]); // far below the default floors
-    const [finding] = find({ pythonUdf: { minBytesSent: 0, minStageMs: 0 } });
+    expect(await find()).toEqual([]); // far below the default floors
+    const [finding] = await find({ pythonUdf: { minBytesSent: 0, minStageMs: 0 } });
     expect(finding).toMatchObject({ dataSentBytes: 12048680, dataReturnedBytes: 14113810, stageIds: [0] });
   });
 });

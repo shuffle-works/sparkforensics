@@ -4,7 +4,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { StageTaskSpread } from '@/view/StageTaskSpread';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, TaskData } from '@sparkforensics/core/types';
 import { runState } from './_shared/run';
 

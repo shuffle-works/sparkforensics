@@ -5,7 +5,8 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { collapseHiddenEdges, PlanGraphRoute } from '@/view/PlanGraphRoute';
-import { emptyAppModel, store } from '@/store/store';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { ReactElement } from 'react';
 import type { PlanGraphModel } from '@sparkforensics/core/types';
 

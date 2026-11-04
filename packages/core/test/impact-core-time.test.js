@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
-import { analyze } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { impactEstimateFigure } from '../src/impact-format.js';
 import { findingSavings } from '../src/run-interpretation.js';
 import { buildCostLane } from '../src/run-verdict.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 function estimate(findings, stages, totalCores) {
   estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
@@ -225,7 +225,7 @@ describe('coreTimeMs in the evidence report', () => {
   });
 
   it('stays null for a cut-off log', () => {
-    const findings = analyze(makeApp({ endTime: null }), new Map(), [], [], new Map());
+    const findings = analyzedRunFrom({ app: makeApp({ endTime: null }) }).catalog;
     const incomplete = findings.find((f) => f.type === 'incompleteRun');
     expect(incomplete.impactEstimate.coreTimeMs).toBeNull();
   });

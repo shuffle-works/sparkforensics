@@ -4,12 +4,14 @@ import { test, expect, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyAppModel, store } from '@/store/store';
-import { analyze, computeCoreLocalityRatio, buildLocalityChart } from '@sparkforensics/core/analysis';
+import { store } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
+import { computeCoreLocalityRatio, buildLocalityChart } from '@sparkforensics/core/analysis';
 import { downsample } from '@/view/charts/downsample';
 import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
+import { analyzedRunFrom } from '../../packages/core/test/fixtures/analyzed-run.js';
 import { testStage } from './_shared/model';
 import { installInterpretation } from './_shared/interpretation';
 import { testFinding } from './_shared/finding';
@@ -351,7 +353,7 @@ test('the rendered finding value and the widget\'s own locality computation agre
   const app = { id: 'app_1', name: 'test', startTime: 0, endTime: 60_000, sparkVersion: '3.4.0', config: {} };
   const stages = new Map([[1, stage]]);
 
-  const catalog = analyze(app, stages, [], [], new Map());
+  const catalog = analyzedRunFrom({ app, stages: stages as unknown as AppModel['stages'] }).catalog;
   const finding = catalog.find((f) => f.type === 'coreLocality') as Finding;
   expect(finding).toBeTruthy();
 

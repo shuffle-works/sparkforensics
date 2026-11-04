@@ -9,3 +9,5 @@ testConfigs:
 languageGlobs:
   tsx:
     - "**/*.ts"
+    - "**/*.js"
+    - "**/*.mjs"

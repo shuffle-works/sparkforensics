@@ -1,9 +1,9 @@
 import { useCallback } from 'react';
 import { createIngestClient, createModelCallbacks, analyzeRun, comparedRun, isShsErrorCode } from '@sparkforensics/core/analysis';
-import { deserializeRun, serializeRun } from '@sparkforensics/core/export';
+import { deserializeRun, emptyAppModel, serializeRun } from '@sparkforensics/core/export';
 import { runLabel } from './run-label';
 import * as recentFiles from '@sparkforensics/core/browser';
-import { emptyAppModel, snapshotOf, store } from './store';
+import { snapshotOf, store } from './store';
 import type { AppModel, TaskData } from '@sparkforensics/core/types';
 
 interface Opts { makeClient?: () => ReturnType<typeof createIngestClient>; }

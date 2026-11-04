@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { test, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel } from '@sparkforensics/core/export';
 import type { AppModel, Finding } from '@sparkforensics/core/types';
 
 vi.mock('@/view/StageDetailContext', () => ({
