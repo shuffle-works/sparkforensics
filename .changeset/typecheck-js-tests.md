@@ -5,4 +5,4 @@
 "sparkforensics-server": patch
 ---
 
-The root `.js` tests and the package `.js` tests are type-checked with JSDoc types.
+The root `.js` tests and the CLI, MCP and server `.js` tests are type-checked with JSDoc types.

@@ -19,7 +19,7 @@ npm run dev           # Vite dev server for the app itself
 npm run build         # production build, outputs dist/ (plus dist/export-template.html, the HTML download's template)
 npm run preview       # serves dist/ locally
 npx tsc --noEmit      # typecheck (strict TypeScript across src/, tests/view/ and packages/core/src/)
-npx tsc --noEmit -p tsconfig.check.json   # typecheck the CLI, MCP and server entry points and the core .test.ts files
+npx tsc --noEmit -p tsconfig.check.json   # typecheck the Node entry points and tests outside src/ (scope: testing.md)
 npm run lint          # eslint over the repo's JS, oxlint over its .ts/.tsx
 npm run lint:structure  # ast-grep structure rules over src/, packages/core/src/ and the tests (rules/, tested by rule-tests/)
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
