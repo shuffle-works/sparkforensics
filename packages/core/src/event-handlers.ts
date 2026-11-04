@@ -698,12 +698,12 @@ export function accumulateTask(
     if (record.speculative && !record.failed) stage.speculativeWinners.add(key);
   } else if (existing.failed && !record.failed) {
     // A retry succeeded where the earlier attempt failed: the earlier attempt's time was wasted.
-    // Only a losing speculative copy is speculation waste. An original that a copy beat is
-    // speculation working: it is neither speculation waste nor retry waste.
+    // A failed speculative copy is speculation waste. A failed original ended before any copy won,
+    // so no copy beat it: it failed on its own and is retry waste.
     if (existing.speculative) {
       stage.speculationWasteMs += existing.duration;
       stage.speculationWastedAttempts++;
-    } else if (!record.speculative) {
+    } else {
       stage.retryWasteMs += existing.duration;
       stage.wastedAttempts++;
       if (stage.retryTaskSamples.length < MAX_TASK_SAMPLES) {
@@ -717,12 +717,12 @@ export function accumulateTask(
   } else {
     stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(record), stage.lateAttemptWork);
     // Non-winning duplicate (both failed, or a race where a winner is already recorded): its
-    // metrics are discarded. Its time is speculation waste only when it is a speculative copy;
-    // an original beaten by a copy is not waste.
+    // metrics are discarded. A speculative copy's time is speculation waste. An original that a
+    // successful copy beat is speculation working, not waste; any other original is retry waste.
     if (record.speculative) {
       stage.speculationWasteMs += record.duration;
       stage.speculationWastedAttempts++;
-    } else if (!existing.speculative) {
+    } else if (!existing.speculative || existing.failed) {
       stage.retryWasteMs += record.duration;
       stage.wastedAttempts++;
       if (stage.retryTaskSamples.length < MAX_TASK_SAMPLES) {

@@ -2563,6 +2563,34 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     expect(msg.data.wastedAttempts).toBe(0);
   });
 
+  it('counts an original that failed on its own as retry waste when a speculative copy then succeeds', () => {
+    const s = createState();
+    setupStage(s);
+    processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, taskId: 3 }), s);
+    processEvent(specTaskEnd(1, 0, { launch: 50, finish: 150, speculative: true, taskId: 103, attemptNumber: 1 }), s);
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+
+    expect(msg.data.retryWasteMs).toBe(100);
+    expect(msg.data.wastedAttempts).toBe(1);
+    expect(msg.data.retryTaskSamples).toHaveLength(1);
+    expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 3, reason: 'FetchFailed' });
+    expect(msg.data.speculationWasteMs).toBe(0);
+    expect(msg.data.speculationWastedAttempts).toBe(0);
+  });
+
+  it('counts a failed original as retry waste when the speculative copy failed first', () => {
+    const s = createState();
+    setupStage(s);
+    processEvent(specTaskEnd(1, 0, { launch: 50, finish: 120, failed: true, speculative: true, taskId: 103, attemptNumber: 1 }), s);
+    processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, taskId: 3 }), s);
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+
+    expect(msg.data.retryWasteMs).toBe(100);
+    expect(msg.data.wastedAttempts).toBe(1);
+    expect(msg.data.retryTaskSamples).toHaveLength(1);
+    expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 3 });
+  });
+
   it('raises no speculationWaste finding for a stage whose copies won every race, at any original duration', () => {
     const s = createState();
     setupStage(s);
