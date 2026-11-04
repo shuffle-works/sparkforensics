@@ -1137,23 +1137,24 @@ describe('analyze: speculation waste', () => {
     expect(catalog.filter(b => b.type === 'speculationWaste')).toHaveLength(0);
   });
 
-  it('emits a speculationWaste finding at >=5 attempts and >=60s wasted, reconciled to critical here', () => {
-    // Detector grades 'warning'; deriveImpactBand promotes to 'critical' (90s wasted is well over 2% of the 5s default).
+  it('emits a speculationWaste finding at >=5 attempts and >=60s wasted, kept at its own warning band', () => {
+    // The finding claims core time only, so the share of the run never raises its band.
     // 90s is exactly 1.5x the 60s minWasteMs floor: the weakest confidence this detector reports.
     const stages = new Map([[1, makeStage({ speculationWastedAttempts: 5, speculationWasteMs: 90000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'speculationWaste');
     expect(found).toHaveLength(1);
-    expect(found[0].impactBand).toBe('critical');
+    expect(found[0].impactBand).toBe('warning');
+    expect(found[0].impactEstimate).toMatchObject({ basis: 'resourceOnly', wallClock: null });
     expect(found[0].confidence).toBe('low');
     expect(found[0].docAnchor).toBe('#bottleneck-speculation-waste');
   });
 
-  it('emits critical at >=10 minutes wasted, with high confidence (4x+ the 60s floor)', () => {
+  it('stays at warning at >=10 minutes wasted, with high confidence (4x+ the 60s floor)', () => {
     const stages = new Map([[1, makeStage({ speculationWastedAttempts: 6, speculationWasteMs: 700000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'speculationWaste')[0];
-    expect(found.impactBand).toBe('critical');
+    expect(found.impactBand).toBe('warning');
     expect(found.confidence).toBe('high');
   });
 

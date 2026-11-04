@@ -191,14 +191,7 @@
       "type": "smallFiles"
     }
   },
-  "speculationWaste": {
-    "source": "corpus",
-    "log": "pairwise-01.ndjson",
-    "finding": {
-      "id": "ea58fb74",
-      "type": "speculationWaste"
-    }
-  },
+  "speculationWaste": null,
   "spill": {
     "source": "corpus",
     "log": "pairwise-03.ndjson",

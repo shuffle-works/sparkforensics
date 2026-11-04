@@ -223,9 +223,12 @@ Stages under 0.5% of the run are skipped unless the `SKEW` duration test holds.
 
 ### `SPEC`: Speculation waste {#spec}
 
-Speculative task attempts used a lot of executor time without confirming a
-genuine straggler. Self-flags a confidence that scales with how far the
-wasted time sits past the threshold. If task durations are just naturally
+Speculative copies that lost their race used a lot of executor core time.
+The finding counts only the losing copies, failed copies included. An original
+that a copy beat is speculation working and is not counted. Copies run on spare
+slots beside their originals, so the finding claims core time and no wall-clock
+time, and keeps its own `warning` band. Self-flags a confidence that scales
+with how far the wasted time sits past the threshold. If task durations are just naturally
 variable rather than genuine stragglers, tune
 `spark.speculation.multiplier`/`spark.speculation.quantile`. The
 recommendation names the run's effective values: Spark relaunches a task that

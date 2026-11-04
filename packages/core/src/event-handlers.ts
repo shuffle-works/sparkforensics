@@ -173,7 +173,7 @@ export interface StageRecord {
   speculationWasteMs: number;
   speculationWastedAttempts: number;
   // Keys (`attempt:index`) whose recorded winner is a speculative copy. Kept past finalize so a
-  // late TaskEnd for the original it beat still pairs as speculation waste (accountLateSpeculativeLoser).
+  // late TaskEnd for the original it beat is still recognized as beaten (accountLateSpeculativeLoser).
   speculativeWinners: Set<string | symbol>;
   // Set once a late TaskEnd adds speculation waste after finalize, so the stage is re-posted
   // via `stageSpeculationWaste` before `done`.
@@ -698,12 +698,12 @@ export function accumulateTask(
     if (record.speculative && !record.failed) stage.speculativeWinners.add(key);
   } else if (existing.failed && !record.failed) {
     // A retry succeeded where the earlier attempt failed: the earlier attempt's time was wasted.
-    // Spark marks only the speculative COPY's Speculative flag, never the original it raced, so
-    // check both sides to catch "original loses to twin" and "twin loses to original" either way.
-    if (existing.speculative || record.speculative) {
+    // Only a losing speculative copy is speculation waste. An original that a copy beat is
+    // speculation working: it is neither speculation waste nor retry waste.
+    if (existing.speculative) {
       stage.speculationWasteMs += existing.duration;
       stage.speculationWastedAttempts++;
-    } else {
+    } else if (!record.speculative) {
       stage.retryWasteMs += existing.duration;
       stage.wastedAttempts++;
       if (stage.retryTaskSamples.length < MAX_TASK_SAMPLES) {
@@ -716,12 +716,13 @@ export function accumulateTask(
     if (record.speculative) stage.speculativeWinners.add(key);
   } else {
     stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(record), stage.lateAttemptWork);
-    // Non-winning duplicate (both failed, or a race where a winner is
-    // already recorded): its time is waste, its metrics are discarded.
-    if (existing.speculative || record.speculative) {
+    // Non-winning duplicate (both failed, or a race where a winner is already recorded): its
+    // metrics are discarded. Its time is speculation waste only when it is a speculative copy;
+    // an original beaten by a copy is not waste.
+    if (record.speculative) {
       stage.speculationWasteMs += record.duration;
       stage.speculationWastedAttempts++;
-    } else {
+    } else if (!existing.speculative) {
       stage.retryWasteMs += record.duration;
       stage.wastedAttempts++;
       if (stage.retryTaskSamples.length < MAX_TASK_SAMPLES) {
@@ -736,17 +737,20 @@ export function accumulateTask(
 
 // Spark kills the losing copy of a speculative race only once the stage finishes ("Stage
 // cancelled: Stage finished"), so that loser's TaskEnd normally lands after StageCompleted. Count
-// its time as speculation waste, pairing it the same way accumulateTask does: the late attempt is
-// the speculative copy itself, or the original that a speculative winner beat. Every other stat
-// of a late attempt stays excluded, as the finalized stage already posted them.
+// its time as speculation waste when it is the speculative copy. A late original that a speculative
+// winner beat is not waste, but it still returns true so it stays out of the failed-attempt path.
+// Every other stat of a late attempt stays excluded, as the finalized stage already posted them.
 function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, stage: StageRecord): boolean {
   const info = event['Task Info'];
   if (info?.['Index'] == null) return false;
   const key = `${event['Stage Attempt ID'] ?? 0}:${info['Index']}`;
-  if (info['Speculative'] !== true && !stage.speculativeWinners.has(key)) return false;
-  stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
-  stage.speculationWastedAttempts++;
-  stage.lateSpeculationWaste = true;
+  const isCopy = info['Speculative'] === true;
+  if (!isCopy && !stage.speculativeWinners.has(key)) return false;
+  if (isCopy) {
+    stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
+    stage.speculationWastedAttempts++;
+    stage.lateSpeculationWaste = true;
+  }
   stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(taskRecordOf(event, null)), stage.lateAttemptWork);
   return true;
 }
