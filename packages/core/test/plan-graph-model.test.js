@@ -1,45 +1,97 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildPlanGraphModel } from '../src/plan-graph-model.js';
 import { buildDurationMap } from '../src/plan-node-detail.ts';
+import { makeTypedStage } from './fixtures/stage-app-fixtures.js';
+
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/types.ts').AppModel} AppModel */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').PlanGraphModel} PlanGraphModel */
+/** @typedef {import('../src/types.ts').PlanGraphNodeData} PlanGraphNodeData */
+/** @typedef {import('../src/types.ts').PlanGraphEdge} PlanGraphEdge */
 
 vi.mock('../src/plan-node-detail.ts', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = /** @type {typeof import('../src/plan-node-detail.ts')} */ (await importOriginal());
   return { ...actual, buildDurationMap: vi.fn(actual.buildDurationMap) };
 });
 
 let nextTestId = 0;
+/**
+ * @param {string} name
+ * @param {PlanNode[]} [children]
+ * @param {NonNullable<PlanNode['metrics']>} [metrics]
+ * @param {Partial<PlanNode>} [overrides]
+ * @returns {PlanNode & { id: string }}
+ */
 function node(name, children = [], metrics = [], overrides = {}) {
   return { id: `t${nextTestId++}`, name, detail: name, metrics, children, ...overrides };
 }
 
 // Mirrors resolvePlanTree's real split shape (see event-handlers.ts):
 // write keeps metrics/detail='', read keeps detail/metrics=[].
+/**
+ * @param {string} label
+ * @param {PlanNode[]} children
+ * @param {{ detail?: string }} [options]
+ */
 function splitExchange(label, children, { detail = label } = {}) {
   const write = node(label, children, [], { exchangeRole: 'write', detail: '' });
   const read = node(label, [write], [], { exchangeRole: 'read', detail });
   return read;
 }
 
+/**
+ * @param {{ stageId?: number, sqlExecutionId?: number, stageIds?: number[], planTree?: PlanNode | null, stages?: Record<number, Partial<Stage>> }} [options]
+ * @returns {AppModel}
+ */
 function makeAppModel({ stageId = 1, sqlExecutionId = 1, stageIds = [stageId], planTree, stages = {} } = {}) {
+  /** @type {Map<number, Stage>} */
   const stagesMap = new Map();
   for (const id of stageIds) {
-    stagesMap.set(id, {
+    stagesMap.set(id, makeTypedStage({
       id,
       sqlExecutionId,
       submittedAt: 0,
       completedAt: 1000,
       ...(stages[id] ?? {}),
-    });
+    }));
   }
   return {
     app: null,
     stages: stagesMap,
     executors: { added: [], removed: [] },
-    sql: new Map([[sqlExecutionId, { executionId: sqlExecutionId, planTree, stageIds }]]),
+    sql: new Map([[sqlExecutionId, { id: sqlExecutionId, planTree, stageIds }]]),
     jobs: new Map(),
     runAggregates: null,
     evidenceAvailability: null,
   };
+}
+
+/**
+ * @param {PlanGraphModel} model
+ * @param {(n: PlanGraphNodeData) => boolean} predicate
+ */
+function nodeWhere(model, predicate) {
+  const found = model.nodes.find(predicate);
+  if (!found) throw new Error('expected a matching graph node');
+  return found;
+}
+
+/**
+ * @param {PlanGraphModel} model
+ * @param {(e: PlanGraphEdge) => boolean} predicate
+ */
+function edgeWhere(model, predicate) {
+  const found = model.edges.find(predicate);
+  if (!found) throw new Error('expected a matching graph edge');
+  return found;
+}
+
+// A fixture finding carries only the fields the graph model reads, so it is asserted, not built to the full shape.
+/** @param {Record<string, unknown>} [fields] */
+function smallFilesFinding(fields = {}) {
+  return /** @type {Finding} */ (/** @type {unknown} */ ({ type: 'smallFiles', impactBand: 'warning', ...fields }));
 }
 
 describe('buildPlanGraphModel', () => {
@@ -58,8 +110,8 @@ describe('buildPlanGraphModel', () => {
     expect(model.scope).toBe('full');
     expect(model.nodes).toHaveLength(2);
     expect(model.edges).toHaveLength(1);
-    const rootNode = model.nodes.find((n) => n.label === 'SortMergeJoin');
-    const leafNode = model.nodes.find((n) => n.label === 'Scan parquet');
+    const rootNode = nodeWhere(model, (n) => n.label === 'SortMergeJoin');
+    const leafNode = nodeWhere(model, (n) => n.label === 'Scan parquet');
     expect(model.edges[0]).toMatchObject({ source: rootNode.id, target: leafNode.id });
   });
 
@@ -79,7 +131,7 @@ describe('buildPlanGraphModel', () => {
     const n = model.nodes[0];
 
     expect(n.metrics).toHaveLength(2);
-    expect(n.metrics[0]).toEqual({ name: 'number of output rows', value: '4,100,000' });
+    expect(n.metrics?.[0]).toEqual({ name: 'number of output rows', value: '4,100,000' });
     expect(n.detailText).toBe('FileScan parquet db.sales[region#3] Batched: true');
   });
 
@@ -99,8 +151,8 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
     expect(readHalf).toBeTruthy();
     expect(writeHalf).toBeTruthy();
     expect(readHalf.sourceNodeId).toBe(writeHalf.sourceNodeId);
@@ -121,7 +173,7 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const totalForStage = (stageId) => model.nodes
+    const totalForStage = (/** @type {number} */ stageId) => model.nodes
       .filter((graphNode) => model.segmentStageIds.get(graphNode.segmentIndex) === stageId)
       .reduce((total, graphNode) => total + (graphNode.durationShare ?? 0), 0);
     expect(totalForStage(1)).toBe(500);
@@ -156,10 +208,10 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const rootNode = model.nodes.find((n) => n.label === 'SortMergeJoin');
-    const leafNode = model.nodes.find((n) => n.label === 'Scan parquet');
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const rootNode = nodeWhere(model, (n) => n.label === 'SortMergeJoin');
+    const leafNode = nodeWhere(model, (n) => n.label === 'Scan parquet');
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
 
     expect(model.edges).toContainEqual(expect.objectContaining({ source: rootNode.id, target: readHalf.id }));
     expect(model.edges).toContainEqual(expect.objectContaining({ source: readHalf.id, target: writeHalf.id }));
@@ -186,12 +238,12 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
-    const exchangeEdge = model.edges.find((e) => e.source === readHalf.id && e.target === writeHalf.id);
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
+    const exchangeEdge = edgeWhere(model, (e) => e.source === readHalf.id && e.target === writeHalf.id);
     expect(exchangeEdge.shuffleBytes).toBe(4096);
     // Ordinary parent-child edges (e.g. parent -> read half) carry no weight.
-    const plainEdge = model.edges.find((e) => e.target === readHalf.id);
+    const plainEdge = edgeWhere(model, (e) => e.target === readHalf.id);
     expect(plainEdge.shuffleBytes).toBeUndefined();
   });
 
@@ -210,8 +262,8 @@ describe('buildPlanGraphModel', () => {
     });
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
-    const exchangeEdge = model.edges.find((e) => e.target === writeHalf.id);
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
+    const exchangeEdge = edgeWhere(model, (e) => e.target === writeHalf.id);
     expect(exchangeEdge.shuffleBytes).toBeUndefined();
   });
 
@@ -223,8 +275,8 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
     expect(readHalf.pairedNodeId).toBe(writeHalf.id);
     expect(writeHalf.pairedNodeId).toBe(readHalf.id);
   });
@@ -252,7 +304,7 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'segment', stageId: 1, appModel });
 
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
     expect(writeHalf.pairedNodeId).toEqual(expect.any(String));
     // The partner read half lives in the consumer segment, not this one.
     expect(model.nodes.some((n) => n.id === writeHalf.pairedNodeId)).toBe(false);
@@ -274,8 +326,8 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
     expect(writeHalf.exchangeShuffleBytes).toBe(4096);
     expect(readHalf.exchangeShuffleBytes).toBe(4096);
   });
@@ -291,7 +343,7 @@ describe('buildPlanGraphModel', () => {
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
     expect(model.nodes.filter((n) => n.splitRole).map((n) => n.exchangeWidth)).toEqual([rowWidth, rowWidth]);
-    expect(model.nodes.find((n) => !n.splitRole).exchangeWidth).toBeUndefined();
+    expect(nodeWhere(model, (n) => !n.splitRole).exchangeWidth).toBeUndefined();
   });
 
   it('leaves exchangeShuffleBytes null on both halves of a zero-byte (broadcast/empty) exchange', () => {
@@ -310,8 +362,8 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
     expect(writeHalf.exchangeShuffleBytes ?? null).toBeNull();
     expect(readHalf.exchangeShuffleBytes ?? null).toBeNull();
   });
@@ -324,10 +376,10 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const rootNode = model.nodes.find((n) => n.label === 'SortMergeJoin');
-    const leafNode = model.nodes.find((n) => n.label === 'Scan parquet');
-    const readHalf = model.nodes.find((n) => n.splitRole === 'read');
-    const writeHalf = model.nodes.find((n) => n.splitRole === 'write');
+    const rootNode = nodeWhere(model, (n) => n.label === 'SortMergeJoin');
+    const leafNode = nodeWhere(model, (n) => n.label === 'Scan parquet');
+    const readHalf = nodeWhere(model, (n) => n.splitRole === 'read');
+    const writeHalf = nodeWhere(model, (n) => n.splitRole === 'write');
     expect(readHalf.segmentIndex).toBe(rootNode.segmentIndex);
     expect(writeHalf.segmentIndex).toBe(leafNode.segmentIndex);
     expect(writeHalf.segmentIndex).not.toBe(readHalf.segmentIndex);
@@ -343,10 +395,10 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const leftNode = model.nodes.find((n) => n.label === 'Scan left');
-    const rightNode = model.nodes.find((n) => n.label === 'Scan right');
-    const leftWrite = model.nodes.find((n) => n.label === 'Exchange left' && n.splitRole === 'write');
-    const rightWrite = model.nodes.find((n) => n.label === 'Exchange right' && n.splitRole === 'write');
+    const leftNode = nodeWhere(model, (n) => n.label === 'Scan left');
+    const rightNode = nodeWhere(model, (n) => n.label === 'Scan right');
+    const leftWrite = nodeWhere(model, (n) => n.label === 'Exchange left' && n.splitRole === 'write');
+    const rightWrite = nodeWhere(model, (n) => n.label === 'Exchange right' && n.splitRole === 'write');
     expect(model.segmentCount).toBe(3);
     expect(leftWrite.segmentIndex).toBe(leftNode.segmentIndex);
     expect(rightWrite.segmentIndex).toBe(rightNode.segmentIndex);
@@ -376,9 +428,9 @@ describe('buildPlanGraphModel', () => {
     });
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 10, appModel });
-    const deepNode = model.nodes.find((graphNode) => graphNode.label === 'Scan deep');
-    const leftNode = model.nodes.find((graphNode) => graphNode.label === 'Project left');
-    const rightNode = model.nodes.find((graphNode) => graphNode.label === 'Scan right');
+    const deepNode = nodeWhere(model, (graphNode) => graphNode.label === 'Scan deep');
+    const leftNode = nodeWhere(model, (graphNode) => graphNode.label === 'Project left');
+    const rightNode = nodeWhere(model, (graphNode) => graphNode.label === 'Scan right');
 
     expect(model.segmentStageIds.get(deepNode.segmentIndex)).toBe(10);
     expect(deepNode.durationShare).toBe(100);
@@ -464,7 +516,7 @@ describe('buildPlanGraphModel', () => {
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
     expect(model.inheritedSegments).toEqual(new Set([0]));
-    expect(model.nodes.find((n) => n.label === 'SortMergeJoin').durationShare).toBe(1000);
+    expect(nodeWhere(model, (n) => n.label === 'SortMergeJoin').durationShare).toBe(1000);
     expect(model.stageDurations).toEqual(new Map([[1, 500]]));
   });
 
@@ -489,7 +541,7 @@ describe('buildPlanGraphModel', () => {
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
-    const rootNode = model.nodes.find((n) => n.label === 'SortMergeJoin');
+    const rootNode = nodeWhere(model, (n) => n.label === 'SortMergeJoin');
     expect(rootNode.durationShare).toBeNull();
   });
 
@@ -497,12 +549,12 @@ describe('buildPlanGraphModel', () => {
     const leaf = node('Scan parquet');
     const root = node('SortMergeJoin', [leaf]);
     const appModel = makeAppModel({ planTree: root });
-    const finding = { type: 'smallFiles', stageIds: [1], impactBand: 'warning', planNodeIds: [leaf.id], executionId: 1 };
+    const finding = smallFilesFinding({ stageIds: [1], planNodeIds: [leaf.id], executionId: 1 });
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel, findings: [finding] });
 
-    const leafNode = model.nodes.find((n) => n.label === 'Scan parquet');
-    const rootNode = model.nodes.find((n) => n.label === 'SortMergeJoin');
+    const leafNode = nodeWhere(model, (n) => n.label === 'Scan parquet');
+    const rootNode = nodeWhere(model, (n) => n.label === 'SortMergeJoin');
     expect(leafNode.findings).toEqual([finding]);
     expect(rootNode.findings).toEqual([]);
   });
@@ -511,20 +563,20 @@ describe('buildPlanGraphModel', () => {
     const leaf = node('Scan parquet');
     const root = node('SortMergeJoin', [leaf]);
     const appModel = makeAppModel({ planTree: root });
-    const finding = { type: 'smallFiles', stageIds: [1], impactBand: 'warning', planNodeIds: ['not-in-this-tree'], executionId: 1 };
+    const finding = smallFilesFinding({ stageIds: [1], planNodeIds: ['not-in-this-tree'], executionId: 1 });
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel, findings: [finding] });
-    expect(model.nodes.every((n) => n.findings.length === 0)).toBe(true);
+    expect(model.nodes.every((n) => n.findings?.length === 0)).toBe(true);
   });
 
   it('attaches nothing, without throwing, for a finding that carries no planNodeIds', () => {
     const leaf = node('Scan parquet');
     const root = node('SortMergeJoin', [leaf]);
     const appModel = makeAppModel({ planTree: root });
-    const finding = { type: 'smallFiles', stageIds: [1], impactBand: 'warning', executionId: 1 };
+    const finding = smallFilesFinding({ stageIds: [1], executionId: 1 });
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel, findings: [finding] });
-    expect(model.nodes.every((n) => n.findings.length === 0)).toBe(true);
+    expect(model.nodes.every((n) => n.findings?.length === 0)).toBe(true);
   });
 
   it('does not attach a finding from a different SQL execution, even when its planNodeIds collide with the current tree (node ids are only unique per execution)', () => {
@@ -537,30 +589,31 @@ describe('buildPlanGraphModel', () => {
     const leafExecB = node('Scan parquet', [], [], { id: 'n1' });
     const rootExecB = node('SortMergeJoin', [leafExecB], [], { id: 'n0' });
 
+    /** @type {AppModel} */
     const appModel = {
       app: null,
       stages: new Map([
-        [10, { id: 10, sqlExecutionId: 1, submittedAt: 0, completedAt: 1000 }],
-        [20, { id: 20, sqlExecutionId: 2, submittedAt: 0, completedAt: 1000 }],
+        [10, makeTypedStage({ id: 10, sqlExecutionId: 1, submittedAt: 0, completedAt: 1000 })],
+        [20, makeTypedStage({ id: 20, sqlExecutionId: 2, submittedAt: 0, completedAt: 1000 })],
       ]),
       executors: { added: [], removed: [] },
       sql: new Map([
-        [1, { executionId: 1, planTree: rootExecA, stageIds: [10] }],
-        [2, { executionId: 2, planTree: rootExecB, stageIds: [20] }],
+        [1, { id: 1, planTree: rootExecA, stageIds: [10] }],
+        [2, { id: 2, planTree: rootExecB, stageIds: [20] }],
       ]),
       jobs: new Map(),
       runAggregates: null,
       evidenceAvailability: null,
     };
     // Belongs to execution 1's node n1 only.
-    const finding = { type: 'smallFiles', stageIds: [10], impactBand: 'warning', planNodeIds: ['n1'], executionId: 1 };
+    const finding = smallFilesFinding({ stageIds: [10], planNodeIds: ['n1'], executionId: 1 });
 
     const modelExecB = buildPlanGraphModel(rootExecB, { scope: 'full', stageId: 20, appModel, findings: [finding] });
-    const n1InExecB = modelExecB.nodes.find((n) => n.id === 'n1');
+    const n1InExecB = nodeWhere(modelExecB, (n) => n.id === 'n1');
     expect(n1InExecB.findings).toEqual([]);
 
     const modelExecA = buildPlanGraphModel(rootExecA, { scope: 'full', stageId: 10, appModel, findings: [finding] });
-    const n1InExecA = modelExecA.nodes.find((n) => n.id === 'n1');
+    const n1InExecA = nodeWhere(modelExecA, (n) => n.id === 'n1');
     expect(n1InExecA.findings).toEqual([finding]);
   });
 });
@@ -573,18 +626,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const stage394Fixture = JSON.parse(readFileSync(join(__dirname, 'fixtures/plan-graph-stage-394.json'), 'utf-8'));
 
 describe('buildPlanGraphModel (stage-394 regression fixture)', () => {
+  /**
+   * @param {{ stageId: number, sqlExecutionId: number, stage: { submittedAt: number, completedAt: number }, sqlExec: { stageIds: number[] }, planTree: PlanNode }} fixture
+   * @returns {AppModel}
+   */
   function appModelFromFixture(fixture) {
     return {
       app: null,
-      stages: new Map([[fixture.stageId, {
+      stages: new Map([[fixture.stageId, makeTypedStage({
         id: fixture.stageId,
         sqlExecutionId: fixture.sqlExecutionId,
         submittedAt: fixture.stage.submittedAt,
         completedAt: fixture.stage.completedAt,
-      }]]),
+      })]]),
       executors: { added: [], removed: [] },
       sql: new Map([[fixture.sqlExecutionId, {
-        executionId: fixture.sqlExecutionId,
+        id: fixture.sqlExecutionId,
         planTree: fixture.planTree,
         stageIds: fixture.sqlExec.stageIds,
       }]]),

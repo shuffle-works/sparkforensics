@@ -7,13 +7,46 @@ import { computePlanShapes, normalizeDetail, findCompositeCandidates, planOperat
 import { createState, dispatchLine } from '../src/parser-worker.js';
 import { pathBasename } from '../src/text-format.js';
 import { formatBytes } from '../src/units.js';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { present } from './fixtures/present.js';
+
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/types.ts').SqlExecution} SqlExecution */
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+
+/**
+ * A `filter` or `find` predicate that narrows to one finding type.
+ * @template {Finding['type']} T
+ * @param {T} type
+ */
+function ofType(type) {
+  /** @param {Finding} f @returns {f is Extract<Finding, { type: T }>} */
+  return (f) => f.type === type;
+}
+
+/**
+ * A stage holding only the fields a test sets, for tests that need the detectors to see little else.
+ * @param {Partial<Stage>} fields
+ */
+const minimalStage = (fields) => /** @type {Stage} */ (fields);
 
 // Values never feed the fingerprint, so a placeholder value of 1 is fine.
+/**
+ * @param {string} name
+ * @param {string[]} [metricNames]
+ * @param {PlanNode[]} [children]
+ * @returns {PlanNode}
+ */
 const node = (name, metricNames = [], children = []) => ({
   name, detail: '', metrics: metricNames.map(n => ({ name: n, value: 1, metricType: 'sum' })), children,
 });
 
+/**
+ * @param {number} id
+ * @param {PlanNode | null} planTree
+ * @returns {SqlExecution}
+ */
 function makeSqlExec(id, planTree) {
   return { id, description: '', startTime: 0, endTime: 100, stageIds: [], planTree };
 }
@@ -24,8 +57,12 @@ const MB = 1024 * 1024;
 const GB = 1024 * MB;
 
 // Attributes every node of `tree` to stage `sid`, as resolvePlanTree does from task accumulables.
+/**
+ * @param {PlanNode} tree
+ * @param {number} sid
+ */
 const inStage = (tree, sid) => {
-  const visit = (n) => { n.stageIds = [sid]; n.children.forEach(visit); };
+  const visit = (/** @type {PlanNode} */ n) => { n.stageIds = [sid]; n.children.forEach(visit); };
   visit(tree);
   return tree;
 };
@@ -37,9 +74,9 @@ describe('duplicatePlanSubtree', () => {
     const dup = () => inStage(node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]), 1);
     const planTree = node('Project', [], [dup(), dup()]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].impactBand).toBe('critical');
     expect(findings[0].stageIds).toEqual([1]);
@@ -51,8 +88,8 @@ describe('duplicatePlanSubtree', () => {
     const dup = () => inStage(node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]), 1);
     const sql = new Map([[1, makeSqlExec(1, node('Project', [], [dup(), dup()]))]]);
     const run = makeApp({ endTime: 400_000 });
-    const at = (completedAt) => analyzedRunFrom({ app: run, stages: new Map([[1, makeStage({ sqlExecutionId: 1, completedAt })]]), sql }).catalog
-      .filter(b => b.type === 'duplicatePlanSubtree');
+    const at = (/** @type {number} */ completedAt) => analyzedRunFrom({ app: run, stages: new Map([[1, makeTypedStage({ sqlExecutionId: 1, completedAt })]]), sql }).catalog
+      .filter(ofType('duplicatePlanSubtree'));
     expect(at(1000)).toHaveLength(0); // 0.25% of the run: the repeat is real, the floor drops it
     const kept = at(8000); // 2%
     expect(kept).toHaveLength(1);
@@ -62,31 +99,31 @@ describe('duplicatePlanSubtree', () => {
   // Same operator shape over different data (another table, another filter) is no repeated
   // work: the finding stays, flagged low-confidence and informational, with no time claimed.
   it('makes repeats whose details differ informational, with no wall-clock claim', () => {
-    const dup = (filter) => {
+    const dup = (/** @type {string} */ filter) => {
       const tree = inStage(node('Filter', ['a'], [node('ColumnarToRow', ['b'], [node('Scan parquet', ['c'])])]), 1);
       tree.detail = filter;
       return tree;
     };
     const planTree = node('Union', [], [dup('Filter (x = 1)'), dup('Filter (y = 2)')]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const [finding] = analyzedRunFrom({ app: makeApp(), stages, sql: new Map([[1, makeSqlExec(1, planTree)]]) }).catalog
-      .filter(b => b.type === 'duplicatePlanSubtree');
+      .filter(ofType('duplicatePlanSubtree'));
     expect(finding.occurrencesIdentical).toBe(false);
     expect(finding.impactBand).toBe('info');
     expect(finding.confidence).toBe('low');
-    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(present(finding.impactEstimate).wallClock).toBeNull();
     expect(finding.recommendation).toContain('may compute different data');
   });
 
   it('treats repeats that differ only in AQE query-stage numbering as identical', () => {
-    const dup = (n) => {
+    const dup = (/** @type {number} */ n) => {
       const leaf = node('ShuffleQueryStage', ['d']);
       leaf.detail = `ShuffleQueryStage ${n}`;
       return inStage(node('Sort', ['a'], [node('AQEShuffleRead', ['b'], [leaf])]), 1);
     };
     const planTree = node('SortMergeJoin', [], [dup(718), dup(720)]);
-    const [finding] = analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeStage({ sqlExecutionId: 1 })]]), sql: new Map([[1, makeSqlExec(1, planTree)]]) }).catalog
-      .filter(b => b.type === 'duplicatePlanSubtree');
+    const [finding] = analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]), sql: new Map([[1, makeSqlExec(1, planTree)]]) }).catalog
+      .filter(ofType('duplicatePlanSubtree'));
     expect(finding.occurrencesIdentical).toBe(true);
   });
 
@@ -99,8 +136,8 @@ describe('duplicatePlanSubtree', () => {
     const write = inStage(node('Exchange', ['data size'], [dup()]), 1);
     write.exchangeRole = 'write';
     const planTree = node('Union', [], [wrapper, write, other]);
-    const [finding] = analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeStage({ sqlExecutionId: 1 })]]), sql: new Map([[1, makeSqlExec(1, planTree)]]) }).catalog
-      .filter(b => b.type === 'duplicatePlanSubtree');
+    const [finding] = analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]), sql: new Map([[1, makeSqlExec(1, planTree)]]) }).catalog
+      .filter(ofType('duplicatePlanSubtree'));
     // 6 repeated operators of the stage's 8 (the wrapper and the write half excluded).
     expect(finding.stageShares).toEqual({ 1: 0.75 });
   });
@@ -108,20 +145,20 @@ describe('duplicatePlanSubtree', () => {
   it('claims no time when no operator of the repeats ran in a known stage', () => {
     const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]);
     const planTree = node('Project', [], [dup(), dup()]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const [finding] = analyzedRunFrom({ app: makeApp(), stages, sql: new Map([[1, makeSqlExec(1, planTree)]]) }).catalog
-      .filter(b => b.type === 'duplicatePlanSubtree');
+      .filter(ofType('duplicatePlanSubtree'));
     // stageIds still falls back to the execution's stages for linking, but none is attributable.
     expect(finding.stageIds).toEqual([1]);
     expect(finding.impactBand).toBe('info');
-    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(present(finding.impactEstimate).wallClock).toBeNull();
   });
 
   it('confidence is low for a match at the bare minimum subtreeSize and occurrences (old logic hardcoded medium here, the weakest evidence the matcher can produce)', () => {
     const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]); // subtreeSize 3
     const planTree = node('Project', [], [dup(), dup()]); // occurrences 2
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].subtreeSize).toBe(3);
     expect(findings[0].value).toBe(2); // occurrences
@@ -132,7 +169,7 @@ describe('duplicatePlanSubtree', () => {
     const dup = () => node('Agg', ['a'], [node('L1'), node('L2'), node('L3')]); // subtreeSize 4
     const planTree = node('Project', [], [dup(), dup()]); // occurrences 2
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].confidence).toBe('medium');
   });
@@ -141,7 +178,7 @@ describe('duplicatePlanSubtree', () => {
     const dup = () => node('Agg', ['a'], [node('L1'), node('L2'), node('L3'), node('L4'), node('L5')]); // subtreeSize 6
     const planTree = node('Project', [], [dup(), dup()]); // occurrences 2
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].subtreeSize).toBe(6);
     expect(findings[0].confidence).toBe('high');
@@ -151,7 +188,7 @@ describe('duplicatePlanSubtree', () => {
     const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]); // subtreeSize 3
     const planTree = node('Project', [], [dup(), dup(), dup(), dup()]); // occurrences 4
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), sql }).catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].value).toBe(4); // occurrences
     expect(findings[0].confidence).toBe('high');
@@ -168,7 +205,7 @@ describe('duplicatePlanSubtree', () => {
     // No stages: no wallClock estimate, so impactBand stays the no-coverage 'info'
     // regardless of isExchangeRoot; only the recommendation text differs.
     const catalog = analyzedRunFrom({ app: makeApp(), sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].impactBand).toBe('info');
     expect(findings[0].recommendation).toContain('missed exchange reuse');
@@ -179,14 +216,14 @@ describe('duplicatePlanSubtree', () => {
     const planTree = node('Project', [], [dup(), dup()]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const catalog = analyzedRunFrom({ app: makeApp(), sql }).catalog;
-    expect(catalog.filter(b => b.type === 'duplicatePlanSubtree')).toHaveLength(0);
+    expect(catalog.filter(ofType('duplicatePlanSubtree'))).toHaveLength(0);
   });
 
   it('emits no finding for a plan with no repetition', () => {
     const planTree = node('Project', [], [node('Scan', ['x']), node('Filter', ['y'])]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const catalog = analyzedRunFrom({ app: makeApp(), sql }).catalog;
-    expect(catalog.filter(b => b.type === 'duplicatePlanSubtree')).toHaveLength(0);
+    expect(catalog.filter(ofType('duplicatePlanSubtree'))).toHaveLength(0);
   });
 
   it('guards against a missing planTree without throwing', () => {
@@ -200,7 +237,7 @@ describe('duplicatePlanSubtree', () => {
     const planTree = node('Project', [], [dup(), dup()]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const catalog = analyzedRunFrom({ app: makeApp(), sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].rootName).toBe(rawName);
     expect(findings[0].recommendation).toContain(pathBasename(rawName));
@@ -210,7 +247,7 @@ describe('duplicatePlanSubtree', () => {
   it('distinguishes two same-shape duplicate groups that scan different tables (regression: real logs emitted indistinguishable/id-colliding findings for unrelated repeated BroadcastExchange subtrees over different tables)', () => {
     // Same-shape groups scanning different tables stay separate fingerprint groups;
     // the emitted findings need a field reflecting the table or they collide on one id.
-    const broadcastOf = (table) => node('BroadcastExchange', [], [
+    const broadcastOf = (/** @type {string} */ table) => node('BroadcastExchange', [], [
       node('Project', [], [
         node('Filter', [], [
           node(`Scan parquet spark_catalog.warehouse.${table}`, []),
@@ -222,9 +259,9 @@ describe('duplicatePlanSubtree', () => {
       broadcastOf('packs_inverso'), broadcastOf('packs_inverso'),
     ]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ id: 1, sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ id: 1, sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(2);
     // Each finding must carry something that reflects which table it's about.
     expect(findings[0].recommendation).not.toBe(findings[1].recommendation);
@@ -234,7 +271,7 @@ describe('duplicatePlanSubtree', () => {
   it('keeps both findings distinct when neither duplicate group resolves to a named catalog relation (regression: sampleRelation alone is null for scan-less sources like JDBC/Kafka/LocalRelation, and a shared null would silently drop the second finding via push()\'s id-dedup guardrail)', () => {
     // Leaves not recognized by scanRelationId, so sampleRelation is null for both;
     // groupIndex is the discriminator that must keep them apart.
-    const localOf = (label) => node('BroadcastExchange', [], [
+    const localOf = (/** @type {string} */ label) => node('BroadcastExchange', [], [
       node('Project', [], [
         node('Filter', [], [
           node(`LocalTableScan ${label}`, []),
@@ -246,9 +283,9 @@ describe('duplicatePlanSubtree', () => {
       localOf('B'), localOf('B'),
     ]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ id: 1, sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ id: 1, sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(2);
     expect(findings.every((f) => f.sampleRelation == null)).toBe(true);
     // Both findings must survive push()'s id-dedup guardrail, not just one.
@@ -262,7 +299,7 @@ describe('duplicatePlanSubtree', () => {
     b.detail = 'condition B';
     const { shapeOf } = computePlanShapes(a);
     const { shapeOf: shapeOfB } = computePlanShapes(b);
-    expect(shapeOf.get(a).fingerprint).toBe(shapeOfB.get(b).fingerprint);
+    expect(present(shapeOf.get(a)).fingerprint).toBe(present(shapeOfB.get(b)).fingerprint);
   });
 
   it('computePlanShapes: includeDetail folds only the root\'s own normalized detail', () => {
@@ -272,12 +309,12 @@ describe('duplicatePlanSubtree', () => {
     a.detail = 'condition A';
     const b = node('Join', ['rows'], [leftChild, rightChild]);
     b.detail = 'condition B';
-    const identityNormalize = (d) => d;
+    const identityNormalize = (/** @type {string} */ d) => d;
     const { shapeOf: sa } = computePlanShapes(a, { includeDetail: true, normalizeDetail: identityNormalize });
     const { shapeOf: sb } = computePlanShapes(b, { includeDetail: true, normalizeDetail: identityNormalize });
-    expect(sa.get(a).fingerprint).not.toBe(sb.get(b).fingerprint);
-    expect(sa.get(a).fingerprint).toContain('<condition A>');
-    expect(sb.get(b).fingerprint).toContain('<condition B>');
+    expect(present(sa.get(a)).fingerprint).not.toBe(present(sb.get(b)).fingerprint);
+    expect(present(sa.get(a)).fingerprint).toContain('<condition A>');
+    expect(present(sb.get(b)).fingerprint).toContain('<condition B>');
   });
 
   it('computePlanShapes: includeDetail never folds detail into recursive child fingerprints', () => {
@@ -289,11 +326,11 @@ describe('duplicatePlanSubtree', () => {
     a.detail = 'same condition';
     const b = node('Join', ['rows'], [leftB]);
     b.detail = 'same condition';
-    const identityNormalize = (d) => d;
+    const identityNormalize = (/** @type {string} */ d) => d;
     const { shapeOf: sa } = computePlanShapes(a, { includeDetail: true, normalizeDetail: identityNormalize });
     const { shapeOf: sb } = computePlanShapes(b, { includeDetail: true, normalizeDetail: identityNormalize });
     // Only the root's detail is folded; a child's own detail never enters the fingerprint.
-    expect(sa.get(a).fingerprint).toBe(sb.get(b).fingerprint);
+    expect(present(sa.get(a)).fingerprint).toBe(present(sb.get(b)).fingerprint);
   });
 
   it('computePlanShapes: a read/write Exchange split pair collapses to one logical node, sized and fingerprinted off the write half', () => {
@@ -305,25 +342,25 @@ describe('duplicatePlanSubtree', () => {
     const root = node('Project', [], [read]);
     const { shapeOf } = computePlanShapes(root);
     // Project, Exchange, Scan -- NOT 4 (the write half must not count separately).
-    expect(shapeOf.get(root).size).toBe(3);
+    expect(present(shapeOf.get(root)).size).toBe(3);
     // The Exchange's fingerprint must come from the write half's real "data size"
     // metric, not the read half's always-empty metrics.
-    expect(shapeOf.get(read).fingerprint).toContain('data size');
+    expect(present(shapeOf.get(read)).fingerprint).toContain('data size');
   });
 
   it('computePlanShapes: fingerprints stay O(own size) on a deep plan, yet still tell apart subtrees that differ only at the leaf', () => {
-    const chain = (leafName) => {
+    const chain = (/** @type {string} */ leafName) => {
       let n = node(leafName, ['number of output rows']);
       for (let i = 0; i < 300; i++) n = node('Project', ['number of output rows'], [n]);
       return n;
     };
     const a = chain('Scan parquet a');
     const b = chain('Scan parquet b');
-    const fa = computePlanShapes(a).shapeOf.get(a).fingerprint;
+    const fa = present(computePlanShapes(a).shapeOf.get(a)).fingerprint;
     // Children fold in as fixed-length digests: embedding them whole made the root carry all
     // 300 levels of text.
     expect(fa.length).toBeLessThan(100);
-    expect(fa).not.toBe(computePlanShapes(b).shapeOf.get(b).fingerprint);
+    expect(fa).not.toBe(present(computePlanShapes(b).shapeOf.get(b)).fingerprint);
   });
 });
 
@@ -351,12 +388,18 @@ describe('findDuplicateSubtrees: node instance contract', () => {
 });
 
 describe('duplicatePlanSubtree: narrowed stageIds', () => {
+  /**
+   * @param {string} name
+   * @param {number[] | undefined} stageIds
+   * @param {PlanNode[]} [children]
+   * @returns {PlanNode}
+   */
   function planNodeWithStages(name, stageIds, children = []) {
     return { name, detail: '', metrics: [{ name: 'm', value: 1 }], children, ...(stageIds ? { stageIds } : {}) };
   }
 
   it('unions stageIds across all matched instances of the duplicated group', () => {
-    const dup = (stageId) => planNodeWithStages('SortMergeJoin', [stageId], [
+    const dup = (/** @type {number} */ stageId) => planNodeWithStages('SortMergeJoin', [stageId], [
       planNodeWithStages('Sort', undefined), planNodeWithStages('Sort', undefined),
     ]);
     const a = dup(10);
@@ -364,11 +407,11 @@ describe('duplicatePlanSubtree: narrowed stageIds', () => {
     const planTree = planNodeWithStages('Project', undefined, [a, b]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const stages = new Map([
-      [10, makeStage({ id: 10, sqlExecutionId: 1 })], [11, makeStage({ id: 11, sqlExecutionId: 1 })],
-      [12, makeStage({ id: 12, sqlExecutionId: 1 })], // unrelated stage in the same execution
+      [10, makeTypedStage({ id: 10, sqlExecutionId: 1 })], [11, makeTypedStage({ id: 11, sqlExecutionId: 1 })],
+      [12, makeTypedStage({ id: 12, sqlExecutionId: 1 })], // unrelated stage in the same execution
     ]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('duplicatePlanSubtree'));
 
     expect(findings).toHaveLength(1);
     expect(findings[0].stageIds).toEqual([10, 11]);
@@ -377,7 +420,7 @@ describe('duplicatePlanSubtree: narrowed stageIds', () => {
   it('unions stageIds from a descendant node, not just the matched subtree root', () => {
     // Passthrough roots often carry no stageIds; coverage lives on a node deeper in
     // the same occurrence, so the union must walk the full matched subtree.
-    const dup = (stageId) => planNodeWithStages('SortMergeJoin', undefined, [
+    const dup = (/** @type {number} */ stageId) => planNodeWithStages('SortMergeJoin', undefined, [
       planNodeWithStages('Sort', [stageId]), planNodeWithStages('Sort', undefined),
     ]);
     const a = dup(10);
@@ -385,11 +428,11 @@ describe('duplicatePlanSubtree: narrowed stageIds', () => {
     const planTree = planNodeWithStages('Project', undefined, [a, b]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const stages = new Map([
-      [10, makeStage({ id: 10, sqlExecutionId: 1 })], [11, makeStage({ id: 11, sqlExecutionId: 1 })],
-      [12, makeStage({ id: 12, sqlExecutionId: 1 })], // unrelated stage in the same execution
+      [10, makeTypedStage({ id: 10, sqlExecutionId: 1 })], [11, makeTypedStage({ id: 11, sqlExecutionId: 1 })],
+      [12, makeTypedStage({ id: 12, sqlExecutionId: 1 })], // unrelated stage in the same execution
     ]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('duplicatePlanSubtree'));
 
     expect(findings).toHaveLength(1);
     expect(findings[0].stageIds).toEqual([10, 11]);
@@ -401,29 +444,32 @@ describe('duplicatePlanSubtree: narrowed stageIds', () => {
     ]);
     const planTree = planNodeWithStages('Project', undefined, [dup(), dup()]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[10, makeStage({ id: 10, sqlExecutionId: 1 })], [11, makeStage({ id: 11, sqlExecutionId: 1 })]]);
+    const stages = new Map([[10, makeTypedStage({ id: 10, sqlExecutionId: 1 })], [11, makeTypedStage({ id: 11, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'duplicatePlanSubtree');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('duplicatePlanSubtree'));
 
-    expect(findings[0].stageIds.sort()).toEqual([10, 11]);
+    expect(present(findings[0].stageIds).sort()).toEqual([10, 11]);
   });
 });
 
 describe('smallFiles', () => {
-  const metric = (name, value) => ({ name, value, metricType: 'sum' });
+  const metric = (/** @type {string} */ name, /** @type {number} */ value) => ({ name, value, metricType: 'sum' });
+  /** @param {number} fileCount @param {number} avgBytes @returns {PlanNode} */
   const readNode = (fileCount, avgBytes) => ({
     name: 'Scan parquet', detail: '', children: [],
     metrics: [metric('number of files read', fileCount), metric('size of files read', fileCount * avgBytes)],
   });
+  /** @param {number} fileCount @param {number} avgBytes @returns {PlanNode} */
   const writeNode = (fileCount, avgBytes) => ({
     name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', children: [],
     metrics: [metric('number of written files', fileCount), metric('written output', fileCount * avgBytes)],
   });
 
+  /** @param {PlanNode} planNode */
   function run(planNode) {
     const sql = new Map([[1, makeSqlExec(1, planNode)]]);
     const catalog = analyzedRunFrom({ app: makeApp(), sql }).catalog;
-    return catalog.filter(b => b.type === 'smallFiles');
+    return catalog.filter(ofType('smallFiles'));
   }
 
   it('does not flag file count exactly at the 100-file boundary', () => {
@@ -453,6 +499,7 @@ describe('smallFiles', () => {
 
   it('recommendation uses the basename of a path-like scan node name, leaving nodeName raw', () => {
     const rawName = 'Scan parquet - hdfs://host/a/b/leaf_dir';
+    /** @type {PlanNode} */
     const planNode = {
       name: rawName, detail: '', children: [],
       metrics: [metric('number of files read', 150), metric('size of files read', 150 * 1024 * 1024)],
@@ -477,9 +524,9 @@ describe('smallFiles: narrowed stageIds', () => {
     };
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
-    const stages = new Map([[4, { id: 4, sqlExecutionId: 1 }], [5, { id: 5, sqlExecutionId: 1 }]]);
+    const stages = new Map([[4, minimalStage({ id: 4, sqlExecutionId: 1 })], [5, minimalStage({ id: 5, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'smallFiles');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('smallFiles'));
 
     expect(findings[0].stageIds).toEqual([4]);
   });
@@ -495,9 +542,9 @@ describe('smallFiles: narrowed stageIds', () => {
     };
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
-    const stages = new Map([[4, { id: 4, sqlExecutionId: 1 }]]);
+    const stages = new Map([[4, minimalStage({ id: 4, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'smallFiles');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('smallFiles'));
 
     expect(findings[0].stageIds).toEqual([4]);
   });
@@ -506,6 +553,7 @@ describe('smallFiles: narrowed stageIds', () => {
 describe('smallFiles: real-fixture metric-name integration', () => {
   const fixturePath = fileURLToPath(new URL('../../../examples/private-log-06', import.meta.url));
 
+  /** @param {string} filePath @param {string[]} substrings */
   async function collectMatchingLines(filePath, substrings) {
     const rl = createInterface({ input: createReadStream(filePath), crlfDelay: Infinity });
     const lines = [];
@@ -537,6 +585,7 @@ describe('smallFiles: real-fixture metric-name integration', () => {
       expect(sql.size).toBeGreaterThan(0);
       expect(() => analyzedRunFrom({ app: makeApp(), sql }).catalog).not.toThrow();
 
+      /** @param {PlanNode} node @returns {boolean} */
       function hasFileMetric(node) {
         const names = (node.metrics ?? []).map(m => m.name);
         if (names.includes('number of files read') || names.includes('number of written files')) return true;
@@ -552,12 +601,22 @@ describe('smallFiles: real-fixture metric-name integration', () => {
 const SMJ_INNER = 'SortMergeJoin [a#1L], [b#2L], Inner';
 
 describe('broadcast sizing', () => {
+  /**
+   * @param {string} name
+   * @param {PlanNode[]} [children]
+   * @param {number} [value]
+   * @returns {PlanNode}
+   */
   function sizeNode(name, children = [], value) {
     return {
       name, detail: name === 'SortMergeJoin' ? SMJ_INNER : '', children,
       metrics: value != null ? [{ name: 'data size', value, metricType: 'size' }] : [],
     };
   }
+  /**
+   * @param {PlanNode} planNode
+   * @param {import('../src/analyzed-run.ts').AnalyzeRunOptions['thresholds']} [thresholds]
+   */
   function run(planNode, thresholds) {
     const sql = new Map([[1, makeSqlExec(1, planNode)]]);
     const catalog = analyzedRunFrom({ app: makeApp(), sql }, { thresholds }).catalog;
@@ -596,7 +655,7 @@ describe('broadcast sizing', () => {
       sizeNode('Exchange', [], 5 * 1024 * 1024),
       sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024),
     ]);
-    const [finding] = run(join);
+    const finding = present(run(join).find(ofType('underBroadcast')));
     expect(finding.recommendation).toContain(formatBytes(finding.value));
     expect(finding.recommendation).toContain(formatBytes(finding.largerSideBytes));
   });
@@ -635,6 +694,13 @@ describe('broadcast sizing', () => {
 });
 
 describe('broadcastSizing: narrowed stageIds', () => {
+  /**
+   * @param {string} name
+   * @param {PlanNode[]} [children]
+   * @param {number} [value]
+   * @param {number[]} [stageIds]
+   * @returns {PlanNode}
+   */
   function sizeNode(name, children = [], value, stageIds) {
     return {
       name, detail: name === 'SortMergeJoin' ? SMJ_INNER : '', children,
@@ -647,9 +713,9 @@ describe('broadcastSizing: narrowed stageIds', () => {
     const child = sizeNode('Project', [], undefined, [20]);
     const bx = sizeNode('BroadcastExchange', [child], 2 * 1024 * 1024 * 1024);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: bx }]]);
-    const stages = new Map([[20, { id: 20, sqlExecutionId: 1 }], [21, { id: 21, sqlExecutionId: 1 }]]);
+    const stages = new Map([[20, minimalStage({ id: 20, sqlExecutionId: 1 })], [21, minimalStage({ id: 21, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'overBroadcast');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('overBroadcast'));
 
     expect(findings[0].stageIds).toEqual([20]);
   });
@@ -659,19 +725,19 @@ describe('broadcastSizing: narrowed stageIds', () => {
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
-    const stages = new Map([[30, { id: 30, sqlExecutionId: 1 }], [31, { id: 31, sqlExecutionId: 1 }], [32, { id: 32, sqlExecutionId: 1 }]]);
+    const stages = new Map([[30, minimalStage({ id: 30, sqlExecutionId: 1 })], [31, minimalStage({ id: 31, sqlExecutionId: 1 })], [32, minimalStage({ id: 32, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'underBroadcast');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('underBroadcast'));
 
-    expect(findings[0].stageIds.sort()).toEqual([30, 31]);
+    expect(present(findings[0].stageIds).sort()).toEqual([30, 31]);
   });
 
   it('falls back to execution-wide stageIds when no contributing node has coverage', () => {
     const bx = sizeNode('BroadcastExchange', [], 2 * 1024 * 1024 * 1024);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: bx }]]);
-    const stages = new Map([[20, { id: 20, sqlExecutionId: 1 }]]);
+    const stages = new Map([[20, minimalStage({ id: 20, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'overBroadcast');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('overBroadcast'));
 
     expect(findings[0].stageIds).toEqual([20]);
   });
@@ -683,43 +749,51 @@ describe('broadcastSizing: narrowed stageIds', () => {
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
-    const stages = new Map([[30, { id: 30, sqlExecutionId: 1 }], [31, { id: 31, sqlExecutionId: 1 }], [32, { id: 32, sqlExecutionId: 1 }]]);
+    const stages = new Map([[30, minimalStage({ id: 30, sqlExecutionId: 1 })], [31, minimalStage({ id: 31, sqlExecutionId: 1 })], [32, minimalStage({ id: 32, sqlExecutionId: 1 })]]);
 
-    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter((f) => f.type === 'underBroadcast');
+    const findings = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('underBroadcast'));
 
-    expect(findings[0].stageIds.sort()).toEqual([30, 31]);
+    expect(present(findings[0].stageIds).sort()).toEqual([30, 31]);
   });
 });
 
 describe('duplicatePlanSubtree: planNodeIds and the Exchange split', () => {
+  /**
+   * @param {string} name
+   * @param {string} id
+   * @param {string[]} [metricNames]
+   * @param {PlanNode[]} [children]
+   * @param {Partial<PlanNode>} [extra]
+   * @returns {PlanNode}
+   */
   function idNode(name, id, metricNames = [], children = [], extra = {}) {
     return { id, name, detail: '', metrics: metricNames.map(n => ({ name: n, value: 1, metricType: 'sum' })), children, ...extra };
   }
 
   it('captures planNodeIds covering the whole matched subtree', () => {
-    const dup = (suffix) => idNode('SortMergeJoin', `j${suffix}`, ['a'], [
+    const dup = (/** @type {string} */ suffix) => idNode('SortMergeJoin', `j${suffix}`, ['a'], [
       idNode('Sort', `s1${suffix}`, ['b']), idNode('Sort', `s2${suffix}`, ['b']),
     ]);
     const planTree = idNode('Project', 'root', [], [dup('A'), dup('B')]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     expect(findings).toHaveLength(1);
     expect(findings[0].planNodeIds.sort()).toEqual(['jA', 's1A', 's2A', 'jB', 's1B', 's2B'].sort());
   });
 
   it('treats a write/read Exchange pair as one indivisible unit: no spurious nested duplicate at the write half', () => {
-    const dup = (suffix) => {
+    const dup = (/** @type {string} */ suffix) => {
       const write = idNode('Exchange', `w${suffix}`, ['data size'], [idNode('Scan parquet t', `scan${suffix}`)], { exchangeRole: 'write' });
       const read = idNode('Exchange', `r${suffix}`, [], [write], { exchangeRole: 'read' });
       return idNode('SortMergeJoin', `j${suffix}`, ['a'], [read, idNode('Sort', `sort${suffix}`)]);
     };
     const planTree = idNode('Project', 'root', [], [dup('A'), dup('B')]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const findings = catalog.filter(ofType('duplicatePlanSubtree'));
     // Exactly one group (the SortMergeJoin subtree), not two (no separate
     // group rooted at the write half nested inside it).
     expect(findings).toHaveLength(1);
@@ -728,6 +802,13 @@ describe('duplicatePlanSubtree: planNodeIds and the Exchange split', () => {
 });
 
 describe('smallFiles: planNodeIds', () => {
+  /**
+   * @param {string} name
+   * @param {string} id
+   * @param {string[]} [metricNames]
+   * @param {PlanNode[]} [children]
+   * @returns {PlanNode}
+   */
   function idNode(name, id, metricNames = [], children = []) {
     return { id, name, detail: '', metrics: metricNames.map(n => ({ name: n, value: 1, metricType: 'sum' })), children };
   }
@@ -737,15 +818,23 @@ describe('smallFiles: planNodeIds', () => {
     scan.metrics = [{ name: 'number of files read', value: 500, metricType: 'sum' }, { name: 'size of files read', value: 500 * MB, metricType: 'sum' }];
     const planTree = idNode('Project', 'root', [], [scan]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'smallFiles');
+    const findings = catalog.filter(ofType('smallFiles'));
     expect(findings).toHaveLength(1);
     expect(findings[0].planNodeIds).toEqual(['scan1']);
   });
 });
 
 describe('overBroadcast/underBroadcast: classifier + planNodeIds', () => {
+  /**
+   * @param {string} name
+   * @param {string} id
+   * @param {string[]} [metricNames]
+   * @param {PlanNode[]} [children]
+   * @param {Partial<PlanNode>} [extra]
+   * @returns {PlanNode}
+   */
   function idNode(name, id, metricNames = [], children = [], extra = {}) {
     return { id, name, detail: '', metrics: metricNames.map(n => ({ name: n, value: 1, metricType: 'sum' })), children, ...extra };
   }
@@ -756,9 +845,9 @@ describe('overBroadcast/underBroadcast: classifier + planNodeIds', () => {
     const read = idNode('BroadcastExchange', 'bx-read', [], [write], { exchangeRole: 'read' });
     const planTree = idNode('Project', 'root', [], [read]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
     const catalog = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog;
-    const findings = catalog.filter(b => b.type === 'overBroadcast');
+    const findings = catalog.filter(ofType('overBroadcast'));
     expect(findings).toHaveLength(1);
     expect(findings[0].planNodeIds).toEqual(['bx-write']);
   });
@@ -822,6 +911,7 @@ describe('planOperatorKind', () => {
 });
 
 describe('findCompositeCandidates', () => {
+  /** @param {string} relation @param {number} bytes @returns {PlanNode} */
   function makeScan(relation, bytes) {
     return {
       name: `Scan parquet spark_catalog.${relation}`,
@@ -877,18 +967,20 @@ describe('findCompositeCandidates', () => {
 });
 
 describe('duplicatePlanSubtree: action and Delta version context', () => {
+  /** @param {number | undefined} version @returns {PlanNode} */
   const scan = (version) => ({
     name: 'Scan parquet',
     detail: `FileScan parquet spark_catalog.db.t[c#1] Location: PreparedDeltaFileIndex[hdfs://cluster/wh/db/t], ${version === undefined ? '' : `Delta[version=${version}], `}PushedFilters: []`,
     metrics: [], children: [],
   });
   // A shuffled, sorted aggregation over one Delta scan, in stage 1.
-  const branch = (version) => inStage(node('Sort', ['a'], [node('HashAggregate', ['b'], [node('Exchange', ['c'], [scan(version)])])]), 1);
+  const branch = (/** @type {number | undefined} */ version) => inStage(node('Sort', ['a'], [node('HashAggregate', ['b'], [node('Exchange', ['c'], [scan(version)])])]), 1);
+  /** @param {string} description @param {(number | undefined)[]} [versions] */
   const run = (description, versions = [undefined, undefined]) => {
     const planTree = node('SortMergeJoin', [], versions.map(branch));
     const sql = new Map([[1, { ...makeSqlExec(1, planTree), description }]]);
-    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
-    return analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(b => b.type === 'duplicatePlanSubtree');
+    const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1 })]]);
+    return analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.filter(ofType('duplicatePlanSubtree'));
   };
 
   it.each(['show', 'showString', 'collect'])('lowers a repeat under %s to info with no time claim', (action) => {
@@ -896,14 +988,14 @@ describe('duplicatePlanSubtree: action and Delta version context', () => {
     expect(finding.rootAction).toBe(action);
     expect(finding.occurrencesIdentical).toBe(true);
     expect(finding.impactBand).toBe('info');
-    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(present(finding.impactEstimate).wallClock).toBeNull();
   });
 
   it.each(['count', 'save'])('keeps a repeat under %s above info with its time claim', (action) => {
     const [finding] = run(`${action} at Job.scala:12`);
     expect(finding.rootAction).toBe(action);
     expect(finding.impactBand).not.toBe('info');
-    expect(finding.impactEstimate.wallClock).not.toBeNull();
+    expect(present(finding.impactEstimate).wallClock).not.toBeNull();
   });
 
   it('keeps a repeat whose execution names no action above info', () => {
@@ -917,7 +1009,7 @@ describe('duplicatePlanSubtree: action and Delta version context', () => {
     expect(finding.readsDifferentVersions).toBe(true);
     expect(finding.occurrencesIdentical).toBe(false);
     expect(finding.impactBand).toBe('info');
-    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(present(finding.impactEstimate).wallClock).toBeNull();
     expect(finding.recommendation).not.toMatch(/consider caching|computed once and reused/);
     expect(finding.recommendation).toMatch(/different versions of the same Delta table/);
   });

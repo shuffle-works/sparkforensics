@@ -12,18 +12,40 @@ import { Decompress } from '../src/vendor/fzstd.js';
 // both behave as between workers), and over a hand-driven fake port where a test needs exact
 // control of when replies arrive.
 
+/** @typedef {import('../src/zstd-worker.ts').ZstdWorkerRequest} ZstdWorkerRequest */
+/** @typedef {import('../src/zstd-worker.ts').ZstdWorkerReply} ZstdWorkerReply */
+/** @typedef {import('../src/zstd-worker-client.ts').ZstdWorkerPort} ZstdWorkerPort */
+/** @typedef {import('../src/parser-messages.ts').ParserMessage} ParserMessage */
+/** @typedef {import('../src/parser-worker.ts').ZstdDecoderFactory} ZstdDecoderFactory */
+/** @typedef {Parameters<typeof runParse>[0]} FileSource */
+/** @typedef {ZstdWorkerPort & { requests: string[], inFlight: number, maxInFlight: number, terminate(): void }} ChannelPort */
+/** @typedef {ZstdWorkerPort & {
+ *   sent: ZstdWorkerRequest[], terminated: boolean,
+ *   reply(data: ZstdWorkerReply): void,
+ *   fail(message: string): { message: string, preventDefault: ReturnType<typeof vi.fn> },
+ *   data(): Extract<ZstdWorkerRequest, { type: 'data' }>[],
+ * }} FakePort */
+
 const enc = new TextEncoder();
+/** @param {Uint8Array} u8 */
 const zstd = (u8) => new Uint8Array(zstdCompressSync(u8));
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const fzstdFallback = (onChunk) => new Decompress(onChunk);
+// fzstd is untyped vendor JS; this construct signature mirrors the shim in parser-worker.ts.
+/** @type {ZstdDecoderFactory} */
+const fzstdFallback = (onChunk) => new (/** @type {new (onChunk: (chunk: Uint8Array) => void) => { push(chunk: Uint8Array, final?: boolean): void }} */ (/** @type {unknown} */ (Decompress)))(onChunk);
 
 const sampleNdjson = gunzipSync(readFileSync(fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url))));
 
+/**
+ * @param {Uint8Array} bytes
+ * @param {string} [name]
+ * @returns {FileSource}
+ */
 function fakeFile(bytes, name = 'eventlog.zstd') {
   return {
     name,
     size: bytes.length,
-    slice(start, end) {
+    slice(/** @type {number} */ start, /** @type {number} */ end) {
       const view = bytes.subarray(start, end);
       return { async arrayBuffer() { return view.slice().buffer; } };
     },
@@ -32,12 +54,19 @@ function fakeFile(bytes, name = 'eventlog.zstd') {
 
 // A decompress worker on the far side of a MessageChannel, running the real handler. Tracks the
 // slices sent but not yet acknowledged, as the parse side sees them.
+/** @type {ChannelPort[]} */
 const openPorts = [];
+/**
+ * @param {{ batchBytes?: number }} [options]
+ * @returns {ChannelPort}
+ */
 function channelWorker({ batchBytes } = {}) {
   const { port1, port2 } = new MessageChannel();
   const handle = createZstdWorkerHandler((msg, transfer) => port2.postMessage(msg, transfer ?? []), batchBytes);
+  /** @type {string[]} */
   const requests = [];
   port2.onmessage = ({ data }) => { requests.push(data.type); handle(data); };
+  /** @type {ChannelPort} */
   const port = {
     requests,
     inFlight: 0,
@@ -59,8 +88,11 @@ function channelWorker({ batchBytes } = {}) {
   return port;
 }
 
-// A port whose replies the test sends by hand.
+// A port whose replies the test sends by hand. The client reads only `data` from a reply and
+// `message`/`preventDefault` from an error, so the events are plain objects of that shape.
+/** @returns {FakePort} */
 function fakePort() {
+  /** @type {FakePort} */
   const port = {
     sent: [],
     onmessage: null,
@@ -68,60 +100,90 @@ function fakePort() {
     terminated: false,
     postMessage(msg) { port.sent.push(msg); },
     terminate() { port.terminated = true; },
-    reply(data) { port.onmessage({ data }); },
+    reply(data) {
+      if (!port.onmessage) throw new Error('no onmessage handler installed');
+      port.onmessage(/** @type {MessageEvent<ZstdWorkerReply>} */ (/** @type {unknown} */ ({ data })));
+    },
     fail(message) {
       const ev = { message, preventDefault: vi.fn() };
-      port.onerror(ev);
+      if (!port.onerror) throw new Error('no onerror handler installed');
+      port.onerror(/** @type {ErrorEvent} */ (/** @type {unknown} */ (ev)));
       return ev;
     },
-    data() { return port.sent.filter((m) => m.type === 'data'); },
+    data() {
+      return port.sent.flatMap((m) => (m.type === 'data' ? [m] : []));
+    },
   };
   return port;
 }
 
 afterEach(() => {
-  while (openPorts.length) openPorts.pop().terminate();
+  while (openPorts.length) openPorts.pop()?.terminate();
 });
 
 // Progress `pct` is the read position, which runs up to the in-flight window ahead of the
 // slice being parsed once decoding is off-thread; everything else must match exactly.
-const withoutPct = (emitted) => emitted.map((m) => (m.type === 'progress' ? { ...m, pct: undefined } : m));
+const withoutPct = (/** @type {ParserMessage[]} */ emitted) => emitted.map((m) => (m.type === 'progress' ? { ...m, pct: undefined } : m));
 
+/**
+ * @param {FileSource} file
+ * @param {ZstdDecoderFactory | undefined} zstdDecoder
+ * @param {number} chunkSize
+ */
 async function parse(file, zstdDecoder, chunkSize) {
   const state = createState();
+  /** @type {ParserMessage[]} */
   const emitted = [];
   await runParse(file, state, { emit: (m) => emitted.push(m), chunkSize, zstdDecoder });
   return { state, emitted };
 }
 
 describe('zstd decompress worker handler', () => {
+  /** @typedef {{ msg: ZstdWorkerReply, transfer?: Transferable[] }} HandlerOutput */
+
+  /**
+   * @param {ZstdWorkerRequest[]} msgs
+   * @param {number} [batchBytes]
+   */
   function drive(msgs, batchBytes) {
+    /** @type {HandlerOutput[]} */
     const out = [];
     const handle = createZstdWorkerHandler((msg, transfer) => out.push({ msg, transfer }), batchBytes);
     for (const m of msgs) handle(m);
     return out;
   }
+  /**
+   * @template {ZstdWorkerReply['type']} T
+   * @param {HandlerOutput[]} out
+   * @param {T} type
+   * @returns {{ msg: Extract<ZstdWorkerReply, { type: T }>, transfer?: Transferable[] }[]}
+   */
+  const outputOfType = (out, type) => /** @type {ReturnType<typeof outputOfType<T>>} */ (out.filter((o) => o.msg.type === type));
+  /** @param {Uint8Array<ArrayBuffer>} bytes @param {number} size */
   const slices = (bytes, size) => {
+    /** @type {Uint8Array<ArrayBuffer>[]} */
     const parts = [];
     for (let o = 0; o < bytes.length; o += size) parts.push(bytes.slice(o, o + size));
     return parts;
   };
+  /** @param {number} id @param {Uint8Array<ArrayBuffer>[]} parts @returns {ZstdWorkerRequest[]} */
   const dataMsgs = (id, parts) => parts.map((p, seq) => ({ type: 'data', id, seq, bytes: p.buffer, final: seq === parts.length - 1 }));
-  const joined = (out) => Buffer.concat(out.filter((o) => o.msg.type === 'chunk').map((o) => new Uint8Array(o.msg.bytes, 0, o.msg.length)));
+  /** @param {HandlerOutput[]} out */
+  const joined = (out) => Buffer.concat(outputOfType(out, 'chunk').map((o) => new Uint8Array(o.msg.bytes, 0, o.msg.length)));
 
   it('decodes a stream into batched, transferred chunks, each slice acknowledged after its output', () => {
     const parts = slices(zstd(sampleNdjson), 4096);
     const out = drive([{ type: 'start', id: 7 }, ...dataMsgs(7, parts)], 64 * 1024);
 
     expect(joined(out).equals(sampleNdjson)).toBe(true);
-    const chunks = out.filter((o) => o.msg.type === 'chunk');
+    const chunks = outputOfType(out, 'chunk');
     expect(chunks.every((o) => o.msg.id === 7 && o.msg.length <= 64 * 1024)).toBe(true);
     expect(chunks.every((o) => o.transfer?.[0] === o.msg.bytes)).toBe(true);
     // Output leaves in batches, not one message per zstd block.
     expect(chunks.length).toBeLessThanOrEqual(Math.ceil(sampleNdjson.length / (64 * 1024)) + parts.length);
-    const consumed = out.filter((o) => o.msg.type === 'consumed').map((o) => o.msg.seq);
+    const consumed = outputOfType(out, 'consumed').map((o) => o.msg.seq);
     expect(consumed).toEqual(parts.map((_, seq) => seq));
-    expect(out.at(-1).msg).toEqual({ type: 'consumed', id: 7, seq: parts.length - 1 });
+    expect(out.at(-1)?.msg).toEqual({ type: 'consumed', id: 7, seq: parts.length - 1 });
   });
 
   it('reports a corrupt stream once, as an error, and ignores the rest of it', () => {
@@ -133,11 +195,11 @@ describe('zstd decompress worker handler', () => {
       { type: 'data', id: 1, seq: 0, bytes: corrupt.buffer, final: false },
       { type: 'data', id: 1, seq: 1, bytes: bytes.slice(2000).buffer, final: true },
     ]);
-    const errors = out.filter((o) => o.msg.type === 'error');
+    const errors = outputOfType(out, 'error');
     expect(errors).toHaveLength(1);
     expect(errors[0].msg.id).toBe(1);
     expect(errors[0].msg.message).toBeTruthy();
-    expect(out.at(-1).msg.type).toBe('error');
+    expect(out.at(-1)?.msg.type).toBe('error');
   });
 
   it('drops a cancelled stream, and a later start serves only the new stream', () => {
@@ -152,7 +214,7 @@ describe('zstd decompress worker handler', () => {
       ...dataMsgs(1, parts),
     ]);
     const cancelAt = out.findIndex((o) => o.msg.type === 'consumed' && o.msg.id === 1 && o.msg.seq === 1);
-    expect(out.slice(cancelAt + 1).every((o) => o.msg.id === 2)).toBe(true);
+    expect(out.slice(cancelAt + 1).every((o) => 'id' in o.msg && o.msg.id === 2)).toBe(true);
     expect(joined(out.slice(cancelAt + 1)).equals(sampleNdjson)).toBe(true);
   });
 });
@@ -177,7 +239,8 @@ describe('worker-backed zstd decoding', () => {
     const cut = Math.floor(lines.length / 3);
     const parts = [lines.slice(0, cut), lines.slice(cut, 2 * cut), lines.slice(2 * cut)]
       .map((ls, i) => fakeFile(zstd(enc.encode(ls.join('\n') + (i < 2 ? '\n' : ''))), `events_${i + 1}_app.zstd`));
-    const run = async (zstdDecoder) => {
+    const run = async (/** @type {ZstdDecoderFactory | undefined} */ zstdDecoder) => {
+      /** @type {ParserMessage[]} */
       const emitted = [];
       await runParseFiles(parts, createState(), { emit: (m) => emitted.push(m), chunkSize: 8192, zstdDecoder });
       return emitted;
@@ -201,6 +264,7 @@ describe('worker-backed zstd decoding', () => {
 
   it('keeps at most maxInFlight slices unacknowledged, and resolves the final push only when drained', async () => {
     const port = fakePort();
+    /** @type {number[]} */
     const fed = [];
     const decoder = createWorkerZstdDecoders(() => port, fzstdFallback, { maxInFlight: 2 })((c) => fed.push(c.length));
     const slice = () => new Uint8Array(8);
@@ -212,7 +276,7 @@ describe('worker-backed zstd decoding', () => {
     expect(port.sent.map((m) => m.type)).toEqual(['start', 'data']);
 
     let secondDone = false;
-    const second = decoder.push(slice()).then(() => { secondDone = true; });
+    const second = Promise.resolve(decoder.push(slice())).then(() => { secondDone = true; });
     await tick();
     expect(secondDone).toBe(false); // 2 in flight: at the window
     expect(port.data()).toHaveLength(2);
@@ -225,7 +289,7 @@ describe('worker-backed zstd decoding', () => {
     expect(fed).toEqual([3]);
 
     let finalDone = false;
-    const last = decoder.push(slice(), true).then(() => { finalDone = true; });
+    const last = Promise.resolve(decoder.push(slice(), true)).then(() => { finalDone = true; });
     await tick();
     expect(port.data().map((m) => m.final)).toEqual([false, false, true]);
     port.reply({ type: 'consumed', id: 0, seq: 1 });
@@ -252,7 +316,7 @@ describe('worker-backed zstd decoding', () => {
     const viaWorker = await parse(fakeFile(bytes, 'bad.zstd'), createWorkerZstdDecoders(() => channelWorker(), fzstdFallback), 1024);
 
     const error = inThread.emitted.find((m) => m.type === 'error');
-    expect(error.message).toMatch(/^Could not decompress "bad\.zstd": /);
+    expect(error?.message).toMatch(/^Could not decompress "bad\.zstd": /);
     expect(viaWorker.emitted.filter((m) => m.type === 'error')).toEqual([error]);
     expect(viaWorker.emitted.some((m) => m.type === 'done')).toBe(false);
   });
@@ -272,13 +336,14 @@ describe('worker-backed zstd decoding', () => {
 
   it('cancel() rejects the waiting push and ignores output that arrives after it', async () => {
     const port = fakePort();
+    /** @type {Uint8Array[]} */
     const fed = [];
     const decoder = createWorkerZstdDecoders(() => port, fzstdFallback, { maxInFlight: 1 })((c) => fed.push(c));
     const pushed = decoder.push(new Uint8Array(8));
     await tick();
     port.reply({ type: 'ready' });
     await tick();
-    decoder.cancel();
+    decoder.cancel?.();
     await expect(pushed).rejects.toThrow('Decompression cancelled');
     expect(port.sent.at(-1)).toEqual({ type: 'cancel', id: 0 });
     port.reply({ type: 'chunk', id: 0, bytes: new ArrayBuffer(4), length: 4 });
@@ -293,7 +358,7 @@ describe('worker-backed zstd decoding', () => {
     const file = {
       name: 'eventlog.zstd',
       size: bytes.length,
-      slice(start, end) {
+      slice(/** @type {number} */ start, /** @type {number} */ end) {
         return { async arrayBuffer() {
           if (++reads === 4) throw new Error('disk gone');
           return bytes.slice(start, end).buffer;
@@ -321,12 +386,12 @@ describe('worker-backed zstd decoding', () => {
     expect(onFallback).toHaveBeenCalledWith('the decompress worker crashed: out of memory');
 
     const { emitted } = await parse(fakeFile(zstd(sampleNdjson)), factory, 8192);
-    expect(emitted.at(-1).type).toBe('done');
+    expect(emitted.at(-1)?.type).toBe('done');
     expect(port.data()).toHaveLength(1);
   });
 
   describe('falls back to in-thread decoding with identical output', () => {
-    const expectFallbackParse = async (factory) => {
+    const expectFallbackParse = async (/** @type {ZstdDecoderFactory} */ factory) => {
       const bytes = zstd(sampleNdjson);
       const inThread = await parse(fakeFile(bytes), undefined, 8192);
       const fallback = await parse(fakeFile(bytes), factory, 8192);

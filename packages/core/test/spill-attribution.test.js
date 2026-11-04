@@ -1,23 +1,39 @@
 import { describe, it, expect } from 'vitest';
 import { recommendationParts } from '../src/finding-names.js';
 import { attributeSpill, describeSpillCause, exchangeWidth, spillToInputRatio } from '../src/spill-attribution.js';
-import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
+import { present } from './fixtures/present.js';
 
 const TB = 1e12;
 const GB = 1e9;
 
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {NonNullable<PlanNode['metrics']>[number]} PlanMetric */
+
+/** @param {string} name @param {number} value @returns {PlanMetric} */
 const sized = (name, value) => ({ name, value, metricType: 'size', executorSide: true });
+/** @param {string} name @param {number} value @returns {PlanMetric} */
 const count = (name, value) => ({ name, value, metricType: 'sum', executorSide: true });
+/**
+ * @param {string} id
+ * @param {string} name
+ * @param {string} detail
+ * @param {PlanNode[]} [children]
+ * @param {{ metrics?: PlanMetric[], stageIds?: number[], exchangeRole?: 'read' | 'write' }} [options]
+ * @returns {PlanNode}
+ */
 const node = (id, name, detail, children = [], { metrics = [], stageIds, exchangeRole } = {}) =>
   ({ id, name, detail, metrics, children, ...(stageIds ? { stageIds } : {}), ...(exchangeRole ? { exchangeRole } : {}) });
 
 // "c0#1, c1#2, ..." as Spark prints a list past spark.sql.debug.maxToStringFields (25).
+/** @param {number} total @param {number} [shown] */
 function truncatedColumns(total, shown = 25) {
   const listed = Array.from({ length: shown }, (_, i) => `c${i}#${i + 1}`);
   return `[${listed.join(', ')}, ... ${total - shown} more fields]`;
 }
 
+/** @param {string} id @param {PlanNode} below @param {{ producer?: number, dataSize?: number, records?: number }} [options] */
 function exchange(id, below, { producer = 1, dataSize, records } = {}) {
   const metrics = [
     ...(dataSize != null ? [sized('data size', dataSize)] : []),
@@ -29,6 +45,7 @@ function exchange(id, below, { producer = 1, dataSize, records } = {}) {
 
 const ENSURE_200 = { partitioning: 'hashpartitioning(k#1, 200)', partitions: 200, origin: 'ENSURE_REQUIREMENTS' };
 
+/** @param {number} columns */
 const wideProject = (columns) => node('proj', 'Project', `Project ${truncatedColumns(columns)}`, [node('scan', 'Scan parquet db.t', 'FileScan parquet db.t[k#1] Batched: true')]);
 
 function wideSortPlan({ spill = 3 * TB } = {}) {
@@ -38,13 +55,16 @@ function wideSortPlan({ spill = 3 * TB } = {}) {
   return node('write', 'WriteFiles', 'WriteFiles', [node('wscg', 'WholeStageCodegen (4)', 'WholeStageCodegen (4)', [sort], { stageIds: [2] })]);
 }
 
+/** @param {PlanNode | null} planTree @param {Record<string, unknown>} [stageOverrides] @param {string} [description] */
 function spillFinding(planTree, stageOverrides = {}, description = '') {
-  const sql = new Map([[1, { id: 1, description, startTime: 0, endTime: 100, stageIds: [], planTree }]]);
-  const stages = new Map([[2, makeStage({
+  const sql = new Map([[1, /** @type {import('../src/types.ts').SqlExecution} */ ({ id: 1, description, startTime: 0, endTime: 100, stageIds: [], planTree })]]);
+  const stages = new Map([[2, makeTypedStage({
     id: 2, sqlExecutionId: 1, memoryBytesSpilled: 67.7 * TB, diskBytesSpilled: 20 * TB, shuffleReadBytes: 4 * TB,
     spillClassification: 'volume', spillMemMax: 5 * GB, spillDiskMax: 2 * GB, ...stageOverrides,
   })]]);
-  return analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.find((f) => f.type === 'spill');
+  const finding = analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.find(/** @returns {f is Extract<import('../src/types.ts').Finding, { type: 'spill' }>} */ (f) => f.type === 'spill');
+  if (!finding) throw new Error('expected a spill finding');
+  return finding;
 }
 
 describe('attributeSpill', () => {
@@ -54,7 +74,9 @@ describe('attributeSpill', () => {
   });
 
   // As an executed plan prints it: each Sort sits in its own codegen stage under an InputAdapter.
+  /** @param {string} name */
   const sortMergeJoin = (name) => {
+    /** @param {string} id @param {number} spill @param {PlanNode} below */
     const side = (id, spill, below) => node('in-' + id, 'InputAdapter', '', [node('wscg-' + id, 'WholeStageCodegen (3)', 'WholeStageCodegen (3)', [
       node(id, 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0', [below], { metrics: [sized('spill size', spill)], stageIds: [2] }),
     ], { stageIds: [2] })], { stageIds: [2] });
@@ -124,13 +146,13 @@ describe('exchangeWidth', () => {
 
   it('counts a Project list that fits without a truncation tail, skipping commas inside expressions', () => {
     const project = node('p', 'Project', 'Project [k#1, concat(a#2, b#3) AS ab#4, named_struct(x, c#5, y, d#6) AS s#7]');
-    expect(exchangeWidth(exchange('x', project)).columns).toBe(3);
+    expect(present(exchangeWidth(exchange('x', project))).columns).toBe(3);
   });
 
   it('reads the columns from a file scan below filters and sorts', () => {
     const scan = node('scan', 'Scan parquet db.t', 'FileScan parquet db.t[a#1,b#2,c#3] Batched: true, Format: Parquet, ReadSchema: struct<a:int,b:int,c:int>');
     const below = node('f', 'Filter', 'Filter (a#1 > 0)', [node('s', 'Sort', 'Sort [a#1 ASC], false, 0', [scan])]);
-    expect(exchangeWidth(exchange('x', below)).columns).toBe(3);
+    expect(present(exchangeWidth(exchange('x', below))).columns).toBe(3);
   });
 
   it('reads the columns of a ReusedExchange from its own list', () => {
@@ -206,7 +228,7 @@ describe('spill finding', () => {
   });
 
   it('keeps the recommendation split on its advice, with the cause after it', () => {
-    const recommendation = spillFinding(wideSortPlan()).recommendation;
+    const recommendation = present(spillFinding(wideSortPlan()).recommendation);
     const advice = recommendation.slice(0, recommendation.indexOf(' Spilled by '));
     const { measured, fix } = recommendationParts(recommendation);
     expect(measured).toBe(recommendationParts(advice).measured);
@@ -239,6 +261,7 @@ describe('spill finding', () => {
 
 describe('spill finding on a user-partitioned sort', () => {
   // A repartition(n, key) feeding sortWithinPartitions: the exchange is the job's own, not the session's.
+  /** @param {string} origin @param {string} [suffix] */
   function userPartitionedSortPlan(origin, suffix = '[plan_id=42]') {
     const exchangeNode = node('xchg', 'Exchange', `Exchange hashpartitioning(key#7, 5000)${origin ? `, ${origin}` : ''}, ${suffix}`, [
       node('xchg-w', 'Exchange', '', [wideProject(127)], { metrics: [sized('data size', 410 * GB), count('shuffle records written', 1e9)], stageIds: [1], exchangeRole: 'write' }),
@@ -249,7 +272,7 @@ describe('spill finding on a user-partitioned sort', () => {
 
   it('carries the sort keys, the global flag, the exchange arguments and the SQL description', () => {
     const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), {}, 'daily load 2026-07');
-    expect(finding.operators[0]).toMatchObject({
+    expect(present(finding.operators)[0]).toMatchObject({
       name: 'Sort', global: false,
       arguments: '[day#11 ASC NULLS FIRST, region#12 ASC NULLS FIRST, seq#13 ASC NULLS FIRST], false, 0',
     });
@@ -262,13 +285,13 @@ describe('spill finding on a user-partitioned sort', () => {
 
   it('reads the exchange arguments of a Spark 3.1 to 3.3 plan, which ends with [id=#N]', () => {
     const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM', '[id=#42]'));
-    expect(finding.exchanges[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM' });
+    expect(present(finding.exchanges)[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM' });
   });
 
   it('reads the partitioning of a Spark 3.0 plan, which prints a flag and no origin', () => {
     const finding = spillFinding(userPartitionedSortPlan('true', '[id=#42]'));
-    expect(finding.exchanges[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000 });
-    expect(finding.exchanges[0]).not.toHaveProperty('origin');
+    expect(present(finding.exchanges)[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000 });
+    expect(present(finding.exchanges)[0]).not.toHaveProperty('origin');
   });
 
   it('says the partitioning is the job\'s own and gives the column count of the wide rows', () => {
@@ -281,7 +304,7 @@ describe('spill finding on a user-partitioned sort', () => {
     const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), { taskCount: 200 });
     expect(finding.recommendation).toContain("raise the partition count of the job's own repartition(n) so each partition is smaller, or increase executor memory.");
     expect(finding.recommendation).not.toContain('raise spark.sql.shuffle.partitions');
-    expect(finding.remediation.map((r) => r.key ?? r.kind)).not.toContain('spark.sql.shuffle.partitions');
+    expect(present(finding.remediation).map((r) => (r.kind === 'conf' ? r.key : r.kind))).not.toContain('spark.sql.shuffle.partitions');
   });
 
   it('does not say so for a session-planned shuffle', () => {

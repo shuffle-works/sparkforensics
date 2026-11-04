@@ -5,10 +5,11 @@ import { join } from 'node:path';
 import { collectRun } from '../src/cli/collect-run.ts';
 import { computeRunMetrics, METRICS_SCHEMA_VERSION } from '../src/run-metrics.ts';
 import { stageIdentity } from '../src/run-comparison.ts';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 const GIB = 1024;
 
+/** @param {number} stageId @param {number} id @param {{ runMs?: number, cpuNs?: number, records?: number, spill?: number, peak?: number, failed?: boolean }} [options] */
 function taskEnd(stageId, id, { runMs = 100, cpuNs, records, spill = 0, peak, failed = false } = {}) {
   return JSON.stringify({
     Event: 'SparkListenerTaskEnd', 'Stage ID': stageId, 'Stage Attempt ID': 0,
@@ -25,6 +26,7 @@ function taskEnd(stageId, id, { runMs = 100, cpuNs, records, spill = 0, peak, fa
   });
 }
 
+/** @param {number} stageId @param {string} name @param {string[]} tasks @param {string} [details] */
 function stageLines(stageId, name, tasks, details = '') {
   return [
     JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': stageId, 'Stage Name': name, Details: details, 'Number of Tasks': tasks.length, 'Submission Time': 1000 } }),
@@ -33,6 +35,7 @@ function stageLines(stageId, name, tasks, details = '') {
   ];
 }
 
+/** @param {string[]} lines */
 async function model(lines) {
   const dir = mkdtempSync(join(tmpdir(), 'sf-metrics-'));
   const path = join(dir, 'eventlog');
@@ -42,8 +45,11 @@ async function model(lines) {
 
 const START = JSON.stringify({ Event: 'SparkListenerApplicationStart', 'App ID': 'application_0000000000000_0001', 'App Name': 't', Timestamp: 0 });
 const END = JSON.stringify({ Event: 'SparkListenerApplicationEnd', Timestamp: 3600000 });
+/** @param {Record<string, string>} props */
 const env = (props) => JSON.stringify({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': props });
+/** @param {string} id @param {number} ts @param {number} [cores] */
 const added = (id, ts, cores = 4) => JSON.stringify({ Event: 'SparkListenerExecutorAdded', Timestamp: ts, 'Executor ID': id, 'Executor Info': { Host: `h${id}`, 'Total Cores': cores } });
+/** @param {string} id @param {number} ts */
 const removed = (id, ts) => JSON.stringify({ Event: 'SparkListenerExecutorRemoved', Timestamp: ts, 'Executor ID': id, 'Removed Reason': 'done' });
 
 describe('computeRunMetrics on a parsed log', () => {
@@ -85,10 +91,12 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 
   it('counts stage attempts across a resubmit, apart from task retries', async () => {
+    /** @param {number} id @param {string} [reason] */
     const completed = (id, reason) => JSON.stringify({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': id, 'Submission Time': 1000, 'Completion Time': 2000, ...(reason ? { 'Failure Reason': reason } : {}) },
     });
+    /** @param {number} id @param {number} attempt */
     const submitted = (id, attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': id, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 } });
     const appModel = await model([
       START,
@@ -105,7 +113,9 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 
   it('sums the work of a failed attempt with its retry, leaving the stage record at the latest attempt', async () => {
+    /** @param {number} attempt */
     const submitted = (attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 + attempt * 5000 } });
+    /** @param {number} attempt @param {string} [reason] */
     const completed = (attempt, reason) => JSON.stringify({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Submission Time': 1000 + attempt * 5000, 'Completion Time': 2000 + attempt * 5000, ...(reason ? { 'Failure Reason': reason } : {}) },
@@ -144,7 +154,9 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 
   it('counts a failed attempt\'s task that ends after its StageCompleted, leaving the stage record unchanged', async () => {
+    /** @param {number} attempt */
     const submitted = (attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 + attempt * 5000 } });
+    /** @param {number} attempt @param {string} [reason] */
     const completed = (attempt, reason) => JSON.stringify({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Submission Time': 1000 + attempt * 5000, 'Completion Time': 2000 + attempt * 5000, ...(reason ? { 'Failure Reason': reason } : {}) },
@@ -165,7 +177,9 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 
   it('counts an earlier failed attempt\'s task that ends after a successful retry', async () => {
+    /** @param {number} attempt */
     const submitted = (attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 + attempt * 5000 } });
+    /** @param {number} attempt @param {string} [reason] */
     const completed = (attempt, reason) => JSON.stringify({
       Event: 'SparkListenerStageCompleted',
       'Stage Info': { 'Stage ID': 1, 'Submission Time': 1000 + attempt * 5000, 'Completion Time': 2000 + attempt * 5000, ...(reason ? { 'Failure Reason': reason } : {}) },
@@ -187,11 +201,13 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 
   it('keeps task-level failures and retries in failedTasks / retriedTasks', () => {
+    /** @type {import('../src/types.ts').AppModel} */
     const appModel = {
+      runAggregates: null, evidenceAvailability: null,
       app: makeApp(), sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] },
       stages: new Map([
-        [1, makeStage({ id: 1, name: 'a', stageAttempts: 1, failedStageAttempts: 0, failedTasks: 3, taskCount: 4 })],
-        [2, makeStage({ id: 2, name: 'b', stageAttempts: 1, failedStageAttempts: 0, wastedAttempts: 2 })],
+        [1, makeTypedStage({ id: 1, name: 'a', stageAttempts: 1, failedStageAttempts: 0, failedTasks: 3, taskCount: 4 })],
+        [2, makeTypedStage({ id: 2, name: 'b', stageAttempts: 1, failedStageAttempts: 0, wastedAttempts: 2 })],
       ]),
     };
     const m = computeRunMetrics(appModel);
@@ -199,9 +215,11 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 
   it('reports null stage-attempt figures when a stage record carries no attempt count', () => {
+    /** @type {import('../src/types.ts').AppModel} */
     const appModel = {
+      runAggregates: null, evidenceAvailability: null,
       app: makeApp(), sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] },
-      stages: new Map([[1, makeStage({ id: 1, name: 'a' })]]),
+      stages: new Map([[1, makeTypedStage({ id: 1, name: 'a' })]]),
     };
     const m = computeRunMetrics(appModel);
     expect(m.shape).toMatchObject({ failedStageAttempts: null, retriedStages: null });
@@ -210,6 +228,7 @@ describe('computeRunMetrics on a parsed log', () => {
 });
 
 describe('computeRunMetrics counts every task attempt', () => {
+  /** @param {number} stageId @param {number} index @param {{ runMs: number, cpuMs: number, failed?: boolean, killed?: boolean, speculative?: boolean, attemptNumber?: number }} options */
   function attempt(stageId, index, { runMs, cpuMs, failed = false, killed = false, speculative = false, attemptNumber = 0 }) {
     return JSON.stringify({
       Event: 'SparkListenerTaskEnd', 'Stage ID': stageId, 'Stage Attempt ID': 0,
@@ -294,10 +313,12 @@ describe('computeRunMetrics null contract', () => {
   });
 
   it('leaves allocation null without a core count, and memory null without any Spark properties', () => {
+    /** @type {import('../src/types.ts').AppModel} */
     const appModel = {
+      runAggregates: null, evidenceAvailability: null,
       app: makeApp({ endTime: 3600000, config: undefined, resources: { executor: {} } }), sql: new Map(), jobs: new Map(),
       stages: new Map(),
-      executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, totalCores: 0 }], removed: [] },
+      executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 0, resourceProfileId: null }], removed: [] },
     };
     // One 1-hour executor with no core count: the executor figures stand, the core figures do not.
     expect(computeRunMetrics(appModel).allocation).toEqual({
@@ -307,25 +328,30 @@ describe('computeRunMetrics null contract', () => {
   });
 
   it('resolves cores from spark.executor.cores when the event carries none', () => {
+    /** @type {import('../src/types.ts').AppModel} */
     const appModel = {
+      runAggregates: null, evidenceAvailability: null,
       app: makeApp({ endTime: 3600000, config: { 'spark.executor.cores': '3' } }), sql: new Map(), jobs: new Map(), stages: new Map(),
-      executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, totalCores: 0 }], removed: [] },
+      executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 0, resourceProfileId: null }], removed: [] },
     };
     expect(computeRunMetrics(appModel).allocation.coreHours).toBeCloseTo(3, 10);
   });
 });
 
 describe('python share', () => {
+  /** @param {string} nodeName @param {number} stageId @returns {import('../src/types.ts').PlanNode} */
   const plan = (nodeName, stageId) => ({ name: 'Project', children: [{ name: nodeName, stageIds: [stageId], children: [] }], stageIds: [stageId] });
 
   it('is the task run time of Python stages over total task run time, from plan nodes or stage names', () => {
+    /** @type {import('../src/types.ts').AppModel} */
     const appModel = {
+      runAggregates: null, evidenceAvailability: null,
       app: makeApp(), jobs: new Map(), executors: { added: [], removed: [] },
       sql: new Map([[7, { id: 7, planTree: plan('BatchEvalPython', 1) }]]),
       stages: new Map([
-        [1, makeStage({ id: 1, name: 'collect', sqlExecutionId: 7, executorRunTime: 3000 })],
-        [2, makeStage({ id: 2, name: 'PythonRDD lambda', executorRunTime: 1000 })],
-        [3, makeStage({ id: 3, name: 'scan', executorRunTime: 4000 })],
+        [1, makeTypedStage({ id: 1, name: 'collect', sqlExecutionId: 7, executorRunTime: 3000 })],
+        [2, makeTypedStage({ id: 2, name: 'PythonRDD lambda', executorRunTime: 1000 })],
+        [3, makeTypedStage({ id: 3, name: 'scan', executorRunTime: 4000 })],
       ]),
     };
     const { python, stages } = computeRunMetrics(appModel);

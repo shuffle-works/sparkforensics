@@ -7,22 +7,40 @@ import { rankedRollup, rankCostMs } from '../src/recommendation-rollup.ts';
 import { buildNextSteps } from '../src/run-verdict.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
+import { present, firstOfType } from './fixtures/present.js';
+
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').Stage} Stage */
 
 const HOUR_MS = 3_600_000;
 
 // A 30-minute stage of `taskHours` summed task time, spread over `executors` executors.
+/**
+ * @param {number} id
+ * @param {number} taskHours
+ * @param {Record<string, unknown>} [extra]
+ * @param {number} [executors]
+ */
 function stage(id, taskHours, extra = {}, executors = 1) {
-  return {
+  /** @type {Partial<Stage>} */
+  const base = {
     id, submittedAt: 0, completedAt: 30 * 60_000, parentIds: [], taskCount: 1000,
-    executorStats: Array.from({ length: executors }, (_, i) => ({
+    executorStats: Array.from({ length: executors }, (_, i) => /** @type {Stage['executorStats'][number]} */ ({
       executorId: String(i), taskCount: 1000 / executors, totalDuration: (taskHours * HOUR_MS) / executors,
     })),
-    ...extra,
   };
+  return /** @type {Stage} */ ({ ...base, ...extra });
 }
 
+/**
+ * @param {Finding['type']} type
+ * @param {number} stageId
+ * @param {import('../src/types.ts').ImpactBand} impactBand
+ * @param {number} stageTaskHours
+ * @param {number | null} [wallClockMs]
+ */
 function finding(type, stageId, impactBand, stageTaskHours, wallClockMs = null) {
-  return {
+  return /** @type {Finding} */ ({
     type, stageId, impactBand, recommendation: `fix ${type}`,
     impactEstimate: {
       basis: wallClockMs == null ? 'resourceOnly' : 'serial',
@@ -31,7 +49,15 @@ function finding(type, stageId, impactBand, stageTaskHours, wallClockMs = null) 
       ...(wallClockMs == null ? { rawWaste: { value: 1, unit: 'bytes' } } : {}),
       stageTaskMs: stageTaskHours * HOUR_MS,
     },
-  };
+  });
+}
+
+/**
+ * @param {Finding} base
+ * @param {Record<string, unknown>} overrides
+ */
+function variant(base, overrides) {
+  return /** @type {Finding} */ ({ ...base, ...overrides });
 }
 
 describe('task-hour ranking: one axis for verdict steps and recommendations', () => {
@@ -53,7 +79,7 @@ describe('task-hour ranking: one axis for verdict steps and recommendations', ()
   });
 
   it('ranks an info finding and an app-level finding after every warning on a stage with task time', () => {
-    const appLevel = { type: 'utilization', impactBand: 'warning', recommendation: 'resize', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5, unit: 'coreHours' } } };
+    const appLevel = /** @type {Finding} */ ({ type: 'utilization', impactBand: 'warning', recommendation: 'resize', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5, unit: 'coreHours' } } });
     const info = finding('gc', 4, 'info', 900, 60_000);
     const order = buildNextSteps([appLevel, info, ...findings]).map((step) => step.lead.type);
     expect(order.slice(0, 3)).toEqual(['spill', 'shuffle', 'skew']);
@@ -61,10 +87,12 @@ describe('task-hour ranking: one axis for verdict steps and recommendations', ()
   });
 
   it('ranks an idle-allocation finding by its idle core time among the stage findings', () => {
-    const idle = (hours, band = 'warning') => ({
+    /** @param {number} hours @param {import('../src/types.ts').ImpactBand} [band] */
+    const idle = (hours, band = 'warning') => /** @type {Finding} */ ({
       type: 'utilization', impactBand: band, recommendation: 'resize',
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: hours, unit: 'coreHours', idle: true }, idleCoreTimeMs: { low: hours * HOUR_MS, high: hours * HOUR_MS } },
     });
+    /** @param {Finding[]} list */
     const order = (list) => buildNextSteps(list).map((step) => step.lead.type);
     expect(order([...findings, idle(100)])).toEqual(['spill', 'utilization', 'shuffle', 'skew']);
     expect(order([...findings, idle(1)])).toEqual(['spill', 'shuffle', 'skew', 'utilization']);
@@ -95,15 +123,17 @@ describe('task-hour ranking: a heavy spill stage against a cheap critical findin
 
 // Grades each finding under its detector entry's policy on a run with no application timing,
 // so only the task-time cap applies.
+/** @param {Finding[]} findings @param {Map<number, Stage>} stages */
 function capCriticalByTaskTime(findings, stages) {
   const run = bandRun(null, stages);
-  for (const finding of findings) gradeFinding(finding, ENTRY_BY_TYPE.get(finding.type), run);
+  for (const finding of findings) gradeFinding(finding, present(ENTRY_BY_TYPE.get(finding.type)), run);
 }
 
 describe('the critical cap by task time', () => {
   // 2,513 task-hours over the run; the stage under test carries 0.4 of them.
   const stages = new Map([[1, stage(1, 0.4)], [2, stage(2, 2512.6)]]);
-  const slowHost = (stageId) => ({ ...finding('slowHost', stageId, 'critical', 0), impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } });
+  /** @param {number} stageId */
+  const slowHost = (stageId) => variant(finding('slowHost', stageId, 'critical', 0), { impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } });
 
   it('caps a critical finding on a stage under the minimum share', () => {
     const findings = [slowHost(1)];
@@ -120,50 +150,52 @@ describe('the critical cap by task time', () => {
 
   it('keeps critical on a failure and on an oversized-partition safety signal', () => {
     const findings = [
-      { ...slowHost(1), type: 'stageFailed' },
-      { ...slowHost(1), type: 'partitionSizing', rule: 'maxPartitionTooBig' },
+      variant(slowHost(1), { type: 'stageFailed' }),
+      variant(slowHost(1), { type: 'partitionSizing', rule: 'maxPartitionTooBig' }),
     ];
     capCriticalByTaskTime(findings, stages);
     expect(findings.map((f) => f.impactBand)).toEqual(['critical', 'critical']);
   });
 
   it('caps a finding graded critical from a wall-clock estimate the same way', () => {
-    const timed = { ...slowHost(1), impactEstimate: { basis: 'serial', wallClock: { low: 1, high: 1 }, estimateMethod: 'modeled' } };
+    const timed = variant(slowHost(1), { impactEstimate: { basis: 'serial', wallClock: { low: 1, high: 1 }, estimateMethod: 'modeled' } });
     const findings = [timed];
     capCriticalByTaskTime(findings, stages);
     expect(findings[0].impactBand).toBe('warning');
   });
 
   it('caps a sql-scope finding whose stageIds hold one cheap stage, but not one spanning several', () => {
-    const sqlScope = (stageIds) => ({ ...slowHost(1), type: 'duplicatePlanSubtree', stageId: undefined, stageIds });
+    /** @param {number[]} stageIds */
+    const sqlScope = (stageIds) => variant(slowHost(1), { type: 'duplicatePlanSubtree', stageId: undefined, stageIds });
     const findings = [sqlScope([1]), sqlScope([1, 2])];
     capCriticalByTaskTime(findings, stages);
     expect(findings.map((f) => f.impactBand)).toEqual(['warning', 'critical']);
   });
 
   it('leaves an app-level finding and a run with no recorded task time alone', () => {
-    const appLevel = { ...slowHost(1), stageId: null };
+    const appLevel = variant(slowHost(1), { stageId: null });
     const findings = [appLevel];
     capCriticalByTaskTime(findings, stages);
     expect(findings[0].impactBand).toBe('critical');
     const noTime = [slowHost(1)];
-    capCriticalByTaskTime(noTime, new Map([[1, { id: 1 }]]));
+    capCriticalByTaskTime(noTime, new Map([[1, /** @type {Stage} */ ({ id: 1 })]]));
     expect(noTime[0].impactBand).toBe('critical');
   });
 
   it('leaves a finding on a stage with no recorded task time alone in a run that has some', () => {
     const findings = [slowHost(3)];
-    capCriticalByTaskTime(findings, new Map([...stages, [3, { id: 3 }]]));
+    capCriticalByTaskTime(findings, new Map([...stages, [3, /** @type {Stage} */ ({ id: 3 })]]));
     expect(findings[0].impactBand).toBe('critical');
   });
 });
 
 describe('spill impact estimate', () => {
+  /** @param {Record<string, number>} stageFields */
   function spillEstimate(stageFields) {
     const stages = new Map([[0, stage(0, 422.5, stageFields, 255)]]);
-    const findings = [{ type: 'spill', stageId: 0, impactBand: 'warning' }];
+    const findings = [/** @type {Finding} */ ({ type: 'spill', stageId: 0, impactBand: 'warning' })];
     estimateImpact(findings, { stages, totalCores: 0, occupancy: computeOccupancy(stages, 0) });
-    return findings[0].impactEstimate;
+    return present(findings[0].impactEstimate);
   }
 
   it('charges spill as serialization and sort CPU on top of the disk I/O time, up to the cap', () => {
@@ -171,7 +203,7 @@ describe('spill impact estimate', () => {
     const stageFields = { shuffleReadBytes: 10e12, memoryBytesSpilled: 67.7e12, diskBytesSpilled: 7e12 };
     const diskOnly = (7e12 / (200_000_000 * 255)) * 1000;
     const est = spillEstimate(stageFields);
-    expect(est.wallClock.high).toBeCloseTo(0.35 * 30 * 60_000 + diskOnly, 0);
+    expect(present(est.wallClock).high).toBeCloseTo(0.35 * 30 * 60_000 + diskOnly, 0);
     expect(est.assumptions).toContain('plus 35% of the stage\'s task time as serialization and sort CPU');
     const capped = spillEstimate({ ...stageFields, diskBytesSpilled: 20e12 });
     expect(capped.assumptions).toContain('plus 60% of the stage\'s task time as serialization and sort CPU');
@@ -181,7 +213,7 @@ describe('spill impact estimate', () => {
 
   it('scales the CPU share with the spilled passes and states when it has no bytes to compare', () => {
     const light = spillEstimate({ shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9, diskBytesSpilled: 10e9 });
-    expect(light.wallClock.high).toBeCloseTo(30 * 60_000 * 0.05 + (10e9 / (200_000_000 * 255)) * 1000, 0);
+    expect(present(light.wallClock).high).toBeCloseTo(30 * 60_000 * 0.05 + (10e9 / (200_000_000 * 255)) * 1000, 0);
     const noBase = spillEstimate({ memoryBytesSpilled: 50e9, diskBytesSpilled: 10e9 });
     expect(noBase.assumptions).toContain('the stage read no bytes to compare its disk spill to, so serialization and sort CPU is not counted');
     const noDisk = spillEstimate({ shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9, diskBytesSpilled: 0 });
@@ -195,34 +227,35 @@ describe('spill impact estimate', () => {
       shuffleReadBytes: 100e9, memoryBytesSpilled: 400e9, diskBytesSpilled: 100e9,
     };
     const stages = new Map([[0, stage(0, 400 / 60, packed, 4)]]);
-    const findings = [{ type: 'spill', stageId: 0, impactBand: 'warning' }];
+    const findings = [/** @type {Finding} */ ({ type: 'spill', stageId: 0, impactBand: 'warning' })];
     estimateImpact(findings, { stages, totalCores: 16, occupancy: computeOccupancy(stages, 16) });
-    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(0.5 * 25 * 60_000, 0);
+    expect(present(present(findings[0].impactEstimate).wallClock).high).toBeCloseTo(0.5 * 25 * 60_000, 0);
   });
 });
 
 describe('task-hour ranking: plan findings on the execution-wide stage fallback', () => {
   const MB = 1024 * 1024;
   // One execution over two heavy stages; the write node either has stage coverage or none.
+  /** @param {number[] | undefined} writeStageIds */
   function run(writeStageIds) {
-    const write = {
+    const write = /** @type {import('../src/types.ts').PlanNode} */ ({
       name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', children: [], stageIds: writeStageIds,
       metrics: [{ name: 'number of written files', value: 800, metricType: 'sum' }, { name: 'written output', value: 0.8 * MB, metricType: 'sum' }],
-    };
-    const planTree = { name: 'Project', detail: '', metrics: [], children: [write] };
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 30 * 60_000, stageIds: [1, 2], planTree }]]);
+    });
+    const planTree = /** @type {import('../src/types.ts').PlanNode} */ ({ name: 'Project', detail: '', metrics: [], children: [write] });
+    const sql = new Map([[1, /** @type {import('../src/types.ts').SqlExecution} */ ({ id: 1, description: '', startTime: 0, endTime: 30 * 60_000, stageIds: [1, 2], planTree })]]);
     const stages = new Map([1, 2].map((id) => [id, stage(id, 100, { sqlExecutionId: 1 })]));
-    return analyzedRunFrom({ app: makeApp(), stages, sql }).catalog.find((f) => f.type === 'smallFiles');
+    return present(firstOfType(analyzedRunFrom({ app: makeApp(), stages, sql }).catalog, 'smallFiles'));
   }
 
   it('gives a smallFiles finding on the fallback no stage task time', () => {
     const smallFiles = run(undefined);
     expect(smallFiles.stageIds).toEqual([1, 2]);
-    expect(smallFiles.impactEstimate.stageTaskMs).toBeUndefined();
+    expect(present(smallFiles.impactEstimate).stageTaskMs).toBeUndefined();
     expect(rankCostMs(smallFiles)).toBe(0);
   });
 
   it('keeps the task time of the stage a plan node ran on', () => {
-    expect(run([2]).impactEstimate.stageTaskMs).toBe(100 * HOUR_MS);
+    expect(present(run([2]).impactEstimate).stageTaskMs).toBe(100 * HOUR_MS);
   });
 });

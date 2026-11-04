@@ -5,75 +5,169 @@ import { detectorCatalog } from '../src/detector-catalog.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/units.js';
 import { FINDING_PRESENTATION } from '../src/finding-presentation.js';
-import { makeStage, makeApp, dataTail, executorRow } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp, dataTail, executorRow } from './fixtures/stage-app-fixtures.js';
+import { present } from './fixtures/present.js';
+
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/types.ts').SqlExecution} SqlExecution */
+/** @typedef {import('../src/types.ts').RunAggregates} RunAggregates */
+/** @typedef {NonNullable<import('../src/analyzer.ts').AnalyzeOptions['thresholds']>} Thresholds */
+/** @typedef {import('../src/types.ts').ExecutorAddedEvent} ExecutorAddedEvent */
+/** @typedef {import('../src/types.ts').ExecutorRemovedEvent} ExecutorRemovedEvent */
+/** @typedef {import('../src/detectors/index.ts').MemoryHeapOverProvisionedFinding} HeapBandFinding */
+
+/**
+ * Type guard for `find`/`filter` over a catalog: findings of one type, optionally narrowed further.
+ * @template {Finding['type']} T
+ * @param {T} type
+ * @param {(finding: Extract<Finding, { type: T }>) => boolean} [where]
+ * @returns {(finding: Finding) => finding is Extract<Finding, { type: T }>}
+ */
+function ofType(type, where = () => true) {
+  return /** @returns {finding is Extract<Finding, { type: T }>} */ (finding) =>
+    finding.type === type && where(/** @type {Extract<Finding, { type: T }>} */ (finding));
+}
+
+/**
+ * @template {Finding['type']} T
+ * @template {string} K
+ * @template V
+ * @typedef {Extract<Finding, { type: T }> & { [P in K]: V }} FindingWith
+ */
+
+/**
+ * Type guard for findings of one type whose `key` field equals `value`, optionally narrowed further.
+ * @template {Finding['type']} T
+ * @template {string} K
+ * @template {string} V
+ * @param {T} type
+ * @param {K} key
+ * @param {V} value
+ * @param {(finding: FindingWith<T, K, V>) => boolean} [where]
+ * @returns {(finding: Finding) => finding is FindingWith<T, K, V>}
+ */
+function ofField(type, key, value, where = () => true) {
+  return /** @returns {finding is FindingWith<T, K, V>} */ (finding) =>
+    finding.type === type && Reflect.get(finding, key) === value && where(/** @type {FindingWith<T, K, V>} */ (finding));
+}
+
+/** @param {Finding} finding @returns {finding is HeapBandFinding} */
+function isHeapBand(finding) {
+  return finding.type === 'memoryUtilization' && 'rule' in finding && finding.rule === 'heapOverProvisioned';
+}
+
+/** The host a by-host slowHost finding names; none for the executor-level variant.
+ * @param {Finding} finding
+ */
+function hostOf(finding) {
+  return 'host' in finding ? finding.host : undefined;
+}
+
+/** The modeled wall-clock range of a finding the test expects to carry one.
+ * @param {Finding} finding
+ */
+function wallClockOf(finding) {
+  return present(present(finding.impactEstimate).wallClock);
+}
+
+/**
+ * @param {string} executorId
+ * @param {number} timestamp
+ * @param {number} totalCores
+ * @returns {ExecutorAddedEvent}
+ */
+function addedExecutor(executorId, timestamp, totalCores) {
+  return { kind: 'added', executorId, timestamp, host: 'host-1', totalCores, resourceProfileId: null };
+}
+
+/**
+ * @param {string} executorId
+ * @param {number} timestamp
+ * @returns {ExecutorRemovedEvent}
+ */
+function removedExecutor(executorId, timestamp) {
+  return { kind: 'removed', executorId, timestamp, reason: '' };
+}
+
+/** @param {number} n @returns {import('../src/stage-quantiles.ts').StageExecutorStat[]} */
+function execs(n) {
+  return Array.from({ length: n }, (_, i) => ({
+    executorId: `e${i}`, taskCount: 1, totalDuration: 0, logDurationSum: 0, logDurationM2: 0,
+    inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0,
+  }));
+}
 
 // Shared fixture for tests needing no bespoke overrides.
 const sampleApp = makeApp();
-const sampleStages = new Map([[1, makeStage()]]);
+const sampleStages = new Map([[1, makeTypedStage()]]);
+/** @type {ExecutorAddedEvent[]} */
 const sampleAdded = [];
+/** @type {ExecutorRemovedEvent[]} */
 const sampleRemoved = [];
 const sampleJobs = new Map([[0, makeJob(0, true)]]);
 
 describe('analyze: task skew', () => {
   it('emits no bottleneck when ratio is below threshold', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 200 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 200 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'skew')).toHaveLength(0);
+    expect(catalog.filter(ofType('skew'))).toHaveLength(0);
   });
 
   it('emits a skew finding above the 3× P95/median ratio', () => {
     // Detector grades 'warning'; deriveImpactBand promotes to 'critical' (250ms delta = 5% of the 5s default, over the 2% floor).
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const skew = catalog.filter(b => b.type === 'skew');
+    const skew = catalog.filter(ofType('skew'));
     expect(skew).toHaveLength(1);
     expect(skew[0].impactBand).toBe('critical');
     expect(skew[0].stageId).toBe(1);
   });
 
   it('emits critical when P95/median > 5×', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find(b => b.type === 'skew').impactBand).toBe('critical');
+    expect(present(catalog.find(ofType('skew'))).impactBand).toBe('critical');
   });
 
   it('uses max/median fallback for stages with < 20 tasks', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400, tailAttribution: dataTail() })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find(b => b.type === 'skew').impactBand).toBe('critical');
+    expect(present(catalog.find(ofType('skew'))).impactBand).toBe('critical');
   });
 
   it('suppresses a critical-ratio skew finding when the absolute waste is negligible against total app runtime', () => {
     // ratio 6× clears warn on paper, but 5ms p95-p50 in a 1,000,000ms app is under the runtime floor: the critical-with-sub-second-savings mismatch the floor prevents.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 1, taskDurationP95: 6 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 1, taskDurationP95: 6 })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 1000000 }), stages, [], []);
-    expect(catalog.filter(b => b.type === 'skew')).toHaveLength(0);
+    expect(catalog.filter(ofType('skew'))).toHaveLength(0);
   });
 
   it('caps a skew finding at warning when the waste clears the warn floor but not the critical floor', () => {
     // ratio 7× clears warn (3×); 60ms clears the 0.5% warn floor (50ms) but not the 2% crit floor (200ms) of a 10,000ms app.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 10, taskDurationP95: 70, tailAttribution: dataTail() })]]);
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 10, taskDurationP95: 70, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 10000 }), stages, [], []);
-    expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
+    expect(present(catalog.find(ofType('skew'))).impactBand).toBe('warning');
   });
 
   it('falls back to the fixed impactBand when total app runtime is unavailable', () => {
     // With no total duration, deriveImpactBand leaves the detector's fixed fallback ('warning') untouched regardless of ratio.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 1, taskDurationP95: 6, tailAttribution: dataTail() })]]);
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 1, taskDurationP95: 6, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp({ startTime: undefined, endTime: undefined }), stages, [], []);
-    expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
+    expect(present(catalog.find(ofType('skew'))).impactBand).toBe('warning');
   });
 
   it('credits a one-task-dominated stage\'s tail as recoverable: the fix shortens the very task the ceiling used to floor it at', () => {
     // The 5,000ms max task fills nearly the whole 5,005ms window. Fixing the skew brings the tail
     // down to ~P50, so the recoverable time is the 4,990ms delta, not the 5ms left above that task.
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, tailAttribution: dataTail(),
     })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, [], []);
-    const skew = catalog.filter(b => b.type === 'skew');
+    const skew = catalog.filter(ofType('skew'));
     expect(skew).toHaveLength(1);
-    expect(skew[0].impactEstimate.wallClock.high).toBe(4990);
+    expect(wallClockOf(present(skew[0])).high).toBe(4990);
     expect(skew[0].impactBand).toBe('critical');
   });
 
@@ -81,65 +175,68 @@ describe('analyze: task skew', () => {
     // 14,990 core-ms less the 4,990ms the fix removes leaves 10,000 core-ms over 2 cores: 5,000ms of
     // unavoidable work in the 5,005ms window, so only 5ms is recoverable despite a 4,990ms raw delta
     // that clears both floors.
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, executorRunTime: 14990,
     })]]);
-    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
+    const executorsAdded = [addedExecutor('1', 0, 2)];
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, executorsAdded, []);
-    expect(catalog.filter(b => b.type === 'skew')).toHaveLength(0);
+    expect(catalog.filter(ofType('skew'))).toHaveLength(0);
   });
 });
 
 describe('analyze: shuffle I/O', () => {
   it('emits no bottleneck below 50 MB', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 40 * 1024 * 1024 })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'shuffle')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ shuffleReadBytes: 40 * 1024 * 1024 })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('shuffle'))).toHaveLength(0);
   });
 
   it('emits a shuffle finding above 50 MB, reconciled to critical against the default fixture duration', () => {
     // Detector grades 'info'; deriveImpactBand promotes to 'critical' (60 MB clears the 2% floor of the 5s default).
     // The tasks measured 500ms of fetch wait (5000 core-ms at the fixture's 10x concurrency), so the
     // 503ms link model is claimed nearly whole.
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 60 * 1024 * 1024, fetchWaitTime: 5000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadBytes: 60 * 1024 * 1024, fetchWaitTime: 5000 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('shuffle')));
     expect(b.impactBand).toBe('critical');
   });
 
   it('emits critical above 1 GB', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('shuffle')));
     expect(b.impactBand).toBe('critical');
   });
 
   it('skips a shuffle or spill on a stage under 0.5% of the run, and keeps a longer stage\'s above info', () => {
     const run = makeApp({ endTime: 400_000 });
-    const stage = (completedAt) => new Map([[1, makeStage({
+    /** @param {number} completedAt */
+    const stage = (completedAt) => new Map([[1, makeTypedStage({
       shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 40_000, memoryBytesSpilled: 8 * 1024 * 1024 * 1024,
       diskBytesSpilled: 4 * 1024 * 1024 * 1024, spillMemMax: 8 * 1024 * 1024 * 1024, spillDiskMax: 4 * 1024 * 1024 * 1024, completedAt,
     })]]);
+    /** @param {number} completedAt @param {Finding['type']} type */
     const of = (completedAt, type) => analyze(run, stage(completedAt), [], []).filter(b => b.type === type);
     // 1s of a 400s run (0.25%): the bytes are real, the floor drops them.
     expect(of(1000, 'shuffle')).toHaveLength(0);
     expect(of(1000, 'spill')).toHaveLength(0);
     // 8s (2%): both claim enough of the run to grade above info.
-    expect(of(8000, 'shuffle')[0].impactBand).not.toBe('info');
-    expect(of(8000, 'spill')[0].impactBand).not.toBe('info');
+    expect(present(of(8000, 'shuffle')[0]).impactBand).not.toBe('info');
+    expect(present(of(8000, 'spill')[0]).impactBand).not.toBe('info');
     // A zero-length stage (no submission time on older Spark) isn't skipped.
     expect(of(0, 'spill')).toHaveLength(1);
   });
 
   it('grades a large shuffle whose tasks never waited on a fetch informational: nothing stalled', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 0 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
-    expect(b.impactEstimate.wallClock.high).toBe(0);
+    const stages = new Map([[1, makeTypedStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 0 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('shuffle')));
+    expect(wallClockOf(b).high).toBe(0);
     expect(b.impactBand).toBe('info');
   });
 });
 
 describe('analyze: slow host', () => {
+  /** @param {import('../src/stage-quantiles.ts').StageHostStat[]} hostStats @param {Partial<Stage>} [overrides] */
   function stageWithHosts(hostStats, overrides = {}) {
     const taskCount = hostStats.reduce((s, h) => s + h.taskCount, 0);
-    return makeStage({ taskCount, hostStats, ...overrides });
+    return makeTypedStage({ taskCount, hostStats, ...overrides });
   }
 
   it('emits no slowHost when fewer than 3 hosts', () => {
@@ -147,7 +244,7 @@ describe('analyze: slow host', () => {
       { host: 'a', taskCount: 10, totalDuration: 1000 },
       { host: 'b', taskCount: 10, totalDuration: 5000 },
     ])]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'slowHost')).toHaveLength(0);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('slowHost'))).toHaveLength(0);
   });
 
   it('emits no slowHost when stage taskCount < 15', () => {
@@ -156,7 +253,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 4, totalDuration: 400 },
       { host: 'c', taskCount: 4, totalDuration: 4000 },
     ])]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'slowHost')).toHaveLength(0);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('slowHost'))).toHaveLength(0);
   });
 
   it('emits a slowHost finding when a host is 2-4× the median host-mean, reconciled to critical here', () => {
@@ -166,10 +263,10 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 20, totalDuration: 200000 },   // mean 10000ms
       { host: 'c', taskCount: 20, totalDuration: 600000 },   // mean 30000ms -> 3×
     ])]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'slowHost');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('slowHost')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('critical');
-    expect(b.host).toBe('c');
+    expect(hostOf(b)).toBe('c');
     expect(b.value).toBe(3);
   });
 
@@ -179,7 +276,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 20, totalDuration: 200000 },
       { host: 'c', taskCount: 20, totalDuration: 1000000 }, // mean 50000ms -> 5×
     ])]]);
-    expect(analyze(makeApp(), stages, [], []).find(b => b.type === 'slowHost').impactBand).toBe('critical');
+    expect(present(analyze(makeApp(), stages, [], []).find(ofType('slowHost'))).impactBand).toBe('critical');
   });
 
   it('skips slow host with < 20% task share', () => {
@@ -188,7 +285,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 40, totalDuration: 400000 },
       { host: 'c', taskCount: 3, totalDuration: 300000 },  // mean 100000ms = 10×, but only 3/83 = 3.6% share
     ])]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'slowHost')).toHaveLength(0);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('slowHost'))).toHaveLength(0);
   });
 
   it('does not flag hostMeanRatio when the absolute duration is sub-second noise (ratio 4× but ~200ms)', () => {
@@ -198,7 +295,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 20, totalDuration: 1000 },  // mean 50ms
       { host: 'c', taskCount: 20, totalDuration: 4000 },  // mean 200ms -> 4× (would be 'critical' pre-floor)
     ])]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'slowHost' && b.metric === 'hostMeanRatio')).toHaveLength(0);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('slowHost', b => b.metric === 'hostMeanRatio'))).toHaveLength(0);
   });
 
   it('still flags hostMeanRatio critical for large absolute durations at the same 4× ratio (no regression)', () => {
@@ -207,7 +304,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 20, totalDuration: 600000 },   // mean 30000ms (30s)
       { host: 'c', taskCount: 20, totalDuration: 2400000 },  // mean 120000ms (120s) -> 4×
     ])]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'slowHost' && b.metric === 'hostMeanRatio');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('slowHost', b => b.metric === 'hostMeanRatio')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('critical');
   });
@@ -219,7 +316,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 20, totalDuration: 600000 },
       { host: 'c', taskCount: 20, totalDuration: 2400000 },
     ], { submittedAt: 5000, completedAt: 5000 })]]);
-    const b = analyze(makeApp({ endTime: 400_000 }), stages, [], []).find(b => b.type === 'slowHost' && b.metric === 'hostMeanRatio');
+    const b = present(analyze(makeApp({ endTime: 400_000 }), stages, [], []).find(ofType('slowHost', b => b.metric === 'hostMeanRatio')));
     expect(b).toBeTruthy();
     expect(b.impactBand).not.toBe('info');
   });
@@ -230,7 +327,7 @@ describe('analyze: slow host', () => {
       { host: 'b', taskCount: 20, totalDuration: 5000 },     // mean 250ms
       { host: 'c', taskCount: 20, totalDuration: 20000 },    // mean 1000ms -> exactly the floor, 4× ratio
     ])]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'slowHost' && b.metric === 'hostMeanRatio');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('slowHost', b => b.metric === 'hostMeanRatio')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('critical');
   });
@@ -239,67 +336,71 @@ describe('analyze: slow host', () => {
 describe('analyze: stage slowness fallback + suppression (§6)', () => {
   const min = 60000;
   // Wall-clock (completedAt/submittedAt) drives the band; the guard is !(stageDurationMs > 0), not executorRunTime, which here is just realistic filler.
-  const slow = (mins, execs) => makeStage({ id: 1, executorRunTime: mins * min * execs, executorStats: Array.from({ length: execs }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), hostStats: [], submittedAt: 0, completedAt: mins * min });
+  /** @param {number} mins @param {number} count */
+  const slow = (mins, count) => makeTypedStage({ id: 1, executorRunTime: mins * min * count, executorStats: execs(count), hostStats: [], submittedAt: 0, completedAt: mins * min });
   it('fires from 15 minutes of wall-clock; its band comes from the partitioning headroom, not the duration', () => {
     // 4 tasks on a 16-core cluster, running the whole window: more partitions could spread it over
     // all 16 cores (critical against the 100-minute app). With 100 tasks there's no headroom (info).
     // It reads 1 GB: a stage that reads nothing has no data for more partitions to split.
-    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
+    const executorsAdded = [addedExecutor('1', 0, 16)];
     const app = makeApp({ startTime: 0, endTime: 100 * min });
+    /** @param {number} mins @param {number} taskCount */
     const run = (mins, taskCount) => analyze(app, new Map([[1, { ...slow(mins, 4), taskCount, taskActiveMs: mins * min, inputBytes: 1e9 }]]), executorsAdded, [])
-      .find(b => b.type === 'stageSlowness');
+      .find(ofType('stageSlowness'));
     expect(run(14, 4)).toBeUndefined();
-    expect(run(15, 4).impactBand).toBe('critical');
-    expect(run(15, 4).impactEstimate.wallClock.high).toBeCloseTo(15 * min * (12 / 16), 6);
-    expect(run(61, 100).impactBand).toBe('info');
+    expect(present(run(15, 4)).impactBand).toBe('critical');
+    expect(wallClockOf(present(run(15, 4))).high).toBeCloseTo(15 * min * (12 / 16), 6);
+    expect(present(run(61, 100)).impactBand).toBe('info');
   });
+  /** @param {number} hotTasks */
   const slowHostStage = (hotTasks) => {
     const rest = (50 - hotTasks) / 2;
     const hostStats = [ { host: 'hot', taskCount: hotTasks, totalDuration: 8e6 }, { host: 'b', taskCount: rest, totalDuration: rest * 1000 }, { host: 'c', taskCount: rest, totalDuration: rest * 1000 } ];
-    return makeStage({ id: 1, taskCount: 50, hostStats, executorRunTime: 70 * min * 4, executorStats: Array.from({ length: 4 }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), submittedAt: 0, completedAt: 70 * min }); // wall-clock basis per Decision 7
+    return makeTypedStage({ id: 1, taskCount: 50, hostStats, executorRunTime: 70 * min * 4, executorStats: execs(4), submittedAt: 0, completedAt: 70 * min }); // wall-clock basis per Decision 7
   };
+  /** @param {Stage} stage @param {Thresholds} thresholds */
   const runTuned = (stage, thresholds) => analyze(makeApp(), new Map([[1, stage]]), [], [], new Map(), new Map(), null, { thresholds });
   it('is suppressed when a slowHost finding exists on the same stage', () => {
     const catalog = analyze(makeApp(), new Map([[1, slowHostStage(40)]]), [], []);
-    expect(catalog.some(b => b.type === 'slowHost')).toBe(true);
-    expect(catalog.some(b => b.type === 'stageSlowness')).toBe(false);
+    expect(catalog.some(ofType('slowHost'))).toBe(true);
+    expect(catalog.some(ofType('stageSlowness'))).toBe(false);
   });
   it('labels a stageSlowness finding that a tightened slowHost lets through with slowHost\'s tuned thresholds', () => {
     // Tuned so slowHost can't fire (3 hosts < 4): the stage gets its stageSlowness finding back,
     // and that finding exists only because of the override.
     const tuned = runTuned(slowHostStage(40), { slowHost: { minHosts: 4 } });
-    expect(tuned.some(b => b.type === 'slowHost')).toBe(false);
-    const slowness = tuned.find(b => b.type === 'stageSlowness');
+    expect(tuned.some(ofType('slowHost'))).toBe(false);
+    const slowness = present(tuned.find(ofType('stageSlowness')));
     expect(slowness.tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
     expect(slowness.validationRequired).toContain('Produced with tuned thresholds: slowHost.minHosts 4 (default 3).');
-    expect(analyze(makeApp(), new Map([[1, slowHostStage(8)]]), [], []).find(b => b.type === 'stageSlowness').tunedThresholds).toBeUndefined();
+    expect(present(analyze(makeApp(), new Map([[1, slowHostStage(8)]]), [], []).find(ofType('stageSlowness'))).tunedThresholds).toBeUndefined();
   });
   it('estimates a stageSlowness finding the suppression link surfaces, keeping its tuned label', () => {
     // 100 cores for 50 tasks: more partitions could halve the 70-minute stage's task-active time.
-    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 100 }];
+    const executorsAdded = [addedExecutor('1', 0, 100)];
     const stage = { ...slowHostStage(40), inputBytes: 1e9 };
-    const slowness = analyze(makeApp(), new Map([[1, stage]]), executorsAdded, [], new Map(), new Map(), null,
-      { thresholds: { slowHost: { minHosts: 4 } } }).find(b => b.type === 'stageSlowness');
+    const slowness = present(analyze(makeApp(), new Map([[1, stage]]), executorsAdded, [], new Map(), new Map(), null,
+      { thresholds: { slowHost: { minHosts: 4 } } }).find(ofType('stageSlowness')));
     expect(slowness.tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
     expect(slowness.validationRequired).toContain('estimate is unvalidated');
     expect(slowness.impactEstimate).toMatchObject({ estimateMethod: 'modeled', rawWaste: { value: 35 * min, unit: 'ms' } });
-    expect(slowness.impactEstimate.wallClock.high).toBeCloseTo(35 * min, 6);
+    expect(wallClockOf(slowness).high).toBeCloseTo(35 * min, 6);
   });
   it('drops the stageSlowness finding when a loosened slowHost starts flagging the stage', () => {
     // The hot host runs 8 of 50 tasks, below the default 20% share, so only stageSlowness fires.
     const stage = slowHostStage(8);
     const defaults = analyze(makeApp(), new Map([[1, stage]]), [], []);
-    expect(defaults.some(b => b.type === 'slowHost')).toBe(false);
-    expect(defaults.some(b => b.type === 'stageSlowness')).toBe(true);
+    expect(defaults.some(ofType('slowHost'))).toBe(false);
+    expect(defaults.some(ofType('stageSlowness'))).toBe(true);
     const loosened = runTuned(stage, { slowHost: { minShare: 0.1 } });
-    expect(loosened.find(b => b.type === 'slowHost').tunedThresholds).toEqual({ minShare: { value: 0.1, default: 0.2 } });
-    expect(loosened.some(b => b.type === 'stageSlowness')).toBe(false);
+    expect(present(loosened.find(ofType('slowHost'))).tunedThresholds).toEqual({ minShare: { value: 0.1, default: 0.2 } });
+    expect(loosened.some(ofType('stageSlowness'))).toBe(false);
   });
 
   it('scores stageSlowness off real wall-clock duration, not per-executor average (Decision 7)', () => {
     // executorRunTime aggregate is small, but the stage's real wall-clock duration is long due to low concurrency.
     const stages = new Map([
-      [0, makeStage({
+      [0, makeTypedStage({
         id: 0,
         taskCount: 2,
         executorRunTime: 2 * 60 * 1000, // 2 minutes summed across 2 tasks
@@ -308,7 +409,7 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
       })],
     ]);
     const findings = analyze(makeApp(), stages, [], []);
-    const finding = findings.find((f) => f.type === 'stageSlowness');
+    const finding = present(findings.find(ofType('stageSlowness')));
     expect(finding).toBeDefined();
     expect(finding.stageId).toBe(0);
   });
@@ -318,7 +419,7 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     // executorRunTime 0 but can still be slow by wall clock. No task ran, so more partitions
     // recover nothing: the finding stays at the detector's own 'info'.
     const stages = new Map([
-      [0, makeStage({
+      [0, makeTypedStage({
         id: 0,
         executorRunTime: 0,
         taskActiveMs: 0,
@@ -326,23 +427,23 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
         completedAt: 20 * 60 * 1000, // 20 minutes real wall-clock -> should still fire
       })],
     ]);
-    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
-    const finding = analyze(makeApp(), stages, executorsAdded, []).find((f) => f.type === 'stageSlowness');
+    const executorsAdded = [addedExecutor('1', 0, 16)];
+    const finding = present(analyze(makeApp(), stages, executorsAdded, []).find(ofType('stageSlowness')));
     expect(finding).toBeDefined();
-    expect(finding.impactEstimate.wallClock.high).toBe(0);
+    expect(wallClockOf(finding).high).toBe(0);
     expect(finding.impactBand).toBe('info');
   });
 
   it('does not fire when wall-clock duration is zero, even with executorRunTime > 0', () => {
     const stages = new Map([
-      [0, makeStage({
+      [0, makeTypedStage({
         id: 0,
         executorRunTime: 999 * 60 * 1000, // large, but not the basis
         submittedAt: 1000,
         completedAt: 1000, // zero wall-clock duration
       })],
     ]);
-    expect(analyze(makeApp(), stages, [], []).some((f) => f.type === 'stageSlowness')).toBe(false);
+    expect(analyze(makeApp(), stages, [], []).some(ofType('stageSlowness'))).toBe(false);
   });
 });
 
@@ -353,10 +454,10 @@ describe('analyze: host duration-share (§2a)', () => {
       { host: 'b', taskCount: 20, totalDuration: 5000 },
       { host: 'c', taskCount: 20, totalDuration: 5000 },
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 100, hostStats })]]);
-    const found = analyze(makeApp(), stages, [], []).filter(b => b.type === 'slowHost' && b.variant === 'durationShare');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, hostStats })]]);
+    const found = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'durationShare'));
     expect(found).toHaveLength(1);
-    expect(found[0].host).toBe('hot');
+    expect(hostOf(present(found[0]))).toBe('hot');
   });
   it('does not flag duration-share when task share < 50%', () => {
     const hostStats = [
@@ -364,21 +465,21 @@ describe('analyze: host duration-share (§2a)', () => {
       { host: 'b', taskCount: 30, totalDuration: 5000 },
       { host: 'c', taskCount: 30, totalDuration: 5000 },
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 100, hostStats })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.variant === 'durationShare')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, hostStats })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'durationShare'))).toHaveLength(0);
   });
 });
 
 describe('analyze: executor multi-dim imbalance (§2b)', () => {
-  const base = { taskCount: 5, totalDuration: 5000, inputBytes: 500, shuffleReadBytes: 0, shuffleWriteBytes: 0 };
+  const base = { taskCount: 5, totalDuration: 5000, logDurationSum: 0, logDurationM2: 0, inputBytes: 500, shuffleReadBytes: 0, shuffleWriteBytes: 0 };
   it('flags task-time deviation past the top tier as critical', () => {
     const executorStats = [
       executorRow('e1', Array(5).fill(100000)), // mean 100000
       executorRow('e2', Array(5).fill(1000)), // mean 1000
       executorRow('e3', Array(5).fill(1000)), // mean 1000  → max/median = 100×
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
-    const f = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'taskTime');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    const f = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'taskTime'));
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
     expect(f[0].executorId).toBe('e1');
@@ -389,10 +490,10 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
       executorRow('e2', Array(5).fill(1000)),
       executorRow('e3', Array(5).fill(1000)),
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
-    const [f] = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'taskTime');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    const [f] = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'taskTime'));
     expect(f).toMatchObject({ confidence: 'low', executorCount: 3, taskCount: 15, executorId: 'e1' });
-    expect(f.host).toBeUndefined(); // host is an id discriminator: setting it would change the id
+    expect(hostOf(f)).toBeUndefined(); // host is an id discriminator: setting it would change the id
     expect(f.validationRequired).toMatch(/^One of 3 executors: the largest of 3 per-executor mean task times reaches 100x the median by chance when/);
   });
 
@@ -400,8 +501,8 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     const executorStats = [
       { executorId: 'e1', ...base, inputBytes: 5_000_000_000 }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
-    const [f] = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    const [f] = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
     expect(f.confidence).toBeUndefined();
     expect(f.executorCount).toBeUndefined();
   });
@@ -410,9 +511,9 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     const executorStats = [
       { executorId: 'e1', ...base }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, executorMetrics: new Map() })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, executorMetrics: new Map() })]]);
     expect(() => analyze(makeApp(), stages, [], [])).not.toThrow();
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.dimension === 'storageMemory')).toHaveLength(0);
+    expect(analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'storageMemory'))).toHaveLength(0);
   });
 
   it('does not flag taskTime when absolute per-task time is sub-second noise (10× ratio, ~200ms)', () => {
@@ -421,8 +522,8 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
       { executorId: 'e2', ...base, taskCount: 5, totalDuration: 100 },  // mean 20ms
       { executorId: 'e3', ...base, taskCount: 5, totalDuration: 100 },  // mean 20ms -> max/median = 10×
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'taskTime')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'taskTime'))).toHaveLength(0);
   });
 
   it('does not flag inputBytes when the absolute byte volume is tiny (10× ratio, 100 bytes)', () => {
@@ -431,8 +532,8 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
       { executorId: 'e2', ...base, inputBytes: 10 },
       { executorId: 'e3', ...base, inputBytes: 10 }, // max/median = 10×
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'))).toHaveLength(0);
   });
 
   it('still flags inputBytes at the same 10× ratio when volumes are large (no regression)', () => {
@@ -441,8 +542,8 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
       { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
       { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 }, // max/median = 10×
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
-    const f = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    const f = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
     expect(f[0].recommendation).toMatch(/^Executor e1's input read is 10× the median: /);
@@ -457,10 +558,11 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
       { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 },
     ];
     const longRun = makeApp({ startTime: 0, endTime: 400_000 });
-    const at = (completedAt) => analyze(longRun, new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [], submittedAt: 0, completedAt })]]), [], [])
-      .filter(b => b.type === 'slowHost');
+    /** @param {number} completedAt */
+    const at = (completedAt) => analyze(longRun, new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [], submittedAt: 0, completedAt })]]), [], [])
+      .filter(ofType('slowHost'));
     expect(at(1000)).toHaveLength(0); // 0.25% of the run: the imbalance is real, the floor drops it
-    const kept = at(4000).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes'); // 1%
+    const kept = at(4000).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes')); // 1%
     expect(kept).toHaveLength(1);
     expect(kept[0].impactBand).not.toBe('info');
   });
@@ -468,50 +570,51 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
 
 describe('analyze: failed task rate', () => {
   it('emits no failures bottleneck when failureRate <= 5%', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 5 })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'failures')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 5 })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('failures'))).toHaveLength(0);
   });
 
   it('emits warning when 5% < failureRate <= 20%', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 10 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'failures');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 10 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('failures')));
     expect(b.impactBand).toBe('warning');
     expect(b.value).toBe(10);
   });
 
   it('emits critical when failureRate > 20%', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 25 })]]);
-    expect(analyze(makeApp(), stages, [], []).find(b => b.type === 'failures').impactBand).toBe('critical');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 25 })]]);
+    expect(present(analyze(makeApp(), stages, [], []).find(ofType('failures'))).impactBand).toBe('critical');
   });
 
   it('skips stages with fewer than 10 tasks', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 9, failedTasks: 5 })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'failures')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 9, failedTasks: 5 })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('failures'))).toHaveLength(0);
   });
 
   it('picks dominant failure reason from failureReasons array', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       taskCount: 100, failedTasks: 10,
       failureReasons: [
         { reason: 'FetchFailed', count: 7 },
         { reason: 'ExecutorLostFailure', count: 3 },
       ],
     })]]);
-    expect(analyze(makeApp(), stages, [], []).find(b => b.type === 'failures').dominantReason).toBe('FetchFailed');
+    expect(present(analyze(makeApp(), stages, [], []).find(ofType('failures'))).dominantReason).toBe('FetchFailed');
   });
 
   it('names the dominant error from the largest group under the dominant tag, with up to 5 groups', () => {
+    /** @param {string} reason @param {Partial<import('../src/task-failure.ts').TaskFailureGroup>} extra @param {number} count */
     const group = (reason, extra, count) => ({ reason, className: null, message: null, lossReason: null, stackExcerpt: null, ...extra, count });
     const failureGroups = [
       group('ExecutorLostFailure', { lossReason: 'Container killed by YARN for exceeding memory limits.' }, 6),
       ...Array.from({ length: 6 }, (_, i) => group('ExceptionFailure', { className: 'java.lang.ArithmeticException', message: `row ${i}` }, 2)),
     ];
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       taskCount: 100, failedTasks: 20,
       failureReasons: [{ reason: 'ExecutorLostFailure', count: 6 }, { reason: 'ExceptionFailure', count: 12 }],
       failureGroups,
     })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'failures');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('failures')));
     expect(b.dominantReason).toBe('ExceptionFailure');
     expect(b.dominantError).toBe('java.lang.ArithmeticException');
     expect(b.recommendation).toContain('(dominant error: java.lang.ArithmeticException)');
@@ -520,58 +623,59 @@ describe('analyze: failed task rate', () => {
   });
 
   it('names an executor loss by its loss reason', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       taskCount: 100, failedTasks: 10,
       failureReasons: [{ reason: 'ExecutorLostFailure', count: 10 }],
       failureGroups: [{ reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Executor heartbeat timed out', stackExcerpt: null, count: 10 }],
     })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'failures');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('failures')));
     expect(b.dominantError).toBe('ExecutorLostFailure: Executor heartbeat timed out');
     expect(b.otherFailedTasks).toBe(0);
   });
 
   it('dominantReason is null when failureReasons is empty', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 10 })]]);
-    expect(analyze(makeApp(), stages, [], []).find(b => b.type === 'failures').dominantReason).toBeNull();
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 10 })]]);
+    expect(present(analyze(makeApp(), stages, [], []).find(ofType('failures'))).dominantReason).toBeNull();
   });
 });
 
 describe('analyze: speculative / straggler', () => {
   it('emits no straggler when no speculative tasks and straggler share <= 5%', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 4 })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 4 })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('straggler'))).toHaveLength(0);
   });
 
   it('admits a 2.5-5% straggler share only when its recoverable tail clears the runtime floor', () => {
     // 4/100 = 4% stragglers. A 4,900ms tail on a 5,000ms stage in a 500,000ms app clears the 0.5%
     // floor (2,500ms); a 400ms tail does not.
     const app = makeApp({ startTime: 0, endTime: 500000 });
-    const stage = (max) => new Map([[1, makeStage({
+    /** @param {number} max */
+    const stage = (max) => new Map([[1, makeTypedStage({
       taskCount: 100, speculativeTasks: 0, stragglerCount: 4, completedAt: 5000, taskDurationP50: 100, taskDurationMax: max,
     })]]);
-    const gating = analyze(app, stage(5000), [], []).find(b => b.type === 'straggler');
+    const gating = present(analyze(app, stage(5000), [], []).find(ofType('straggler')));
     expect(gating.metric).toBe('stragglerShare');
     expect(gating.impactBand).toBe('warning');
     expect(gating.confidence).toBe('low');
-    expect(analyze(app, stage(500), [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    expect(analyze(app, stage(500), [], []).find(ofType('straggler'))).toBeUndefined();
     // At or under 2.5% nothing fires, however long the tail.
-    const two = new Map([[1, makeStage({ taskCount: 100, stragglerCount: 2, completedAt: 5000, taskDurationP50: 100, taskDurationMax: 5000 })]]);
-    expect(analyze(app, two, [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    const two = new Map([[1, makeTypedStage({ taskCount: 100, stragglerCount: 2, completedAt: 5000, taskDurationP50: 100, taskDurationMax: 5000 })]]);
+    expect(analyze(app, two, [], []).find(ofType('straggler'))).toBeUndefined();
     // No app end time (an incomplete run): the floor can't be checked, so the lower gate stays shut.
-    expect(analyze(makeApp({ startTime: 0, endTime: null }), stage(5000), [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    expect(analyze(makeApp({ startTime: 0, endTime: null }), stage(5000), [], []).find(ofType('straggler'))).toBeUndefined();
   });
 
   it('skips stages with fewer than 10 tasks', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 8, speculativeTasks: 3, stragglerCount: 0 })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 8, speculativeTasks: 3, stragglerCount: 0 })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('straggler'))).toHaveLength(0);
   });
 
   it('emits straggler when any speculative task present', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 2, stragglerCount: 0, tailReplayRecoveryMs: 0 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 2, stragglerCount: 0, tailReplayRecoveryMs: 0 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('info');
-    expect(b.impactEstimate.wallClock.high).toBe(0);
+    expect(wallClockOf(b).high).toBe(0);
     expect(b.recommendation).toContain('2 tasks finished on a speculative copy');
     expect(b.metric).toBe('speculativeTasks');
     expect(b.value).toBe(2);
@@ -579,8 +683,8 @@ describe('analyze: speculative / straggler', () => {
 
   it('emits straggler when stragglerCount > 5% of tasks', () => {
     // taskDurationMax raised above p50 so the runtime floor sees real waste, not the fixture's zero-variance durations.
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.metric).toBe('stragglerShare');
     expect(b.value).toBe(8);
@@ -589,16 +693,16 @@ describe('analyze: speculative / straggler', () => {
 
   it('flags a large straggler share even with zero speculative tasks, reconciled to critical here', () => {
     // Detector grades 'warning'; deriveImpactBand promotes to 'critical' against the default fixture duration.
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 44, taskDurationMax: 300 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 44, taskDurationMax: 300 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('critical');
   });
 
   it('reports stragglerShare, not a misleadingly-low speculativeTasks count, when the straggler share is what actually drove the impact band', () => {
     // 50% straggler share ('warning') beats 1% speculative ('info'); metric/value must reflect the criterion that drove the grade, not just that speculation was on.
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 1, stragglerCount: 50, taskDurationMax: 300 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 1, stragglerCount: 50, taskDurationMax: 300 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('critical');
     expect(b.metric).toBe('stragglerShare');
@@ -607,8 +711,8 @@ describe('analyze: speculative / straggler', () => {
 
   it('caps a large straggler share at info when task durations show no real variance', () => {
     // taskDurationMax == taskDurationP50 means zero modeled waste, so the share-driven label caps at info.
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 44 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 44 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('info');
   });
@@ -617,12 +721,12 @@ describe('analyze: speculative / straggler', () => {
     // Like the skew ceiling test: the 10,000 core-ms left after the fix removes 4,990 fill the
     // 5,005ms window over 2 cores, so only 5ms is recoverable despite a raw delta that clears the
     // 25ms warn floor.
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000, executorRunTime: 14990,
     })]]);
-    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
-    const b = analyze(makeApp(), stages, executorsAdded, []).find(b => b.type === 'straggler');
+    const executorsAdded = [addedExecutor('1', 0, 2)];
+    const b = present(analyze(makeApp(), stages, executorsAdded, []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('info');
   });
@@ -630,42 +734,42 @@ describe('analyze: speculative / straggler', () => {
   it('grades a straggler that alone gates its stage on the recoverable tail, not on ~0', () => {
     // Same 5,000ms straggler in a 5,005ms window, but no core work filling it: bringing the
     // straggler down to P50 recovers the 4,990ms delta.
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000,
     })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
-    expect(b.impactEstimate.wallClock.high).toBe(4990);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
+    expect(wallClockOf(b).high).toBe(4990);
     expect(b.impactBand).toBe('critical');
   });
 
   it('skips a stage shorter than 0.5% of the run, whose tail could only grade info, and keeps a warning one', () => {
     const straggling = { taskCount: 100, speculativeTasks: 3, stragglerCount: 50, taskDurationP50: 10, taskDurationMax: 400 };
     // A 1s stage in a 400s run (0.25%): the tail is real, but can't cost 0.5% of the run.
-    const short = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 1000 })]]);
-    expect(analyze(makeApp({ endTime: 400_000 }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
+    const short = new Map([[1, makeTypedStage({ ...straggling, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), short, [], []).filter(ofType('straggler'))).toHaveLength(0);
     // The same run without an end (duration unknown) keeps it, as the other runtime floors do.
-    expect(analyze(makeApp({ endTime: null }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
+    expect(analyze(makeApp({ endTime: null }), short, [], []).filter(ofType('straggler'))).toHaveLength(1);
     // A stage with no completion time in a run that ended is zero-length, not short: kept.
-    const open = new Map([[1, makeStage({ ...straggling, submittedAt: 1000, completedAt: null })]]);
-    expect(analyze(makeApp({ endTime: 400_000 }), open, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
+    const open = new Map([[1, makeTypedStage({ ...straggling, submittedAt: 1000, completedAt: 0 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), open, [], []).filter(ofType('straggler'))).toHaveLength(1);
     // A 5s stage (1.25%) whose 4.99s tail clears the floor still grades above info.
-    const long = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 5005, taskDurationMax: 5000 })]]);
-    const b = analyze(makeApp({ endTime: 400_000 }), long, [], []).find(b => b.type === 'straggler');
+    const long = new Map([[1, makeTypedStage({ ...straggling, submittedAt: 0, completedAt: 5005, taskDurationMax: 5000 })]]);
+    const b = present(analyze(makeApp({ endTime: 400_000 }), long, [], []).find(ofType('straggler')));
     expect(b.impactBand).toBe('warning');
   });
 });
 
 describe('analyze: one finding per slow-task tail (§4)', () => {
-  const tailStage = (over = {}) => new Map([[1, makeStage({
+  const tailStage = (over = {}) => new Map([[1, makeTypedStage({
     taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
     speculativeTasks: 0, stragglerCount: 2, ...over,
   })]]);
 
   it('reports a tail with no measured cause as straggler alone, with no key advice or fix', () => {
     const catalog = analyze(makeApp(), tailStage(), [], []);
-    expect(catalog.find(b => b.type === 'skew')).toBeUndefined();
-    const straggler = catalog.find(b => b.type === 'straggler');
+    expect(catalog.find(ofType('skew'))).toBeUndefined();
+    const straggler = present(catalog.find(ofType('straggler')));
     expect(straggler.cause).toBe('unattributed');
     expect(straggler.origin).toBeUndefined();
     expect(straggler.remediation).toBeUndefined();
@@ -680,9 +784,9 @@ describe('analyze: one finding per slow-task tail (§4)', () => {
 
   it('reports a data-driven tail as skew alone, with no overlap caveat on either side', () => {
     const catalog = analyze(makeApp(), tailStage({ tailAttribution: dataTail() }), [], []);
-    const skew = catalog.find(b => b.type === 'skew');
+    const skew = present(catalog.find(ofType('skew')));
     expect(skew.cause).toBe('data');
-    expect(catalog.find(b => b.type === 'straggler')).toBeUndefined();
+    expect(catalog.find(ofType('straggler'))).toBeUndefined();
     expect(skew.validationRequired ?? '').not.toMatch(/overlaps with/);
   });
 });
@@ -690,17 +794,18 @@ describe('analyze: one finding per slow-task tail (§4)', () => {
 describe('analyze: speculative tiering (§1), collapsed to critical by reconciliation', () => {
   // taskDurationMax raised above p50 so the runtime floor doesn't cap tiering at info.
   // The detector tiers by share (info 5% / warning 12% / critical 25%), but all three clear the 2% floor of the 5s default and collapse to critical here.
-  const spec = (n, total) => makeStage({ taskCount: total, speculativeTasks: n, stragglerCount: 0, taskDurationMax: 300 });
+  /** @param {number} n @param {number} total */
+  const spec = (n, total) => makeTypedStage({ taskCount: total, speculativeTasks: n, stragglerCount: 0, taskDurationMax: 300 });
   it('reconciles to critical at 5% speculative share', () => {
-    const b = analyze(makeApp(), new Map([[1, spec(5, 100)]]), [], []).find(b => b.type === 'straggler');
+    const b = present(analyze(makeApp(), new Map([[1, spec(5, 100)]]), [], []).find(ofType('straggler')));
     expect(b.impactBand).toBe('critical');
   });
   it('reconciles to critical at 12% speculative share', () => {
-    const b = analyze(makeApp(), new Map([[1, spec(12, 100)]]), [], []).find(b => b.type === 'straggler');
+    const b = present(analyze(makeApp(), new Map([[1, spec(12, 100)]]), [], []).find(ofType('straggler')));
     expect(b.impactBand).toBe('critical');
   });
   it("reconciles to critical at 25% speculative share (also the detector's own tier here)", () => {
-    const b = analyze(makeApp(), new Map([[1, spec(25, 100)]]), [], []).find(b => b.type === 'straggler');
+    const b = present(analyze(makeApp(), new Map([[1, spec(25, 100)]]), [], []).find(ofType('straggler')));
     expect(b.impactBand).toBe('critical');
   });
 });
@@ -708,26 +813,26 @@ describe('analyze: speculative tiering (§1), collapsed to critical by reconcili
 describe('analyze: partition sizing (§4)', () => {
   const MiB = 1024 * 1024;
   it('flags shuffle partition skew (max > 5× median AND > 256MiB)', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
-    const f = analyze(makeApp(), stages, [], []).filter(b => b.type === 'partitionSizing' && b.rule === 'shufflePartitionSkew');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
+    const f = analyze(makeApp(), stages, [], []).filter(ofField('partitionSizing', 'rule', 'shufflePartitionSkew'));
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
   });
   it('describes skew over an empty median without a ratio', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 0, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
-    const [f] = analyze(makeApp(), stages, [], []).filter(b => b.rule === 'shufflePartitionSkew');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadP50: 0, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
+    const [f] = analyze(makeApp(), stages, [], []).filter(ofField('partitionSizing', 'rule', 'shufflePartitionSkew'));
     expect(f.recommendation).toContain('is far larger than the median, which is effectively empty: ');
   });
   it('flags low shuffle parallelism (≥1GiB over ≤7 tasks)', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })]]);
-    const f = analyze(makeApp(), stages, [], []).filter(b => b.rule === 'lowShuffleParallelism');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })]]);
+    const f = analyze(makeApp(), stages, [], []).filter(ofField('partitionSizing', 'rule', 'lowShuffleParallelism'));
     expect(f).toHaveLength(1);
   });
   it('flags a single partition ≥5GB as critical, alongside skew', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 6 * 1024 * MiB, shuffleReadBytes: 7 * 1024 * MiB, taskCount: 50 })]]);
-    const f = analyze(makeApp(), stages, [], []).filter(b => b.type === 'partitionSizing');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 6 * 1024 * MiB, shuffleReadBytes: 7 * 1024 * MiB, taskCount: 50 })]]);
+    const f = analyze(makeApp(), stages, [], []).filter(ofType('partitionSizing'));
     expect(f.map(x => x.rule).sort()).toEqual(['maxPartitionTooBig', 'shufflePartitionSkew']);
-    expect(f.find(x => x.rule === 'maxPartitionTooBig').impactBand).toBe('critical');
+    expect(present(f.find(ofField('partitionSizing', 'rule', 'maxPartitionTooBig'))).impactBand).toBe('critical');
   });
 
   it('maxPartitionTooBig (regression): stays critical on a long-running job even though its own modeled time savings are a tiny fraction of total runtime', () => {
@@ -735,82 +840,82 @@ describe('analyze: partition sizing (§4)', () => {
     // The modeled wall-clock savings (~10s) are a tiny fraction of the run, but this is an
     // OOM/crash-risk safety signal and must not be downgraded by time-fraction grading.
     const app = makeApp({ startTime: 0, endTime: 2 * 60 * 60 * 1000 });
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       id: 1, submittedAt: 0, completedAt: 10000,
       shuffleReadP50: 1 * MiB, shuffleReadMax: 6 * 1024 * MiB, shuffleReadBytes: 6 * 1024 * MiB,
       taskCount: 50,
     })]]);
     const catalog = analyze(app, stages, [], []);
-    const finding = catalog.find(b => b.type === 'partitionSizing' && b.rule === 'maxPartitionTooBig');
+    const finding = present(catalog.find(ofField('partitionSizing', 'rule', 'maxPartitionTooBig')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('critical');
   });
 });
 
 describe('analyze: stage shape smells (§7)', () => {
-  const execs = (n) => Array.from({ length: n }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 }));
   it('flags under-parallelization (PRatio < 0.5)', () => {
     const app = makeApp({ resources: { executor: { cores: 4 } } });
-    const stage = makeStage({ taskCount: 3, executorStats: execs(4) }); // 3 / (4*4)=0.19
-    const f = analyze(app, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism');
+    const stage = makeTypedStage({ taskCount: 3, executorStats: execs(4) }); // 3 / (4*4)=0.19
+    const f = analyze(app, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'));
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('info');
   });
   // Parallelizing a stage saves at most its own duration, so one under the 0.5% runtime floor is
   // skipped; with no known app duration the floor passes, as for the tiered detectors.
   it('skips under-parallelization on a stage shorter than 0.5% of the run', () => {
-    const stage = makeStage({ taskCount: 3, executorStats: execs(4), submittedAt: 0, completedAt: 1000 }); // 1s
+    const stage = makeTypedStage({ taskCount: 3, executorStats: execs(4), submittedAt: 0, completedAt: 1000 }); // 1s
     const longRun = makeApp({ resources: { executor: { cores: 4 } }, startTime: 0, endTime: 400_000 }); // 1s = 0.25%
-    expect(analyze(longRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(0);
+    expect(analyze(longRun, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'))).toHaveLength(0);
     const shortRun = makeApp({ resources: { executor: { cores: 4 } }, startTime: 0, endTime: 200_000 }); // 1s = 0.5%
-    expect(analyze(shortRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    expect(analyze(shortRun, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'))).toHaveLength(1);
     const unknownRun = makeApp({ resources: { executor: { cores: 4 } }, endTime: null });
-    expect(analyze(unknownRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    expect(analyze(unknownRun, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'))).toHaveLength(1);
     // A stage with no completion time is zero-length, not short: kept, as the other stage floors do.
-    const open = makeStage({ taskCount: 3, executorStats: execs(4), submittedAt: 1000, completedAt: null });
-    expect(analyze(longRun, new Map([[1, open]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    const open = makeTypedStage({ taskCount: 3, executorStats: execs(4), submittedAt: 1000, completedAt: 0 });
+    expect(analyze(longRun, new Map([[1, open]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'))).toHaveLength(1);
   });
   it('pluralizes "task" correctly for a single-task stage', () => {
     const app = makeApp({ resources: { executor: { cores: 4 } } });
-    const stage = makeStage({ taskCount: 1, executorStats: execs(4) });
-    const f = analyze(app, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism');
+    const stage = makeTypedStage({ taskCount: 1, executorStats: execs(4) });
+    const f = analyze(app, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'lowParallelism'));
     expect(f).toHaveLength(1);
     expect(f[0].recommendation).toContain('1 task ');
     expect(f[0].recommendation).not.toContain('1 tasks');
   });
   it('flags data explosion (OIRatio > 10) but skips when inputBytes is 0', () => {
     const app = makeApp();
-    const boom = makeStage({ id: 1, inputBytes: 100, outputBytes: 2000, executorStats: execs(2) });
-    const zero = makeStage({ id: 2, inputBytes: 0, outputBytes: 2000, executorStats: execs(2) });
+    const boom = makeTypedStage({ id: 1, inputBytes: 100, outputBytes: 2000, executorStats: execs(2) });
+    const zero = makeTypedStage({ id: 2, inputBytes: 0, outputBytes: 2000, executorStats: execs(2) });
     const cat = analyze(app, new Map([[1, boom], [2, zero]]), [], []);
-    const f = cat.filter(b => b.rule === 'dataExplosion');
+    const f = cat.filter(ofField('stageShape', 'rule', 'dataExplosion'));
     expect(f).toHaveLength(1);
     expect(f[0].stageId).toBe(1);
   });
   // taskStageSkew: the longest task spans more than half the stage's wall-clock and runs over
   // 3x the median task, so one straggler, not the work as a whole, sets when the stage ends.
-  const tss = (app, stage) => analyze(app, new Map([[1, stage]]), [], []).filter(b => b.rule === 'taskStageSkew');
+  /** @param {ReturnType<typeof makeApp>} app @param {Stage} stage */
+  const tss = (app, stage) => analyze(app, new Map([[1, stage]]), [], []).filter(ofField('stageShape', 'rule', 'taskStageSkew'));
   it('flags taskStageSkew as info when one straggler spans most of the stage', () => {
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
+    const s = makeTypedStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
     const f = tss(makeApp(), s);
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('info');
     expect(f[0].value).toBe(0.9);
   });
   it('skips taskStageSkew when the longest task spans half the stage or less', () => {
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 500, executorStats: execs(2) });
+    const s = makeTypedStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 500, executorStats: execs(2) });
     expect(tss(makeApp(), s)).toHaveLength(0);
   });
   it('skips taskStageSkew on a single wave of even tasks, whose longest task always spans the stage', () => {
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 4, taskDurationP50: 950, taskDurationMax: 990, executorStats: execs(4) });
+    const s = makeTypedStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 4, taskDurationP50: 950, taskDurationMax: 990, executorStats: execs(4) });
     expect(tss(makeApp(), s)).toHaveLength(0);
   });
   it('skips taskStageSkew on a single-task stage', () => {
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 1, taskDurationP50: 100, taskDurationMax: 990, executorStats: execs(1) });
+    const s = makeTypedStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 1, taskDurationP50: 100, taskDurationMax: 990, executorStats: execs(1) });
     expect(tss(makeApp(), s)).toHaveLength(0);
   });
   it('skips taskStageSkew on a stage shorter than 0.5% of the run, and on a zero-length stage', () => {
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
+    const s = makeTypedStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
     expect(tss(makeApp({ startTime: 0, endTime: 400_000 }), s)).toHaveLength(0); // 1s = 0.25%
     expect(tss(makeApp({ startTime: 0, endTime: 200_000 }), s)).toHaveLength(1); // 1s = 0.5%
     expect(tss(makeApp(), { ...s, completedAt: 0 })).toHaveLength(0);
@@ -819,6 +924,7 @@ describe('analyze: stage shape smells (§7)', () => {
 
 describe('analyze: caching opportunity (relation reuse)', () => {
   const MiB = 1024 * 1024;
+  /** @param {string} relation @param {number} bytes @returns {PlanNode} */
   const parquetScan = (relation, bytes) => ({
     name: 'Scan parquet',
     detail: `FileScan parquet [c#1] Format: Parquet, Location: InMemoryFileIndex(1 paths)[hdfs://cluster/wh/${relation}], PushedFilters: []`,
@@ -826,14 +932,17 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     children: [],
   });
   // A catalog-named Delta FileScan; identity comes from the untruncated nodeName.
+  /** @param {string} relation @param {number} bytes @returns {PlanNode} */
   const deltaScan = (relation, bytes) => ({
     name: `Scan parquet spark_catalog.${relation}`,
     detail: `FileScan parquet spark_catalog.${relation}[c#1] Location: PreparedDeltaFileIndex[hdfs://cluster/wh/${relation.replace(/\./g, '/')}]`,
     metrics: [{ name: 'size of files read', value: bytes }],
     children: [],
   });
+  /** @param {number} id @param {PlanNode[]} scanNodes @returns {[number, SqlExecution]} */
   const exec = (id, ...scanNodes) => [id, { id, planTree: { name: 'Root', detail: '', metrics: [], children: scanNodes } }];
-  const caching = (sql) => analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(b => b.type === 'cachingOpportunity');
+  /** @param {Map<number, SqlExecution>} sql */
+  const caching = (sql) => analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(ofType('cachingOpportunity'));
 
   it('flags one relation scanned by two executions, summing read bytes over distinct execs', () => {
     const sql = new Map([exec(1, parquetScan('prices', 100)), exec(2, parquetScan('prices', 250))]);
@@ -895,6 +1004,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
   });
 
   // A join node over two scan subtrees; condition drives structural identity via normalizeDetail.
+  /** @param {string} condition @param {PlanNode} left @param {PlanNode} right @returns {PlanNode} */
   const joinNode = (condition, left, right) => ({
     name: 'SortMergeJoin',
     detail: `[id#1], [id#2], Inner${condition ? `, ${condition}` : ''}`,
@@ -902,6 +1012,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     children: [left, right],
   });
 
+  /** @param {PlanNode} left @param {PlanNode} right @returns {PlanNode} */
   const unionNode = (left, right) => ({
     name: 'Union', detail: '', metrics: [], children: [left, right],
   });
@@ -912,7 +1023,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(2, joinNode('', deltaScan('mx.a', 150), deltaScan('mx.b', 250))),
     ]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(composites).toHaveLength(1);
     expect(composites[0].value).toBe(2);
     expect(composites[0].operator).toBe('join');
@@ -924,7 +1035,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
   it('composite: confidence rises to high once the same join shape repeats across 6+ executions (3x minExecutions)', () => {
     const sql = new Map(Array.from({ length: 6 }, (_, i) =>
       exec(i + 1, joinNode('', deltaScan('mx.a', 100), deltaScan('mx.b', 200)))));
-    const composites = caching(sql).filter(f => f.variant === 'composite');
+    const composites = caching(sql).filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(composites).toHaveLength(1);
     expect(composites[0].value).toBe(6);
     expect(composites[0].confidence).toBe('high');
@@ -936,7 +1047,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(2, joinNode("(status#3 = 'inactive')", deltaScan('mx.a', 150), deltaScan('mx.b', 250))),
     ]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     const leaves = findings.filter(f => f.variant !== 'composite');
     expect(composites).toHaveLength(0);
     expect(leaves).toHaveLength(2);
@@ -949,7 +1060,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     const outer2 = joinNode('', inner(), deltaScan('mx.c', 10));
     const sql = new Map([exec(1, outer1), exec(2, outer2)]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(composites).toHaveLength(1);
     expect(composites[0].relation).toBe('mx.a join mx.b join mx.c');
   });
@@ -960,10 +1071,10 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     const outer2 = joinNode('', inner(), deltaScan('mx.c', 10));
     const sql = new Map([exec(1, outer1), exec(2, outer2), exec(3, inner()), exec(4, inner())]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(composites).toHaveLength(2);
-    const outer = composites.find(c => c.relation === 'mx.a join mx.b join mx.c');
-    const residualInner = composites.find(c => c.relation === 'mx.a join mx.b');
+    const outer = present(composites.find(c => c.relation === 'mx.a join mx.b join mx.c'));
+    const residualInner = present(composites.find(c => c.relation === 'mx.a join mx.b'));
     expect(outer).toBeDefined();
     expect(outer.value).toBe(2);
     expect(residualInner).toBeDefined();
@@ -978,7 +1089,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     const outerD2 = joinNode('', inner(), deltaScan('mx.d', 10));
     const sql = new Map([exec(1, outerC1), exec(2, outerC2), exec(3, outerD1), exec(4, outerD2)]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(composites.map(c => c.relation).sort()).toEqual([
       'mx.a join mx.b join mx.c',
       'mx.a join mx.b join mx.d',
@@ -990,7 +1101,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(1, joinNode('', deltaScan('mx.a', 10), deltaScan('mx.b', 10))),
       exec(2, joinNode('', deltaScan('mx.a', 10), deltaScan('mx.b', 10))),
     ]);
-    const [smallComposite] = caching(smallSql).filter(f => f.variant === 'composite');
+    const [smallComposite] = caching(smallSql).filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(smallComposite.recommendation).toMatch(/joined DataFrame/);
     expect(smallComposite.recommendation).not.toMatch(/mx\.a/); // relation identity belongs to the Relation column, not repeated here
     expect(smallComposite.recommendation).not.toMatch(/~/);
@@ -1001,7 +1112,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(1, joinNode('', deltaScan('mx.a', 100 * MiB), deltaScan('mx.b', 100 * MiB))),
       exec(2, joinNode('', deltaScan('mx.a', 100 * MiB), deltaScan('mx.b', 100 * MiB))),
     ]);
-    const [bigComposite] = caching(bigSql).filter(f => f.variant === 'composite');
+    const [bigComposite] = caching(bigSql).filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(bigComposite.recommendation).toMatch(/joined DataFrame/);
     expect(bigComposite.recommendation).toMatch(/~/);
 
@@ -1009,7 +1120,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(1, unionNode(deltaScan('mx.a', 10), deltaScan('mx.b', 10))),
       exec(2, unionNode(deltaScan('mx.a', 10), deltaScan('mx.b', 10))),
     ]);
-    const [unionComposite] = caching(unionSql).filter(f => f.variant === 'composite');
+    const [unionComposite] = caching(unionSql).filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(unionComposite.operator).toBe('union');
     expect(unionComposite.recommendation).toMatch(/unioned DataFrame/);
     expect(unionComposite.recommendation).not.toMatch(/mx\.a/);
@@ -1021,7 +1132,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(2, joinNode('', deltaScan('mx.a', 150), deltaScan('mx.b', 250))),
     ]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     const leaves = findings.filter(f => f.variant !== 'composite');
     expect(composites).toHaveLength(1);
     expect(leaves).toHaveLength(0);
@@ -1035,8 +1146,8 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(4, deltaScan('mx.a', 300)),
     ]);
     const findings = caching(sql);
-    const composite = findings.find(f => f.variant === 'composite');
-    const leafA = findings.find(f => f.variant !== 'composite' && f.relation === 'mx.a');
+    const composite = findings.find(ofField('cachingOpportunity', 'variant', 'composite'));
+    const leafA = present(findings.find(f => f.variant !== 'composite' && f.relation === 'mx.a'));
     const leafB = findings.find(f => f.variant !== 'composite' && f.relation === 'mx.b');
     expect(composite).toBeDefined();
     expect(leafB).toBeUndefined(); // mx.b fully covered by the composite, no extra reads
@@ -1046,6 +1157,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
   });
 
   // A scan node matching none of scanRelationId's patterns (returns null), used to build a join whose leaves are all unrecognized.
+  /** @param {number} bytes @returns {PlanNode} */
   const unrecognizedScan = (bytes) => ({
     name: 'Scan ExistingRDD',
     detail: 'ExistingRDD[c#1]',
@@ -1059,73 +1171,73 @@ describe('analyze: caching opportunity (relation reuse)', () => {
       exec(2, joinNode('', unrecognizedScan(150), unrecognizedScan(250))),
     ]);
     const findings = caching(sql);
-    const composites = findings.filter(f => f.variant === 'composite');
+    const composites = findings.filter(ofField('cachingOpportunity', 'variant', 'composite'));
     expect(composites).toHaveLength(0);
   });
 });
 
 describe('analyze: stage failed outright (§3)', () => {
   it('fires critical when stageFailureReason is present', () => {
-    const stages = new Map([[1, makeStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'stageFailed');
+    const stages = new Map([[1, makeTypedStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('stageFailed')));
     expect(b.impactBand).toBe('critical');
     expect(b.stageId).toBe(1);
   });
   it('does not fire when stageFailureReason is null, even with high task failure rate', () => {
-    const stages = new Map([[1, makeStage({ stageFailureReason: null, taskCount: 100, failedTasks: 50 })]]);
-    expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'stageFailed')).toHaveLength(0);
+    const stages = new Map([[1, makeTypedStage({ stageFailureReason: null, taskCount: 100, failedTasks: 50 })]]);
+    expect(analyze(makeApp(), stages, [], []).filter(ofType('stageFailed'))).toHaveLength(0);
   });
 
   it('attaches numTasks, memoryBytesSpilled, and failedTaskDetails from the stage', () => {
     const sample = { taskId: 5, attemptNumber: 0, host: 'h1', executorId: 'e1', reason: 'ExecutorLostFailure', peakExecMem: 100, memSpilled: 0, shuffleWrite: 0 };
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       stageFailureReason: 'Job aborted due to stage failure',
       taskCount: 42, memoryBytesSpilled: 999,
       failedTaskSamples: [sample],
     })]]);
-    const b = analyze(makeApp(), stages, [], []).find((x) => x.type === 'stageFailed');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('stageFailed')));
     expect(b.numTasks).toBe(42);
     expect(b.memoryBytesSpilled).toBe(999);
     expect(b.failedTaskDetails).toEqual([sample]);
   });
 
   it('defaults failedTaskDetails to an empty array when the stage carries no samples', () => {
-    const stages = new Map([[1, makeStage({ stageFailureReason: 'x', failedTasks: 0 })]]);
-    const b = analyze(makeApp(), stages, [], []).find((x) => x.type === 'stageFailed');
+    const stages = new Map([[1, makeTypedStage({ stageFailureReason: 'x', failedTasks: 0 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('stageFailed')));
     expect(b.failedTaskDetails).toEqual([]);
   });
 });
 
 describe('analyze: retry waste', () => {
   it('emits no bottleneck below the 3-attempt/30s floor', () => {
-    const stages = new Map([[1, makeStage({ wastedAttempts: 2, retryWasteMs: 40000 })]]);
+    const stages = new Map([[1, makeTypedStage({ wastedAttempts: 2, retryWasteMs: 40000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'retryWaste')).toHaveLength(0);
+    expect(catalog.filter(ofType('retryWaste'))).toHaveLength(0);
   });
 
   it('emits a retryWaste finding at >=3 attempts and >=30s wasted, reconciled to critical here', () => {
     // Detector grades 'warning'; deriveImpactBand promotes to 'critical' (45s wasted is well over 2% of the 5s default).
-    const stages = new Map([[1, makeStage({ wastedAttempts: 3, retryWasteMs: 45000 })]]);
+    const stages = new Map([[1, makeTypedStage({ wastedAttempts: 3, retryWasteMs: 45000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const found = catalog.filter(b => b.type === 'retryWaste');
+    const found = catalog.filter(ofType('retryWaste'));
     expect(found).toHaveLength(1);
     expect(found[0].impactBand).toBe('critical');
   });
 
   it('emits critical at >=5 minutes wasted', () => {
-    const stages = new Map([[1, makeStage({ wastedAttempts: 4, retryWasteMs: 360000 })]]);
+    const stages = new Map([[1, makeTypedStage({ wastedAttempts: 4, retryWasteMs: 360000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'retryWaste')[0].impactBand).toBe('critical');
+    expect(catalog.filter(ofType('retryWaste'))[0].impactBand).toBe('critical');
   });
 
   it('attaches numTasks, memoryBytesSpilled, and retriedTaskDetails from the stage', () => {
     const sample = { taskId: 7, attemptNumber: 0, host: 'h2', executorId: 'e2', reason: 'FetchFailed', peakExecMem: 200, memSpilled: 10, shuffleWrite: 20 };
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       wastedAttempts: 3, retryWasteMs: 45000,
       taskCount: 10, memoryBytesSpilled: 555,
       retryTaskSamples: [sample],
     })]]);
-    const b = analyze(makeApp(), stages, [], []).find((x) => x.type === 'retryWaste');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('retryWaste')));
     expect(b.numTasks).toBe(10);
     expect(b.memoryBytesSpilled).toBe(555);
     expect(b.retriedTaskDetails).toEqual([sample]);
@@ -1134,17 +1246,17 @@ describe('analyze: retry waste', () => {
 
 describe('analyze: speculation waste', () => {
   it('emits no bottleneck below the 5-attempt/60s floor', () => {
-    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 4, speculationWasteMs: 90000 })]]);
+    const stages = new Map([[1, makeTypedStage({ speculationWastedAttempts: 4, speculationWasteMs: 90000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'speculationWaste')).toHaveLength(0);
+    expect(catalog.filter(ofType('speculationWaste'))).toHaveLength(0);
   });
 
   it('emits a speculationWaste finding at >=5 attempts and >=60s wasted, kept at its own warning band', () => {
     // The finding claims core time only, so the share of the run never raises its band.
     // 90s is exactly 1.5x the 60s minWasteMs floor: the weakest confidence this detector reports.
-    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 5, speculationWasteMs: 90000 })]]);
+    const stages = new Map([[1, makeTypedStage({ speculationWastedAttempts: 5, speculationWasteMs: 90000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const found = catalog.filter(b => b.type === 'speculationWaste');
+    const found = catalog.filter(ofType('speculationWaste'));
     expect(found).toHaveLength(1);
     expect(found[0].impactBand).toBe('warning');
     expect(found[0].impactEstimate).toMatchObject({ basis: 'resourceOnly', wallClock: null });
@@ -1153,46 +1265,47 @@ describe('analyze: speculation waste', () => {
   });
 
   it('stays at warning at >=10 minutes wasted, with high confidence (4x+ the 60s floor)', () => {
-    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 6, speculationWasteMs: 700000 })]]);
+    const stages = new Map([[1, makeTypedStage({ speculationWastedAttempts: 6, speculationWasteMs: 700000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const found = catalog.filter(b => b.type === 'speculationWaste')[0];
+    const found = catalog.filter(ofType('speculationWaste'))[0];
     expect(found.impactBand).toBe('warning');
     expect(found.confidence).toBe('high');
   });
 
   it('marks speculationWaste confidence medium between 1.5x and 4x the 60s floor', () => {
-    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 5, speculationWasteMs: 150000 })]]);
+    const stages = new Map([[1, makeTypedStage({ speculationWastedAttempts: 5, speculationWasteMs: 150000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'speculationWaste')[0].confidence).toBe('medium');
+    expect(catalog.filter(ofType('speculationWaste'))[0].confidence).toBe('medium');
   });
 
   it('does not fire retryWaste for a pure-speculation stage', () => {
-    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 6, speculationWasteMs: 700000, wastedAttempts: 0, retryWasteMs: 0 })]]);
+    const stages = new Map([[1, makeTypedStage({ speculationWastedAttempts: 6, speculationWasteMs: 700000, wastedAttempts: 0, retryWasteMs: 0 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'retryWaste')).toHaveLength(0);
+    expect(catalog.filter(ofType('retryWaste'))).toHaveLength(0);
   });
 });
 
 describe('analyze: tiny tasks', () => {
   it('emits no bottleneck with fewer than 100 tasks', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 50, taskDurationP50: 100, taskDurationP95: 200 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 50, taskDurationP50: 100, taskDurationP95: 200 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'tinyTask')).toHaveLength(0);
+    expect(catalog.filter(ofType('tinyTask'))).toHaveLength(0);
   });
 
   it('emits a tinyTask finding when >=100 tasks with P50<=500ms and P95<=1000ms, reconciled to critical here', () => {
     // Detector always emits 'info'; deriveImpactBand promotes to 'critical' (150 tiny tasks clear the 2% floor of the 5s default).
-    const stages = new Map([[1, makeStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const found = catalog.filter(b => b.type === 'tinyTask');
+    const found = catalog.filter(ofType('tinyTask'));
     expect(found).toHaveLength(1);
     expect(found[0].impactBand).toBe('critical');
   });
 
   it('skips a stage under 0.5% of the run, and keeps a longer one at its warning tier', () => {
     const run = makeApp({ endTime: 400_000 });
-    const at = (completedAt) => analyze(run, new Map([[1, makeStage({ taskCount: 1000, taskDurationP50: 80, taskDurationP95: 150, completedAt })]]), [], [])
-      .filter(b => b.type === 'tinyTask');
+    /** @param {number} completedAt */
+    const at = (completedAt) => analyze(run, new Map([[1, makeTypedStage({ taskCount: 1000, taskDurationP50: 80, taskDurationP95: 150, completedAt })]]), [], [])
+      .filter(ofType('tinyTask'));
     expect(at(1000)).toHaveLength(0); // 0.25% of the run: the tasks are tiny, the floor drops it
     const kept = at(4000); // 1%: 900 excess tasks x 50ms, clipped to the stage, clear the 0.5% floor
     expect(kept).toHaveLength(1);
@@ -1200,30 +1313,31 @@ describe('analyze: tiny tasks', () => {
   });
 
   it('does not fire when P95 exceeds the 1000ms ceiling despite a low P50', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 1500 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 1500 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'tinyTask')).toHaveLength(0);
+    expect(catalog.filter(ofType('tinyTask'))).toHaveLength(0);
   });
 
   it('mentions spark.sql.shuffle.partitions when the stage is shuffle-fed', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 1024 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 1024 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const found = catalog.filter(b => b.type === 'tinyTask');
+    const found = catalog.filter(ofType('tinyTask'));
     expect(found).toHaveLength(1);
     expect(found[0].remediation).toEqual([{ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'decrease', suggested: null }]);
   });
 
   it('omits spark.sql.shuffle.partitions wording when the stage has no shuffle read', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 0 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 0 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const found = catalog.filter(b => b.type === 'tinyTask');
+    const found = catalog.filter(ofType('tinyTask'));
     expect(found[0].remediation).toEqual([]);
     expect(found[0].recommendation).toContain('.coalesce(15)');
   });
 });
 
+/** @param {number} id @param {boolean} succeeded @returns {import('../src/types.ts').Job} */
 function makeJob(id, succeeded) {
-  return { id, submissionTime: 0, stageIds: [], result: succeeded ? 'JobSucceeded' : 'JobFailed', succeeded, exception: null, completionTime: 100 };
+  return { id, submissionTime: 0, stageIds: [], sqlExecutionId: null, result: succeeded ? 'JobSucceeded' : 'JobFailed', succeeded, exception: null, completionTime: 100 };
 }
 
 describe('analyze: job failure rate', () => {
@@ -1231,21 +1345,22 @@ describe('analyze: job failure rate', () => {
 
   it('emits nothing when jobs are absent (older call sites pass no jobs)', () => {
     const catalog = analyze(makeApp(), noStages, [], []);
-    expect(catalog.filter(b => b.type === 'jobFailureRate')).toHaveLength(0);
+    expect(catalog.filter(ofType('jobFailureRate'))).toHaveLength(0);
   });
 
   it('emits nothing when all jobs succeeded', () => {
     const jobs = new Map([[0, makeJob(0, true)], [1, makeJob(1, true)]]);
     const catalog = analyze(makeApp(), noStages, [], [], jobs);
-    expect(catalog.filter(b => b.type === 'jobFailureRate')).toHaveLength(0);
+    expect(catalog.filter(ofType('jobFailureRate'))).toHaveLength(0);
   });
 
   it('ignores jobs that never completed (result === null)', () => {
-    const running = { id: 2, submissionTime: 0, stageIds: [], result: null, succeeded: null, exception: null, completionTime: null };
+    /** @type {import('../src/types.ts').Job} */
+    const running = { id: 2, submissionTime: 0, stageIds: [], sqlExecutionId: null, result: null, succeeded: null, exception: null, completionTime: null };
     const jobs = new Map([[0, makeJob(0, true)], [1, makeJob(1, true)], [2, running]]);
     const catalog = analyze(makeApp(), noStages, [], [], jobs);
     // 0 of 2 completed jobs failed → below the 10% floor.
-    expect(catalog.filter(b => b.type === 'jobFailureRate')).toHaveLength(0);
+    expect(catalog.filter(ofType('jobFailureRate'))).toHaveLength(0);
   });
 
   it('emits info at >=10% job-failure rate', () => {
@@ -1253,7 +1368,7 @@ describe('analyze: job failure rate', () => {
     const jobs = new Map();
     for (let i = 0; i < 9; i++) jobs.set(i, makeJob(i, true));
     jobs.set(9, makeJob(9, false));
-    const b = analyze(makeApp(), noStages, [], [], jobs).find(x => x.type === 'jobFailureRate');
+    const b = present(analyze(makeApp(), noStages, [], [], jobs).find(ofType('jobFailureRate')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('info');
     expect(b.value).toBe(10);
@@ -1264,19 +1379,19 @@ describe('analyze: job failure rate', () => {
 
   it('emits warning at >=30% and critical at >=50%', () => {
     const warnJobs = new Map([[0, makeJob(0, false)], [1, makeJob(1, false)], [2, makeJob(2, true)]]); // 2/3 = 66% -> critical
-    expect(analyze(makeApp(), noStages, [], [], warnJobs).find(x => x.type === 'jobFailureRate').impactBand).toBe('critical');
+    expect(present(analyze(makeApp(), noStages, [], [], warnJobs).find(ofType('jobFailureRate'))).impactBand).toBe('critical');
 
     const jobs = new Map();
     for (let i = 0; i < 10; i++) jobs.set(i, makeJob(i, i < 3 ? false : true)); // 3/10 = 30% -> warning
-    expect(analyze(makeApp(), noStages, [], [], jobs).find(x => x.type === 'jobFailureRate').impactBand).toBe('warning');
+    expect(present(analyze(makeApp(), noStages, [], [], jobs).find(ofType('jobFailureRate'))).impactBand).toBe('warning');
   });
 
   it('surfaces task-failure context alongside the job rate', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 20 })]]);
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 20 })]]);
     const jobs = new Map();
     for (let i = 0; i < 9; i++) jobs.set(i, makeJob(i, true));
     jobs.set(9, makeJob(9, false));
-    const b = analyze(makeApp(), stages, [], [], jobs).find(x => x.type === 'jobFailureRate');
+    const b = present(analyze(makeApp(), stages, [], [], jobs).find(ofType('jobFailureRate')));
     expect(b.failedTasks).toBe(20);
     expect(b.totalTasks).toBe(100);
     expect(b.taskFailureRate).toBe(20);
@@ -1285,66 +1400,66 @@ describe('analyze: job failure rate', () => {
 
 describe('analyze: spill confidence metadata', () => {
   it('marks classified spill (skew/volume) as medium confidence', () => {
-    const stages = new Map([[1, makeStage({ memoryBytesSpilled: 1024, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ memoryBytesSpilled: 1024, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.confidence).toBe('medium');
     expect(b.validationRequired).toMatch(/Spark UI/);
   });
 
   it('marks unclassified spill as low confidence', () => {
-    const stages = new Map([[1, makeStage({ memoryBytesSpilled: 1024, spillClassification: 'unclassified' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ memoryBytesSpilled: 1024, spillClassification: 'unclassified' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.confidence).toBe('low');
   });
 
   it('marks skew confidence low just past ratioWarn (3.1x), medium a bit further out (6x)', () => {
-    const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310, tailAttribution: dataTail() })]]);
-    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'skew');
+    const borderline = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 310, tailAttribution: dataTail() })]]);
+    const b1 = present(analyze(makeApp(), borderline, [], []).find(ofType('skew')));
     expect(b1.confidence).toBe('low');
     expect(b1.validationRequired).toMatch(/costs at least 0\.5% of run time/);
 
-    const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
-    const b2 = analyze(makeApp(), mid, [], []).find(x => x.type === 'skew');
+    const mid = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
+    const b2 = present(analyze(makeApp(), mid, [], []).find(ofType('skew')));
     expect(b2.confidence).toBe('medium');
   });
 
   it('marks skew confidence high many multiples past ratioWarn (a 50x P95/median ratio)', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 5000, tailAttribution: dataTail() })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 5000, tailAttribution: dataTail() })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('skew')));
     expect(b.confidence).toBe('high');
   });
 
   it('marks straggler confidence low just past shareWarn, high once it clears critPct', () => {
     // 6/100 = 6% straggler share, just past the 5% shareWarn floor.
-    const borderline = new Map([[1, makeStage({ taskCount: 100, stragglerCount: 6, taskDurationP50: 100, taskDurationMax: 500 })]]);
-    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'straggler');
+    const borderline = new Map([[1, makeTypedStage({ taskCount: 100, stragglerCount: 6, taskDurationP50: 100, taskDurationMax: 500 })]]);
+    const b1 = present(analyze(makeApp(), borderline, [], []).find(ofType('straggler')));
     expect(b1.confidence).toBe('low');
     expect(b1.validationRequired).toMatch(/Warning needs at least 0\.5% of run time at stake, critical 2%/);
 
     // 5/20 = 25% straggler share, well past critPct (20%).
-    const strong = new Map([[1, makeStage({ taskCount: 20, stragglerCount: 5, taskDurationP50: 100, taskDurationMax: 500 })]]);
-    const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'straggler');
+    const strong = new Map([[1, makeTypedStage({ taskCount: 20, stragglerCount: 5, taskDurationP50: 100, taskDurationMax: 500 })]]);
+    const b2 = present(analyze(makeApp(), strong, [], []).find(ofType('straggler')));
     expect(b2.confidence).toBe('high');
   });
 
   it('marks gc confidence low just past warnPct100 (10%), high several multiples out (35%)', () => {
-    const borderline = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
-    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
+    const borderline = new Map([[1, makeTypedStage({ gcPct: 15, executorRunTime: 60000 })]]);
+    const b1 = present(analyze(makeApp(), borderline, [], []).find(ofType('gc', x => x.direction !== 'low')));
     expect(b1.confidence).toBe('low');
     expect(b1.validationRequired).toMatch(/at least 10s of executor run time/);
 
-    const strong = new Map([[1, makeStage({ gcPct: 35, executorRunTime: 60000 })]]);
-    const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
+    const strong = new Map([[1, makeTypedStage({ gcPct: 35, executorRunTime: 60000 })]]);
+    const b2 = present(analyze(makeApp(), strong, [], []).find(ofType('gc', x => x.direction !== 'low')));
     expect(b2.confidence).toBe('high');
   });
 
   it('marks low-GC (over-provisioned) confidence high near zero, low just under lowInfoPct100', () => {
-    const borderline = new Map([[1, makeStage({ gcPct: 4, executorRunTime: 60000 })]]);
-    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'gc' && x.direction === 'low');
+    const borderline = new Map([[1, makeTypedStage({ gcPct: 4, executorRunTime: 60000 })]]);
+    const b1 = present(analyze(makeApp(), borderline, [], []).find(ofType('gc', x => x.direction === 'low')));
     expect(b1.confidence).toBe('low');
 
-    const strong = new Map([[1, makeStage({ gcPct: 0.5, executorRunTime: 60000 })]]);
-    const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'gc' && x.direction === 'low');
+    const strong = new Map([[1, makeTypedStage({ gcPct: 0.5, executorRunTime: 60000 })]]);
+    const b2 = present(analyze(makeApp(), strong, [], []).find(ofType('gc', x => x.direction === 'low')));
     expect(b2.confidence).toBe('high');
   });
 });
@@ -1354,50 +1469,50 @@ describe('analyze: spill impact band v2 (§5)', () => {
   // the 0.5% warn floor of the 5s default, so all demote to info. Test names describe the magnitude tier, not the reconciled band.
   const GiB = 1024 * 1024 * 1024, MiB = 1024 * 1024;
   it('single-task stage with ≥1GiB disk spill has its own severe magnitude tier, reconciled to info here', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 1, memoryBytesSpilled: 100, spillDiskMax: 2 * GiB, spillMemMax: 0, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 1, memoryBytesSpilled: 100, spillDiskMax: 2 * GiB, spillMemMax: 0, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.impactBand).toBe('info');
     expect(b.spillMagnitude).toBe('severe');
   });
   it('multi-task medium disk spill has its own medium magnitude tier, reconciled to info here', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 300 * MiB, spillMemMax: 0, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 300 * MiB, spillMemMax: 0, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.impactBand).toBe('info');
     expect(b.spillMagnitude).toBe('medium');
   });
   it('skew below the disk floor does not fire 5b (no magnitude tier), reconciled to info here', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskP50: 1 * MiB, spillDiskMax: 100 * MiB, spillMemMax: 0, spillClassification: 'skew' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskP50: 1 * MiB, spillDiskMax: 100 * MiB, spillMemMax: 0, spillClassification: 'skew' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.impactBand).toBe('info');
     expect(b.spillMagnitude).toBeUndefined();
   });
   it('multi-task memory spill at 1GiB (old medium floor) still gets its own medium magnitude tier (not high), reconciled to info here', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 0, spillMemMax: 1 * GiB, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 0, spillMemMax: 1 * GiB, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.impactBand).toBe('info');
     expect(b.spillMagnitude).toBe('medium');
   });
   it('multi-task memory spill ≥4GiB has its own high magnitude tier, reconciled to info here', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 0, spillMemMax: 5 * GiB, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 0, spillMemMax: 5 * GiB, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.impactBand).toBe('info');
     expect(b.spillMagnitude).toBe('high');
   });
   it('multi-task memory spill at exactly 4GiB has its own high magnitude tier (inclusive floor), reconciled to info here', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 0, spillMemMax: 4 * GiB, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 0, spillMemMax: 4 * GiB, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.impactBand).toBe('info');
     expect(b.spillMagnitude).toBe('high');
   });
   it('multi-task disk spill magnitude tiers are unaffected by the memory high-tier addition (both reconcile to info here)', () => {
     // Both carry distinct spillMagnitude tiers (high vs medium) but reconcile to the same info band; the distinction survives in spillMagnitude, not .impactBand.
-    const highStages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 2 * GiB, spillMemMax: 0, spillClassification: 'volume' })]]);
-    const high = analyze(makeApp(), highStages, [], []).find(b => b.type === 'spill');
+    const highStages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 2 * GiB, spillMemMax: 0, spillClassification: 'volume' })]]);
+    const high = present(analyze(makeApp(), highStages, [], []).find(ofType('spill')));
     expect(high.impactBand).toBe('info');
     expect(high.spillMagnitude).toBe('high');
 
-    const medStages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 300 * MiB, spillMemMax: 0, spillClassification: 'volume' })]]);
-    const med = analyze(makeApp(), medStages, [], []).find(b => b.type === 'spill');
+    const medStages = new Map([[1, makeTypedStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 300 * MiB, spillMemMax: 0, spillClassification: 'volume' })]]);
+    const med = present(analyze(makeApp(), medStages, [], []).find(ofType('spill')));
     expect(med.impactBand).toBe('info');
     expect(med.spillMagnitude).toBe('medium');
   });
@@ -1406,34 +1521,37 @@ describe('analyze: spill impact band v2 (§5)', () => {
 describe('analyze: incomplete run', () => {
   it('emits an incompleteRun finding when the app never recorded an ApplicationEnd', () => {
     const app = makeApp({ startTime: 0, endTime: null });
-    const finding = analyze(app, new Map(), [], []).find((f) => f.type === 'incompleteRun');
+    const finding = present(analyze(app, new Map(), [], []).find(ofType('incompleteRun')));
     expect(finding).toBeDefined();
     expect(finding.impactBand).toBe('warning');
   });
 
   it('emits no incompleteRun finding when the app recorded an ApplicationEnd', () => {
-    expect(analyze(makeApp(), new Map(), [], []).find((f) => f.type === 'incompleteRun')).toBeUndefined();
+    expect(analyze(makeApp(), new Map(), [], []).find(ofType('incompleteRun'))).toBeUndefined();
   });
 
   it('emits no incompleteRun finding when there is no evidence of a run at all (no startTime)', () => {
     const app = makeApp({ startTime: undefined, endTime: undefined });
-    expect(analyze(app, new Map(), [], []).find((f) => f.type === 'incompleteRun')).toBeUndefined();
+    expect(analyze(app, new Map(), [], []).find(ofType('incompleteRun'))).toBeUndefined();
   });
 });
 
 describe('auditConfig: static config sanity', () => {
-  const rddStages = new Map([[1, makeStage()]]); // sqlExecutionId null: a stage outside any SQL execution
+  const rddStages = new Map([[1, makeTypedStage()]]); // sqlExecutionId null: a stage outside any SQL execution
+  /** @param {Record<string, string>} config @param {Partial<import('../src/types.ts').AppResources>} [resourceOverrides] */
   function appWith(config, resourceOverrides = {}) {
+    /** @type {import('../src/types.ts').AppResources} */
     const res = {
-      executor: { memoryMB: null, memoryOverheadMB: null, cores: null, instances: null },
-      driver: {},
-      dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null,
+      executor: { memory: null, memoryMB: null, memoryOverhead: null, memoryOverheadMB: null, cores: null, instances: null },
+      driver: { memory: null, memoryMB: null, memoryOverhead: null, memoryOverheadMB: null, cores: null },
+      dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null, stageExecutorMetricsLogging: null,
       ...resourceOverrides,
     };
     return { config, resources: res };
   }
 
   it('returns nothing for an older log with no config and no resources', () => {
+    // @ts-expect-error an older log carries no resources at all
     expect(auditConfig({ config: {}, resources: null })).toHaveLength(0);
     expect(auditConfig(null)).toHaveLength(0);
   });
@@ -1494,7 +1612,7 @@ describe('auditConfig: static config sanity', () => {
       { 'spark.dynamicAllocation.enabled': 'true', 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
       { dynamicAllocationEnabled: true, shuffleServiceEnabled: true, serializer: 'org.apache.spark.serializer.KryoSerializer' },
     );
-    const f = auditConfig(app).find(x => x.property === 'spark.dynamicAllocation.maxExecutors');
+    const f = present(auditConfig(app).find(ofField('configAudit', 'property', 'spark.dynamicAllocation.maxExecutors')));
     expect(f.impactBand).toBe('info');
   });
 
@@ -1503,33 +1621,33 @@ describe('auditConfig: static config sanity', () => {
       { 'spark.executor.memory': '4g' },
       { serializer: null },
     );
-    const f = auditConfig(app, rddStages).find(x => x.property === 'spark.serializer');
+    const f = present(auditConfig(app, rddStages).find(ofField('configAudit', 'property', 'spark.serializer')));
     expect(f.impactBand).toBe('info');
   });
 
   it('does not flag the serializer when every stage ran under a SQL execution', () => {
     const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
-    const sqlOnly = new Map([[1, makeStage({ id: 1, sqlExecutionId: 0 })], [2, makeStage({ id: 2, sqlExecutionId: 1 })]]);
-    expect(auditConfig(app, sqlOnly).find(x => x.property === 'spark.serializer')).toBeUndefined();
+    const sqlOnly = new Map([[1, makeTypedStage({ id: 1, sqlExecutionId: 0 })], [2, makeTypedStage({ id: 2, sqlExecutionId: 1 })]]);
+    expect(auditConfig(app, sqlOnly).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeUndefined();
   });
 
   it('flags the serializer when any one stage ran outside a SQL execution', () => {
     const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
-    const mixed = new Map([[1, makeStage({ id: 1, sqlExecutionId: 0 })], [2, makeStage({ id: 2, sqlExecutionId: null })]]);
-    expect(auditConfig(app, mixed).find(x => x.property === 'spark.serializer')).toBeDefined();
+    const mixed = new Map([[1, makeTypedStage({ id: 1, sqlExecutionId: 0 })], [2, makeTypedStage({ id: 2, sqlExecutionId: null })]]);
+    expect(auditConfig(app, mixed).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeDefined();
   });
 
   it('stays silent about the serializer when the caller gives no stages or the run has none', () => {
     const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
-    expect(auditConfig(app).find(x => x.property === 'spark.serializer')).toBeUndefined();
-    expect(auditConfig(app, new Map()).find(x => x.property === 'spark.serializer')).toBeUndefined();
+    expect(auditConfig(app).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeUndefined();
+    expect(auditConfig(app, new Map()).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeUndefined();
   });
 
   it('recomputes a memoized audit when the same app is audited with stages of the other kind', () => {
     const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
-    const sqlOnly = new Map([[1, makeStage({ sqlExecutionId: 0 })]]);
-    expect(auditConfig(app, sqlOnly).find(x => x.property === 'spark.serializer')).toBeUndefined();
-    expect(auditConfig(app, rddStages).find(x => x.property === 'spark.serializer')).toBeDefined();
+    const sqlOnly = new Map([[1, makeTypedStage({ sqlExecutionId: 0 })]]);
+    expect(auditConfig(app, sqlOnly).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeUndefined();
+    expect(auditConfig(app, rddStages).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeDefined();
   });
 
   it('does not flag serializer when Kryo is set', () => {
@@ -1537,17 +1655,18 @@ describe('auditConfig: static config sanity', () => {
       { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
       { serializer: 'org.apache.spark.serializer.KryoSerializer' },
     );
-    expect(auditConfig(app, rddStages).find(x => x.property === 'spark.serializer')).toBeUndefined();
+    expect(auditConfig(app, rddStages).find(ofField('configAudit', 'property', 'spark.serializer'))).toBeUndefined();
   });
 
   describe('memoryOverhead against the overhead Spark would default to', () => {
+    /** @param {Record<string, string>} config @param {{ memoryMB: number, memoryOverheadMB: number }} executor @param {string | undefined} sparkVersion */
     const overheadFinding = (config, executor, sparkVersion) =>
-      auditConfig({ ...appWith({ 'spark.serializer': 'kryo', ...config }, { executor, serializer: 'kryo' }), sparkVersion }, rddStages)
-        .find(x => x.property === 'spark.executor.memoryOverhead');
+      auditConfig({ ...appWith({ 'spark.serializer': 'kryo', ...config }, { executor: { memory: null, memoryOverhead: null, cores: null, instances: null, ...executor }, serializer: 'kryo' }), sparkVersion }, rddStages)
+        .find(ofField('configAudit', 'property', 'spark.executor.memoryOverhead'));
 
     it('flags memoryOverhead below the default of max(384 MiB, 10%) (info)', () => {
       // 10 GiB executor → default = max(384, 1024) = 1024 MiB; overhead 256 is below.
-      const f = overheadFinding({ 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '256' }, { memoryMB: 10240, memoryOverheadMB: 256 }, '3.5.3');
+      const f = present(overheadFinding({ 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '256' }, { memoryMB: 10240, memoryOverheadMB: 256 }, '3.5.3'));
       expect(f.impactBand).toBe('info');
       expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '1024m' }]);
       expect(f.recommendation).toContain('10% of executor memory');
@@ -1561,7 +1680,7 @@ describe('auditConfig: static config sanity', () => {
       // factor 0.25 → 2560 MiB default; 2048 is below it, though above the 10% default of 1024.
       const config = { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '2048', 'spark.executor.memoryOverheadFactor': '0.25' };
       const executor = { memoryMB: 10240, memoryOverheadMB: 2048 };
-      const f = overheadFinding(config, executor, '3.5.3');
+      const f = present(overheadFinding(config, executor, '3.5.3'));
       expect(f.recommendation).toContain('25% of executor memory');
       expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '2560m' }]);
     });
@@ -1575,7 +1694,7 @@ describe('auditConfig: static config sanity', () => {
       // 1 GiB executor: 10% is 102 MiB, so the minimum decides. A 1 GiB minimum makes 512 MiB too low.
       const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '512', 'spark.executor.minMemoryOverhead': '1g' };
       const executor = { memoryMB: 1024, memoryOverheadMB: 512 };
-      const f = overheadFinding(config, executor, '4.0.0');
+      const f = present(overheadFinding(config, executor, '4.0.0'));
       expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '1024m' }]);
       expect(f.recommendation).toContain('max of 1024 MiB');
     });
@@ -1587,7 +1706,7 @@ describe('auditConfig: static config sanity', () => {
 
     it('ignores spark.executor.minMemoryOverhead before Spark 4, where the 384 MiB minimum is fixed', () => {
       const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '256', 'spark.executor.minMemoryOverhead': '128m' };
-      expect(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, '3.5.3').remediation).toEqual([
+      expect(present(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, '3.5.3')).remediation).toEqual([
         { kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '384m' },
       ]);
     });
@@ -1608,7 +1727,7 @@ describe('detector contract', () => {
       // incompleteRun deliberately has no docAnchor (documented deviation)
       if (d.type !== 'incompleteRun') {
         expect(typeof d.docAnchor).toBe('string');
-        expect(d.docAnchor.startsWith('#')).toBe(true);
+        expect(d.docAnchor?.startsWith('#')).toBe(true);
       }
     }
   });
@@ -1666,12 +1785,12 @@ describe('detector contract', () => {
 describe('detector extended-field whitelist', () => {
   it('no DETECTORS entry carries a static top-level extended string', () => {
     for (const d of DETECTORS) {
-      expect(d.extended, `${d.type} (${d.property ?? ''}) has a static top-level extended`).toBeUndefined();
+      expect(Reflect.get(d, 'extended'), `${d.type} (${Reflect.get(d, 'property') ?? ''}) has a static top-level extended`).toBeUndefined();
     }
   });
 
   it('analyze() results have a docAnchor and no extended unless retryWaste', () => {
-    const stage = makeStage({
+    const stage = makeTypedStage({
       taskCount: 100,
       taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 600, // skew
       shuffleReadBytes: 2 * 1024 * 1024 * 1024,                          // shuffle
@@ -1681,7 +1800,7 @@ describe('detector extended-field whitelist', () => {
       wastedAttempts: 5, retryWasteMs: 60000,                            // retryWaste
     });
     const catalog = analyze(makeApp(), new Map([[1, stage]]), [], [], new Map());
-    expect(catalog.some(b => b.type === 'retryWaste')).toBe(true);
+    expect(catalog.some(ofType('retryWaste'))).toBe(true);
     for (const b of catalog) {
       expect(typeof b.docAnchor).toBe('string');
       if (b.type === 'retryWaste') expect(typeof b.extended).toBe('string');
@@ -1692,7 +1811,7 @@ describe('detector extended-field whitelist', () => {
   it('auditConfig() results carry no extended', () => {
     const app = makeApp({ config: { 'spark.master': 'yarn' } }); // triggers the serializer info finding
     for (const b of auditConfig(app)) {
-      expect(b, `${b.property} still has extended`).not.toHaveProperty('extended');
+      expect(b, `${Reflect.get(b, 'property')} still has extended`).not.toHaveProperty('extended');
     }
   });
 });
@@ -1700,39 +1819,40 @@ describe('detector extended-field whitelist', () => {
 describe('analyze: memory advice that raises and lowers executor memory in one run', () => {
   const MB = 1024 * 1024;
   const sized = makeApp({ startTime: 0, endTime: 120000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
-  const executors = [{ executorId: '3', timestamp: 0, totalCores: 4 }];
+  const executors = [addedExecutor('3', 0, 4)];
   const ra = { coreHistogram: [], busyCoreMs: 0, peakConcurrentCores: 0, perStage: {}, executorPeakMetrics: { 3: { jvmHeapMemory: 250 * MB } } };
-  const lowering = (catalog) => catalog.filter((f) => f.remediation?.some((r) => r.key === 'spark.executor.memory' && r.direction === 'decrease'));
+  /** @param {Finding[]} catalog */
+  const lowering = (catalog) => catalog.filter((f) => f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.executor.memory' && r.direction === 'decrease'));
 
   it('keeps the over-provisioned heap advice while nothing asks for more memory', () => {
-    const catalog = analyze(sized, new Map([[1, makeStage()]]), executors, [], sampleJobs, new Map(), ra);
-    expect(lowering(catalog).map((f) => f.rule)).toContain('heapOverProvisioned');
+    const catalog = analyze(sized, new Map([[1, makeTypedStage()]]), executors, [], sampleJobs, new Map(), ra);
+    expect(lowering(catalog).map((f) => ('rule' in f ? f.rule : undefined))).toContain('heapOverProvisioned');
   });
 
   it('drops the lowering advice when a stage has high GC', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })], [2, makeStage({ id: 2, gcPct: 3, executorRunTime: 60000 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 15, executorRunTime: 60000 })], [2, makeTypedStage({ id: 2, gcPct: 3, executorRunTime: 60000 })]]);
     const catalog = analyze(sized, stages, executors, [], sampleJobs, new Map(), ra);
-    expect(catalog.find((f) => f.type === 'gc' && f.direction !== 'low')).toBeTruthy();
+    expect(catalog.find(ofType('gc', f => f.direction !== 'low'))).toBeTruthy();
     expect(lowering(catalog)).toEqual([]);
     // The run-level heap finding stays, without its advice to lower memory, and names the stage that asks for more.
-    const heap = catalog.find((f) => f.rule === 'heapOverProvisioned');
+    const heap = present(catalog.find(ofField('memoryUtilization', 'rule', 'heapOverProvisioned')));
     expect(heap.remediation).toEqual([]);
     expect(heap.recommendation).toMatch(/Stage 1 asks for more executor memory, so confirm before lowering it\./);
   });
 
   it('drops the lowering advice when a stage spills for volume', () => {
-    const stage = makeStage({ memoryBytesSpilled: 5 * 1024 * MB, spillClassification: 'volume' });
+    const stage = makeTypedStage({ memoryBytesSpilled: 5 * 1024 * MB, spillClassification: 'volume' });
     const catalog = analyze(sized, new Map([[1, stage]]), executors, [], sampleJobs, new Map(), ra);
-    expect(catalog.find((f) => f.type === 'spill')?.remediation.some((r) => r.key === 'spark.executor.memory' && r.direction === 'increase')).toBe(true);
+    expect(catalog.find(ofType('spill'))?.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.executor.memory' && r.direction === 'increase')).toBe(true);
     expect(lowering(catalog)).toEqual([]);
   });
 });
 
 describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
   it('emits an info low-GC finding when gcPct is under 5% and stage ran long enough', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const low = catalog.find(b => b.type === 'gc' && b.direction === 'low');
+    const low = present(catalog.find(ofType('gc', b => b.direction === 'low')));
     expect(low).toBeTruthy();
     expect(low.impactBand).toBe('info');
     expect(low.stageId).toBe(1);
@@ -1740,79 +1860,79 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
   });
 
   it('is retired once the log carries a measured executor heap peak (heapOverProvisioned judges sizing instead)', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000 })]]);
     const sized = makeApp({ resources: { executor: { cores: 4, memoryMB: 1000 } } });
     const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
     const catalog = analyze(sized, stages, [], [], sampleJobs, new Map(), ra);
-    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    expect(catalog.find(ofType('gc', b => b.direction === 'low'))).toBeUndefined();
     const zeros = analyze(sized, stages, [], [], sampleJobs, new Map(), { executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } });
-    expect(zeros.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    expect(zeros.find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
   });
 
   it('keeps the low-GC note when a heap peak exists but the executor memory is unknown, since nothing else judges sizing', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000 })]]);
     const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
     const catalog = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), ra);
-    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    expect(catalog.find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
   });
 
   it('does not call GC low on a stage that failed or lost tasks', () => {
-    const failed = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000, stageFailureReason: 'Job aborted' })]]);
-    expect(analyze(makeApp(), failed, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
-    const lost = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000, failedTasks: 3 })]]);
-    expect(analyze(makeApp(), lost, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
-    const clean = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000 })]]);
-    expect(analyze(makeApp(), clean, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    const failed = new Map([[1, makeTypedStage({ gcPct: 0, executorRunTime: 60000, stageFailureReason: 'Job aborted' })]]);
+    expect(analyze(makeApp(), failed, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeUndefined();
+    const lost = new Map([[1, makeTypedStage({ gcPct: 0, executorRunTime: 60000, failedTasks: 3 })]]);
+    expect(analyze(makeApp(), lost, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeUndefined();
+    const clean = new Map([[1, makeTypedStage({ gcPct: 0, executorRunTime: 60000 })]]);
+    expect(analyze(makeApp(), clean, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
   });
 
   it('does not fire on a short stage even when gcPct is 0 (noise floor)', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 5000 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 0, executorRunTime: 5000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    expect(catalog.find(ofType('gc', b => b.direction === 'low'))).toBeUndefined();
   });
 
   it('skips a low-GC note on a stage shorter than 0.5% of the run, but never a high-GC finding', () => {
     // A 1s stage in a 400s run (0.25%): low GC is still true there, the floor is why it's dropped.
-    const low = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
-    expect(analyze(makeApp({ endTime: 400_000 }), low, [], []).find(b => b.type === 'gc')).toBeUndefined();
-    const lowLong = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 4000 })]]);
-    expect(analyze(makeApp({ endTime: 400_000 }), lowLong, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    const low = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), low, [], []).find(ofType('gc'))).toBeUndefined();
+    const lowLong = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 4000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), lowLong, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
     // A stage with no completion time is zero-length, not short: its note is kept.
-    const lowOpen = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 1000, completedAt: null })]]);
-    expect(analyze(makeApp({ endTime: 400_000 }), lowOpen, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
-    const high = new Map([[1, makeStage({ gcPct: 15, jvmGCTime: 9000, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
-    expect(analyze(makeApp({ endTime: 400_000 }), high, [], []).find(b => b.type === 'gc' && b.direction !== 'low')).toBeTruthy();
+    const lowOpen = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 1000, completedAt: 0 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), lowOpen, [], []).find(ofType('gc', b => b.direction === 'low'))).toBeTruthy();
+    const high = new Map([[1, makeTypedStage({ gcPct: 15, jvmGCTime: 9000, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), high, [], []).find(ofType('gc', b => b.direction !== 'low'))).toBeTruthy();
   });
 
   it('does not emit a low finding when GC is high', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 15, executorRunTime: 60000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
-    expect(catalog.find(b => b.type === 'gc' && b.direction !== 'low')).toBeTruthy();
+    expect(catalog.find(ofType('gc', b => b.direction === 'low'))).toBeUndefined();
+    expect(catalog.find(ofType('gc', b => b.direction !== 'low'))).toBeTruthy();
   });
 
   it('does not fire a high-GC finding on a near-instant stage (noise floor)', () => {
     // Tiny executorRunTime denominator inflates gcPct past critical though the stage barely ran: same noise floor as low-GC.
-    const stages = new Map([[1, makeStage({ gcPct: 300, executorRunTime: 500 })]]);
+    const stages = new Map([[1, makeTypedStage({ gcPct: 300, executorRunTime: 500 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find(b => b.type === 'gc' && b.direction !== 'low')).toBeUndefined();
+    expect(catalog.find(ofType('gc', b => b.direction !== 'low'))).toBeUndefined();
   });
 
   it('still fires at its own warning/critical gcPct tiers on a stage that ran long enough, both reconciled to info here', () => {
     // Detector grades warning at 15% / critical at 25%, but GC time here is under the 0.5% warn floor of the 5s default, so both demote to info.
-    const warnStages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
-    const warn = analyze(makeApp(), warnStages, [], []).find(b => b.type === 'gc' && b.direction !== 'low');
+    const warnStages = new Map([[1, makeTypedStage({ gcPct: 15, executorRunTime: 60000 })]]);
+    const warn = analyze(makeApp(), warnStages, [], []).find(ofType('gc', b => b.direction !== 'low'));
     expect(warn?.impactBand).toBe('info');
 
-    const critStages = new Map([[1, makeStage({ gcPct: 25, executorRunTime: 60000 })]]);
-    const crit = analyze(makeApp(), critStages, [], []).find(b => b.type === 'gc' && b.direction !== 'low');
+    const critStages = new Map([[1, makeTypedStage({ gcPct: 25, executorRunTime: 60000 })]]);
+    const crit = analyze(makeApp(), critStages, [], []).find(ofType('gc', b => b.direction !== 'low'));
     expect(crit?.impactBand).toBe('info');
   });
 
   it('fires at exactly minRunTimeMs (inclusive floor), reconciled to info here', () => {
     // Detector grades 'critical' at 25%, demoted to 'info' for the same reason as above.
-    const stages = new Map([[1, makeStage({ gcPct: 25, executorRunTime: 10000 })]]);
-    const crit = analyze(makeApp(), stages, [], []).find(b => b.type === 'gc' && b.direction !== 'low');
+    const stages = new Map([[1, makeTypedStage({ gcPct: 25, executorRunTime: 10000 })]]);
+    const crit = analyze(makeApp(), stages, [], []).find(ofType('gc', b => b.direction !== 'low'));
     expect(crit?.impactBand).toBe('info');
   });
 });
@@ -1822,14 +1942,14 @@ describe('analyze: CPU utilization metric (sparkMeasure, metric-only)', () => {
     // Allocated: executor 1 holds 4 cores for the 10s run, executor 2 for 1s of it: 44000 core-ms.
     // executorCpuTime is nanoseconds: 16000000000ns = 16000ms => 16000/44000 = 36%.
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: 4 } } });
-    const stages = new Map([[1, makeStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
+    const stages = new Map([[1, makeTypedStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
     const added = [
-      { executorId: '1', timestamp: 1000, totalCores: 4 },
-      { executorId: '2', timestamp: 1000, totalCores: 4 },
+      addedExecutor('1', 1000, 4),
+      addedExecutor('2', 1000, 4),
     ];
-    const removed = [{ executorId: '2', timestamp: 2000 }]; // exec 2 leaves early => util < 60% (avg 1.1/2=55%)
+    const removed = [removedExecutor('2', 2000)]; // exec 2 leaves early => util < 60% (avg 1.1/2=55%)
     const catalog = analyze(app, stages, added, removed);
-    const util = catalog.find(b => b.type === 'utilization');
+    const util = present(catalog.find(ofType('utilization')));
     expect(util).toBeTruthy();
     expect(util.cpuUtilizationPct).toBe(36);
     // Sanity bound: CPU utilization should never be wildly above 100% of core-time (some measurement slack).
@@ -1839,35 +1959,35 @@ describe('analyze: CPU utilization metric (sparkMeasure, metric-only)', () => {
 
   it('sets cpuUtilizationPct to null, not 0, when no stage recorded CPU time', () => {
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: 4 } } });
-    const stages = new Map([[1, makeStage({ executorRunTime: 100000, executorCpuTime: 0 })]]);
+    const stages = new Map([[1, makeTypedStage({ executorRunTime: 100000, executorCpuTime: 0 })]]);
     const added = [
-      { executorId: '1', timestamp: 1000, totalCores: 4 },
-      { executorId: '2', timestamp: 1000, totalCores: 4 },
+      addedExecutor('1', 1000, 4),
+      addedExecutor('2', 1000, 4),
     ];
-    const util = analyze(app, stages, added, [{ executorId: '2', timestamp: 2000 }]).find(b => b.type === 'utilization');
+    const util = present(analyze(app, stages, added, [removedExecutor('2', 2000)]).find(ofType('utilization')));
     expect(util).toBeTruthy();
     expect(util.cpuUtilizationPct).toBeNull();
   });
 
   it('sets cpuUtilizationPct to null when cores are unknown', () => {
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: null } } });
-    const stages = new Map([[1, makeStage({ executorCpuTime: 16000 })]]);
-    const added = [{ executorId: '1', timestamp: 1000, totalCores: 0 }];
+    const stages = new Map([[1, makeTypedStage({ executorCpuTime: 16000 })]]);
+    const added = [addedExecutor('1', 1000, 0)];
     const catalog = analyze(app, stages, added, []);
-    const util = catalog.find(b => b.type === 'utilization');
+    const util = catalog.find(ofType('utilization'));
     if (util) expect(util.cpuUtilizationPct).toBeNull();
   });
 
   it('carries the raw 0-1 utilizationFraction alongside the rounded percentage value', () => {
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: 4 } } });
-    const stages = new Map([[1, makeStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
+    const stages = new Map([[1, makeTypedStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
     const added = [
-      { executorId: '1', timestamp: 1000, totalCores: 4 },
-      { executorId: '2', timestamp: 1000, totalCores: 4 },
+      addedExecutor('1', 1000, 4),
+      addedExecutor('2', 1000, 4),
     ];
-    const removed = [{ executorId: '2', timestamp: 2000 }]; // exec 2 leaves early => util < 60% (avg 1.1/2=55%)
+    const removed = [removedExecutor('2', 2000)]; // exec 2 leaves early => util < 60% (avg 1.1/2=55%)
     const catalog = analyze(app, stages, added, removed);
-    const finding = catalog.find(b => b.type === 'utilization');
+    const finding = present(catalog.find(ofType('utilization')));
     expect(finding).toBeDefined();
     expect(typeof finding.utilizationFraction).toBe('number');
     expect(finding.utilizationFraction).toBeGreaterThanOrEqual(0);
@@ -1879,12 +1999,12 @@ describe('analyze: CPU utilization metric (sparkMeasure, metric-only)', () => {
 describe('analyze: utilization detector tolerates a null app', () => {
   it('does not throw when app is null (ApplicationStart never parsed)', () => {
     const added = [
-      { executorId: '1', timestamp: 1000, totalCores: 4 },
-      { executorId: '2', timestamp: 1000, totalCores: 4 },
+      addedExecutor('1', 1000, 4),
+      addedExecutor('2', 1000, 4),
     ];
-    const removed = [{ executorId: '2', timestamp: 2000 }];
+    const removed = [removedExecutor('2', 2000)];
     const catalog = analyze(null, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'utilization')).toBeUndefined();
+    expect(catalog.find(ofType('utilization'))).toBeUndefined();
   });
 });
 
@@ -1894,16 +2014,16 @@ describe('analyze: utilization detector under executor churn (regression)', () =
   // but 5 executors are added over the run, so counting every added executor would report 20.
   function churnedExecutors() {
     const added = [
-      { executorId: 'a', timestamp: 0, totalCores: 4 },
-      { executorId: 'b', timestamp: 0, totalCores: 4 },
-      { executorId: 'c', timestamp: 25000, totalCores: 4 },
-      { executorId: 'd', timestamp: 50000, totalCores: 4 },
-      { executorId: 'e', timestamp: 75000, totalCores: 4 },
+      addedExecutor('a', 0, 4),
+      addedExecutor('b', 0, 4),
+      addedExecutor('c', 25000, 4),
+      addedExecutor('d', 50000, 4),
+      addedExecutor('e', 75000, 4),
     ];
     const removed = [
-      { executorId: 'a', timestamp: 25000 },
-      { executorId: 'b', timestamp: 50000 },
-      { executorId: 'c', timestamp: 75000 },
+      removedExecutor('a', 25000),
+      removedExecutor('b', 50000),
+      removedExecutor('c', 75000),
     ];
     return { added, removed };
   }
@@ -1913,7 +2033,7 @@ describe('analyze: utilization detector under executor churn (regression)', () =
     const { added, removed } = churnedExecutors();
     const ra = { coreHistogram: [], busyCoreMs: 50000, peakConcurrentCores: 8, perStage: {} };
     const catalog = analyze(app, new Map(), added, removed, sampleJobs, new Map(), ra);
-    const util = catalog.find(b => b.type === 'utilization');
+    const util = present(catalog.find(ofType('utilization')));
     expect(util).toBeTruthy();
     expect(util.totalCores).toBe(8);
     // Honest utilization: busyCoreMs 50000 / (8 cores x 100000ms) = 6.25%, not the churn-inflated
@@ -1928,14 +2048,14 @@ describe('analyze: idle capacity is measured against the allocation', () => {
   // be 800,000 core-ms.
   const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4 } } });
   const added = [
-    { executorId: 'a', timestamp: 0, totalCores: 4 },
-    { executorId: 'b', timestamp: 80000, totalCores: 4 },
+    addedExecutor('a', 0, 4),
+    addedExecutor('b', 80000, 4),
   ];
   const ra = { coreHistogram: [], busyCoreMs: 100000, peakConcurrentCores: 8, perStage: {} };
   const run = () => analyze(app, new Map(), added, [], sampleJobs, new Map(), ra);
 
   it('computes the utilization percentage over allocated core-time, not peak cores x the whole run', () => {
-    const util = run().find(b => b.type === 'utilization');
+    const util = present(run().find(ofType('utilization')));
     expect(util.totalCores).toBe(8);
     expect(util.allocatedCoreMs).toBe(480000);
     expect(util.utilizationFraction).toBeCloseTo(100000 / 480000, 10);
@@ -1943,27 +2063,27 @@ describe('analyze: idle capacity is measured against the allocation', () => {
   });
 
   it('reports the idle figure as allocated minus busy core time, never above the allocation', () => {
-    const util = run().find(b => b.type === 'utilization');
-    const { rawWaste, idleCoreTimeMs } = util.impactEstimate;
+    const util = present(run().find(ofType('utilization')));
+    const { rawWaste, idleCoreTimeMs } = present(util.impactEstimate);
     expect(idleCoreTimeMs).toEqual({ low: 380000, high: 380000 });
     expect(rawWaste).toEqual({ value: 380000 / 3.6e6, unit: 'coreHours', idle: true });
-    expect(idleCoreTimeMs.high).toBeLessThanOrEqual(util.allocatedCoreMs);
+    expect(present(idleCoreTimeMs).high).toBeLessThanOrEqual(util.allocatedCoreMs);
     // The basis it replaces: 700,000 core-ms idle, more than the 480,000 ever allocated.
-    expect(idleCoreTimeMs.high).toBeLessThan(8 * 100000 - 100000);
+    expect(present(idleCoreTimeMs).high).toBeLessThan(8 * 100000 - 100000);
   });
 
   it('gives the memory view of the same condition the same idle rate, without the idle core time', () => {
     const catalog = run();
-    const util = catalog.find(b => b.type === 'utilization');
-    const idle = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'idleCores');
-    expect(idle.value).toBe(100 - util.value);
-    expect(idle.impactEstimate.idleCoreTimeMs).toBeUndefined();
+    const util = present(catalog.find(ofType('utilization')));
+    const idle = present(catalog.find(ofField('memoryUtilization', 'variant', 'idleCores')));
+    expect(idle.value).toBe(100 - present(util.value));
+    expect(present(idle.impactEstimate).idleCoreTimeMs).toBeUndefined();
   });
 
   it('reports no utilization finding when the log gives no executor cores to allocate', () => {
-    const noCores = [{ executorId: 'a', timestamp: 0, totalCores: 0 }];
+    const noCores = [addedExecutor('a', 0, 0)];
     const bare = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: null } } });
-    expect(analyze(bare, new Map(), noCores, [], sampleJobs, new Map(), ra).find(b => b.type === 'utilization')).toBeUndefined();
+    expect(analyze(bare, new Map(), noCores, [], sampleJobs, new Map(), ra).find(ofType('utilization'))).toBeUndefined();
   });
 });
 
@@ -1973,9 +2093,9 @@ describe('analyze: coldStart/utilization do not silently skip on a literal start
     // app.startTime (`!app.startTime`) treats this exactly like a missing startTime and silently
     // no-ops. The first executor arrives well past the 30s default gap after the first stage.
     const app = makeApp({ startTime: 0, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 1000 })]]);
-    const added = [{ executorId: '1', timestamp: 42000, totalCores: 4 }];
-    const b = analyze(app, stages, added, []).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeTypedStage({ submittedAt: 1000 })]]);
+    const added = [addedExecutor('1', 42000, 4)];
+    const b = present(analyze(app, stages, added, []).find(ofType('coldStart')));
     expect(b).toBeTruthy();
     expect(b.value).toBe(41);
   });
@@ -1984,34 +2104,34 @@ describe('analyze: coldStart/utilization do not silently skip on a literal start
   // job isn't executor wait, and with no executor events there's nothing to measure.
   it('coldStart: ignores driver startup before the first stage, and needs executor events', () => {
     const app = makeApp({ startTime: 0, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
-    const warm = [{ executorId: '1', timestamp: 30000, totalCores: 4 }];
-    expect(analyze(app, stages, warm, []).find(x => x.type === 'coldStart')).toBeUndefined();
-    expect(analyze(app, stages, [], []).find(x => x.type === 'coldStart')).toBeUndefined();
-    const late = [{ executorId: '2', timestamp: 80000, totalCores: 4 }, { executorId: '1', timestamp: 75000, totalCores: 4 }];
-    expect(analyze(app, stages, late, []).find(x => x.type === 'coldStart').value).toBe(34);
+    const stages = new Map([[1, makeTypedStage({ submittedAt: 41000 })]]);
+    const warm = [addedExecutor('1', 30000, 4)];
+    expect(analyze(app, stages, warm, []).find(ofType('coldStart'))).toBeUndefined();
+    expect(analyze(app, stages, [], []).find(ofType('coldStart'))).toBeUndefined();
+    const late = [addedExecutor('2', 80000, 4), addedExecutor('1', 75000, 4)];
+    expect(present(analyze(app, stages, late, []).find(ofType('coldStart'))).value).toBe(34);
   });
 
   // An executor that idled out before the first stage can't run it, so the wait runs
   // to the next executor added after submission.
   it('coldStart: measures to the next executor when early ones were removed before the first stage', () => {
     const app = makeApp({ startTime: 0, endTime: 300000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 100000 })]]);
-    const added = [{ executorId: '1', timestamp: 5000, totalCores: 4 }, { executorId: '2', timestamp: 160000, totalCores: 4 }];
-    const removed = [{ executorId: '1', timestamp: 65000 }];
-    const b = analyze(app, stages, added, removed).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeTypedStage({ submittedAt: 100000 })]]);
+    const added = [addedExecutor('1', 5000, 4), addedExecutor('2', 160000, 4)];
+    const removed = [removedExecutor('1', 65000)];
+    const b = present(analyze(app, stages, added, removed).find(ofType('coldStart')));
     expect(b).toBeTruthy();
     expect(b.value).toBe(60);
-    const removedLater = [{ executorId: '1', timestamp: 200000 }];
-    expect(analyze(app, stages, added, removedLater).find(x => x.type === 'coldStart')).toBeUndefined();
-    expect(analyze(app, stages, added, []).find(x => x.type === 'coldStart')).toBeUndefined();
+    const removedLater = [removedExecutor('1', 200000)];
+    expect(analyze(app, stages, added, removedLater).find(ofType('coldStart'))).toBeUndefined();
+    expect(analyze(app, stages, added, []).find(ofType('coldStart'))).toBeUndefined();
   });
 
   it('utilization still fires when app.startTime is exactly 0', () => {
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4 } } });
-    const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }];
-    const catalog = analyze(app, new Map([[1, makeStage()]]), added, []);
-    const util = catalog.find(b => b.type === 'utilization');
+    const added = [addedExecutor('1', 0, 4)];
+    const catalog = analyze(app, new Map([[1, makeTypedStage()]]), added, []);
+    const util = catalog.find(ofType('utilization'));
     expect(util).toBeTruthy();
   });
 });
@@ -2025,15 +2145,16 @@ describe('analyze: runAggregates threading', () => {
 });
 
 describe('analyze: memoryUtilization detector (§1)', () => {
+  /** @param {number} busyCoreMs @param {number} peak @returns {RunAggregates} */
   const raBusy = (busyCoreMs, peak) => ({ coreHistogram: [], busyCoreMs, peakConcurrentCores: peak, perStage: {} });
 
   it('1a: fires idleCores warning when idle-core rate exceeds 50%', () => {
     // peakCores 8, app 10s => capacity 80 core-s. busy 20 core-s => idle 75% > 50%.
     const app = makeApp({ startTime: 0, endTime: 10000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
-    const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];
+    const added = [addedExecutor('1', 0, 4), addedExecutor('2', 0, 4)];
     const ra = raBusy(20000, 8);
-    const catalog = analyze(app, new Map([[1, makeStage()]]), added, [], sampleJobs, new Map(), ra);
-    const idle = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'idleCores');
+    const catalog = analyze(app, new Map([[1, makeTypedStage()]]), added, [], sampleJobs, new Map(), ra);
+    const idle = present(catalog.find(ofField('memoryUtilization', 'variant', 'idleCores')));
     expect(idle).toBeTruthy();
     expect(idle.impactBand).toBe('warning');
     expect(idle.value).toBe(75);
@@ -2046,18 +2167,18 @@ describe('analyze: memoryUtilization detector (§1)', () => {
   it('1b: reports no OOM-risk band for a peak near the allocated heap (heap used counts uncollected garbage)', () => {
     const app = makeApp({ resources: { executor: { cores: 4, memoryMB: 1000 } } });
     // 1000 MB allocated; jvmHeapMemory is in bytes => 0.98 * 1000 * 1024 * 1024.
-    const stage = makeStage({ executorMetrics: new Map([['3', { jvmHeapMemory: Math.round(0.98 * 1000 * 1024 * 1024) }]]) });
-    const catalog = analyze(app, new Map([[1, stage]]), [{ executorId: '3', timestamp: 0, totalCores: 4 }], [], sampleJobs, new Map(), raBusy(0, 0));
-    expect(catalog.filter(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand')).toEqual([]);
+    const stage = makeTypedStage({ executorMetrics: new Map([['3', { jvmHeapMemory: Math.round(0.98 * 1000 * 1024 * 1024) }]]) });
+    const catalog = analyze(app, new Map([[1, stage]]), [addedExecutor('3', 0, 4)], [], sampleJobs, new Map(), raBusy(0, 0));
+    expect(catalog.filter(ofField('memoryUtilization', 'variant', 'memoryBand'))).toEqual([]);
   });
 
   it('1b: flags an executor well under the allocated heap as over-provisioned, with the impact-estimate inputs', () => {
     const app = makeApp({ startTime: 0, endTime: 120000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
     // 25% of 1000 MB => below the 0.70 bandTooHigh threshold.
     const heapBytes = Math.round(0.25 * 1000 * 1024 * 1024);
-    const stage = makeStage({ executorMetrics: new Map([['3', { jvmHeapMemory: heapBytes }]]) });
-    const catalog = analyze(app, new Map([[1, stage]]), [{ executorId: '3', timestamp: 0, totalCores: 4 }], [], sampleJobs, new Map(), raBusy(0, 0));
-    const band = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand' && b.executorId === '3');
+    const stage = makeTypedStage({ executorMetrics: new Map([['3', { jvmHeapMemory: heapBytes }]]) });
+    const catalog = analyze(app, new Map([[1, stage]]), [addedExecutor('3', 0, 4)], [], sampleJobs, new Map(), raBusy(0, 0));
+    const band = present(catalog.filter(isHeapBand).find((b) => b.executorId === '3'));
     expect(band).toBeTruthy();
     expect(band.impactBand).toBe('info');
     expect(band.rule).toBe('heapOverProvisioned');
@@ -2071,10 +2192,12 @@ describe('analyze: memoryUtilization detector (§1)', () => {
   describe('1b: heap peaks folded from TaskEnd executor metrics', () => {
     const MB = 1024 * 1024;
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
-    const added = ['1', '2', '3'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 4 }));
-    const run = (executorPeakMetrics, stages = new Map([[1, makeStage()]])) =>
+    const added = ['1', '2', '3'].map((executorId) => addedExecutor(executorId, 0, 4));
+    /** @param {Record<string, Record<string, number>> | undefined} executorPeakMetrics @param {Map<number, Stage>} [stages] */
+    const run = (executorPeakMetrics, stages = new Map([[1, makeTypedStage()]])) =>
       analyze(app, stages, added, [], sampleJobs, new Map(), { ...raBusy(0, 0), executorPeakMetrics });
-    const bands = (catalog) => catalog.filter(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand');
+    /** @param {Finding[]} catalog */
+    const bands = (catalog) => catalog.filter(ofField('memoryUtilization', 'variant', 'memoryBand'));
 
     it('judges once, on the executor with the highest peak, with no stage executor metrics logged', () => {
       const [band, ...rest] = bands(run({
@@ -2090,7 +2213,7 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     });
 
     it('takes the larger of a TaskEnd peak and a stage executor metrics peak', () => {
-      const stage = makeStage({ executorMetrics: new Map([['1', { jvmHeapMemory: 900 * MB }]]) });
+      const stage = makeTypedStage({ executorMetrics: new Map([['1', { jvmHeapMemory: 900 * MB }]]) });
       expect(bands(run({ 1: { jvmHeapMemory: 100 * MB }, 2: { jvmHeapMemory: 200 * MB } }, new Map([[1, stage]])))).toEqual([]);
     });
 
@@ -2105,76 +2228,76 @@ describe('analyze: memoryUtilization detector (§1)', () => {
 
     it('does not suggest logStageExecutorMetrics when it is already on', () => {
       const logged = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } }, config: { 'spark.eventLog.logStageExecutorMetrics': 'true' } });
-      const [band] = bands(analyze(logged, new Map([[1, makeStage()]]), added, [], sampleJobs, new Map(), { ...raBusy(0, 0), executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } }));
+      const [band] = bands(analyze(logged, new Map([[1, makeTypedStage()]]), added, [], sampleJobs, new Map(), { ...raBusy(0, 0), executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } }));
       expect(band.dataUnavailable).toBe(true);
       expect(band.remediation).toEqual([]);
       expect(band.recommendation).toMatch(/already on/);
     });
 
     it('leaves the driver out: its heap is sized by spark.driver.memory', () => {
-      const stage = makeStage({ executorMetrics: new Map([['driver', { jvmHeapMemory: 100 * MB }]]) });
+      const stage = makeTypedStage({ executorMetrics: new Map([['driver', { jvmHeapMemory: 100 * MB }]]) });
       expect(bands(run({}, new Map([[1, stage]])))[0]?.dataUnavailable).toBe(true);
     });
 
     it('prices the unused heap across the executors alive time', () => {
-      const [band] = bands(run({ 1: { jvmHeapMemory: 250 * MB } }));
-      expect(band.executorSeconds).toBe(300); // 3 executors x 100 s
+      const [band] = bands(run({ 1: { jvmHeapMemory: 250 * MB } })).filter(isHeapBand);
+      expect(present(band).executorSeconds).toBe(300); // 3 executors x 100 s
     });
   });
 
   it('1b: emits a dataUnavailable memoryBand finding when no executorMetrics present', () => {
     const app = makeApp({ resources: { executor: { cores: 4, memoryMB: 1000 } } });
-    const catalog = analyze(app, new Map([[1, makeStage()]]), [{ executorId: '1', timestamp: 0, totalCores: 4 }], [], sampleJobs, new Map(), raBusy(0, 0));
-    const band = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand');
+    const catalog = analyze(app, new Map([[1, makeTypedStage()]]), [addedExecutor('1', 0, 4)], [], sampleJobs, new Map(), raBusy(0, 0));
+    const band = catalog.find(ofField('memoryUtilization', 'variant', 'memoryBand'));
     expect(band?.dataUnavailable).toBe(true);
   });
 
   it('1c: waste-model finding carries high confidence + validationRequired when waste is many multiples of the gate', () => {
     const app = makeApp({ startTime: 0, endTime: 3600000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
-    const added = Array.from({ length: 4 }, (_, i) => ({ executorId: String(i), timestamp: 0, totalCores: 4 }));
-    const stage = makeStage({ executorRunTime: 1000 }); // tiny used-time => wasted is ~9600x the 1.5x-gated floor
+    const added = Array.from({ length: 4 }, (_, i) => (addedExecutor(String(i), 0, 4)));
+    const stage = makeTypedStage({ executorRunTime: 1000 }); // tiny used-time => wasted is ~9600x the 1.5x-gated floor
     const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
-    const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    const waste = catalog.find(ofField('memoryUtilization', 'variant', 'wasteModel'));
     expect(waste?.confidence).toBe('high');
     expect(waste?.validationRequired).toBeTruthy();
   });
 
   it('1c: waste-model finding is low confidence just past the 1.5x wasteBufferMultiplier floor', () => {
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 1, memoryMB: 1000 } } });
-    const added = [{ executorId: '0', timestamp: 0, totalCores: 1 }];
+    const added = [addedExecutor('0', 0, 1)];
     // allocatedMBSeconds = 1*1000*100 = 100,000; usedMBSeconds = 1000*34 = 34,000; wasted = 66,000,
     // which is ~1.3x (1.5 * 34,000) = 51,000: just past the gate, the weakest evidence this detector reports.
-    const stage = makeStage({ executorRunTime: 34000 });
+    const stage = makeTypedStage({ executorRunTime: 34000 });
     const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
-    const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    const waste = catalog.find(ofField('memoryUtilization', 'variant', 'wasteModel'));
     expect(waste?.confidence).toBe('low');
   });
 
   it('1c: allocated memory-time follows when executors were alive, not the peak executor count over the whole run', () => {
     // 4 single-core executors at the peak, but three live for 10 s of the 100 s run: 130 executor-s, not 400.
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 1, memoryMB: 1000 } } });
-    const added = ['0', '1', '2', '3'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 1 }));
-    const removed = ['1', '2', '3'].map((executorId) => ({ executorId, timestamp: 10000 }));
+    const added = ['0', '1', '2', '3'].map((executorId) => addedExecutor(executorId, 0, 1));
+    const removed = ['1', '2', '3'].map((executorId) => (removedExecutor(executorId, 10000)));
     // 100 executor-s used: a peak x run model (400 executor-s) calls 300 of them waste, past 1.5 x 100.
-    const stages = new Map([[1, makeStage({ executorRunTime: 100000 })]]);
+    const stages = new Map([[1, makeTypedStage({ executorRunTime: 100000 })]]);
     const waste = analyze(app, stages, added, removed, sampleJobs, new Map(), raBusy(0, 0))
-      .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+      .find(ofField('memoryUtilization', 'variant', 'wasteModel'));
     expect(waste).toBeUndefined();
     // Held for the whole run, the same use is waste: 4 x 100 executor-s allocated, 100 used.
     const held = analyze(app, stages, added, [], sampleJobs, new Map(), raBusy(0, 0))
-      .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+      .find(ofField('memoryUtilization', 'variant', 'wasteModel'));
     expect(held?.value).toBe(300000);
   });
 
   it('1c: divides summed task run time by executor cores, so a fully busy 4-core executor is not waste', () => {
     // 1 executor x 4 cores for 100 s, tasks kept every core busy: 400 core-s of run time = 100 executor-s.
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
-    const added = [{ executorId: '0', timestamp: 0, totalCores: 4 }];
-    const busy = analyze(app, new Map([[1, makeStage({ executorRunTime: 400000 })]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
-    expect(busy.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel')).toBeUndefined();
+    const added = [addedExecutor('0', 0, 4)];
+    const busy = analyze(app, new Map([[1, makeTypedStage({ executorRunTime: 400000 })]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
+    expect(busy.find(ofField('memoryUtilization', 'variant', 'wasteModel'))).toBeUndefined();
     // A quarter of that run time leaves 75% of the executor-seconds unused: 75,000 MB-s, past 1.5 x 25,000.
-    const idle = analyze(app, new Map([[1, makeStage({ executorRunTime: 100000 })]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
-    expect(idle.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel')?.value).toBe(75000);
+    const idle = analyze(app, new Map([[1, makeTypedStage({ executorRunTime: 100000 })]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
+    expect(idle.find(ofField('memoryUtilization', 'variant', 'wasteModel'))?.value).toBe(75000);
   });
 
   it('1a (regression): executor churn does not inflate idleCores past the real peak concurrent capacity', () => {
@@ -2183,20 +2306,20 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     // 93.75% (50000 busy / 800000 capacity core-ms), not the 97.5% a 20-core count would give.
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
     const added = [
-      { executorId: 'a', timestamp: 0, totalCores: 4 },
-      { executorId: 'b', timestamp: 0, totalCores: 4 },
-      { executorId: 'c', timestamp: 25000, totalCores: 4 },
-      { executorId: 'd', timestamp: 50000, totalCores: 4 },
-      { executorId: 'e', timestamp: 75000, totalCores: 4 },
+      addedExecutor('a', 0, 4),
+      addedExecutor('b', 0, 4),
+      addedExecutor('c', 25000, 4),
+      addedExecutor('d', 50000, 4),
+      addedExecutor('e', 75000, 4),
     ];
     const removed = [
-      { executorId: 'a', timestamp: 25000 },
-      { executorId: 'b', timestamp: 50000 },
-      { executorId: 'c', timestamp: 75000 },
+      removedExecutor('a', 25000),
+      removedExecutor('b', 50000),
+      removedExecutor('c', 75000),
     ];
     const ra = raBusy(50000, 8);
-    const catalog = analyze(app, new Map([[1, makeStage()]]), added, removed, sampleJobs, new Map(), ra);
-    const idle = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'idleCores');
+    const catalog = analyze(app, new Map([[1, makeTypedStage()]]), added, removed, sampleJobs, new Map(), ra);
+    const idle = present(catalog.find(ofField('memoryUtilization', 'variant', 'idleCores')));
     expect(idle).toBeTruthy();
     expect(idle.value).toBe(94); // round(93.75), not the churn-inflated round(97.5) = 98
     expect(idle.idleRateFraction).toBeCloseTo(0.9375, 10);
@@ -2206,11 +2329,18 @@ describe('analyze: memoryUtilization detector (§1)', () => {
 describe('analyze, cacheUtilization detector', () => {
   const emptyStages = new Map();
   const emptyJobs = new Map();
-  const cacheFindings = (app) => analyze(app, emptyStages, [], [], emptyJobs).filter((b) => b.type === 'cacheUtilization');
+  /** @param {ReturnType<typeof makeApp>} app */
+  const cacheFindings = (app) => analyze(app, emptyStages, [], [], emptyJobs).filter(ofType('cacheUtilization'));
+  /** A finding that names a cached RDD, so not the log-wide storageUnobserved caveat.
+   * @param {Finding} f
+   * @returns {f is Extract<Finding, { type: 'cacheUtilization', rddId: number }>}
+   */
+  const namesRdd = (f) => f.type === 'cacheUtilization' && f.variant !== 'storageUnobserved';
 
+  /** @param {number} id @param {Partial<import('../src/types.ts').RddInfo>} [overrides] */
   function makeRdd(id, overrides = {}) {
     return {
-      id, name: `rdd${id}`,
+      id, name: `rdd${id}`, callsite: '', storageSource: /** @type {const} */ ('rddInfo'), stageIds: [],
       storageLevel: { useMemory: true, useDisk: false, deserialized: true, replication: 1 },
       numPartitions: 10, numCachedPartitions: 10,
       memorySize: 1000, diskSize: 0,
@@ -2233,30 +2363,30 @@ describe('analyze, cacheUtilization detector', () => {
 
   it('fires an info partialCache finding just below the 0.90 cachedRatio tier', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numPartitions: 100, numCachedPartitions: 89 })]]); // 0.89
-    const partial = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache');
+    const partial = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'partialCache')));
     expect(partial.impactBand).toBe('info');
     expect(partial.value).toBe(89);
   });
 
   it('emits no partialCache finding just above the 0.90 cachedRatio tier', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numPartitions: 100, numCachedPartitions: 91 })]]); // 0.91
-    expect(cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache')).toBeUndefined();
+    expect(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'partialCache'))).toBeUndefined();
   });
 
   it('emits no partialCache finding when cachedRatio is exactly 0.90 (info tier upper bound is exclusive)', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numPartitions: 100, numCachedPartitions: 90 })]]);
-    expect(cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache')).toBeUndefined();
+    expect(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'partialCache'))).toBeUndefined();
   });
 
   it('fires a warning partialCache finding just below the 0.50 cachedRatio tier', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numPartitions: 100, numCachedPartitions: 49 })]]); // 0.49
-    const partial = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache');
+    const partial = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'partialCache')));
     expect(partial.impactBand).toBe('warning');
   });
 
   it('lands in the info tier (not warning) when cachedRatio is exactly 0.50', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numPartitions: 100, numCachedPartitions: 50 })]]);
-    const partial = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache');
+    const partial = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'partialCache')));
     expect(partial.impactBand).toBe('info');
   });
 
@@ -2265,7 +2395,7 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 590, diskSize: 410, // 0.41
     })]]);
-    const spill = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover');
+    const spill = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'diskSpillover')));
     expect(spill.impactBand).toBe('warning');
     expect(spill.value).toBe(41);
   });
@@ -2275,7 +2405,7 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 600, diskSize: 400,
     })]]);
-    const spill = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover');
+    const spill = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'diskSpillover')));
     expect(spill.impactBand).toBe('info');
   });
 
@@ -2284,7 +2414,7 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 840, diskSize: 160, // 0.16
     })]]);
-    const spill = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover');
+    const spill = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'diskSpillover')));
     expect(spill.impactBand).toBe('info');
   });
 
@@ -2293,7 +2423,7 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 850, diskSize: 150,
     })]]);
-    expect(cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover')).toBeUndefined();
+    expect(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'diskSpillover'))).toBeUndefined();
   });
 
   it('emits no diskSpillover finding just below the 0.15 diskRatio tier', () => {
@@ -2301,7 +2431,7 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 860, diskSize: 140, // 0.14
     })]]);
-    expect(cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover')).toBeUndefined();
+    expect(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'diskSpillover'))).toBeUndefined();
   });
 
   it('never flags DISK_ONLY storage for disk spillover regardless of diskSize', () => {
@@ -2321,11 +2451,12 @@ describe('analyze, cacheUtilization detector', () => {
 
   it('never flags an RDD with numCachedPartitions === 0 with a partial-cache or spillover finding', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numCachedPartitions: 0 })]]);
-    expect(cacheFindings(makeApp({ rddInfo })).filter((f) => !f.dataUnavailable)).toEqual([]);
+    expect(cacheFindings(makeApp({ rddInfo })).filter((f) => !('dataUnavailable' in f && f.dataUnavailable))).toEqual([]);
   });
 
   describe('persisted RDDs without storage evidence', () => {
     // Spark 2.3+ with logBlockUpdates off: RDD Info's cache figures are always 0.
+    /** @param {number} id */
     const unobservedRdd = (id) => makeRdd(id, { numCachedPartitions: 0, memorySize: 0, diskSize: 0 });
 
     it('reports a storageUnobserved caveat naming spark.eventLog.logBlockUpdates.enabled instead of a clean result', () => {
@@ -2375,7 +2506,7 @@ describe('analyze, cacheUtilization detector', () => {
     });
 
     it('ignores RDDs that were never persisted', () => {
-      const rddInfo = new Map([[1, makeRdd(1, { numCachedPartitions: 0, storageLevel: { useMemory: false, useDisk: false } })]]);
+      const rddInfo = new Map([[1, makeRdd(1, { numCachedPartitions: 0, storageLevel: { useMemory: false, useDisk: false, deserialized: false, replication: 1 } })]]);
       expect(cacheFindings(makeApp({ rddInfo }))).toEqual([]);
     });
   });
@@ -2385,7 +2516,7 @@ describe('analyze, cacheUtilization detector', () => {
       [1, makeRdd(1, { numCachedPartitions: 4 })],
       [2, makeRdd(2, { numCachedPartitions: 4, storageSource: 'blockUpdates' })],
     ]);
-    const byRdd = new Map(cacheFindings(makeApp({ rddInfo })).map((f) => [f.rddId, f.validationRequired]));
+    const byRdd = new Map(cacheFindings(makeApp({ rddInfo })).filter(namesRdd).map((f) => [f.rddId, f.validationRequired]));
     expect(byRdd.get(1)).toContain('stage-submission events');
     expect(byRdd.get(2)).toContain('block-update events');
   });
@@ -2397,7 +2528,7 @@ describe('analyze, cacheUtilization detector', () => {
       numPartitions: 100, numCachedPartitions: 40, // 0.40 < 0.50 => warning partialCache
       memorySize: 290, diskSize: 710, // 0.71 > 0.40 => warning diskSpillover
     })]]);
-    const forRdd = cacheFindings(makeApp({ rddInfo })).filter((f) => f.rddId === 7);
+    const forRdd = cacheFindings(makeApp({ rddInfo })).filter(namesRdd).filter((f) => f.rddId === 7);
     expect(forRdd).toHaveLength(2);
     expect(forRdd.map((f) => f.variant).sort()).toEqual(['diskSpillover', 'partialCache']);
     expect(forRdd.every((f) => f.impactBand === 'warning')).toBe(true);
@@ -2408,7 +2539,7 @@ describe('analyze, cacheUtilization detector', () => {
       name: 'orders_cached',
       numPartitions: 100, numCachedPartitions: 62, // 0.62
     })]]);
-    const partial = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache');
+    const partial = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'partialCache')));
     expect(partial.rddId).toBe(3);
     expect(partial.rddName).toBe('orders_cached');
     expect(partial.confidence).toBe('high');
@@ -2424,10 +2555,10 @@ describe('analyze, cacheUtilization detector', () => {
       [3, makeRdd(3, { name: plan, numPartitions: 100, numCachedPartitions: 62 })],
       [4, makeRdd(4, { name: '', numPartitions: 100, numCachedPartitions: 62 })],
     ]);
-    const byRdd = new Map(cacheFindings(makeApp({ rddInfo })).map((f) => [f.rddId, f]));
-    expect(byRdd.get(3).rddName).toBe(plan);
-    expect(byRdd.get(3).recommendation).toMatch(/^RDD \*\(1\) Project \[id#0L AS row_id#1L, cast\(\(\.\.\. is 38% evicted/);
-    expect(byRdd.get(4).recommendation).toMatch(/^RDD 4 is 38% evicted/);
+    const byRdd = new Map(cacheFindings(makeApp({ rddInfo })).filter(namesRdd).map((f) => [f.rddId, f]));
+    expect(present(byRdd.get(3)).rddName).toBe(plan);
+    expect(present(byRdd.get(3)).recommendation).toMatch(/^RDD \*\(1\) Project \[id#0L AS row_id#1L, cast\(\(\.\.\. is 38% evicted/);
+    expect(present(byRdd.get(4)).recommendation).toMatch(/^RDD 4 is 38% evicted/);
   });
 
   it('confidence scales with numPartitions (sample size), not a flat medium, for both variants', () => {
@@ -2436,9 +2567,9 @@ describe('analyze, cacheUtilization detector', () => {
     const mid = new Map([[2, makeRdd(2, { numPartitions: 20, numCachedPartitions: 5 })]]); // 0.25, 10-49 partitions
     const large = new Map([[3, makeRdd(3, { numPartitions: 80, numCachedPartitions: 20 })]]); // 0.25, >=50 partitions
 
-    expect(cacheFindings(makeApp({ rddInfo: tiny })).find((f) => f.variant === 'partialCache').confidence).toBe('low');
-    expect(cacheFindings(makeApp({ rddInfo: mid })).find((f) => f.variant === 'partialCache').confidence).toBe('medium');
-    expect(cacheFindings(makeApp({ rddInfo: large })).find((f) => f.variant === 'partialCache').confidence).toBe('high');
+    expect(present(cacheFindings(makeApp({ rddInfo: tiny })).find(ofField('cacheUtilization', 'variant', 'partialCache'))).confidence).toBe('low');
+    expect(present(cacheFindings(makeApp({ rddInfo: mid })).find(ofField('cacheUtilization', 'variant', 'partialCache'))).confidence).toBe('medium');
+    expect(present(cacheFindings(makeApp({ rddInfo: large })).find(ofField('cacheUtilization', 'variant', 'partialCache'))).confidence).toBe('high');
 
     const tinySpill = new Map([[4, makeRdd(4, {
       numPartitions: 4,
@@ -2450,8 +2581,8 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 300, diskSize: 700,
     })]]);
-    expect(cacheFindings(makeApp({ rddInfo: tinySpill })).find((f) => f.variant === 'diskSpillover').confidence).toBe('low');
-    expect(cacheFindings(makeApp({ rddInfo: largeSpill })).find((f) => f.variant === 'diskSpillover').confidence).toBe('high');
+    expect(present(cacheFindings(makeApp({ rddInfo: tinySpill })).find(ofField('cacheUtilization', 'variant', 'diskSpillover'))).confidence).toBe('low');
+    expect(present(cacheFindings(makeApp({ rddInfo: largeSpill })).find(ofField('cacheUtilization', 'variant', 'diskSpillover'))).confidence).toBe('high');
   });
 
   it('carries the instance-derived diskSpillover recommendation text', () => {
@@ -2460,7 +2591,7 @@ describe('analyze, cacheUtilization detector', () => {
       storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
       memorySize: 290, diskSize: 710, // 0.71
     })]]);
-    const spill = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover');
+    const spill = present(cacheFindings(makeApp({ rddInfo })).find(ofField('cacheUtilization', 'variant', 'diskSpillover')));
     expect(spill.recommendation).toBe(
       'RDD orders_cached is 71% spilled to disk despite requesting MEMORY_AND_DISK: executor memory may be too small for it.',
     );
@@ -2473,7 +2604,7 @@ describe('analyze, cacheUtilization detector', () => {
       numPartitions: 100, numCachedPartitions: 40, // 0.40 < 0.50 => warning partialCache
       memorySize: 290, diskSize: 710, // 0.71 > 0.40 => warning diskSpillover
     })]]);
-    const forRdd = cacheFindings(makeApp({ rddInfo })).filter((f) => f.rddId === 7);
+    const forRdd = cacheFindings(makeApp({ rddInfo })).filter(namesRdd).filter((f) => f.rddId === 7);
     expect(forRdd).toHaveLength(2); // both partialCache and diskSpillover branches
     for (const finding of forRdd) {
       expect(typeof finding.memorySize).toBe('number');
@@ -2490,31 +2621,31 @@ describe('analyze, cacheUtilization detector', () => {
 
 describe('analyze, coreLocality detector', () => {
   it('returns no finding when total tasks are below thresholds.minTasks (50)', () => {
-    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'ANY', count: 40 }] })]]);
+    const stages = new Map([[1, makeTypedStage({ localityStats: [{ locality: 'ANY', count: 40 }] })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find((b) => b.type === 'coreLocality')).toBeUndefined();
+    expect(catalog.find(ofType('coreLocality'))).toBeUndefined();
   });
 
   it('returns no finding when the non-local ratio is below thresholds.warnRatio (0.15) even with enough tasks', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 90 },
         { locality: 'ANY', count: 10 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find((b) => b.type === 'coreLocality')).toBeUndefined();
+    expect(catalog.find(ofType('coreLocality'))).toBeUndefined();
   });
 
   it('emits a warning finding in the warn band (ratio >= 0.15, < 0.35)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 80 },
         { locality: 'ANY', count: 20 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('warning');
     expect(finding.metric).toBe('nonLocalRatio');
@@ -2526,34 +2657,35 @@ describe('analyze, coreLocality detector', () => {
 
   it('words the recommendation from the run: worst stages, host count and the effective locality wait', () => {
     const stages = new Map([
-      [1, makeStage({ id: 1, localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })],
-      [2, makeStage({ id: 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 100 }] })],
+      [1, makeTypedStage({ id: 1, localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })],
+      [2, makeTypedStage({ id: 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 100 }] })],
     ]);
     const executors = [
-      { executorId: '1', timestamp: 0, host: 'host-a' },
-      { executorId: '2', timestamp: 0, host: 'host-a' },
-      { executorId: '3', timestamp: 0, host: 'host-b' },
+      { ...addedExecutor('1', 0, 4), host: 'host-a' },
+      { ...addedExecutor('2', 0, 4), host: 'host-a' },
+      { ...addedExecutor('3', 0, 4), host: 'host-b' },
     ];
+    /** @param {Record<string, string>} config */
     const run = (config) => analyze(makeApp({ config }), stages, executors, [], new Map())
-      .find((b) => b.type === 'coreLocality');
-    const finding = run({ 'spark.locality.wait': '10s' });
+      .find(ofType('coreLocality'));
+    const finding = present(run({ 'spark.locality.wait': '10s' }));
     expect(finding.recommendation).toContain('on a run of 2 hosts, highest in stage 1 (40% of 100). Raise');
     expect(finding.recommendation).toContain('spark.locality.wait (10s)');
     expect(finding.remediation).toEqual([{ kind: 'conf', key: 'spark.locality.wait', direction: 'increase', suggested: null }]);
     expect(FINDING_PRESENTATION.coreLocality.genericRecommendation(finding)).toContain('Raise spark.locality.wait');
-    expect(run({}).recommendation).toContain('spark.locality.wait (3s)');
+    expect(present(run({})).recommendation).toContain('spark.locality.wait (3s)');
   });
 
   it('omits the host count when the log has no executor hosts', () => {
-    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
-    const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
+    const stages = new Map([[1, makeTypedStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
+    const finding = present(analyze(makeApp(), stages, [], [], new Map()).find(ofType('coreLocality')));
     expect(finding.recommendation).not.toContain('on a run of');
   });
 
   it('does not suggest a longer locality wait when no task reached a local slot', () => {
-    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'RACK_LOCAL', count: 20 }, { locality: 'ANY', count: 80 }] })]]);
-    const finding = analyze(makeApp({ config: { 'spark.locality.wait': '10s' } }), stages, [], [], new Map())
-      .find((b) => b.type === 'coreLocality');
+    const stages = new Map([[1, makeTypedStage({ localityStats: [{ locality: 'RACK_LOCAL', count: 20 }, { locality: 'ANY', count: 80 }] })]]);
+    const finding = present(analyze(makeApp({ config: { 'spark.locality.wait': '10s' } }), stages, [], [], new Map())
+      .find(ofType('coreLocality')));
     expect(finding.recommendation).toContain('no data-local executor exists and a longer spark.locality.wait (10s) only delays each task');
     expect(finding.recommendation).not.toContain('Raise');
     expect(finding.remediation).toEqual([]);
@@ -2562,30 +2694,30 @@ describe('analyze, coreLocality detector', () => {
 
   it('ignores local placements in stages without non-local tasks, such as a shuffle read', () => {
     const stages = new Map([
-      [1, makeStage({ id: 1, localityStats: [{ locality: 'ANY', count: 100 }] })],
-      [2, makeStage({ id: 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 100 }] })],
+      [1, makeTypedStage({ id: 1, localityStats: [{ locality: 'ANY', count: 100 }] })],
+      [2, makeTypedStage({ id: 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 100 }] })],
     ]);
-    const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
+    const finding = present(analyze(makeApp(), stages, [], [], new Map()).find(ofType('coreLocality')));
     expect(finding.recommendation).not.toContain('Raise');
     expect(finding.remediation).toEqual([]);
   });
 
   it('states the assumed fetch cost on the core-time estimate', () => {
-    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
-    const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
-    expect(finding.impactEstimate.rawWaste).toEqual({ value: 800, unit: 'coreMs' });
-    expect(finding.impactEstimate.assumptions).toMatch(/20 ms .* per non-local task/);
+    const stages = new Map([[1, makeTypedStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
+    const finding = present(analyze(makeApp(), stages, [], [], new Map()).find(ofType('coreLocality')));
+    expect(present(finding.impactEstimate).rawWaste).toEqual({ value: 800, unit: 'coreMs' });
+    expect(present(finding.impactEstimate).assumptions).toMatch(/20 ms .* per non-local task/);
   });
 
   it('emits a critical finding at/above thresholds.critRatio (0.35)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 60 },
         { locality: 'ANY', count: 40 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding.impactBand).toBe('critical');
     expect(finding.value).toBe(40);
     // Ratio alone would be 'high' (>= critRatio), but the 100-task sample is still below
@@ -2594,92 +2726,92 @@ describe('analyze, coreLocality detector', () => {
   });
 
   it('marks coreLocality confidence high when both the ratio and the task sample are large', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 180 },
         { locality: 'ANY', count: 120 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding.value).toBe(40);
     expect(finding.confidence).toBe('high');
   });
 
   it('never counts NO_PREF toward the numerator (shuffle-heavy stage with no real locality problem)', () => {
-    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'NO_PREF', count: 100 }] })]]);
+    const stages = new Map([[1, makeTypedStage({ localityStats: [{ locality: 'NO_PREF', count: 100 }] })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find((b) => b.type === 'coreLocality')).toBeUndefined();
+    expect(catalog.find(ofType('coreLocality'))).toBeUndefined();
   });
 
   // Boundary-exact cases at the literal thresholds (minTasks 50, warnRatio 0.15, critRatio 0.35); the tests above use round numbers, never the cutoffs.
   it('returns no finding at totalTasks one below minTasks (49)', () => {
-    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'ANY', count: 49 }] })]]);
+    const stages = new Map([[1, makeTypedStage({ localityStats: [{ locality: 'ANY', count: 49 }] })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find((b) => b.type === 'coreLocality')).toBeUndefined();
+    expect(catalog.find(ofType('coreLocality'))).toBeUndefined();
   });
 
   it('emits a finding at totalTasks exactly at minTasks (50)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 42 },
         { locality: 'ANY', count: 8 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding).toBeTruthy();
     expect(finding.value).toBe(16);
   });
 
   it('returns no finding at ratio just below warnRatio (0.14)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 86 },
         { locality: 'ANY', count: 14 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.find((b) => b.type === 'coreLocality')).toBeUndefined();
+    expect(catalog.find(ofType('coreLocality'))).toBeUndefined();
   });
 
   it('emits a warning finding at ratio exactly at warnRatio (0.15)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 85 },
         { locality: 'ANY', count: 15 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('warning');
     expect(finding.value).toBe(15);
   });
 
   it('stays a warning finding at ratio just below critRatio (0.34)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 66 },
         { locality: 'ANY', count: 34 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('warning');
     expect(finding.value).toBe(34);
   });
 
   it('emits a critical finding at ratio exactly at critRatio (0.35)', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 65 },
         { locality: 'ANY', count: 35 },
       ],
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    const finding = catalog.find((b) => b.type === 'coreLocality');
+    const finding = present(catalog.find(ofType('coreLocality')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('critical');
     expect(finding.value).toBe(35);
@@ -2688,13 +2820,16 @@ describe('analyze, coreLocality detector', () => {
 
 describe('analyze, autoscaling churn detector (short-lived executors)', () => {
   // Builds executorsAdded/removed pairs; removedAt === null means still alive at app.endTime.
+  /** @param {{ addedAt: number, removedAt: number | null }[]} pairs */
   function addedAndRemoved(pairs) {
+    /** @type {ExecutorAddedEvent[]} */
     const added = [];
+    /** @type {ExecutorRemovedEvent[]} */
     const removed = [];
     pairs.forEach((p, i) => {
       const executorId = String(i + 1);
-      added.push({ executorId, timestamp: p.addedAt, totalCores: 1 });
-      if (p.removedAt != null) removed.push({ executorId, timestamp: p.removedAt });
+      added.push(addedExecutor(executorId, p.addedAt, 1));
+      if (p.removedAt != null) removed.push(removedExecutor(executorId, p.removedAt));
     });
     return { added, removed };
   }
@@ -2707,7 +2842,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
       { addedAt: 0, removedAt: 60_000 },
     ]);
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('does not throw when app is null (ApplicationStart never parsed)', () => {
@@ -2717,7 +2852,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
       { addedAt: 0, removedAt: 60_000 },
     ]);
     const catalog = analyze(null, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('emits no finding below minExecutors (sample-size guard)', () => {
@@ -2727,7 +2862,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
       { addedAt: 0, removedAt: 1000 }, { addedAt: 0, removedAt: 1000 }, { addedAt: 0, removedAt: 1000 },
     ]);
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('emits no finding for executors added early and never removed in a short app', () => {
@@ -2736,7 +2871,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
       Array.from({ length: 6 }, () => ({ addedAt: 1000, removedAt: null })),
     );
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('emits no finding for late-added executors that are never removed in a long app', () => {
@@ -2748,7 +2883,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('measures the short-lived share over removed executors only', () => {
@@ -2760,7 +2895,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    const finding = present(catalog.find(ofType('autoscalingChurn')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('critical');
     expect(finding.value).toBe(100);
@@ -2775,7 +2910,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('emits no finding when all executors are long-lived', () => {
@@ -2784,7 +2919,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
       Array.from({ length: 5 }, () => ({ addedAt: 0, removedAt: 600_000 })),
     );
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('emits a warning finding just over the 30% short-lived threshold', () => {
@@ -2796,7 +2931,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    const finding = present(catalog.find(ofType('autoscalingChurn')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('warning');
     expect(finding.value).toBe(31);
@@ -2813,7 +2948,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    const finding = present(catalog.find(ofType('autoscalingChurn')));
     expect(finding.value).toBe(50);
     expect(finding.confidence).toBe('medium');
   });
@@ -2827,7 +2962,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    const finding = present(catalog.find(ofType('autoscalingChurn')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('critical');
     expect(finding.value).toBe(61);
@@ -2843,7 +2978,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+    expect(catalog.find(ofType('autoscalingChurn'))).toBeUndefined();
   });
 
   it('stays warning (does not escalate to critical) at exactly the 60% boundary', () => {
@@ -2854,7 +2989,7 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     ];
     const { added, removed } = addedAndRemoved(pairs);
     const catalog = analyze(app, new Map(), added, removed);
-    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    const finding = present(catalog.find(ofType('autoscalingChurn')));
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('warning');
   });
@@ -2865,61 +3000,60 @@ describe('analyze, impact estimator: executor-churn ceiling regression', () => {
   // A cumulative sum would total 6, understating the ceiling and letting gc claim wall-clock a saturated stage has no room to give up.
   const churnedApp = makeApp({ startTime: 0, endTime: 10000, resources: { executor: { cores: 2 } } });
   const churnedAdded = [
-    { executorId: '1', timestamp: 0, totalCores: 2 },
-    { executorId: '2', timestamp: 1000, totalCores: 2 },
-    { executorId: '3', timestamp: 2000, totalCores: 2 },
+    addedExecutor('1', 0, 2),
+    addedExecutor('2', 1000, 2),
+    addedExecutor('3', 2000, 2),
   ];
   const churnedRemoved = [
-    { executorId: '1', timestamp: 1000 },
-    { executorId: '2', timestamp: 2000 },
+    removedExecutor('1', 1000),
+    removedExecutor('2', 2000),
   ];
-  const churnedStage = makeStage({
+  const churnedStage = makeTypedStage({
     submittedAt: 0, completedAt: 10000, executorRunTime: 20000, jvmGCTime: 15000,
     gcPct: 50, taskDurationMax: 100, taskDurationP50: 100,
   });
 
   it('does not let executor churn inflate a stage-scoped finding claimed wall-clock', () => {
     const catalog = analyze(churnedApp, new Map([[1, churnedStage]]), churnedAdded, churnedRemoved);
-    const gc = catalog.find((b) => b.type === 'gc' && b.stageId === 1);
+    const gc = present(catalog.find(ofType('gc', b => b.stageId === 1)));
     expect(gc).toBeTruthy();
     // Saturated at true peak capacity (2 cores) for the whole window, so no slack to reclaim.
-    expect(gc.impactEstimate.wallClock).toEqual({ low: 0, high: 0 });
+    expect(present(gc.impactEstimate).wallClock).toEqual({ low: 0, high: 0 });
   });
 });
 
 describe("analyze: recommendation text interpolates the finding's own numbers", () => {
   it('skew: includes the measured ratio', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
+    const stages = new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('skew')));
     expect(b.recommendation).toContain(`${b.value}×`);
   });
 
   it('stageShape (taskStageSkew): includes the stage share and the ratio to the median task', () => {
-    const execs = (n) => Array.from({ length: n }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 }));
-    const stage = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
-    const found = analyze(makeApp(), new Map([[1, stage]]), [], []).find(b => b.rule === 'taskStageSkew');
+      const stage = makeTypedStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
+    const found = present(analyze(makeApp(), new Map([[1, stage]]), [], []).find(ofField('stageShape', 'rule', 'taskStageSkew')));
     expect(found.recommendation).toContain('90%');
     expect(found.recommendation).toContain('9×');
   });
 
   it('shuffle: includes the shuffled byte figure', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 600 * 1024 * 1024 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'shuffle');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadBytes: 600 * 1024 * 1024 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('shuffle')));
     expect(b.recommendation).toContain(formatBytes(b.value));
   });
 
   it('partitionSizing (shufflePartitionSkew): includes the larger/median byte figures', () => {
     const MiB = 1024 * 1024;
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
-    const found = analyze(makeApp(), stages, [], []).find(b => b.type === 'partitionSizing' && b.rule === 'shufflePartitionSkew');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
+    const found = present(analyze(makeApp(), stages, [], []).find(ofField('partitionSizing', 'rule', 'shufflePartitionSkew')));
     expect(found.recommendation).toContain(formatBytes(300 * MiB));
     expect(found.recommendation).toContain(formatBytes(10 * MiB));
   });
 
   it('partitionSizing (shufflePartitionSkew): p50 of 0 avoids a divide-by-zero "Infinity×"', () => {
     const MiB = 1024 * 1024;
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 0, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
-    const found = analyze(makeApp(), stages, [], []).find(b => b.type === 'partitionSizing' && b.rule === 'shufflePartitionSkew');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadP50: 0, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
+    const found = present(analyze(makeApp(), stages, [], []).find(ofField('partitionSizing', 'rule', 'shufflePartitionSkew')));
     expect(found.recommendation).not.toContain('Infinity');
     expect(found.recommendation).toContain(formatBytes(300 * MiB));
     expect(found.recommendation).toContain('effectively empty');
@@ -2927,45 +3061,45 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
 
   it("partitionSizing (maxPartitionTooBig): includes the oversized partition's byte figure", () => {
     const MiB = 1024 * 1024;
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 6 * 1024 * MiB, shuffleReadBytes: 7 * 1024 * MiB, taskCount: 50 })]]);
-    const found = analyze(makeApp(), stages, [], []).find(b => b.type === 'partitionSizing' && b.rule === 'maxPartitionTooBig');
+    const stages = new Map([[1, makeTypedStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 6 * 1024 * MiB, shuffleReadBytes: 7 * 1024 * MiB, taskCount: 50 })]]);
+    const found = present(analyze(makeApp(), stages, [], []).find(ofField('partitionSizing', 'rule', 'maxPartitionTooBig')));
     expect(found.recommendation).toContain(formatBytes(6 * 1024 * MiB));
   });
 
   it('spill (skew-driven): includes the spilled byte figure', () => {
-    const stages = new Map([[1, makeStage({ memoryBytesSpilled: 2 * 1024 * 1024 * 1024, spillClassification: 'skew' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ memoryBytesSpilled: 2 * 1024 * 1024 * 1024, spillClassification: 'skew' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.recommendation).toContain(formatBytes(2 * 1024 * 1024 * 1024));
   });
 
   it('spill (volume-driven): includes the spilled byte figure', () => {
-    const stages = new Map([[1, makeStage({ memoryBytesSpilled: 500 * 1024 * 1024, spillClassification: 'volume' })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'spill');
+    const stages = new Map([[1, makeTypedStage({ memoryBytesSpilled: 500 * 1024 * 1024, spillClassification: 'volume' })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('spill')));
     expect(b.recommendation).toContain(formatBytes(500 * 1024 * 1024));
   });
 
   it('gc (high): includes the measured GC percentage', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 25, executorRunTime: 60000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
+    const stages = new Map([[1, makeTypedStage({ gcPct: 25, executorRunTime: 60000 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('gc', x => x.direction !== 'low')));
     expect(b.recommendation).toContain(`${b.value}%`);
   });
 
   it('gc (low): includes the measured GC percentage', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'gc' && x.direction === 'low');
+    const stages = new Map([[1, makeTypedStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('gc', x => x.direction === 'low')));
     expect(b.recommendation).toContain(`${b.value}%`);
   });
 
   it('stageSlowness: includes the stage duration in minutes', () => {
     const min = 60000;
-    const slow = makeStage({ id: 1, executorRunTime: 40 * min * 4, executorStats: Array.from({ length: 4 }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), hostStats: [], submittedAt: 0, completedAt: 40 * min });
-    const b = analyze(makeApp(), new Map([[1, slow]]), [], []).find(x => x.type === 'stageSlowness');
+    const slow = makeTypedStage({ id: 1, executorRunTime: 40 * min * 4, executorStats: execs(4), hostStats: [], submittedAt: 0, completedAt: 40 * min });
+    const b = present(analyze(makeApp(), new Map([[1, slow]]), [], []).find(ofType('stageSlowness')));
     expect(b.recommendation).toContain(`${b.value} minutes`);
   });
 
   it('stageFailed: valueText carries the raw reason, value stays unset, recommendation stays reason-free', () => {
-    const stages = new Map([[1, makeStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'stageFailed');
+    const stages = new Map([[1, makeTypedStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('stageFailed')));
     expect(b.valueText).toBe('Job aborted due to stage failure');
     expect(b.value).toBeUndefined();
     expect(b.recommendation).not.toContain('Job aborted due to stage failure');
@@ -2973,78 +3107,80 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
   });
 
   it('failures: includes the failure rate and dominant reason', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 25, failureReasons: [{ reason: 'FetchFailed', count: 25 }] })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'failures');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 25, failureReasons: [{ reason: 'FetchFailed', count: 25 }] })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('failures')));
     expect(b.recommendation).toContain(`${b.value}%`);
     expect(b.recommendation).toContain('FetchFailed');
   });
 
   it('straggler: includes the straggler share', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'straggler');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b.recommendation).toContain(`${b.value}%`);
   });
 
   it('speculationWaste: includes the wasted time', () => {
-    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 5, speculationWasteMs: 90000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'speculationWaste');
-    expect(b.recommendation).toContain(`${Math.round(b.value / 1000)}s`);
+    const stages = new Map([[1, makeTypedStage({ speculationWastedAttempts: 5, speculationWasteMs: 90000 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('speculationWaste')));
+    expect(b.recommendation).toContain(`${Math.round(present(b.value) / 1000)}s`);
   });
 
   it('retryWaste: includes the wasted time and attempt count', () => {
-    const stages = new Map([[1, makeStage({ wastedAttempts: 4, retryWasteMs: 360000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'retryWaste');
-    expect(b.recommendation).toContain(`${Math.round(b.value / 1000)}s`);
+    const stages = new Map([[1, makeTypedStage({ wastedAttempts: 4, retryWasteMs: 360000 })]]);
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('retryWaste')));
+    expect(b.recommendation).toContain(`${Math.round(present(b.value) / 1000)}s`);
     expect(b.recommendation).toContain('4 attempts');
   });
 
   it('coldStart: includes the startup gap in seconds', () => {
     const app = makeApp({ startTime: 1000, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 2000 })]]);
-    const added = [{ executorId: '1', timestamp: 42000, totalCores: 4 }];
-    const b = analyze(app, stages, added, []).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeTypedStage({ submittedAt: 2000 })]]);
+    const added = [addedExecutor('1', 42000, 4)];
+    const b = present(analyze(app, stages, added, []).find(ofType('coldStart')));
     expect(b.recommendation).toContain(`${b.value}s`);
   });
 
   it('utilization: includes the measured utilization percentage', () => {
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: 4 } } });
-    const stages = new Map([[1, makeStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
+    const stages = new Map([[1, makeTypedStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
     const added = [
-      { executorId: '1', timestamp: 1000, totalCores: 4 },
-      { executorId: '2', timestamp: 1000, totalCores: 4 },
+      addedExecutor('1', 1000, 4),
+      addedExecutor('2', 1000, 4),
     ];
-    const removed = [{ executorId: '2', timestamp: 2000 }];
-    const b = analyze(app, stages, added, removed).find(x => x.type === 'utilization');
+    const removed = [removedExecutor('2', 2000)];
+    const b = present(analyze(app, stages, added, removed).find(ofType('utilization')));
     expect(b.recommendation).toContain(`${b.value}%`);
   });
 
   it('memoryUtilization (idleCores): includes the idle-core-time percentage', () => {
+    /** @param {number} busyCoreMs @param {number} peak @returns {RunAggregates} */
     const raBusy = (busyCoreMs, peak) => ({ coreHistogram: [], busyCoreMs, peakConcurrentCores: peak, perStage: {} });
     const app = makeApp({ startTime: 0, endTime: 10000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
-    const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];
-    const catalog = analyze(app, new Map([[1, makeStage()]]), added, [], new Map(), new Map(), raBusy(20000, 8));
-    const b = catalog.find(x => x.type === 'memoryUtilization' && x.variant === 'idleCores');
+    const added = [addedExecutor('1', 0, 4), addedExecutor('2', 0, 4)];
+    const catalog = analyze(app, new Map([[1, makeTypedStage()]]), added, [], new Map(), new Map(), raBusy(20000, 8));
+    const b = present(catalog.find(ofField('memoryUtilization', 'variant', 'idleCores')));
     expect(b.recommendation).toContain(`${b.value}% of available core-time ran no task`);
   });
 
   it('memoryUtilization (wasteModel): includes the wasted MB-seconds figure', () => {
+    /** @param {number} busyCoreMs @param {number} peak @returns {RunAggregates} */
     const raBusy = (busyCoreMs, peak) => ({ coreHistogram: [], busyCoreMs, peakConcurrentCores: peak, perStage: {} });
     const app = makeApp({ startTime: 0, endTime: 3600000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
-    const added = Array.from({ length: 4 }, (_, i) => ({ executorId: String(i), timestamp: 0, totalCores: 4 }));
-    const stage = makeStage({ executorRunTime: 1000 });
+    const added = Array.from({ length: 4 }, (_, i) => (addedExecutor(String(i), 0, 4)));
+    const stage = makeTypedStage({ executorRunTime: 1000 });
     const catalog = analyze(app, new Map([[1, stage]]), added, [], new Map(), new Map(), raBusy(0, 0));
-    const b = catalog.find(x => x.type === 'memoryUtilization' && x.variant === 'wasteModel');
-    expect(b.recommendation).toContain(b.value.toLocaleString('en-US'));
+    const b = present(catalog.find(ofField('memoryUtilization', 'variant', 'wasteModel')));
+    expect(b.recommendation).toContain(present(b.value).toLocaleString('en-US'));
   });
 
   it('coreLocality: includes the non-local percentage and task count', () => {
-    const stages = new Map([[1, makeStage({
+    const stages = new Map([[1, makeTypedStage({
       localityStats: [
         { locality: 'PROCESS_LOCAL', count: 80 },
         { locality: 'ANY', count: 20 },
       ],
     })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'coreLocality');
+    const b = present(analyze(makeApp(), stages, [], []).find(ofType('coreLocality')));
     expect(b.recommendation).toContain(`${b.value}%`);
     expect(b.recommendation).toContain(`(${b.nonLocalTaskCount})`);
   });
@@ -3053,31 +3189,36 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     const jobs = new Map();
     for (let i = 0; i < 9; i++) jobs.set(i, { id: i, submissionTime: 0, stageIds: [], result: 'JobSucceeded', succeeded: true, exception: null, completionTime: 100 });
     jobs.set(9, { id: 9, submissionTime: 0, stageIds: [], result: 'JobFailed', succeeded: false, exception: null, completionTime: 100 });
-    const b = analyze(makeApp(), new Map(), [], [], jobs).find(x => x.type === 'jobFailureRate');
+    const b = present(analyze(makeApp(), new Map(), [], [], jobs).find(ofType('jobFailureRate')));
     expect(b.recommendation).toContain(`${b.failedJobs} of ${b.totalJobs} jobs`);
   });
 
   it('configAudit (serializer): includes the current serializer', () => {
-    const app = { config: { 'spark.executor.memory': '4g' }, resources: { executor: {}, driver: {}, dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null } };
-    const f = auditConfig(app, new Map([[1, makeStage()]])).find(x => x.property === 'spark.serializer');
+    const app = { config: { 'spark.executor.memory': '4g' }, resources: {
+      executor: { memory: null, memoryMB: null, memoryOverhead: null, memoryOverheadMB: null, cores: null, instances: null },
+      driver: { memory: null, memoryMB: null, memoryOverhead: null, memoryOverheadMB: null, cores: null },
+      dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null, stageExecutorMetricsLogging: null,
+    } };
+    const f = present(auditConfig(app, new Map([[1, makeTypedStage()]])).find(ofField('configAudit', 'property', 'spark.serializer')));
     expect(f.recommendation).toContain('the default JavaSerializer');
   });
 });
 
 describe('analyze: threshold overrides', () => {
   // 3.5x P95/median: over skew's default 3x ratioWarn.
-  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
+  const skewStages = () => new Map([[1, makeTypedStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
+  /** @param {Thresholds | undefined} thresholds */
   const run = (thresholds) => analyze(makeApp(), skewStages(), [], [], new Map(), new Map(), null, { thresholds });
 
   it('runs every detector on its own thresholds when no override is passed, labeling nothing', () => {
     const findings = run(undefined);
-    expect(findings.some((f) => f.type === 'skew')).toBe(true);
+    expect(findings.some(ofType('skew'))).toBe(true);
     for (const f of findings) expect(f.tunedThresholds, f.type).toBeUndefined();
   });
 
   it('a raised threshold stops the finding; a lowered one keeps it, labeled with value and default', () => {
-    expect(run({ skew: { ratioWarn: 4 } }).some((f) => f.type === 'skew')).toBe(false);
-    const [skew] = run({ skew: { ratioWarn: 2 } }).filter((f) => f.type === 'skew');
+    expect(run({ skew: { ratioWarn: 4 } }).some(ofType('skew'))).toBe(false);
+    const [skew] = run({ skew: { ratioWarn: 2 } }).filter(ofType('skew'));
     expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
     expect(skew.validationRequired).toContain('at least 0.5% of run time');
     expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
@@ -3085,18 +3226,18 @@ describe('analyze: threshold overrides', () => {
   });
 
   it('estimates a tuned finding exactly as its untuned twin, with the label and caveat attached', () => {
-    const tuned = run({ skew: { ratioWarn: 2 } }).find((f) => f.type === 'skew');
-    const untuned = run(undefined).find((f) => f.type === 'skew');
+    const tuned = present(run({ skew: { ratioWarn: 2 } }).find(ofType('skew')));
+    const untuned = present(run(undefined).find(ofType('skew')));
     expect(tuned.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
     expect(tuned.validationRequired).toContain('estimate is unvalidated');
-    expect(tuned.impactEstimate.wallClock).not.toBeNull();
+    expect(present(tuned.impactEstimate).wallClock).not.toBeNull();
     expect(tuned.impactEstimate).toEqual(untuned.impactEstimate);
     expect(tuned.impactBand).toBe(untuned.impactBand);
   });
 
   it('labels only the tuned detector\'s findings, and not an override equal to the default', () => {
     const findings = run({ skew: { ratioWarn: 3 }, tinyTask: { minTasks: 1 } });
-    expect(findings.find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+    expect(present(findings.find(ofType('skew'))).tunedThresholds).toBeUndefined();
     for (const f of findings.filter((f) => f.type !== 'tinyTask')) expect(f.tunedThresholds, f.type).toBeUndefined();
   });
 
@@ -3104,47 +3245,53 @@ describe('analyze: threshold overrides', () => {
     const before = JSON.stringify(DETECTORS.map((d) => d.thresholds));
     run({ skew: { ratioWarn: 2 } });
     expect(JSON.stringify(DETECTORS.map((d) => d.thresholds))).toBe(before);
-    expect(run(undefined).find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+    expect(present(run(undefined).find(ofType('skew'))).tunedThresholds).toBeUndefined();
   });
 
   it('refuses an override the entry does not declare, or one shaped unlike its default', () => {
+    // @ts-expect-error a deliberately invalid override
     expect(() => run({ skew: { ratioWarm: 2 } })).toThrow('Detector skew has no threshold "ratioWarm".');
+    // @ts-expect-error a deliberately invalid override
     expect(() => run({ skew: { constructor: 2 } })).toThrow('Detector skew has no threshold "constructor".');
+    // @ts-expect-error a deliberately invalid override
     expect(() => run({ skew: { toString: 2 } })).toThrow('Detector skew has no threshold "toString".');
     expect(() => run({ slowHost: { ratioTiers: [1, 2] } })).toThrow('Threshold slowHost.ratioTiers must have the same shape as its default.');
+    // @ts-expect-error a deliberately invalid override
     expect(() => run({ skew: { ratioWarn: [2] } })).toThrow('must have the same shape');
   });
 
   it('grades a tuned straggler finding against its tuned runtime floors', () => {
     // 8% stragglers; a 200ms tail on the 5s fixture run is 4%, over the default 2% critical floor.
-    const stages = () => new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
+    const stages = () => new Map([[1, makeTypedStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
+    /** @param {Thresholds | undefined} thresholds */
     const straggler = (thresholds) => analyze(makeApp(), stages(), [], [], new Map(), new Map(), null, { thresholds })
-      .find((f) => f.type === 'straggler');
-    expect(straggler(undefined).impactBand).toBe('critical');
-    expect(straggler({ straggler: { floorPctCrit: 0.5 } }).impactBand).toBe('warning');
+      .find(ofType('straggler'));
+    expect(present(straggler(undefined)).impactBand).toBe('critical');
+    expect(present(straggler({ straggler: { floorPctCrit: 0.5 } })).impactBand).toBe('warning');
     // An 8% share fires past shareWarn whatever the floor; a 5% warn floor now grades its 4% tail info.
-    expect(straggler({ straggler: { floorPctWarn: 0.05, floorPctCrit: 0.1 } }).impactBand).toBe('info');
+    expect(present(straggler({ straggler: { floorPctWarn: 0.05, floorPctCrit: 0.1 } })).impactBand).toBe('info');
   });
 
   it('states the tuned floor in the finding\'s own caveat text', () => {
-    const gcStage = () => new Map([[1, makeStage({ executorRunTime: 120000, gcPct: 20 })]]);
+    const gcStage = () => new Map([[1, makeTypedStage({ executorRunTime: 120000, gcPct: 20 })]]);
+    /** @param {Thresholds | undefined} thresholds */
     const gc = (thresholds) => analyze(makeApp(), gcStage(), [], [], new Map(), new Map(), null, { thresholds })
-      .find((f) => f.type === 'gc');
-    expect(gc(undefined).validationRequired).toBe('Checked only on stages with at least 10s of executor run time.');
-    const tuned = gc({ gc: { minRunTimeMs: 60000 } }).validationRequired;
+      .find(ofType('gc'));
+    expect(present(gc(undefined)).validationRequired).toBe('Checked only on stages with at least 10s of executor run time.');
+    const tuned = present(gc({ gc: { minRunTimeMs: 60000 } })).validationRequired;
     expect(tuned).toContain('at least 60s of executor run time');
     expect(tuned).not.toContain('10s');
-    expect(run({ skew: { ratioWarn: 2, floorPctWarn: 0.01 } }).find((f) => f.type === 'skew').validationRequired)
+    expect(present(run({ skew: { ratioWarn: 2, floorPctWarn: 0.01 } }).find(ofType('skew'))).validationRequired)
       .toContain('at least 1% of run time');
   });
 
   it('adds the unvalidated-estimate caveat only to a tuned finding that carries an estimate figure', () => {
     // 10% failed tasks: over a tuned 1% warnRate. failures has no waste model, so no figure to caveat.
-    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 10 })]]);
-    const failures = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { failures: { warnRate: 0.01 } } })
-      .find((f) => f.type === 'failures');
+    const stages = new Map([[1, makeTypedStage({ taskCount: 100, failedTasks: 10 })]]);
+    const failures = present(analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { failures: { warnRate: 0.01 } } })
+      .find(ofType('failures')));
     expect(failures.tunedThresholds).toEqual({ warnRate: { value: 0.01, default: 0.05 } });
-    expect(failures.impactEstimate.basis).toBe('informational');
+    expect(present(failures.impactEstimate).basis).toBe('informational');
     expect(failures.validationRequired ?? '').toContain('Produced with tuned thresholds: warnRate 0.01 (default 0.05).');
     expect(failures.validationRequired ?? '').not.toContain('estimate');
   });
@@ -3154,24 +3301,26 @@ describe('analyze: rightSizing', () => {
   // 4 executors x 4 cores held for 100 s. One 8-task stage of 80 s of work ran for 10 s, so its
   // modeled makespan stops falling at 8 cores.
   const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4 } } });
-  const added = ['a', 'b', 'c', 'd'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 4 }));
+  const added = ['a', 'b', 'c', 'd'].map((executorId) => addedExecutor(executorId, 0, 4));
+  /** @param {NonNullable<RunAggregates['perStage']>} perStage @returns {RunAggregates} */
   const ra = (perStage) => ({ coreHistogram: [], busyCoreMs: 80000, peakConcurrentCores: 16, perStage });
   const eightTasks = { 1: { totalTaskDurationSum: 80000, taskCount: 8 } };
+  /** @param {{ stageEnd?: number, perStage?: NonNullable<RunAggregates['perStage']>, thresholds?: Thresholds, executors?: ExecutorAddedEvent[] }} [options] */
   const run = ({ stageEnd = 10000, perStage = eightTasks, thresholds, executors = added } = {}) => analyze(
-    app, new Map([[1, makeStage({ completedAt: stageEnd })]]), executors, [], sampleJobs, new Map(), ra(perStage),
+    app, new Map([[1, makeTypedStage({ completedAt: stageEnd })]]), executors, [], sampleJobs, new Map(), ra(perStage),
     thresholds ? { thresholds } : undefined,
-  ).find((f) => f.type === 'rightSizing');
+  ).find(ofType('rightSizing'));
 
   it('reports the modeled core count with the numbers behind it, at low confidence', () => {
-    const finding = run();
+    const finding = present(run());
     expect(finding).toMatchObject({
       value: 8, observedCores: 16, observedActiveMs: 10000, modeledActiveMs: 10000, modelErrorPct: 0,
       confidence: 'low', impactBand: 'warning',
     });
     expect(finding.recommendation).toContain('At its peak the run held 16 cores. A simple model predicts that about 8 would run the stages in 10.0s, within 10% of the 10.0s they took');
     expect(finding.validationRequired).toContain('At 16 cores it misses the real time by 0%.');
-    expect(finding.remediation.map((r) => r.key)).toContain('spark.executor.instances');
-    expect(finding.impactEstimate.basis).toBe('informational');
+    expect(present(finding.remediation).map((r) => ('key' in r ? r.key : undefined))).toContain('spark.executor.instances');
+    expect(present(finding.impactEstimate).basis).toBe('informational');
   });
 
   it('stays silent when the model misses the observed stage time by more than the bound', () => {
@@ -3184,22 +3333,22 @@ describe('analyze: rightSizing', () => {
   });
 
   it('stays silent on a small cluster', () => {
-    const small = [{ executorId: 'a', timestamp: 0, totalCores: 4 }];
+    const small = [addedExecutor('a', 0, 4)];
     expect(run({ executors: small, perStage: { 1: { totalTaskDurationSum: 40000, taskCount: 1 } } })).toBeUndefined();
   });
 
   it('stays silent without per-stage aggregates', () => {
-    const finding = analyze(app, new Map([[1, makeStage()]]), added, [], sampleJobs, new Map(), null)
-      .find((f) => f.type === 'rightSizing');
+    const finding = analyze(app, new Map([[1, makeTypedStage()]]), added, [], sampleJobs, new Map(), null)
+      .find(ofType('rightSizing'));
     expect(finding).toBeUndefined();
   });
 
   it('follows threshold overrides and labels the tuned run', () => {
     // 8 of 16 cores is a 50% share: a 40% cap silences it, a 60% cap keeps it.
     expect(run({ thresholds: { rightSizing: { maxCoreShare: 0.4 } } })).toBeUndefined();
-    const tuned = run({ thresholds: { rightSizing: { maxCoreShare: 0.6 } } });
+    const tuned = present(run({ thresholds: { rightSizing: { maxCoreShare: 0.6 } } }));
     expect(tuned.tunedThresholds).toEqual({ maxCoreShare: { value: 0.6, default: 0.75 } });
     // A wider tolerance finds a smaller cluster.
-    expect(run({ thresholds: { rightSizing: { tolerancePct: 40 } } }).value).toBe(6);
+    expect(present(run({ thresholds: { rightSizing: { tolerancePct: 40 } } })).value).toBe(6);
   });
 });

@@ -1,4 +1,5 @@
 import type { ExchangeWidth, Finding } from './finding-types.ts';
+import type { SparkPlanInfo } from './event-schemas.ts';
 import type { FinalizedStage } from './stage-quantiles.ts';
 export type { DetectorType, FindingType } from './detectors.ts';
 // `@sparkforensics/core/types` entry point: the finding variants are exported from here with the model types.
@@ -185,6 +186,10 @@ export interface SqlExecution {
   commandArguments?: string;
   /** Session settings this execution ran with that differ from the SparkContext's (`SQLExecutionStart.modifiedConfigs`). */
   modifiedConfigs?: Record<string, string>;
+  /** The plan as logged while the execution runs, null once the parser has resolved it into the `sqlPlan` tree. */
+  sparkPlanInfo?: SparkPlanInfo | null;
+  /** True once AQE re-planned this execution mid-run. */
+  hadAdaptiveUpdate?: boolean;
 }
 export interface PlanGraphNodeData {
   id: string;
