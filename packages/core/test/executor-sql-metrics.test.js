@@ -33,33 +33,46 @@ const planInfo = {
   metrics: [],
 };
 
+/** @param {number} id @param {string} name @param {unknown} value */
 const sqlAccumulable = (id, name, value) => ({ ID: id, Name: name, Value: value, Internal: true, 'Count Failed Values': true, Metadata: 'sql' });
 
+/**
+ * @param {object[]} lines
+ * @returns {import('../src/parser-messages.ts').ParserMessage[]}
+ */
 function run(lines) {
   const state = createState();
+  /** @type {import('../src/parser-messages.ts').ParserMessage[]} */
   const messages = [];
   for (const line of lines) dispatchLine(JSON.stringify(line), state, (m) => messages.push(m));
   return messages;
 }
 
 const execStart = { Event: `${SQL}SQLExecutionStart`, executionId: 0, description: 'q', physicalPlanDescription: '', sparkPlanInfo: planInfo, time: 1 };
+/** @param {number} jobId @param {number} stageId */
 const jobStart = (jobId, stageId) => ({
   Event: 'SparkListenerJobStart', 'Job ID': jobId, 'Submission Time': 2, 'Stage IDs': [stageId], Properties: { 'spark.sql.execution.id': '0' },
 });
+/** @param {number} id */
 const stageSubmitted = (id) => ({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': id, 'Stage Attempt ID': 0, 'Number of Tasks': 1, 'Submission Time': 3 } });
+/** @param {number} id @param {object[] | undefined} accumulables */
 const stageCompleted = (id, accumulables) => ({
   Event: 'SparkListenerStageCompleted',
   'Stage Info': { 'Stage ID': id, 'Stage Attempt ID': 0, 'Number of Tasks': 1, 'Submission Time': 3, 'Completion Time': 9, Accumulables: accumulables },
 });
 const execEnd = { Event: `${SQL}SQLExecutionEnd`, executionId: 0, time: 10 };
 
+/** @param {object[]} lines */
 function resolvedPlan(lines) {
   const sqlPlan = run(lines).find((m) => m.type === 'sqlPlan');
   expect(sqlPlan).toBeDefined();
+  if (sqlPlan?.type !== 'sqlPlan') throw new Error('no sqlPlan message');
   return sqlPlan.data.planTree;
 }
 
+/** @param {import('../src/types.ts').PlanNode} tree @param {string} name */
 function metricsOf(tree, name) {
+  /** @type {import('../src/types.ts').PlanNode['metrics']} */
   let found;
   walkPlanTree(tree, (n) => { if (n.name === name && (!n.exchangeRole || n.exchangeRole === 'write')) found = n.metrics; });
   return found;
@@ -84,7 +97,7 @@ describe('executor-side SQL metric values', () => {
       stageCompleted(1, [sqlAccumulable(21, 'data size', '100')]),
       execEnd,
     ]);
-    expect(metricsOf(tree, 'Exchange')[0].value).toBe(100);
+    expect(metricsOf(tree, 'Exchange')?.[0].value).toBe(100);
   });
 
   it('prefers a driver-side value over an executor-side one', () => {
@@ -134,6 +147,7 @@ describe('executor-side SQL metric values', () => {
 });
 
 describe('resolvePlanTree: executor-side map', () => {
+  /** @param {NonNullable<import('../src/event-schemas.ts').SparkPlanInfo['metrics']>} metrics */
   const raw = (metrics) => ({ nodeName: 'Sort', simpleString: 'Sort', children: [], metrics });
 
   it('falls back to the executor-side map only for accumulators the driver map lacks', () => {
@@ -153,6 +167,11 @@ describe('resolvePlanTree: executor-side map', () => {
 });
 
 describe('plan fingerprints', () => {
+  /**
+   * @param {NonNullable<import('../src/types.ts').PlanNode['metrics']>} metrics
+   * @param {import('../src/types.ts').PlanNode[]} [children]
+   * @returns {import('../src/types.ts').PlanNode}
+   */
   const node = (metrics, children = []) => ({ name: 'Exchange', metrics, children });
 
   it('ignore executor-side metrics, so ids derived from them do not shift', () => {
@@ -161,9 +180,13 @@ describe('plan fingerprints', () => {
       { name: 'number of partitions', value: 4 },
       { name: 'data size', value: 96, executorSide: true },
     ]);
-    const a = computePlanShapes(driverOnly).shapeOf.get(driverOnly).fingerprint;
-    const b = computePlanShapes(withExecutor).shapeOf.get(withExecutor).fingerprint;
-    expect(b).toBe(a);
+    /** @param {import('../src/types.ts').PlanNode} root */
+    const fingerprintOf = (root) => {
+      const shape = computePlanShapes(root).shapeOf.get(root);
+      if (!shape) throw new Error('no shape for the root');
+      return shape.fingerprint;
+    };
+    expect(fingerprintOf(withExecutor)).toBe(fingerprintOf(driverOnly));
   });
 });
 
@@ -171,12 +194,13 @@ describe('public corpus', () => {
   const logs = ['spark-3.5-parquet-baseline', 'spark-4.0-parquet-baseline', 'spark-4.1-parquet-baseline', 'spark-4.2-parquet-baseline'];
   for (const name of logs) {
     it.skipIf(!corpusLog(`${name}.ndjson`))(`${name}: every shuffle Exchange resolves a non-zero data size`, async () => {
-      const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
+      const { appModel } = await collectRun(/** @type {string} */ (corpusLog(`${name}.ndjson`))); // skipIf guarantees a path
+      /** @type {(number | undefined)[]} */
       const sizes = [];
       for (const exec of appModel.sql.values()) {
         if (!exec.planTree) continue;
         walkPlanTree(exec.planTree, (n) => {
-          if (n.name === 'Exchange' && n.exchangeRole === 'write') sizes.push(n.metrics.find((m) => m.name === 'data size')?.value);
+          if (n.name === 'Exchange' && n.exchangeRole === 'write') sizes.push(n.metrics?.find((m) => m.name === 'data size')?.value);
         });
       }
       expect(sizes.length).toBeGreaterThan(0);

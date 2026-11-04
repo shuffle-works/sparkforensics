@@ -5,20 +5,39 @@ import { buildEvidenceReport } from '../src/evidence-report.js';
 import { impactEstimateFigure } from '../src/impact-format.js';
 import { findingSavings } from '../src/run-interpretation.js';
 import { buildCostLane } from '../src/run-verdict.js';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/types.ts').Stage} Stage */
+/** @typedef {Partial<Finding> & Record<string, unknown>} MinimalFinding */
+
+// Findings and stages are minimal literals: only the fields the estimator reads.
+/**
+ * @param {MinimalFinding[]} findings
+ * @param {Map<number, Partial<Stage>>} stages
+ * @param {number} totalCores
+ */
 function estimate(findings, stages, totalCores) {
-  estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
-  return findings.map((f) => f.impactEstimate);
+  const full = /** @type {Finding[]} */ (findings);
+  const fullStages = /** @type {Map<number, Stage>} */ (stages);
+  estimateImpact(full, { stages: fullStages, totalCores, occupancy: computeOccupancy(fullStages, totalCores) });
+  return full.map((f) => {
+    if (!f.impactEstimate) throw new Error(`no impact estimate for ${f.type}`);
+    return f.impactEstimate;
+  });
 }
 
+/** @returns {MinimalFinding} */
 const retry = () => ({ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' });
 const soloStage = () => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }]]);
+/** @returns {MinimalFinding} */
 const tiny = () => ({ type: 'tinyTask', stageId: 0, value: 50, impactBand: 'info' });
+/** @param {Partial<Stage>} [extra] */
 const twoCoreStage = (extra = {}) => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], taskCount: 100, executorRunTime: 10000, ...extra }]]);
 
 // A utilization finding at 25% of 4 allocated core-hours.
+/** @returns {MinimalFinding} */
 const idleUtilization = () => ({
   type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4,
   allocatedCoreMs: 4 * 3_600_000, impactBand: 'info',
@@ -37,7 +56,8 @@ describe('impact estimate coreTimeMs', () => {
       [0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }],
       [1, { id: 1, submittedAt: 0, completedAt: 5000, parentIds: [], executorRunTime: 10000, jvmGCTime: 1200 }],
     ]);
-    const gc = { type: 'gc', stageId: 1, direction: 'high', value: 12, impactBand: 'warning' };
+    /** @type {MinimalFinding} */
+    const gc = { type: 'gc', stageId: 1, value: 12, impactBand: 'warning' };
     const [r, g] = estimate([retry(), gc], stages, 8);
     expect(g.coreTimeMs).toEqual({ low: 1200, high: 1200 });
     expect(r.coreTimeMs).toEqual(g.coreTimeMs);
@@ -52,8 +72,8 @@ describe('impact estimate coreTimeMs', () => {
   it('is null, not 0, for a wall-clock-only claim, however busy its stage\'s cores were', () => {
     // 100 tasks, 10s of task run time over a 5s window: 2 cores busy on average.
     const [est] = estimate([tiny()], twoCoreStage(), 8);
-    expect(est.rawWaste.unit).toBe('ms');
-    expect(est.wallClock.high).toBeGreaterThan(0);
+    expect(est.rawWaste?.unit).toBe('ms');
+    expect(est.wallClock?.high).toBeGreaterThan(0);
     expect(est.coreTimeMs).toBeNull();
   });
 
@@ -61,15 +81,16 @@ describe('impact estimate coreTimeMs', () => {
     // Open 2491s, tasks running for 60s of it: 5 tasks of 60s, 300 core-s in all.
     const stage = { id: 0, submittedAt: 0, completedAt: 2_491_000, taskActiveMs: 60_000, parentIds: [], taskCount: 5, executorRunTime: 300_000,
       shuffleReadBytes: 8 * 1024 ** 3, shuffleReadP50: 0, shuffleReadMax: 0 };
+    /** @type {MinimalFinding} */
     const finding = { type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, metric: 'taskCount', value: 5, impactBand: 'warning' };
     const [est] = estimate([finding], new Map([[0, stage]]), 8);
-    expect(est.wallClock.high).toBeGreaterThan(300_000);
+    expect(est.wallClock?.high).toBeGreaterThan(300_000);
     expect(est.coreTimeMs).toBeNull();
   });
 
   it('takes GC\'s logged core-time figure as measured, even with no executor cores in the log', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], executorRunTime: 10000, jvmGCTime: 1200 }]]);
-    const [est] = estimate([{ type: 'gc', stageId: 0, direction: 'high', value: 12, impactBand: 'warning' }], stages, 0);
+    const [est] = estimate([{ type: 'gc', stageId: 0, value: 12, impactBand: 'warning' }], stages, 0);
     expect(est.rawWaste).toEqual({ value: 1200, unit: 'coreMs' });
     expect(est.coreTimeMs).toEqual({ low: 1200, high: 1200 });
   });
@@ -78,10 +99,11 @@ describe('impact estimate coreTimeMs', () => {
     // 2 GB of disk spill over 5 GB read: 0.4 passes at 50% is 20% of the stage's 1,000 core-s.
     const stage = { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], executorRunTime: 1_000_000,
       shuffleReadBytes: 5_000_000_000, memoryBytesSpilled: 10_000_000_000, diskBytesSpilled: 2_000_000_000 };
+    /** @type {MinimalFinding} */
     const finding = { type: 'spill', stageId: 0, impactBand: 'warning', recommendation: 'Reduce spill.' };
     const [est] = estimate([finding], new Map([[0, stage]]), 8);
     expect(est.coreTimeMs).toEqual({ low: 200_000, high: 200_000 });
-    expect(buildCostLane([finding]).map((entry) => entry.coreTimeMs)).toEqual([200_000]);
+    expect(buildCostLane(/** @type {Finding[]} */ ([finding])).map((entry) => entry.coreTimeMs)).toEqual([200_000]);
   });
 
   it('gives a spill finding with no bytes read to compare against no core time', () => {
@@ -92,6 +114,7 @@ describe('impact estimate coreTimeMs', () => {
   });
 
   it('is null for a core-time figure modeled on an assumed constant', () => {
+    /** @type {MinimalFinding} */
     const finding = { type: 'coreLocality', stageId: null, value: 50, nonLocalTaskCount: 100_000, impactBand: 'info' };
     const [est] = estimate([finding], new Map(), 8);
     expect(est.estimateMethod).toBe('modeled');
@@ -100,12 +123,14 @@ describe('impact estimate coreTimeMs', () => {
   });
 
   it('leaves executor-hour and job-hour figures null', () => {
+    /** @type {MinimalFinding} */
     const churn = { type: 'autoscalingChurn', stageId: null, value: 50, shortLivedExecutorCount: 10, impactBand: 'warning' };
+    /** @type {MinimalFinding} */
     const jobs = { type: 'jobFailureRate', stageId: null, value: 50, failedJobs: 2, avgJobDurationMs: 600_000, impactBand: 'warning' };
     const [c, j] = estimate([churn, jobs], new Map(), 4);
-    expect(c.rawWaste.unit).toBe('coreHours');
+    expect(c.rawWaste?.unit).toBe('coreHours');
     expect(c.coreTimeMs).toBeNull();
-    expect(j.rawWaste.unit).toBe('coreHours');
+    expect(j.rawWaste?.unit).toBe('coreHours');
     expect(j.coreTimeMs).toBeNull();
   });
 
@@ -114,14 +139,17 @@ describe('impact estimate coreTimeMs', () => {
     expect(u.rawWaste).toEqual({ value: 0.75 * 4, unit: 'coreHours', idle: true });
     expect(u.coreTimeMs).toBeNull();
 
-    const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000, taskDurationP50: 1000, taskDurationMax: 9000 })]]);
+    const stages = new Map([[0, makeTypedStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000, taskDurationP50: 1000, taskDurationMax: 9000 })]]);
+    /** @type {MinimalFinding} */
     const lowPar = { type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'info' };
+    /** @type {MinimalFinding} */
     const tailShape = { type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' };
+    /** @type {MinimalFinding} */
     const idleCores = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, idleRateFraction: 0.5, allocatedMBSeconds: 10_240, impactBand: 'warning' };
     const [l, t, i] = estimate([lowPar, tailShape, idleCores], stages, 10);
     expect(l.rawWaste).toEqual({ value: 80_000, unit: 'coreMs', idle: true });
     expect(t.rawWaste).toMatchObject({ unit: 'coreMs', idle: true });
-    expect(i.rawWaste.unit).toBe('mbSeconds');
+    expect(i.rawWaste?.unit).toBe('mbSeconds');
     for (const est of [l, t, i]) expect(est.coreTimeMs).toBeNull();
     for (const est of [l, t, i]) expect(est.idleCoreTimeMs).toBeUndefined();
   });
@@ -130,6 +158,7 @@ describe('impact estimate coreTimeMs', () => {
     const [u] = estimate([idleUtilization()], new Map(), 4);
     // 4 allocated core-hours, a quarter of it busy: 3 core-hours idle.
     expect(u.idleCoreTimeMs).toEqual({ low: 3 * 3_600_000, high: 3 * 3_600_000 });
+    if (!u.idleCoreTimeMs || !u.rawWaste) throw new Error('expected idle core time and a raw figure');
     expect(u.idleCoreTimeMs.high / 3_600_000).toBe(u.rawWaste.value);
     expect(u.coreTimeMs).toBeNull();
   });
@@ -142,10 +171,11 @@ describe('impact estimate coreTimeMs', () => {
 
   it('labels an idle-core finding\'s figure as idle capacity on the dashboard and in report rows alike', () => {
     const utilization = idleUtilization();
-    const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000 })]]);
+    const stages = new Map([[0, makeTypedStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000 })]]);
+    /** @type {MinimalFinding} */
     const lowPar = { type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'info' };
     estimate([utilization, lowPar], stages, 10);
-    for (const f of [utilization, lowPar]) {
+    for (const f of /** @type {Finding[]} */ ([utilization, lowPar])) {
       const board = findingSavings(f);
       expect(board.meaning, f.type).toBe('of idle core capacity');
       expect(impactEstimateFigure(f.impactEstimate)).toEqual({ text: board.board, meaning: board.meaning });
@@ -158,13 +188,14 @@ describe('impact estimate coreTimeMs', () => {
       taskDurationP50: 10_000, taskDurationP95: 200_000, taskDurationMax: 500_000, stragglerExcessMs: 490_000, stragglerCount: 1,
       longestNonStragglerMs: 10_000, peakConcurrentTasks: 10,
     };
+    /** @type {MinimalFinding[]} */
     const findings = [
       { type: 'stageSlowness', stageId: 0, value: 16, impactBand: 'info' },
       { type: 'straggler', stageId: 0, value: 50, impactBand: 'warning' },
       { type: 'skew', stageId: 0, metric: 'P95/median', value: 20, impactBand: 'warning' },
     ];
     const [slow, straggler, skew] = estimate(findings, new Map([[0, stage]]), 10);
-    expect(skew.coreTimeMs.high).toBeGreaterThan(0);
+    expect(skew.coreTimeMs?.high).toBeGreaterThan(0);
     expect(straggler.coreTimeMs).toBeNull();
     expect(slow.coreTimeMs).toBeNull();
     // A second stage's tail is its own.
@@ -177,8 +208,9 @@ describe('impact estimate coreTimeMs', () => {
   });
 
   it('is null for byte and memory figures and for an estimate with no model', () => {
+    /** @type {MinimalFinding} */
     const shuffle = { type: 'shuffle', stageId: 0, value: 1, impactBand: 'info' };
-    const stages = new Map([[0, makeStage({ id: 0, shuffleReadBytes: 500 * 1024 * 1024, submittedAt: 0, completedAt: 0 })]]);
+    const stages = new Map([[0, makeTypedStage({ id: 0, shuffleReadBytes: 500 * 1024 * 1024, submittedAt: 0, completedAt: 0 })]]);
     const [s] = estimate([shuffle], stages, 8);
     expect(s.wallClock).toBeNull();
     expect(s.coreTimeMs).toBeNull();
@@ -192,41 +224,48 @@ describe('impact estimate coreTimeMs', () => {
       longestNonStragglerMs: 10_000, peakConcurrentTasks: 100,
     };
     const [est] = estimate([{ type: 'straggler', stageId: 0, value: 50, impactBand: 'warning' }], new Map([[0, stage]]), 100);
-    expect(est.wallClock.high).toBeGreaterThan(0);
-    expect(est.rawWaste.unit).toBe('ms');
+    expect(est.wallClock?.high).toBeGreaterThan(0);
+    expect(est.rawWaste?.unit).toBe('ms');
     expect(est.coreTimeMs).toEqual({ low: 490_000, high: 490_000 });
   });
 
   it('does not depend on executorCpuTime', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], executorRunTime: 10000, jvmGCTime: 1200 }]]);
     const withCpu = new Map([[0, { ...stages.get(0), executorCpuTime: 123 }]]);
-    const gc = () => ({ type: 'gc', stageId: 0, direction: 'high', value: 12, impactBand: 'warning' });
+    /** @returns {MinimalFinding} */
+    const gc = () => ({ type: 'gc', stageId: 0, value: 12, impactBand: 'warning' });
     expect(estimate([gc()], withCpu, 8)[0].coreTimeMs).toEqual(estimate([gc()], stages, 8)[0].coreTimeMs);
   });
 });
 
 describe('coreTimeMs in the evidence report', () => {
-  const slowStage = () => makeStage({ id: 1, taskCount: 100, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 4000, completedAt: 20000, executorRunTime: 40000 });
+  const slowStage = () => makeTypedStage({ id: 1, taskCount: 100, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 4000, completedAt: 20000, executorRunTime: 40000 });
+  /** @param {import('../src/types.ts').ExecutorAddedEvent[]} executors */
   const fixture = (executors) => ({
     app: makeApp({ endTime: 20000 }),
     stages: new Map([[1, slowStage()]]),
     executors: { added: executors, removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null,
   });
   const TAIL_CLAIMS = new Set(['skew', 'straggler']);
+  /** @param {import('../src/evidence-report.ts').EvidenceReportJson} json */
   const wallClockOnlyRows = (json) => json.findings.filter((r) => r.impactEstimate?.wallClock && r.impactEstimate.rawWaste?.unit === 'ms' && !TAIL_CLAIMS.has(r.type));
 
   it('is null on every wall-clock-only row, with or without executor data', () => {
-    const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];
+    /** @type {import('../src/types.ts').ExecutorAddedEvent[]} */
+    const added = [
+      { kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 4, resourceProfileId: null },
+      { kind: 'added', executorId: '2', timestamp: 0, host: 'host-2', totalCores: 4, resourceProfileId: null },
+    ];
     for (const executors of [[], added]) {
       const rows = wallClockOnlyRows(buildEvidenceReport(fixture(executors)).json);
       expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) expect(row.impactEstimate.coreTimeMs, row.type).toBeNull();
+      for (const row of rows) expect(row.impactEstimate?.coreTimeMs, row.type).toBeNull();
     }
   });
 
   it('stays null for a cut-off log', () => {
     const findings = analyzedRunFrom({ app: makeApp({ endTime: null }) }).catalog;
     const incomplete = findings.find((f) => f.type === 'incompleteRun');
-    expect(incomplete.impactEstimate.coreTimeMs).toBeNull();
+    expect(incomplete?.impactEstimate?.coreTimeMs).toBeNull();
   });
 });

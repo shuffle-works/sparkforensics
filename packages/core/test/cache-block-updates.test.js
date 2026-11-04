@@ -13,16 +13,20 @@ import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 // 0s that Spark 2.3+ always writes, so only the block updates can produce these findings.
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'cache-block-updates.ndjson');
 
+/** @param {string} path */
 async function cacheFindings(path) {
   const run = await analyzedRunFrom(path);
   return run.catalog
     .filter((f) => f.type === 'cacheUtilization');
 }
 
+/** @param {import('../src/finding-types.ts').CacheUtilizationFinding[]} findings */
+const cachedRddFindings = (findings) => findings.filter((f) => f.variant !== 'storageUnobserved');
+
 describe('cacheUtilization end to end on a block-update log', () => {
   it('flags the MEMORY_ONLY RDD as partially cached and the MEMORY_AND_DISK RDD as spilled to disk', async () => {
     const findings = await cacheFindings(FIXTURE);
-    expect(findings.map(({ variant, rddId, impactBand, value }) => ({ variant, rddId, impactBand, value }))).toEqual(
+    expect(cachedRddFindings(findings).map(({ variant, rddId, impactBand, value }) => ({ variant, rddId, impactBand, value }))).toEqual(
       expect.arrayContaining([
         { variant: 'partialCache', rddId: 4, impactBand: 'warning', value: 40 },
         { variant: 'diskSpillover', rddId: 9, impactBand: 'warning', value: 70 },
@@ -51,8 +55,9 @@ describe('cacheUtilization end to end on a block-update log', () => {
 describe('cacheUtilization on public corpus caching runs', () => {
 
   it.skipIf(!corpusLog('cache-memory-only.ndjson'))('flags the MEMORY_ONLY run as partially cached', async () => {
-    const findings = await cacheFindings(corpusLog('cache-memory-only.ndjson'));
-    expect(findings.map(({ variant, impactBand, value, numCachedPartitions, numPartitions }) =>
+    const findings = await cacheFindings(/** @type {string} */ (corpusLog('cache-memory-only.ndjson'))); // skipIf guarantees a path
+    expect(findings).toHaveLength(1);
+    expect(cachedRddFindings(findings).map(({ variant, impactBand, value, numCachedPartitions, numPartitions }) =>
       ({ variant, impactBand, value, numCachedPartitions, numPartitions }))).toEqual([
       // Peak residency: 14 of 20 partitions fit at once before LRU eviction took it back to 12.
       { variant: 'partialCache', impactBand: 'info', value: 70, numCachedPartitions: 14, numPartitions: 20 },
@@ -60,8 +65,9 @@ describe('cacheUtilization on public corpus caching runs', () => {
   });
 
   it.skipIf(!corpusLog('cache-memory-and-disk.ndjson'))('flags the MEMORY_AND_DISK run as spilled entirely to disk', async () => {
-    const findings = await cacheFindings(corpusLog('cache-memory-and-disk.ndjson'));
-    expect(findings.map(({ variant, impactBand, value, numCachedPartitions, memorySize }) =>
+    const findings = await cacheFindings(/** @type {string} */ (corpusLog('cache-memory-and-disk.ndjson'))); // skipIf guarantees a path
+    expect(findings).toHaveLength(1);
+    expect(cachedRddFindings(findings).map(({ variant, impactBand, value, numCachedPartitions, memorySize }) =>
       ({ variant, impactBand, value, numCachedPartitions, memorySize }))).toEqual([
       { variant: 'diskSpillover', impactBand: 'warning', value: 100, numCachedPartitions: 20, memorySize: 0 },
     ]);

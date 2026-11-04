@@ -36,6 +36,7 @@ describe('computeWastedCoreHours', () => {
   });
 
   it('caps top stages at 5', () => {
+    /** @type {{ busyCoreMs: number, perStage: Record<number, { totalTaskDurationSum: number }> }} */
     const many = { busyCoreMs: 0, perStage: {} };
     for (let i = 0; i < 8; i++) many.perStage[i] = { totalTaskDurationSum: i * 1000 };
     const r = computeWastedCoreHours(app, executorsAdded, many);
@@ -95,7 +96,7 @@ describe('computeWastedCoreHours', () => {
   });
 
   it('returns nulls/empties when no core count can be derived', () => {
-    const r = computeWastedCoreHours(app, [{ totalCores: 0 }], runAggregates);
+    const r = computeWastedCoreHours(app, [{ executorId: '1', timestamp: 0, totalCores: 0 }], runAggregates);
     expect(r.totalCoreHours).toBeNull();
     expect(r.topStages).toEqual([]);
   });

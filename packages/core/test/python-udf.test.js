@@ -3,25 +3,36 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { isBatchEvalPythonNode } from '../src/python-stage.ts';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 const MB = 1024 * 1024;
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'python-udf-spark-3.5.9.ndjson');
 const ARROW_KEY = 'spark.sql.execution.pythonUDF.arrow.enabled';
 
+/**
+ * @param {string} name
+ * @param {number | null} sent
+ * @param {number | null} returned
+ * @param {number[]} [stageIds]
+ * @returns {import('../src/types.ts').PlanNode}
+ */
 const pythonNode = (name, sent, returned, stageIds = [1]) => ({
   id: 'n1', name, detail: '', children: [], stageIds,
   metrics: [
-    ...(sent == null ? [] : [{ name: 'data sent to Python workers', value: sent, metricType: 'size', executorSide: true }]),
-    ...(returned == null ? [] : [{ name: 'data returned from Python workers', value: returned, metricType: 'size', executorSide: true }]),
+    ...(sent == null ? [] : [{ name: 'data sent to Python workers', value: sent, metricType: 'size', executorSide: /** @type {const} */ (true) }]),
+    ...(returned == null ? [] : [{ name: 'data returned from Python workers', value: returned, metricType: 'size', executorSide: /** @type {const} */ (true) }]),
   ],
 });
 
-// One execution over stage 1, which ran for `durationMs`.
+/**
+ * One execution over stage 1, which ran for `durationMs`.
+ * @param {{ node?: import('../src/types.ts').PlanNode, durationMs?: number, app?: import('../src/types.ts').SparkAppInfo,
+ *   thresholds?: import('../src/analyzed-run.ts').AnalyzeRunOptions['thresholds'] }} [options]
+ */
 function run({ node = pythonNode('BatchEvalPython', 200 * MB, 50 * MB), durationMs = 60_000, app = makeApp({ endTime: 120_000 }), thresholds } = {}) {
   const planTree = { id: 'root', name: 'Project', detail: '', children: [node] };
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: durationMs, stageIds: [1], planTree }]]);
-  const stages = new Map([[1, makeStage({ sqlExecutionId: 1, completedAt: durationMs })]]);
+  const stages = new Map([[1, makeTypedStage({ sqlExecutionId: 1, completedAt: durationMs })]]);
   return analyzedRunFrom({ app, stages, sql }, { thresholds }).catalog.filter((f) => f.type === 'pythonUdf');
 }
 
@@ -67,6 +78,7 @@ describe('pythonUdf', () => {
   });
 
   describe('fix by Spark version and conf', () => {
+    /** @param {Record<string, string>} config @param {string} sparkVersion */
     const fixOf = (config, sparkVersion) => run({ app: makeApp({ endTime: 120_000, config, sparkVersion }) })[0];
 
     it('leaves the property out when the run already enabled it', () => {
@@ -83,6 +95,7 @@ describe('pythonUdf', () => {
 
   // A log from apache/spark:3.5.9 running one Python UDF over 2M rows in local[2] (2.4 s of stage time).
   it('reads the executor-side Python metrics of a real log', async () => {
+    /** @param {import('../src/analyzed-run.ts').AnalyzeRunOptions['thresholds']} [thresholds] */
     const find = async (thresholds) => (await analyzedRunFrom(FIXTURE, { thresholds })).catalog
       .filter((f) => f.type === 'pythonUdf');
     expect(await find()).toEqual([]); // far below the default floors

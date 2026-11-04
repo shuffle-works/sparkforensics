@@ -49,7 +49,12 @@ describe('createLz4BlockDecoder (streaming)', () => {
     return c;
   })();
 
+  /**
+   * @param {Uint8Array} bytes
+   * @param {number} sliceSize
+   */
   function drain(bytes, sliceSize) {
+    /** @type {Uint8Array[]} */
     const chunks = [];
     const dec = createLz4BlockDecoder((c) => chunks.push(new Uint8Array(c)));
     for (let i = 0; i < bytes.length; i += sliceSize) {

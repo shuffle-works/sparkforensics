@@ -11,7 +11,7 @@ import { corpusLog } from './corpus-log.js';
 // checkouts, where the suite skips.
 const present = ['spark-4.2-parquet-baseline', 'spark-4.1-iceberg-baseline', 'spark-4.2-delta-baseline']
   .map((name) => corpusLog(`${name}.ndjson`))
-  .filter(Boolean);
+  .filter((path) => path !== null);
 
 describe.skipIf(present.length === 0)('write targets agree with the dashboard model', () => {
   it.each(present)('%s', async (path) => {
@@ -28,17 +28,21 @@ describe.skipIf(present.length === 0)('write targets agree with the dashboard mo
     for (const write of writeTargets.writes) {
       const exec = appModel.sql.get(write.sqlExecutionId);
       expect(exec, `execution ${write.sqlExecutionId} is in the model`).toBeDefined();
+      if (!exec) continue;
       // The plan graph the dashboard renders for a stage of this execution.
       const stage = [...appModel.stages.values()].find((s) => s.sqlExecutionId === write.sqlExecutionId);
       if (!stage) continue;
-      const graph = buildPlanGraphModel(exec.planTree, { scope: 'full', stageId: stage.id, appModel });
+      const graph = buildPlanGraphModel(exec.planTree ?? null, { scope: 'full', stageId: stage.id, appModel });
       const card = graph.nodes.find((n) => n.sourceNodeId === write.nodeId);
       if (!card) continue;
       compared++;
-      const shown = card.metrics.find((m) => m.name === 'number of output rows');
+      const shown = card.metrics?.find((m) => m.name === 'number of output rows');
       // Only a node metric is shown on the card; a stage sum has no node figure to agree with.
       if (write.outputRowsSource !== 'nodeMetric') expect(shown).toBeUndefined();
-      else expect(shown?.value).toBe(write.outputRows.toLocaleString('en-US'));
+      else {
+        if (write.outputRows === null) throw new Error('a node-metric write carries its output rows');
+        expect(shown?.value).toBe(write.outputRows.toLocaleString('en-US'));
+      }
     }
 
     // Guards the loop above against passing by skipping every write. The Delta log's write runs no

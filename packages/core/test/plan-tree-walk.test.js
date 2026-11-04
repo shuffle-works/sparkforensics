@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { walkPlanTree } from '../src/plan-tree-walk.js';
 
+/** @typedef {{ name: string, children: TestNode[] }} TestNode */
+
+/** @param {string} name @param {TestNode[]} [children] @returns {TestNode} */
 const node = (name, children = []) => ({ name, children });
 
 describe('walkPlanTree', () => {
@@ -9,6 +12,7 @@ describe('walkPlanTree', () => {
       node('a', [node('a1')]),
       node('b'),
     ]);
+    /** @type {string[]} */
     const visited = [];
     walkPlanTree(tree, (n) => visited.push(n.name));
     expect(visited).toEqual(['root', 'a', 'a1', 'b']);
@@ -31,6 +35,7 @@ describe('walkPlanTree', () => {
       node('left', [shared]),
       node('right', [shared]),
     ]);
+    /** @type {string[]} */
     const visited = [];
     walkPlanTree(tree, (n) => visited.push(n.name));
     expect(visited.filter(n => n === 'shared')).toHaveLength(2);
@@ -42,6 +47,7 @@ describe('walkPlanTree', () => {
       node('left', [shared]),
       node('right', [shared]),
     ]);
+    /** @type {string[]} */
     const visited = [];
     walkPlanTree(tree, (n) => visited.push(n.name), { dedupe: true });
     expect(visited.filter(n => n === 'shared')).toHaveLength(1);

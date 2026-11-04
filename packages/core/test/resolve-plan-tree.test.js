@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { resolvePlanTree } from '../src/event-handlers.js';
 
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/event-schemas.ts').SparkPlanInfo} SparkPlanInfo */
+
+/**
+ * @param {string} nodeName
+ * @param {SparkPlanInfo[]} [children]
+ * @param {{ detail?: string, metrics?: NonNullable<SparkPlanInfo['metrics']> }} [opts]
+ * @returns {SparkPlanInfo}
+ */
 function rawNode(nodeName, children = [], opts = {}) {
   return {
     nodeName,
@@ -16,8 +25,9 @@ describe('resolvePlanTree: node identity', () => {
     const join = rawNode('SortMergeJoin', [leaf, rawNode('Scan parquet u')]);
     const tree = resolvePlanTree(join, new Map(), new Map(), undefined);
 
+    /** @type {(string | undefined)[]} */
     const ids = [];
-    (function collect(node) { ids.push(node.id); node.children.forEach(collect); })(tree);
+    (function collect(/** @type {PlanNode} */ node) { ids.push(node.id); node.children.forEach(collect); })(tree);
     expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -28,9 +38,11 @@ describe('resolvePlanTree: node identity', () => {
     const first = resolvePlanTree(join, new Map(), new Map(), undefined);
     const second = resolvePlanTree(join, new Map(), new Map(), undefined);
 
+    /** @param {PlanNode} root */
     const idsOf = (root) => {
+      /** @type {(string | undefined)[]} */
       const ids = [];
-      (function collect(node) { ids.push(node.id); node.children.forEach(collect); })(root);
+      (function collect(/** @type {PlanNode} */ node) { ids.push(node.id); node.children.forEach(collect); })(root);
       return ids;
     };
     expect(idsOf(first)).toEqual(idsOf(second));
@@ -100,9 +112,11 @@ describe('resolvePlanTree: Exchange split', () => {
   it('assigns ids consistently across repeated invocations of a tree containing a split', () => {
     const exchange = rawNode('Exchange', [rawNode('Scan parquet t')]);
     const root = rawNode('Project', [exchange]);
+    /** @param {PlanNode} r */
     const idsOf = (r) => {
+      /** @type {(string | undefined)[]} */
       const ids = [];
-      (function collect(n) { ids.push(n.id); n.children.forEach(collect); })(r);
+      (function collect(/** @type {PlanNode} */ n) { ids.push(n.id); n.children.forEach(collect); })(r);
       return ids;
     };
     const first = resolvePlanTree(root, new Map(), new Map(), undefined);
@@ -117,9 +131,11 @@ describe('resolvePlanTree: Exchange split', () => {
     // (see plan-graph-model.ts's findings guard).
     const leaf = rawNode('Scan parquet t');
     const join = rawNode('SortMergeJoin', [leaf, rawNode('Scan parquet u')]);
+    /** @param {PlanNode} root */
     const idsOf = (root) => {
+      /** @type {(string | undefined)[]} */
       const ids = [];
-      (function collect(n) { ids.push(n.id); n.children.forEach(collect); })(root);
+      (function collect(/** @type {PlanNode} */ n) { ids.push(n.id); n.children.forEach(collect); })(root);
       return ids;
     };
     const execA = resolvePlanTree(join, new Map(), new Map(), undefined, 1);
@@ -132,6 +148,7 @@ describe('resolvePlanTree: Exchange split', () => {
 });
 
 describe('resolvePlanTree: exchange row width', () => {
+  /** @param {string} name @param {number} accumulatorId */
   const metric = (name, accumulatorId) => ({ name, accumulatorId, metricType: 'sum' });
 
   it('puts the width of every exchange, not only spilling ones, on both halves', () => {
@@ -155,6 +172,7 @@ describe('resolvePlanTree: exchange row width', () => {
 });
 
 describe('resolvePlanTree: exchange input columns', () => {
+  /** @param {number} planId */
   const exchange = (planId) => rawNode('Exchange', [rawNode('SortMergeJoin', [rawNode('Scan parquet t')])], {
     detail: `Exchange hashpartitioning(k#1, 200), ENSURE_REQUIREMENTS, [plan_id=${planId}]`,
   });

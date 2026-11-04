@@ -4,6 +4,7 @@ import { unzipSync, gunzipSync, zipSync, strToU8, strFromU8 } from '../src/vendo
 describe('vendored fflate', () => {
   it('round-trips a zip archive', () => {
     const zipped = zipSync({ 'a.txt': strToU8('hello world') });
+    /** @type {Record<string, Uint8Array>} */
     const entries = unzipSync(zipped);
     expect(strFromU8(entries['a.txt'])).toBe('hello world');
   });

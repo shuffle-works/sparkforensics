@@ -3,6 +3,7 @@ import {
   deriveEvidenceAvailability,
   EVIDENCE_AVAILABILITY_SCHEMA_VERSION,
 } from '../src/evidence-availability.js';
+import { emptyAppModel } from '../src/run-serialization.js';
 
 // Closed enums the serialized ledger must stay within; kept here since nothing but these tests consumes them.
 const EVIDENCE_KEYS = [
@@ -52,11 +53,21 @@ const evidenceInputs = {
   taskRecords: 0,
 };
 
+// `resources` is a partial override: the ledger reads only its stageExecutorMetricsLogging.
+/**
+ * @param {Partial<Omit<import('../src/types.ts').AppModel, 'app'>> & { app?: Omit<Partial<import('../src/types.ts').SparkAppInfo>, 'resources'> & { resources?: Partial<import('../src/types.ts').AppResources> } }} [overrides]
+ * @returns {import('../src/types.ts').AppModel}
+ */
 function model(overrides = {}) {
   const { app: appOverrides, ...rest } = overrides;
-  return { app: { evidenceInputs, ...appOverrides }, stages: new Map(), sql: new Map(), runAggregates: null, ...rest };
+  const app = /** @type {import('../src/types.ts').SparkAppInfo} */ ({ evidenceInputs, ...appOverrides });
+  return { ...emptyAppModel(), app, ...rest };
 }
 
+/**
+ * @param {import('../src/types.ts').EvidenceAvailability} ledger
+ * @param {string} key
+ */
 function entry(ledger, key) {
   return ledger.entries.find((candidate) => candidate.key === key);
 }
@@ -107,6 +118,7 @@ describe('deriveEvidenceAvailability', () => {
     ['mixed-case False string', 'False'],
     ['real boolean false', false],
   ])('treats %s as an explicit metric disablement', (_label, value) => {
+    // @ts-expect-error a real boolean is not a config string: the case under test
     const ledger = deriveEvidenceAvailability(model({ app: { config: { 'spark.eventLog.logStageExecutorMetrics': value } } }), complete);
     expect(entry(ledger, 'executorMetrics')).toMatchObject({ state: 'disabled', reasonCode: 'explicitlyDisabled' });
   });
@@ -194,14 +206,17 @@ describe('deriveEvidenceAvailability', () => {
   });
 
   it('serializes only closed enums and compact, non-sensitive provenance', () => {
+    // Fields no model type declares, which a ledger must not echo: bound first so they pass as extras.
+    const app = {
+      evidenceInputs: { ...evidenceInputs, executorMetricRows: 1, taskRecords: 1 },
+      config: { 'spark.eventLog.logStageExecutorMetrics': 'false', 'spark.executor.memory': 'spark.executor.memory=24g' },
+      host: 'worker-host',
+    };
+    const perStage = { 1: { taskCount: 1, totalTaskDurationSum: 0, records: [{ id: 1 }] } };
     const ledger = deriveEvidenceAvailability(model({
-      app: {
-        evidenceInputs: { ...evidenceInputs, executorMetricRows: 1, taskRecords: 1 },
-        config: { 'spark.eventLog.logStageExecutorMetrics': 'false', 'spark.executor.memory': 'spark.executor.memory=24g' },
-        host: 'worker-host',
-      },
-      sql: new Map([[1, { text: 'SELECT * FROM sensitive_path/' }]]),
-      runAggregates: { busyCoreMs: 1, perStage: { 1: { taskCount: 1, records: [{ id: 1 }] } } },
+      app,
+      sql: new Map([[1, /** @type {import('../src/types.ts').SqlExecution} */ ({ id: 1, text: 'SELECT * FROM sensitive_path/' })]]),
+      runAggregates: { busyCoreMs: 1, perStage },
     }), complete);
     const serialized = JSON.stringify(ledger);
     for (const unsafeText of ['spark.executor.memory=', 'host', '/', 'SELECT', 'records']) expect(serialized).not.toContain(unsafeText);

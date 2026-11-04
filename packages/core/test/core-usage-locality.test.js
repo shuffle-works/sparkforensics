@@ -47,6 +47,7 @@ describe('buildLocalityChart', () => {
     const stages = [{ submittedAt: 0, completedAt: 10_000, executorRunTime: 40_000, localityStats: [{ locality: 'PROCESS_LOCAL', count: 1 }] }];
     const chart = buildLocalityChart(stages, { startTime: 0, endTime: 10_000 });
     expect(chart.hasActivity).toBe(true);
+    if (!chart.hasActivity) throw new Error('expected chart activity');
     expect(chart.peakCores).toBeCloseTo(4);
     expect(formatCores(chart.peakCores)).toBe('4');
   });

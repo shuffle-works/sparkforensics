@@ -9,18 +9,23 @@ import { buildComparisonOutput } from '../src/comparison-output.ts';
 
 // Counts the comparisons built, so a cache hit shows as a build that did not happen.
 vi.mock('../src/cli/collect-run.ts', async (importOriginal) => {
+  /** @type {typeof import('../src/cli/collect-run.ts')} */
   const actual = await importOriginal();
   return { ...actual, collectRun: vi.fn(actual.collectRun) };
 });
 vi.mock('../src/comparison-output.ts', async (importOriginal) => {
+  /** @type {typeof import('../src/comparison-output.ts')} */
   const actual = await importOriginal();
   return { ...actual, buildComparisonOutput: vi.fn(actual.buildComparisonOutput) };
 });
+
+/** @typedef {Awaited<ReturnType<typeof compareRuns>>} CompareResult */
 
 const CORPUS = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs');
 
 // One stage of `taskCount` tasks; the last one runs `slowMs`, the rest 100ms. The app name and
 // stage name are parameters so a test can plant text that redaction or normalization acts on.
+/** @param {{ appId: string, appName?: string, stageName?: string, taskCount?: number, slowMs?: number }} spec */
 function tmpLog({ appId, appName = 't', stageName = 's1', taskCount = 10, slowMs = 100 }) {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-cache-'));
   const path = join(dir, 'eventlog');
@@ -42,6 +47,12 @@ function tmpLog({ appId, appName = 't', stageName = 's1', taskCount = 10, slowMs
   return { dir, path };
 }
 
+/**
+ * @template T
+ * @param {Parameters<typeof tmpLog>[0][]} specs
+ * @param {(refs: { source: { path: string } }[]) => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
 async function withLogs(specs, fn) {
   const logs = specs.map(tmpLog);
   try {
@@ -114,8 +125,8 @@ describe('rolling event-log directory cache key', () => {
       appendFileSync(part, `${JSON.stringify({ Event: 'SparkListenerApplicationEnd', Timestamp: 5 })}\n`);
       const second = await resolveOrCreateRun({ source: { path: dir } });
       expect(second.runId).not.toBe(first.runId);
-      expect(second.appModel.app.endTime).toBe(5);
-      expect(first.appModel.app.endTime ?? null).toBeNull();
+      expect(second.appModel.app?.endTime).toBe(5);
+      expect(first.appModel.app?.endTime ?? null).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -142,7 +153,11 @@ describe('compareRuns result cache', () => {
       const first = await compareRuns(a, b);
       const expected = structuredClone(first);
       first.metrics.length = 0;
-      first.findings.introduced.push({ forged: true });
+      // A widened view of the rows, so a row no field of the comparison could hold can be planted.
+      /** @type {unknown[]} */
+      const introduced = first.findings.introduced;
+      introduced.push({ forged: true });
+      // @ts-expect-error a null verdict is the corruption this test plants
       first.verdict = null;
       const second = await compareRuns(a, b);
       expect(builds()).toBe(1);
@@ -152,11 +167,13 @@ describe('compareRuns result cache', () => {
   });
 
   it('does not keep a comparison whose run left the run cache while it was being built', async () => {
+    /** @type {typeof import('../src/cli/collect-run.ts')} */
     const actual = await vi.importActual('../src/cli/collect-run.ts');
     await withLogs(pair, async ([a, b]) => {
       await resolveOrCreateRun(a);
       // The second run's parse waits on a gate, so the first can be evicted while the comparison is mid-request.
-      let release;
+      /** @type {(value?: unknown) => void} */
+      let release = () => {};
       const gate = new Promise((resolve) => { release = resolve; });
       vi.mocked(collectRun).mockImplementation(async (path) => {
         if (path === b.source.path) await gate;
@@ -185,8 +202,9 @@ describe('compareRuns result cache', () => {
       const backward = await compareRuns(b, a);
       expect(backward.baselineRunId).toBe(forward.candidateRunId);
       expect(builds()).toBe(2);
+      /** @param {CompareResult} r */
       const wall = (r) => r.metrics.find((m) => m.key === 'wallClock');
-      expect(wall(backward).baseline).toBe(wall(forward).candidate);
+      expect(wall(backward)?.baseline).toBe(wall(forward)?.candidate);
     });
   });
 
@@ -195,7 +213,7 @@ describe('compareRuns result cache', () => {
       const summary = await compareRuns(a, b);
       const full = await compareRuns(a, b, { include: ['stagePairs'] });
       expect(summary).not.toHaveProperty('stagePairs');
-      expect(full.stagePairs.length).toBeGreaterThan(0);
+      expect(full.stagePairs?.length).toBeGreaterThan(0);
       expect(await compareRuns(a, b)).not.toHaveProperty('stagePairs');
       expect((await compareRuns(a, b, { include: ['stagePairs'] })).stagePairs).toEqual(full.stagePairs);
       expect(builds()).toBe(2);
@@ -207,6 +225,7 @@ describe('compareRuns result cache', () => {
     await withLogs([{ appId: 'app-c-r1', stageName: 's1' }, { appId: 'app-c-r2', stageName: host, slowMs: 2000 }], async ([a, b]) => {
       const plain = await compareRuns(a, b);
       const redacted = await compareRuns(a, b, { redact: true });
+      /** @param {CompareResult} r */
       const stages = (r) => r.findings.introduced.flatMap((f) => f.stages).join('|');
       expect(stages(plain)).toContain('ip-10-1-2-3.ec2.internal');
       expect(stages(redacted)).not.toContain('ip-10-1-2-3.ec2.internal');

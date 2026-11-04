@@ -10,6 +10,7 @@ import { DETECTORS } from '../src/detectors.js';
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const chaptersDir = resolve(root, 'packages/core/src/docs-content/chapters');
 const tuningDir = resolve(root, 'packages/core/src/docs-content/tuning');
+/** @type {{anchor: string, store: string, slug: string}[]} */
 const navIndex = JSON.parse(readFileSync(resolve(chaptersDir, 'nav-index.json'), 'utf8'));
 // Real ids: every manifest anchor plus every {#id} heading attr across the generated markdown.
 const docIds = new Set(navIndex.map((e) => e.anchor));
@@ -48,7 +49,7 @@ describe('KNOWN_DOC_ANCHORS', () => {
     const navByAnchor = new Map(navIndex.map((e) => [e.anchor, e]));
     const unresolved = [...new Set(DETECTORS.map((d) => d.docAnchor))]
       .filter(Boolean)
-      .map((a) => a.replace(/^#/, ''))
+      .map((a) => /** @type {string} */ (a).replace(/^#/, ''))
       .filter((a) => {
         const entry = navByAnchor.get(pageForAnchor(a));
         if (!entry) return true;

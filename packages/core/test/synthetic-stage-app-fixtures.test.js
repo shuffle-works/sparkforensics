@@ -3,11 +3,21 @@ import { fileURLToPath } from 'node:url';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
 // Hand-made logs, each built so one detector fires at its default thresholds.
+/** @param {string} name */
 const analyzeFixture = async (name) => {
   const run = await analyzedRunFrom(fileURLToPath(new URL(`./fixtures/synthetic/${name}.ndjson`, import.meta.url)));
   return { appModel: run.appModel, findings: run.catalog };
 };
-const ofType = (findings, type) => findings.filter((f) => f.type === type);
+/**
+ * @template {import('../src/finding-types.ts').Finding['type']} T
+ * @param {import('../src/finding-types.ts').Finding[]} findings
+ * @param {T} type
+ * @returns {Extract<import('../src/finding-types.ts').Finding, { type: T }>[]}
+ */
+const ofType = (findings, type) => findings.filter(
+  /** @returns {f is Extract<import('../src/finding-types.ts').Finding, { type: T }>} */
+  (f) => f.type === type,
+);
 
 describe('synthetic stage and app fixtures', () => {
   it('stage-slowness: one 17-minute input scan, flagged on that stage and not on the short one', async () => {

@@ -1,18 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { getThresholdSummary } from '../src/threshold-summary.ts';
 import { FINDING_PRESENTATION } from '../src/finding-presentation.ts';
-import { DETECTORS } from '../src/detectors.ts';
-
-const thresholdsOf = (type) => DETECTORS.find((d) => d.type === type).thresholds;
+import { spillDetector } from '../src/detectors/speed-stages.ts';
+import { slowHostDetector } from '../src/detectors/speed-tasks.ts';
 
 describe('getThresholdSummary', () => {
   it('states the spill threshold from the detector\'s own thresholds', () => {
-    expect(getThresholdSummary('spill')).toBe(`single-task disk spill above ${thresholdsOf('spill').singleTaskDiskGiB} GiB`);
-    expect(FINDING_PRESENTATION.spill.thresholdSummary({ ...thresholdsOf('spill'), singleTaskDiskGiB: 2 })).toMatch(/above 2 GiB/);
+    expect(getThresholdSummary('spill')).toBe(`single-task disk spill above ${spillDetector.thresholds.singleTaskDiskGiB} GiB`);
+    expect(FINDING_PRESENTATION.spill.thresholdSummary({ ...spillDetector.thresholds, singleTaskDiskGiB: 2 })).toMatch(/above 2 GiB/);
   });
 
   it('states both slowHost ratios from the detector\'s own thresholds', () => {
-    const { ratioWarn, ratioTiers } = thresholdsOf('slowHost');
+    const { ratioWarn, ratioTiers } = slowHostDetector.thresholds;
     expect(getThresholdSummary('slowHost')).toContain(`${ratioWarn}× slower`);
     expect(getThresholdSummary('slowHost')).toContain(`from ${ratioTiers[0]}×`);
   });

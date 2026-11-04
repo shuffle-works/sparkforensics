@@ -1,13 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateBudgets } from '../src/cli/budgets.ts';
 import { parseStageRegressionBudgetFlag, parseStageQualities } from '../src/cli/regression-budgets.ts';
+import { buildComparison } from '../src/run-comparison.ts';
+import { emptyAppModel } from '../src/run-serialization.ts';
+import { makeApp } from './fixtures/stage-app-fixtures.js';
 
-const appModel = { app: { id: 'a', name: 'n', startTime: 0, endTime: 1000 }, stages: new Map(), executors: { added: [], removed: [] }, evidenceAvailability: { entries: [] } };
+const appModel = { ...emptyAppModel(), app: makeApp({ id: 'a', name: 'n', endTime: 1000 }) };
 
+/**
+ * @param {number | null} baseline
+ * @param {number | null} candidate
+ */
 function delta(baseline, candidate) {
   return { baseline, candidate, delta: baseline == null || candidate == null ? null : candidate - baseline };
 }
 
+/**
+ * @param {string} pairId
+ * @param {import('../src/stage-alignment.ts').StagePair['quality']} quality
+ * @param {[number | null, number | null]} runTime
+ * @param {Partial<import('../src/stage-alignment.ts').StagePair['deltas']>} [extra]
+ * @returns {import('../src/stage-alignment.ts').StagePair}
+ */
 function pair(pairId, quality, runTime, extra = {}) {
   const none = delta(0, 0);
   return {
@@ -19,8 +33,13 @@ function pair(pairId, quality, runTime, extra = {}) {
   };
 }
 
+/**
+ * @param {import('../src/stage-alignment.ts').StagePair[]} stagePairs
+ * @param {import('../src/cli/budgets.ts').BudgetsConfig} budgets
+ */
 function run(stagePairs, budgets) {
-  const comparison = { metrics: [], findings: { introduced: [], resolved: [] }, stagePairs };
+  const emptyRun = { label: 'run', appModel: emptyAppModel(), catalog: [] };
+  const comparison = { ...buildComparison(emptyRun, emptyRun), stagePairs: stagePairs.map((p) => ({ ...p, stageLabel: p.pairId })) };
   return evaluateBudgets({ appModel, catalog: [], budgets, comparison });
 }
 

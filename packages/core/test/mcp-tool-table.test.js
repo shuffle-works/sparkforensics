@@ -11,6 +11,10 @@ const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-table-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 // One slow task among nine fast ones: the run has findings, so get_finding_evidence has an id to read.
+/**
+ * @param {string} name
+ * @param {string} appId
+ */
 function writeEventLog(name, appId) {
   const path = join(dir, name);
   const lines = [
@@ -31,6 +35,7 @@ function writeEventLog(name, appId) {
   return path;
 }
 
+/** @param {import('@modelcontextprotocol/sdk/server/mcp.js').McpServer} server */
 async function connectedClient(server) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -43,11 +48,11 @@ describe('MCP tool table', () => {
 
   it('gives every entry a CLI twin or a stated reason for having none', () => {
     for (const entry of entries) {
-      const { twin, none } = entry.cli;
-      const text = twin ?? none;
+      const { cli } = entry;
+      const text = 'twin' in cli ? cli.twin : cli.none;
       expect(typeof text, entry.name).toBe('string');
       expect(text.trim().length, entry.name).toBeGreaterThan(0);
-      expect(twin !== undefined && none !== undefined, entry.name).toBe(false);
+      expect('twin' in cli && 'none' in cli, entry.name).toBe(false);
     }
   });
 
@@ -65,15 +70,24 @@ describe('MCP tool table', () => {
     const { tools } = await client.listTools();
     for (const t of tools) expect(t.outputSchema, t.name).toBeDefined();
 
+    /**
+     * @param {string} name
+     * @param {Record<string, unknown>} args
+     * @returns {Promise<Record<string, unknown>>}
+     */
     const call = async (name, args) => {
       const result = await client.callTool({ name, arguments: args });
       expect(result.isError, `${name}: ${JSON.stringify(result.content)}`).toBeFalsy();
       expect(result.structuredContent, name).toBeDefined();
-      return result.structuredContent;
+      if (!result.structuredContent) throw new Error(`${name}: no structuredContent`);
+      return { ...result.structuredContent };
     };
 
     const diagnosis = await call('diagnose_run', { source: { path: candidate } });
-    const findingId = diagnosis.findings.find((f) => f.id)?.id;
+    /** @param {unknown} row @returns {row is { id: string }} */
+    const hasId = (row) => typeof row === 'object' && row !== null && 'id' in row && typeof row.id === 'string' && row.id !== '';
+    const rows = diagnosis.findings;
+    const findingId = Array.isArray(rows) ? rows.find(hasId)?.id : undefined;
     expect(findingId).toBeDefined();
     await call('diagnose_run', { source: { path: candidate }, format: 'md' });
     await call('list_runs', { dir });

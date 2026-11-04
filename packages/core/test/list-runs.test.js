@@ -11,9 +11,10 @@ import { corpusLog } from './corpus-log.js';
 const ATTEMPT_FIXTURE_1 = corpusLog('external/external-local-1430917381535_1.ndjson');
 const ATTEMPT_FIXTURE_2 = corpusLog('external/external-local-1430917381535_2.ndjson');
 
+/** @type {string[]} */
 const cleanupDirs = [];
 afterEach(() => {
-  while (cleanupDirs.length) rmSync(cleanupDirs.pop(), { recursive: true, force: true });
+  for (const dir of cleanupDirs.splice(0).reverse()) rmSync(dir, { recursive: true, force: true });
 });
 
 function tmpDir() {
@@ -22,10 +23,26 @@ function tmpDir() {
   return dir;
 }
 
+/**
+ * @param {string} path
+ * @param {{ appId: string, name?: string, timestamp?: number }} opts
+ */
 function writeEventLog(path, { appId, name = 't', timestamp = 0 }) {
   writeFileSync(path,
     `{"Event":"SparkListenerApplicationStart","App ID":"${appId}","App Name":"${name}","Timestamp":${timestamp}}\n`
     + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n');
+}
+
+/** @param {import('../src/list-runs.ts').RunListEntry} run */
+function localPath(run) {
+  if (!('path' in run.source)) throw new Error('expected a local source');
+  return run.source.path;
+}
+
+/** @param {import('../src/list-runs.ts').RunListEntry} run */
+function shsAppId(run) {
+  if (!('appId' in run.source)) throw new Error('expected an SHS source');
+  return run.source.appId;
 }
 
 describe('listRunsLocal', () => {
@@ -137,6 +154,7 @@ describe('listRunsLocal', () => {
   it.skipIf(!ATTEMPT_FIXTURE_1 || !ATTEMPT_FIXTURE_2)(
     'stamps a distinct attemptId per numbered-suffix attempt of the same app',
     async () => {
+      if (!ATTEMPT_FIXTURE_1 || !ATTEMPT_FIXTURE_2) throw new Error('attempt fixtures missing');
       const dir = tmpDir();
       copyFileSync(ATTEMPT_FIXTURE_1, join(dir, 'external-local-1430917381535_1.ndjson'));
       copyFileSync(ATTEMPT_FIXTURE_2, join(dir, 'external-local-1430917381535_2.ndjson'));
@@ -178,8 +196,8 @@ describe('listRunsLocal', () => {
       for (const run of result.runs) {
         expect(run.appId).toMatch(/^app-\d+$/);
         expect(run.name).toBe(run.appId); // name redacted alongside appId
-        expect(run.source.path).toBe(run.appId); // path redacted alongside appId
-        expect(run.source.path).not.toContain(dir); // raw path no longer leaked
+        expect(localPath(run)).toBe(run.appId); // path redacted alongside appId
+        expect(localPath(run)).not.toContain(dir); // the raw path is not exposed
       }
     });
 
@@ -197,6 +215,7 @@ describe('listRunsLocal', () => {
   });
 });
 
+/** @param {unknown} apps */
 function applicationsPayload(apps) {
   return async () => new Response(JSON.stringify(apps), { status: 200, headers: { 'content-type': 'application/json' } });
 }
@@ -272,12 +291,16 @@ describe('listRunsShs', () => {
     const run = result.runs[0];
     expect(run.appId).toBe('app-1');
     expect(run.name).toBe('app-1');
-    expect(run.source.appId).toBe('app-1');
+    expect(shsAppId(run)).toBe('app-1');
     expect(run.source.attemptId).toBe('2');
   });
 
   it('passes a timeout AbortSignal to the fetch', async () => {
     let seenSignal;
+    /**
+     * @param {RequestInfo | URL} _url
+     * @param {RequestInit} [init]
+     */
     const fetchImpl = async (_url, init) => {
       seenSignal = init?.signal;
       return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });

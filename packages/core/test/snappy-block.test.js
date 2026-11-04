@@ -3,6 +3,7 @@ import { decodeSnappyBlock, createSnappyBlockDecoder } from '../src/snappy-block
 
 const MAGIC = [0x82, 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00]; // 0x82 'S' 'N' 'A' 'P' 'P' 'Y' 0x00
 
+/** @param {number} n */
 function encodeVarint(n) {
   const bytes = [];
   while (n >= 0x80) { bytes.push((n & 0x7f) | 0x80); n >>>= 7; }
@@ -12,6 +13,7 @@ function encodeVarint(n) {
 
 // Encode payload as a single literal-only raw Snappy block (varint length +
 // one literal): format per https://github.com/google/snappy/blob/main/format_description.txt.
+/** @param {Uint8Array} payload */
 function literalBlock(payload) {
   const len = payload.length;
   const lenMinus1 = len - 1;
@@ -45,7 +47,9 @@ function xerialHeader() {
 }
 
 // Frame raw Snappy blocks as a xerial SnappyOutputStream: header + [4-byte-BE length, block] per block.
+/** @param {Uint8Array[]} rawBlocks */
 function frameStream(rawBlocks) {
+  /** @type {Uint8Array[]} */
   const parts = [xerialHeader()];
   for (const block of rawBlocks) {
     const lenPrefix = new Uint8Array(4);
@@ -89,7 +93,12 @@ describe('decodeSnappyBlock', () => {
 describe('createSnappyBlockDecoder (streaming)', () => {
   const COMBINED = frameStream([literalBlock(new TextEncoder().encode('{"Event":"A"}')), COPY_BLOCK]);
 
+  /**
+   * @param {Uint8Array} bytes
+   * @param {number} sliceSize
+   */
   function drain(bytes, sliceSize) {
+    /** @type {Uint8Array[]} */
     const chunks = [];
     const dec = createSnappyBlockDecoder((c) => chunks.push(new Uint8Array(c)));
     for (let i = 0; i < bytes.length; i += sliceSize) {

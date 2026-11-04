@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes, sparkConfDefault } from '../src/spark-conf.ts';
 
 const RELEASES = ['3.0.0', '3.1.3', '3.2.0', '3.3.0', '3.4.0', '3.5.9', '4.0.4', '4.1.0', '4.2.0'];
+/** @param {string} key */
 const at = (key) => Object.fromEntries(RELEASES.map((v) => [v, sparkConfDefault(v, key)]));
 
 // Each expectation is a default read from Spark's SQLConf.scala / config/package.scala at the

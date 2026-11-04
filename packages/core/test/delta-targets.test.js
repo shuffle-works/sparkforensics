@@ -5,26 +5,56 @@ import { extractWriteTargets } from '../src/write-targets.ts';
 // only as `<path>/_delta_log` in the scans of the executions that read its log. Ids and paths are
 // synthetic.
 const BASE = 'hdfs://nn/sandbox/db.db';
+/** @typedef {import('../src/types.ts').PlanNode} PlanNode */
+/** @typedef {import('../src/types.ts').SqlExecution} SqlExecution */
+
+/**
+ * @param {string} name
+ * @param {string} [detail]
+ * @param {PlanNode[]} [children]
+ * @returns {PlanNode}
+ */
 const node = (name, detail = name, children = []) => ({ id: 'n0', name, detail, metrics: [], children });
+/** @param {string} table */
 const logScan = (table) => node(`Scan ExistingRDD Delta Table State with Stats #0 - ${BASE}/${table}/_delta_log`,
   `Scan ExistingRDD Delta Table State with Stats #0 - ${BASE}/${table}/_delta_log[txn#1,add#2]`);
 const project = () => node('Project', 'Project [id#1]');
 
 // exec(id, fields): a root execution unless `rootExecutionId` says otherwise.
+/**
+ * @param {number} id
+ * @param {Partial<SqlExecution>} [fields]
+ * @returns {SqlExecution}
+ */
 const exec = (id, fields = {}) => ({ id, rootExecutionId: id, startTime: id * 100, description: 'q', planTree: project(), ...fields });
+/**
+ * @param {number} id
+ * @param {PlanNode | null} planTree
+ * @param {Partial<SqlExecution>} [fields]
+ */
 const mergeStep = (id, planTree, fields = {}) => exec(id, { description: 'MERGE operation - scanning files for matches', planTree, ...fields });
+/** @param {SqlExecution[]} execs */
 const sqlOf = (...execs) => new Map(execs.map((e) => [e.id, e]));
+/** @param {SqlExecution[]} execs */
 const writesOf = (...execs) => extractWriteTargets(sqlOf(...execs)).writes;
+/** @param {import('../src/write-targets.ts').WriteTarget[]} writes */
 const targetsOf = (writes) => writes.map(({ command, kind, target }) => ({ command, kind, target }));
 
+/**
+ * @param {number} id
+ * @param {PlanNode | null} [planTree]
+ * @param {Partial<SqlExecution>} [fields]
+ */
 const writeStep = (id, planTree = project(), fields = {}) =>
   mergeStep(id, planTree, { description: 'MERGE operation - writing new files for only inserts', ...fields });
 
 // Eight executions of one API merge, from `first`: the write step (last) carries no path.
+/** @param {number} first @param {string} table */
 const apiMerge = (first, table) => Array.from({ length: 8 }, (_, k) =>
   k < 7 ? mergeStep(first + k, k < 5 ? logScan(table) : project()) : writeStep(first + k));
 
 describe('SQL MERGE, UPDATE, DELETE and saves: target from the kept arguments line', () => {
+  /** @param {string} command @param {string} args @param {Partial<SqlExecution>} [fields] */
   const withArgs = (command, args, fields = {}) => exec(1, {
     planTree: node(`Execute ${command}`), commandArguments: `${command}\nArguments: ${args}`, ...fields,
   });
@@ -52,6 +82,7 @@ describe('SQL MERGE, UPDATE, DELETE and saves: target from the kept arguments li
   });
 
   it('reports a Delta save by its path option, and nothing for a save the arguments do not show to be Delta', () => {
+    /** @param {string} args @param {Partial<SqlExecution>} [fields] */
     const save = (args, fields) => withArgs('SaveIntoDataSourceCommand', args, fields);
     const delta = 'org.apache.spark.sql.delta.sources.DeltaDataSource@1a2b';
     expect(writesOf(save(`${delta}, [path=${BASE}/t_save, mergeSchema=true], Append`))[0])
@@ -73,8 +104,10 @@ describe('SQL MERGE, UPDATE, DELETE and saves: target from the kept arguments li
 });
 
 describe('SQL MERGE, UPDATE, DELETE and saves: target from the child executions', () => {
+  /** @param {Partial<SqlExecution>} [fields] */
   const merge = (fields = {}) => exec(1, { planTree: node('Execute MergeIntoCommand'), ...fields });
   // A sub-query of the command, whatever the command: only a MERGE's carry a MERGE description.
+  /** @param {number} id @param {PlanNode | null} planTree @param {Partial<SqlExecution>} [fields] */
   const child = (id, planTree, fields = {}) => exec(id, { description: 'Delta: DELETE operation', planTree, rootExecutionId: 1, ...fields });
 
   it('takes the one _delta_log path of the executions that share its root', () => {
@@ -252,11 +285,17 @@ describe('DeltaTable API merges', () => {
 describe('Delta appends, overwrites and CTAS of a table', () => {
   // Shapes printed by Delta 3.3.2 on Spark 3.5: the table object of an append to an existing table,
   // and the staged table of the append a CTAS or RTAS runs under its own root.
+  /**
+   * @param {string} command
+   * @param {{ catalog?: string, table?: string, path?: string, rest?: string }} [parts]
+   */
   const tableV2 = (command, { catalog = 'Catalog: spark_catalog\n', table = 'Table: t_one\n', path = 'hdfs://nn/sandbox/db.db/t_one', rest = '' } = {}) =>
     `${command} DeltaTableV2(org.apache.spark.sql.SparkSession@5a1b2c,${path},Some(CatalogTable(\n${catalog}Database: db\n${table}Owner: spark\nProvider: delta\n)),Some(db.t_one),None,Map())${rest}, Project [id#1L], org.apache.spark.sql.delta.catalog.WriteIntoDeltaBuilder$$anon$1@25dc875`;
   const staged = 'AppendDataExecV1 org.apache.spark.sql.delta.catalog.DeltaCatalog$StagedDeltaTableV2@3dee60f, Project [id#1L], org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$2233/0x0000000841505440@1a7945a4';
+  /** @param {string} [name] @param {string} [command] */
   const ctas = (name = 'db.t_one', command = 'AtomicCreateTableAsSelect') =>
     node(`${command}`, `${command} org.apache.spark.sql.delta.catalog.DeltaCatalog@70e14c40, ${name}, Project [id#1L], TableSpec(Map(),Some(delta),Map(),None,None,None,false), false`);
+  /** @param {number} id @param {string} command @param {string} detail @param {Partial<SqlExecution>} [fields] */
   const write = (id, command, detail, fields = {}) => exec(id, { planTree: node(command, detail), ...fields });
 
   it.each(['AppendDataExecV1', 'OverwriteByExpressionExecV1'])('reports %s on an existing table as table db.t', (command) => {
@@ -295,6 +334,7 @@ describe('Delta appends, overwrites and CTAS of a table', () => {
   });
 
   it('leaves a staged append with no single named CTAS root unattributed', () => {
+    /** @param {Partial<SqlExecution>} fields */
     const append = (fields) => write(2, 'AppendDataExecV1', staged, fields);
     expect(writesOf(append({ rootExecutionId: 2 }))[0]).toMatchObject({ kind: null, target: null });
     expect(writesOf(append({ rootExecutionId: undefined }))[0]).toMatchObject({ kind: null, target: null });

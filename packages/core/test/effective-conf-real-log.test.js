@@ -12,6 +12,7 @@ describe('effective conf of a real Spark 4.0 log with runtime settings', () => {
   it('layers the second query\'s modifiedConfigs over the app properties and the 4.0 defaults', async () => {
     const { appModel } = await collectRun(LOG);
     const { app, sql } = appModel;
+    if (!app) throw new Error('expected the log to carry app properties');
     expect(app.sparkVersion).toBe('4.0.4');
     const [first, second] = [...sql.values()].sort((a, b) => a.id - b.id);
     expect(first.modifiedConfigs).toBeUndefined();
@@ -21,7 +22,7 @@ describe('effective conf of a real Spark 4.0 log with runtime settings', () => {
       'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes': '4MB',
     });
 
-    const conf = (modified, key) => effectiveSparkConf({ sparkVersion: app.sparkVersion, properties: app.config, modified }, key);
+    const conf = (/** @type {Record<string, string> | undefined} */ modified, /** @type {string} */ key) => effectiveSparkConf({ sparkVersion: app.sparkVersion, properties: app.config, modified }, key);
     expect(conf(first.modifiedConfigs, 'spark.sql.shuffle.partitions')).toEqual({ value: '16', source: 'app' });
     expect(conf(second.modifiedConfigs, 'spark.sql.shuffle.partitions')).toEqual({ value: '8', source: 'query' });
     expect(conf(second.modifiedConfigs, 'spark.sql.autoBroadcastJoinThreshold')).toEqual({ value: '-1', source: 'query' });

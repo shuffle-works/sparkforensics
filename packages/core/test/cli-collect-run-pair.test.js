@@ -13,14 +13,35 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const AQE_SKEW = join(FIXTURES, 'aqe-skew-spark-3.5.ndjson');
 const CACHE = join(FIXTURES, 'cache-block-updates.ndjson');
 
+/** @type {string[]} */
 const dirs = [];
 const tmpDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-pair-'));
   dirs.push(dir);
   return dir;
 };
+
+/**
+ * @template T
+ * @param {PromiseSettledResult<T> | undefined} result
+ * @returns {T}
+ */
+function valueOf(result) {
+  if (result?.status !== 'fulfilled') throw new Error('Expected a fulfilled parse.');
+  return result.value;
+}
+
+/**
+ * @param {PromiseSettledResult<unknown> | undefined} result
+ * @returns {Error & { code?: string }}
+ */
+function reasonOf(result) {
+  if (result?.status !== 'rejected') throw new Error('Expected a rejected parse.');
+  return result.reason;
+}
+
 afterEach(() => {
-  while (dirs.length) rmSync(dirs.pop(), { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
 
@@ -54,28 +75,28 @@ describe('collectRunPair', () => {
   it('parses both logs in this thread when the smaller one is below the threshold', async () => {
     const { baseline, candidate } = await collectRunPair(CACHE, AQE_SKEW);
     expect(baseline.status).toBe('fulfilled');
-    expect(candidate.status).toBe('fulfilled');
+    expect(candidate?.status).toBe('fulfilled');
     expect(readFileSync(CACHE).length).toBeLessThan(MIN_OFFLOAD_PARSE_BYTES);
-    expect(baseline.value.appModel.app.id).toBe((await collectRun(CACHE)).appModel.app.id);
+    expect(valueOf(baseline).appModel.app?.id).toBe((await collectRun(CACHE)).appModel.app?.id);
   });
 
   it('returns the same models from a worker thread as from this one, whichever log it parses', async () => {
     const own = { baseline: await collectRun(CACHE), candidate: await collectRun(AQE_SKEW) };
     const { baseline, candidate } = await collectRunPair(CACHE, AQE_SKEW, { minOffloadBytes: 0 });
-    expect(baseline.value).toEqual(own.baseline);
-    expect(candidate.value).toEqual(own.candidate);
+    expect(valueOf(baseline)).toEqual(own.baseline);
+    expect(valueOf(candidate)).toEqual(own.candidate);
 
     const swapped = await collectRunPair(AQE_SKEW, CACHE, { minOffloadBytes: 0 });
-    expect(swapped.baseline.value).toEqual(own.candidate);
-    expect(swapped.candidate.value).toEqual(own.baseline);
+    expect(valueOf(swapped.baseline)).toEqual(own.candidate);
+    expect(valueOf(swapped.candidate)).toEqual(own.baseline);
   });
 
   it('keeps the model\'s Maps and numbers as they are after the worker\'s structured clone', async () => {
     const { baseline } = await collectRunPair(AQE_SKEW, CACHE, { minOffloadBytes: 0 });
     const own = await collectRun(AQE_SKEW);
-    expect(baseline.value.appModel.stages).toBeInstanceOf(Map);
-    expect([...baseline.value.appModel.stages.keys()]).toEqual([...own.appModel.stages.keys()]);
-    expect(baseline.value.skippedLines).toBe(own.skippedLines);
+    expect(valueOf(baseline).appModel.stages).toBeInstanceOf(Map);
+    expect([...valueOf(baseline).appModel.stages.keys()]).toEqual([...own.appModel.stages.keys()]);
+    expect(valueOf(baseline).skippedLines).toBe(own.skippedLines);
   });
 
   it('does not read the candidate when the baseline cannot be parsed in this thread', async () => {
@@ -84,7 +105,7 @@ describe('collectRunPair', () => {
     writeFileSync(bad, 'not an event log\n');
     const { baseline, candidate } = await collectRunPair(bad, AQE_SKEW);
     expect(baseline.status).toBe('rejected');
-    expect(baseline.reason.message).toMatch(/Not a Spark event log/);
+    expect(reasonOf(baseline).message).toMatch(/Not a Spark event log/);
     expect(candidate).toBeUndefined();
   });
 
@@ -94,8 +115,8 @@ describe('collectRunPair', () => {
     writeFileSync(bad, 'not an event log\n');
     const { baseline, candidate } = await collectRunPair(AQE_SKEW, bad, { minOffloadBytes: 0 });
     expect(baseline.status).toBe('fulfilled');
-    expect(candidate.status).toBe('rejected');
-    expect(candidate.reason.message).toMatch(/Not a Spark event log/);
+    expect(candidate?.status).toBe('rejected');
+    expect(reasonOf(candidate).message).toMatch(/Not a Spark event log/);
   });
 
   it('reports a missing log with the message and code the parse in this thread gives', async () => {
@@ -103,8 +124,8 @@ describe('collectRunPair', () => {
     const own = await collectRun(missing).catch((e) => e);
     const { baseline } = await collectRunPair(missing, AQE_SKEW, { minOffloadBytes: 0 });
     expect(baseline.status).toBe('rejected');
-    expect(baseline.reason.message).toBe(own.message);
-    expect(baseline.reason.code).toBe(own.code);
+    expect(reasonOf(baseline).message).toBe(own.message);
+    expect(reasonOf(baseline).code).toBe(own.code);
   });
 });
 

@@ -81,14 +81,15 @@ describe('impactEstimateFigure', () => {
   });
 
   it('falls back to the raw waste in dashboard units when there is no range', () => {
-    const estimate = { basis: 'resourceOnly', estimateMethod: 'modeled', rawWaste: { value: 1639227.1, unit: 'mbSeconds' } };
+    /** @type {import('../src/types.ts').ImpactEstimate} */
+    const estimate = { basis: 'resourceOnly', estimateMethod: 'modeled', wallClock: null, rawWaste: { value: 1639227.1, unit: 'mbSeconds' } };
     expect(impactEstimateFigure(estimate)).toEqual({ text: '0.4 GB-h', meaning: 'of unused executor memory (modeled)' });
   });
 
   it('shows nothing for a figure that reads as zero or an informational estimate', () => {
-    expect(impactEstimateFigure({ basis: 'resourceOnly', estimateMethod: 'measured', rawWaste: { value: 0.01, unit: 'coreHours' } })).toBeNull();
+    expect(impactEstimateFigure({ basis: 'resourceOnly', estimateMethod: 'measured', wallClock: null, rawWaste: { value: 0.01, unit: 'coreHours' } })).toBeNull();
     expect(impactEstimateFigure({ basis: 'serial', estimateMethod: 'measured', wallClock: { low: 0, high: 0 } })).toBeNull();
-    expect(impactEstimateFigure({ basis: 'informational', estimateMethod: 'none' })).toBeNull();
+    expect(impactEstimateFigure({ basis: 'informational', estimateMethod: 'none', wallClock: null })).toBeNull();
   });
 
   it('reads core time in core-s below a tenth of a core-hour', () => {
@@ -97,6 +98,7 @@ describe('impactEstimateFigure', () => {
   });
 
   it('labels an idle core figure as idle capacity, not core time', () => {
+    /** @type {import('../src/types.ts').ImpactEstimate} */
     const idle = { basis: 'resourceOnly', estimateMethod: 'measured', wallClock: null, rawWaste: { value: 12.3, unit: 'coreHours', idle: true } };
     expect(impactEstimateFigure(idle)).toEqual({ text: '12.3 core-h', meaning: 'of idle core capacity' });
     expect(rawWasteMeaning({ value: 12_300, unit: 'coreMs', idle: true })).toBe('of idle core capacity');
@@ -104,7 +106,9 @@ describe('impactEstimateFigure', () => {
 });
 
 describe('savingsMeaning', () => {
+  /** @param {import('../src/types.ts').ImpactEstimate | undefined} impactEstimate @returns {import('../src/types.ts').Finding} */
   const withEstimate = (impactEstimate) => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
+  /** @param {import('../src/types.ts').RawWasteUnit} unit */
   const costOnly = (unit) =>
     withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10, unit } });
 
@@ -120,6 +124,7 @@ describe('savingsMeaning', () => {
 });
 
 describe('estimateProvenance', () => {
+  /** @param {import('../src/types.ts').ImpactEstimate | undefined} impactEstimate @returns {import('../src/types.ts').Finding} */
   const withEstimate = (impactEstimate) => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
 
   it('calls a serial figure close to a point estimate and notes ms raw waste only when the floor clipped it', () => {
@@ -159,8 +164,10 @@ describe('estimateProvenance', () => {
 
 describe('cost-only task time', () => {
   // 594s of cumulative task time: as a duration it reads like the wall-clock savings beside it.
+  /** @type {import('../src/types.ts').ImpactEstimate} */
   const costOnly = { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 594_000, unit: 'ms' } };
-  const finding = { impactEstimate: costOnly };
+  /** @type {import('../src/types.ts').Finding} */
+  const finding = { type: 'skew', impactBand: 'critical', impactEstimate: costOnly };
 
   it('prints a cost-only ms figure as core time with its certainty', () => {
     expect(impactEstimateFigure(costOnly)).toEqual({ text: '0.2 core-h', meaning: 'of task time (modeled)' });
@@ -174,6 +181,7 @@ describe('cost-only task time', () => {
   });
 
   it('prints a measured cost-only figure without a certainty note', () => {
+    /** @type {import('../src/types.ts').ImpactEstimate} */
     const measured = { ...costOnly, estimateMethod: 'measured' };
     expect(impactEstimateFigure(measured)).toEqual({ text: '0.2 core-h', meaning: 'of task time' });
   });
@@ -184,6 +192,7 @@ describe('cost-only task time', () => {
   });
 
   it('words a re-read byte figure as scanned input', () => {
+    /** @type {import('../src/types.ts').ImpactEstimate} */
     const reread = { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 2_000_000_000, unit: 'bytes', reread: true } };
     expect(impactEstimateFigure(reread)).toEqual({ text: '2.0 GB', meaning: 'of input read by the repeated scans' });
   });
@@ -191,6 +200,7 @@ describe('cost-only task time', () => {
 
 describe('estimateProvenance assumptions', () => {
   it('appends the assumptions after the provenance sentence', () => {
+    /** @type {import('../src/types.ts').ImpactEstimate} */
     const estimate = {
       basis: 'serial', estimateMethod: 'modeled', wallClock: { low: 11_100, high: 11_100 },
       assumptions: 'assumes 200 MB/s per executor over 75 executors; counts disk spill only, not memory spill, serialization or GC',

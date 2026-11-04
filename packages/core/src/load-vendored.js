@@ -15,9 +15,13 @@ export const SOURCE_HASH_FILE = 'core-source-hash.txt';
 // docs-content/ is generated from a pinned upstream commit, not analysis code.
 const UNHASHED_TOP_LEVEL = new Set(['docs-content']);
 
-/** A content hash of every analysis source file under core/src (paths and bytes, sorted). */
+/**
+ * A content hash of every analysis source file under core/src (paths and bytes, sorted).
+ * @param {string} coreSrcDir
+ */
 export function coreSourceHash(coreSrcDir) {
   const hash = createHash('sha256');
+  /** @param {string} dir */
   const walk = (dir) => {
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
@@ -38,6 +42,7 @@ const useVendoredByPkg = new Map();
 // local `npm pack` (it is rebuilt only at prepack), so it is used only while it still matches
 // core/src; otherwise the run says so on stderr and loads core/src, rather than silently running
 // outdated detectors.
+/** @param {string} pkgDir */
 function useVendored(pkgDir) {
   if (useVendoredByPkg.has(pkgDir)) return useVendoredByPkg.get(pkgDir);
   const vendorDir = join(pkgDir, 'vendor-core');
@@ -60,6 +65,11 @@ function useVendored(pkgDir) {
 
 // moduleName is a path relative to core/src without extension, e.g. 'cli/collect-run'. Pass
 // srcExt: 'js' for modules already plain JS in core/src (e.g. 'proxy') rather than TypeScript.
+/**
+ * @param {string} pkgDir
+ * @param {string} moduleName
+ * @param {{ srcExt?: string }} [opts]
+ */
 export function resolveVendored(pkgDir, moduleName, { srcExt = 'ts' } = {}) {
   const vendored = join(pkgDir, 'vendor-core', `${moduleName}.js`);
   return useVendored(pkgDir) && existsSync(vendored) ? vendored : join(pkgDir, '..', 'core', 'src', `${moduleName}.${srcExt}`);
@@ -68,7 +78,9 @@ export function resolveVendored(pkgDir, moduleName, { srcExt = 'ts' } = {}) {
 /** The build id of the core this package runs: the stamped source hash of its vendor-core/ when
  * that copy is in use, else the hash of core/src computed now. The same `coreSourceHash` the web
  * build stamps into its bundle, so equal ids mean the same analysis code. 'dev' when neither
- * exists. */
+ * exists.
+ * @param {string} pkgDir
+ */
 export function coreBuildId(pkgDir) {
   if (useVendored(pkgDir)) {
     const stampPath = join(pkgDir, 'vendor-core', SOURCE_HASH_FILE);
@@ -78,6 +90,11 @@ export function coreBuildId(pkgDir) {
   return existsSync(srcDir) ? coreSourceHash(srcDir) : 'dev';
 }
 
+/**
+ * @param {string} pkgDir
+ * @param {string} moduleName
+ * @param {{ srcExt?: string }} [opts]
+ */
 export async function loadVendored(pkgDir, moduleName, opts) {
   return import(pathToFileURL(resolveVendored(pkgDir, moduleName, opts)).href);
 }

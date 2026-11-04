@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { attributeEtlPhases } from '../src/etl-phases.js';
 
+/** @param {Partial<import('../src/types.ts').Stage>[]} list */
 function stagesMap(list) { return new Map(list.map((s, i) => [i, { submittedAt: 0, completedAt: 0, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, outputBytes: 0, ...s }])); }
 
 describe('attributeEtlPhases (Onehouse Spark Analyzer, phase-bucketing only)', () => {

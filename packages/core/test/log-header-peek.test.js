@@ -7,10 +7,15 @@ import { corpusLog } from './corpus-log.js';
 
 const MINIMAL_FIXTURE = corpusLog('external/external-minimal-eventlog.ndjson');
 
+/**
+ * @param {string} name
+ * @param {Uint8Array} bytes
+ */
 function fileFromBytes(name, bytes) {
   return {
     name,
     size: bytes.length,
+    /** @param {number} start @param {number} end */
     slice(start, end) {
       const view = bytes.subarray(start, end);
       return { async arrayBuffer() { return view.slice().buffer; } };
@@ -22,11 +27,11 @@ describe('peekLogHeader', () => {
   // dev/log-corpus is a git submodule (public corpus repo), checked out in CI; skipped locally
   // until `git submodule update --init dev/log-corpus`.
   it.skipIf(!MINIMAL_FIXTURE)('extracts appId/name/sparkVersion/startTime from a real uncompressed fixture', async () => {
-    const raw = readFileSync(MINIMAL_FIXTURE);
+    const raw = readFileSync(/** @type {string} */ (MINIMAL_FIXTURE)); // skipIf guarantees a path
     const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
     const result = await peekLogHeader(fileFromBytes('eventlog', bytes));
     expect(result).not.toBeNull();
-    expect(typeof result.appId).toBe('string');
+    expect(typeof result?.appId).toBe('string');
   });
 
   it('returns null when no SparkListenerApplicationStart appears within the line cap', async () => {
@@ -53,6 +58,7 @@ describe('peekLogHeader', () => {
     const file = {
       name: 'eventlog',
       size: bytes.length,
+      /** @param {number} start @param {number} end */
       slice(start, end) {
         bytesRequested += end - start;
         const view = bytes.subarray(start, end);
@@ -84,7 +90,7 @@ describe('peekLogHeader', () => {
     const ndjson = '{"Event":"SparkListenerLogStart","Spark Version":"3.5.0"}\n'
       + '{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"n","Timestamp":0,"Spark Version":"2.4.0"}\n';
     const result = await peekLogHeader(fileFromBytes('eventlog', strToU8(ndjson)));
-    expect(result.sparkVersion).toBe('3.5.0');
+    expect(result?.sparkVersion).toBe('3.5.0');
   });
 
   it('still finds the header when the last line has no trailing newline', async () => {

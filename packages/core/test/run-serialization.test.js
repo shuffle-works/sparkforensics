@@ -10,12 +10,16 @@ import { deserializeRun, FIELDS, serializeRun } from '../src/run-serialization.t
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const LOGS = [FIXTURES, join(FIXTURES, 'synthetic')]
   .flatMap((dir) => readdirSync(dir).filter((name) => name.endsWith('.ndjson')).sort().map((name) => join(dir, name)));
+/** @param {string} path */
 const nameOf = (path) => path.slice(FIXTURES.length + 1);
 
+/** @param {string} path */
 const analyzed = async (path) => analyzeRun((await collectRun(path)).appModel);
 
 // The run's own fields and its model's fields that `FIELDS` has no entry for.
+/** @param {import('../src/analyzed-run.ts').AnalyzedRun} run */
 function unserializedFields(run) {
+  /** @type {Set<string>} */
   const known = new Set(Object.values(FIELDS).map(({ from }) => from));
   return [
     ...Object.keys(run).filter((key) => key !== 'appModel'),
@@ -33,13 +37,17 @@ describe('serializeRun and deserializeRun', () => {
   it('round-trip the task data a snapshot source holds', async () => {
     const run = await analyzed(LOGS[0]);
     const stages = new Map([[1, { metrics: new Float64Array([1, 2]), fieldNames: ['duration'] }]]);
-    const withTaskData = { ...run, taskData: { kind: 'snapshot', stages } };
+    /** @type {import('../src/analyzed-run.ts').TaskDataSource} */
+    const taskData = { kind: 'snapshot', stages };
+    const withTaskData = { ...run, taskData };
 
     expect(deserializeRun(serializeRun(withTaskData))).toEqual(withTaskData);
   });
 
   it('carry what a worker-backed run fetched so far, since the worker itself is not data', async () => {
-    const run = { ...(await analyzed(LOGS[0])), taskData: { kind: 'worker', request: () => Promise.reject(new Error('no worker')) } };
+    /** @type {import('../src/analyzed-run.ts').TaskDataSource} */
+    const taskData = { kind: 'worker', request: () => Promise.reject(new Error('no worker')) };
+    const run = { ...(await analyzed(LOGS[0])), taskData };
     const fetched = new Map([[2, { metrics: new Float64Array([3]), fieldNames: ['duration'] }]]);
 
     expect(deserializeRun(serializeRun(run, fetched)).taskData).toEqual({ kind: 'snapshot', stages: fetched });
@@ -73,8 +81,9 @@ describe('redactRun', () => {
     const redacted = serializeRun(redactRun(withHost));
     const original = serializeRun(withHost);
 
-    for (const [field, { redaction }] of Object.entries(FIELDS)) {
-      if (redaction === 'keep') expect(redacted[field], field).toEqual(original[field]);
+    const fields = /** @type {(keyof import('../src/run-serialization.ts').SerializedRun)[]} */ (Object.keys(FIELDS));
+    for (const field of fields) {
+      if (FIELDS[field].redaction === 'keep') expect(redacted[field], field).toEqual(original[field]);
     }
     expect(redacted.taskData).toBeNull();
     expect(Object.keys(redacted).sort()).toEqual(Object.keys(FIELDS).sort());

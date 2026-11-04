@@ -3,29 +3,46 @@ import { findingKey, diffFindings } from '../src/finding-identity.ts';
 import { compareRuns } from '../src/run-comparison.ts';
 import { comparisonVerdict } from '../src/comparison-verdict.ts';
 import { evaluateBudgets } from '../src/cli/budgets.ts';
+import { emptyAppModel } from '../src/run-serialization.ts';
+
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/finding-identity.ts').FindingLocator} FindingLocator */
 
 const APP = { id: 'a', name: 'job', startTime: 0, endTime: 10_000 };
 
+/** @param {string} name */
 function stage(name) {
-  return { name, details: name, sqlExecutionId: null, submittedAt: 0, completedAt: 1000, taskDurationMax: 100,
-    taskCount: 10, failedTasks: 0, memoryBytesSpilled: 0, executorRunTime: 1000 };
+  return /** @type {import('../src/types.ts').Stage} */ ({ name, details: name, sqlExecutionId: null, submittedAt: 0, completedAt: 1000, taskDurationMax: 100,
+    taskCount: 10, failedTasks: 0, memoryBytesSpilled: 0, executorRunTime: 1000 });
 }
 
 // Two stages with distinct names, so each pairs with its namesake in the other run.
+/**
+ * @param {Finding[]} catalog
+ * @param {string} label
+ */
 function run(catalog, label) {
   const stages = new Map([[1, stage('Exchange orders')], [2, stage('Sort customers')]]);
-  return { label, snapshot: { app: APP, stages, sql: new Map(), jobs: new Map(), catalog } };
+  return { label, snapshot: { ...emptyAppModel(), app: APP, stages, catalog } };
 }
 
-const finding = (over) => ({ type: 'skew', rule: 'skew', stageId: 1, impactBand: 'critical', value: 10, ...over });
+/** @param {{ type?: Finding['type'], rule?: string, stageId?: number, impactBand?: import('../src/types.ts').ImpactBand, value?: number }} [over] */
+const finding = (over = {}) => /** @type {Finding} */ ({ type: 'skew', stageId: 1, impactBand: 'critical', value: 10, ...over });
 
+/**
+ * @param {import('../src/run-comparison.ts').CompareRunsResult} comparison
+ * @param {string} band
+ */
 function budgetFor(comparison, band) {
-  const appModel = { app: APP, stages: new Map(), executors: { added: [], removed: [] }, runAggregates: null };
-  return evaluateBudgets({ appModel, catalog: [], budgets: { failOnIntroduced: band }, comparison })
+  const appModel = { ...emptyAppModel(), app: APP };
+  const result = evaluateBudgets({ appModel, catalog: [], budgets: { failOnIntroduced: band }, comparison })
     .results.find((r) => r.name === 'fail-on-introduced');
+  if (!result) throw new Error('no fail-on-introduced result');
+  return result;
 }
 
 describe('findingKey', () => {
+  /** @type {FindingLocator} */
   const locator = { stage: (id) => `s${id}`, execution: (id) => `e${id}` };
 
   it('ignores the value and the impact band', () => {
@@ -41,13 +58,20 @@ describe('findingKey', () => {
   });
 
   it('locates a stage-less finding by its execution, its config property, or the run', () => {
-    expect(findingKey({ type: 'smallFiles', stageId: null, executionId: 3 }, locator)).toContain('execution:e3');
-    expect(findingKey({ type: 'configAudit', stageId: null, property: 'spark.x' }, locator)).toContain('property:spark.x');
-    expect(findingKey({ type: 'utilization', stageId: null }, locator)).toContain('run');
+    expect(findingKey({
+      type: 'smallFiles', stageId: null, impactBand: 'info', executionId: 3, stageIds: [], planNodeIds: [],
+      fileCount: 1, direction: 'read', nodeName: 'Scan parquet',
+    }, locator)).toContain('execution:e3');
+    expect(findingKey({ type: 'configAudit', stageId: null, impactBand: 'info', property: 'spark.x', valueText: '1' }, locator)).toContain('property:spark.x');
+    expect(findingKey({
+      type: 'utilization', stageId: null, impactBand: 'info', cpuUtilizationPct: null,
+      utilizationFraction: 0.5, appDurationMs: 1000, totalCores: 4, allocatedCoreMs: 4000,
+    }, locator)).toContain('run');
   });
 });
 
 describe('diffFindings', () => {
+  /** @type {FindingLocator} */
   const locator = { stage: (id) => `s${id}`, execution: (id) => `e${id}` };
 
   it('pairs findings that share a key one-to-one, same band first', () => {
@@ -105,7 +129,7 @@ describe('comparison across runs', () => {
   });
 
   it('keeps a finding unchanged when the same stage carries a different stage id in each run', () => {
-    const shifted = { label: 'cand', snapshot: { app: APP, jobs: new Map(), sql: new Map(),
+    const shifted = { label: 'cand', snapshot: { ...emptyAppModel(), app: APP,
       stages: new Map([[7, stage('Exchange orders')], [8, stage('Sort customers')]]),
       catalog: [finding({ stageId: 7, impactBand: 'critical', value: 3 })] } };
     const comparison = compareRuns(run([finding({ stageId: 1, impactBand: 'critical', value: 8 })], 'base'), shifted);
@@ -113,7 +137,12 @@ describe('comparison across runs', () => {
   });
 
   it('keeps a finding on a stage the aligner cannot pair matched across runs', () => {
-    const withStages = (stages, catalog, label) => ({ label, snapshot: { app: APP, jobs: new Map(), sql: new Map(), stages, catalog } });
+    /**
+     * @param {ReturnType<typeof run>['snapshot']['stages']} stages
+     * @param {Finding[]} catalog
+     * @param {string} label
+     */
+    const withStages = (stages, catalog, label) => ({ label, snapshot: { ...emptyAppModel(), app: APP, stages, catalog } });
     const base = withStages(new Map([[1, stage('Alpha scan')]]), [finding({ stageId: 1, value: 8 })], 'base');
     const cand = withStages(new Map([[5, stage('Zulu write')]]), [finding({ stageId: 5, value: 4 })], 'cand');
     const comparison = compareRuns(base, cand);

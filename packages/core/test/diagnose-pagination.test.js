@@ -8,10 +8,12 @@ import { resolveOrCreateRun, diagnoseRun } from '../src/mcp-tools.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
+/** @type {string[]} */
 const dirs = [];
 afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
 
 // One slow task among nine fast ones in each stage: one straggler finding and one metrics row per stage.
+/** @param {number} stageCount */
 function tmpLargeEventLog(stageCount) {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-pagination-'));
   dirs.push(dir);
@@ -42,8 +44,26 @@ async function connectedClient() {
   return client;
 }
 
-const diagnose = (client, args) => client.callTool({ name: 'diagnose_run', arguments: args });
+// A tool result as the client reads it off the wire: JSON text plus a structured JSON object.
+/**
+ * @param {Client} client
+ * @param {string} name
+ * @param {Record<string, unknown>} args
+ */
+async function callTool(client, name, args) {
+  return JSON.parse(JSON.stringify(await client.callTool({ name, arguments: args })));
+}
 
+/**
+ * @param {Client} client
+ * @param {Record<string, unknown>} args
+ */
+const diagnose = (client, args) => callTool(client, 'diagnose_run', args);
+
+/**
+ * @param {Client} client
+ * @param {Record<string, unknown>} args
+ */
 async function allPages(client, args) {
   const pages = [];
   let cursor;
@@ -57,24 +77,48 @@ async function allPages(client, args) {
 }
 
 // The unpaged answer the handler would page, as a client would parse it.
+/**
+ * @param {string} path
+ * @param {NonNullable<Parameters<typeof diagnoseRun>[1]>} [args]
+ */
 async function wholeDiagnosis(path, args = {}) {
   const { runId } = await resolveOrCreateRun({ source: { path } });
   return JSON.parse(JSON.stringify(diagnoseRun(runId, { view: 'compact', ...args })));
 }
 
+/** @param {ReturnType<typeof paginateDiagnose>} page */
+function paginationOf(page) {
+  if (!('pagination' in page)) throw new Error('expected a paginated page');
+  return page.pagination;
+}
+
+/**
+ * @param {import('../src/mcp-tools.ts').DiagnoseRunResult} result
+ * @param {number} pageChars
+ */
 function pagesOf(result, pageChars) {
   const pages = [];
   let cursor;
   do {
     const page = paginateDiagnose(result, { cursor, pageChars });
     pages.push(JSON.parse(JSON.stringify(page)));
-    cursor = page.pagination?.nextCursor ?? undefined;
+    cursor = ('pagination' in page ? page.pagination.nextCursor : null) ?? undefined;
   } while (cursor);
   return pages;
 }
 
 describe('diagnose_run pagination', () => {
   const path = tmpLargeEventLog(150);
+
+  /** @param {string} id */
+  const row = (id) => ({ id, type: 'straggler', padding: 'x'.repeat(100) });
+  /**
+   * paginateDiagnose reads only the run id, the findings and the rows of `metrics` and `writeTargets`.
+   * @param {string[]} ids
+   * @returns {import('../src/mcp-tools.ts').DiagnoseRunResult}
+   */
+  // @ts-expect-error the result is cut down to the fields paginateDiagnose reads
+  const result = (ids) => ({ runId: 'r', view: 'compact', runComplete: true, findings: ids.map(row), metrics: { stages: {} }, writeTargets: { writes: [] } });
 
   it('returns a run that fits the budget unchanged, with no pagination field', async () => {
     const client = await connectedClient();
@@ -154,17 +198,15 @@ describe('diagnose_run pagination', () => {
   });
 
   it('refuses a cursor cut from other rows of the same count', () => {
-    const row = (id) => ({ id, type: 'straggler', padding: 'x'.repeat(100) });
-    const result = (ids) => ({ runId: 'r', view: 'compact', runComplete: true, findings: ids.map(row), metrics: { stages: {} }, writeTargets: { writes: [] } });
-    const { nextCursor } = paginateDiagnose(result(['a', 'b', 'c', 'd']), { pageChars: 500 }).pagination;
+    const nextCursor = paginationOf(paginateDiagnose(result(['a', 'b', 'c', 'd']), { pageChars: 500 })).nextCursor ?? undefined;
     expect(nextCursor).toBeTruthy();
     expect(() => paginateDiagnose(result(['a', 'b', 'c', 'e']), { pageChars: 500, cursor: nextCursor })).toThrow(/cursor/);
-    expect(paginateDiagnose(result(['a', 'b', 'c', 'd']), { pageChars: 500, cursor: nextCursor }).pagination.page).toBe(2);
+    expect(paginationOf(paginateDiagnose(result(['a', 'b', 'c', 'd']), { pageChars: 500, cursor: nextCursor })).page).toBe(2);
   });
 
   it('paginateDiagnose leaves the result alone when it fits and no cursor is given', () => {
-    const result = { runId: 'r', view: 'compact', findings: [], runComplete: true, metrics: { stages: {} }, writeTargets: { writes: [] } };
-    expect(paginateDiagnose(result)).toBe(result);
+    const whole = result([]);
+    expect(paginateDiagnose(whole)).toBe(whole);
   });
 });
 
@@ -191,12 +233,16 @@ describe('diagnose_run format "md"', () => {
 
 describe('get_finding_evidence by appId', () => {
   const path = tmpLargeEventLog(3);
-  const evidence = (client, args) => client.callTool({ name: 'get_finding_evidence', arguments: args });
+  /**
+   * @param {Client} client
+   * @param {Record<string, unknown>} args
+   */
+  const evidence = (client, args) => callTool(client, 'get_finding_evidence', args);
 
   it('analyses the source again when the runId is not cached, and finds the same finding', async () => {
     const client = await connectedClient();
     const diagnosis = (await diagnose(client, { source: { path } })).structuredContent;
-    const finding = diagnosis.findings.find((row) => row.type === 'straggler');
+    const finding = diagnosis.findings.find((/** @type {{ type: string }} */ row) => row.type === 'straggler');
     const viaRunId = (await evidence(client, { runId: diagnosis.runId, findingId: finding.id })).structuredContent;
 
     const restarted = await evidence(client, { runId: 'a-runid-from-before-the-restart', source: { path }, appId: 'app-large', findingId: finding.id });
@@ -227,7 +273,7 @@ describe('get_finding_evidence by appId', () => {
   it('matches the redacted app id under redact and does not print the real one', async () => {
     const client = await connectedClient();
     const diagnosis = (await diagnose(client, { source: { path }, redact: true })).structuredContent;
-    const finding = diagnosis.findings.find((row) => row.type === 'straggler');
+    const finding = diagnosis.findings.find((/** @type {{ type: string }} */ row) => row.type === 'straggler');
     expect(diagnosis.app.id).toMatch(/^app-\d+$/);
     const result = await evidence(client, { source: { path }, appId: diagnosis.app.id, redact: true, findingId: finding.id });
     expect(result.isError).toBeFalsy();

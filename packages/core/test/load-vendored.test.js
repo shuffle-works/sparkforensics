@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { coreBuildId, coreSourceHash, resolveVendored, SOURCE_HASH_FILE } from '../src/load-vendored.js';
 
 // A monorepo-shaped tree: <root>/core/src next to <root>/<pkg>/vendor-core.
+/** @param {string | null | undefined} stamp */
 function tree(stamp, { monorepo = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'sparkforensics-vendored-'));
   const srcDir = join(root, 'core', 'src');
@@ -19,6 +20,7 @@ function tree(stamp, { monorepo = true } = {}) {
 }
 
 describe('resolveVendored in a monorepo checkout', () => {
+  /** @type {string[]} */
   const dirs = [];
   afterEach(() => {
     vi.restoreAllMocks();
@@ -56,6 +58,7 @@ describe('resolveVendored in a monorepo checkout', () => {
 });
 
 describe('coreBuildId: the build id an HTML export stamps', () => {
+  /** @type {string[]} */
   const dirs = [];
   afterEach(() => {
     vi.restoreAllMocks();

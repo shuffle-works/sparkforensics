@@ -3,6 +3,7 @@ import { computeRunAggregates } from '../src/run-aggregates.js';
 import { FIELDS } from '../src/parser-worker.js';
 
 // Build stage Float64Arrays in the live stride-8 layout; only DURATION, LAUNCH_TIME, FINISH_TIME are set.
+/** @param {Record<number, { launch: number, finish: number }[]>} stages */
 function makeTaskStore(stages) {
   const store = new Map();
   for (const [stageId, tasks] of Object.entries(stages)) {
