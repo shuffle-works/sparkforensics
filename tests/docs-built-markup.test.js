@@ -11,8 +11,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const repoRoot = path.join(import.meta.dirname, '..');
 const configPath = path.join(repoRoot, 'docs-site/.vitepress/config.ts');
 
+/** @type {string} */
 let site;
+/** @type {string} */
 let root;
+/** @param {string} name */
 const page = (name) => new JSDOM(readFileSync(path.join(root, '.vitepress/dist', name), 'utf8')).window.document;
 
 beforeAll(async () => {
@@ -52,7 +55,7 @@ describe('docs header markup in the built HTML', () => {
   });
 
   it('gives the home page a main landmark', () => {
-    expect(page('index.html').querySelector('.VPHome').getAttribute('role')).toBe('main');
+    expect(page('index.html').querySelector('.VPHome')?.getAttribute('role')).toBe('main');
   });
 });
 

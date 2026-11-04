@@ -24,11 +24,14 @@ export const DEFAULT_EXAMPLES_FILE = join(REPO_ROOT, 'dev', 'detector-examples.j
 export const DEFAULT_RUNS_FILE = join(REPO_ROOT, 'dev', 'detector-example-runs.json');
 export const DEFAULT_WIDGET_DATA_DIR = join(REPO_ROOT, 'docs-site', 'public', 'detector-widget', 'data');
 
+/** @typedef {{ source: string, log: string, finding: { id: string, type: string } }} DetectorExample */
+
 // The placeholders the command examples use for the user's own log.
 const LOG_PLACEHOLDER = '<event-log>';
 
 // A long documentation body is cut to its length in the stored MCP response: the page shows the
 // shape of the real response without pasting a whole chapter.
+/** @param {unknown} value @returns {unknown} */
 function shortenDocContent(value) {
   if (Array.isArray(value)) return value.map(shortenDocContent);
   if (value && typeof value === 'object') {
@@ -48,13 +51,19 @@ async function connectMcp() {
   return client;
 }
 
+/**
+ * @param {Client} client
+ * @param {string} name
+ * @param {Record<string, unknown>} args
+ */
 async function callTool(client, name, args) {
   const result = await client.callTool({ name, arguments: args });
-  if (result.isError) throw new Error(`${name} ${JSON.stringify(args)} failed: ${result.content?.[0]?.text}`);
+  if (result.isError) throw new Error(`${name} ${JSON.stringify(args)} failed: ${/** @type {{ text?: string }[] | undefined} */ (result.content)?.[0]?.text}`);
   // The in-memory transport skips the JSON step stdio does, which drops undefined-valued keys.
   return JSON.parse(JSON.stringify(result.structuredContent));
 }
 
+/** @param {string} type */
 function cliDetectors(type) {
   const argv = ['--type', type, '--format', 'md'];
   const result = runDetectorsCommand(argv);
@@ -62,6 +71,7 @@ function cliDetectors(type) {
   return { command: `sparkforensics-analyze detectors ${argv.join(' ')}`, output: result.stdout };
 }
 
+/** @param {string} file */
 function loadJson(file) {
   if (!existsSync(file)) throw new Error(`${file} is missing. Run: node dev/detector-examples.mjs --update`);
   return JSON.parse(readFileSync(file, 'utf8'));
@@ -69,6 +79,11 @@ function loadJson(file) {
 
 // The data file entry for one catalog record: the record, its example and the real tool outputs the
 // page shows.
+/**
+ * @param {Client} client
+ * @param {import('../packages/core/src/detector-listing.ts').DetectorCatalogRecord} record
+ * @param {DetectorExample} example
+ */
 async function buildEntry(client, record, example) {
   const { type } = record;
   const mcpResponse = await callTool(client, 'list_detectors', { type });
@@ -95,6 +110,11 @@ async function buildEntry(client, record, example) {
   };
 }
 
+/**
+ * @param {string} title
+ * @param {string} description
+ * @param {string} component
+ */
 function pageSource(title, description, component) {
   return [
     '---',

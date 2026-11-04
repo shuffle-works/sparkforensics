@@ -1,4 +1,4 @@
-import { singleStageImpact } from '../../impact-model.ts';
+import { costOnly } from '../../impact-model.ts';
 import { increaseConf } from '../../remediation.ts';
 import type { Finding, ImpactEstimate } from '../../types.ts';
 import type { FindingOf, AllKeys } from '../../finding-types.ts';
@@ -13,7 +13,7 @@ export type SpeculationWasteEvidence = Record<never, never>;
 export interface SpeculationWasteFinding extends NumericFinding<'speculationWaste'>, SpeculationWasteEvidence {}
 
 export const speculationWasteDetector = defineStageDetector({
-  type: 'speculationWaste', order: 71, bandPolicy: 'derived', fixEffort: 'config', version: 1,
+  type: 'speculationWaste', order: 71, bandPolicy: 'own', fixEffort: 'config', version: 2,
   emits: ['speculationWaste'],
   docAnchor: '#bottleneck-speculation-waste',
   thresholds: { minWasted: 5, minWasteMs: 60000 },
@@ -35,7 +35,8 @@ export const speculationWasteDetector = defineStageDetector({
     const stage = ctx.stages.get(finding.stageId);
     if (!stage) return null;
     const wasteMs = (stage.speculationWasteMs as number | undefined) ?? 0;
-    return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
+    // Losing copies run on spare slots beside their originals: they cost core time, not run time.
+    return costOnly('measured', { value: wasteMs, unit: 'ms' });
   },
 });
 

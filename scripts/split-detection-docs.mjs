@@ -19,6 +19,7 @@ export const DETECTION_DIR = join(REPO_ROOT, 'packages', 'core', 'src', 'docs-co
 const SECTION_HEADING_RE = /^### `([A-Z]+)`.*\{#([a-z0-9-]+)\}\s*$/;
 
 // Pure, no filesystem access: unit-tested directly.
+/** @param {string} markdown */
 export function splitDetectionDocs(markdown) {
   const lines = markdown.split('\n');
   const sections = [];
@@ -75,7 +76,7 @@ function main() {
     const wrote = ensureDetectionDocs();
     console.log(`split-detection-docs: ${wrote ? 'wrote' : 'kept'} ${DETECTION_DIR}.`);
   } catch (err) {
-    console.error(err.message);
+    console.error(/** @type {Error} */ (err).message);
     process.exit(1);
   }
 }

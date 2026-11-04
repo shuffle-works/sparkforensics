@@ -10,13 +10,19 @@ import { DETECTOR_FAMILIES } from '../packages/core/src/finding-presentation.ts'
 // The generated detector catalog pages (docs-site/detectors/): one page per finding type, the
 // index, and the data file the Vue components render. Built into a temp dir, so the test never
 // touches the gitignored output the docs build writes.
+/** @type {string} */
 let tmp;
+/** @type {string} */
 let outDir;
+/** @type {string} */
 let widgetDataDir;
+/** @type {Awaited<ReturnType<typeof buildDetectorPages>>} */
 let data;
 const catalog = buildDetectorCatalog();
+/** @param {string} name */
 const read = (name) => readFileSync(join(outDir, name), 'utf8');
-const entry = (type) => data.records.find((r) => r.type === type);
+/** @param {string} type */
+const entry = (type) => /** @type {typeof data.records[number]} */ (data.records.find((r) => r.type === type));
 
 beforeAll(async () => {
   tmp = mkdtempSync(join(tmpdir(), 'detector-pages-'));
@@ -70,6 +76,7 @@ describe('real outputs on the pages', () => {
 
 describe('example data for the widget', () => {
   const runs = JSON.parse(readFileSync(DEFAULT_RUNS_FILE, 'utf8'));
+  /** @param {string} type */
   const example = (type) => JSON.parse(readFileSync(join(widgetDataDir, `${type}.json`), 'utf8'));
 
   it('writes one file per type, with the example finding id and its run', () => {
@@ -141,11 +148,11 @@ describe('examples file', () => {
 describe('special cases', () => {
   it('carries the tuning page kind', () => {
     expect(entry('configAudit').tuning).toBeNull();
-    expect(entry('stageShape').tuning.kind).toBe('section');
-    expect(entry('pythonUdf').tuning.kind).toBe('chapter');
-    expect(entry('skew').tuning.kind).toBe('page');
+    expect(entry('stageShape').tuning?.kind).toBe('section');
+    expect(entry('pythonUdf').tuning?.kind).toBe('chapter');
+    expect(entry('skew').tuning?.kind).toBe('page');
     for (const type of ['rightSizing', 'utilization', 'failures', 'stageFailed', 'overBroadcast', 'underBroadcast']) {
-      expect(entry(type).tuning.kind).toBe('shared');
+      expect(entry(type).tuning?.kind).toBe('shared');
     }
   });
 
@@ -161,8 +168,8 @@ describe('special cases', () => {
   });
 
   it('carries a budget gate and its budget command', () => {
-    expect(entry('skew').gate.cliFlag).toBe('--max-skew');
-    expect(entry('failures').gate.cliFlag).toBe('--max-failed-task-rate');
+    expect(entry('skew').gate?.cliFlag).toBe('--max-skew');
+    expect(entry('failures').gate?.cliFlag).toBe('--max-failed-task-rate');
     expect(entry('jobFailureRate').gate).toBeNull();
     expect(entry('stageShape').gate).toBeNull();
     expect(entry('skew').surfaces.cli.budgetCommand).toContain('--max-skew');

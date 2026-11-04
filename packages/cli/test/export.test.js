@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 // rename (argument-validation failures) or runs the packed bin in a separate process (spawnSync,
 // unaffected by an in-process mock either way), so this default passthrough leaves them unchanged.
 vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = /** @type {typeof import('node:fs')} */ (await importOriginal());
   return { ...actual, renameSync: vi.fn(actual.renameSync) };
 });
 
@@ -28,6 +28,7 @@ import { parseRun } from './envelope-helpers.js';
 // writeHtmlExport): base64-decode + gunzip + JSON.parse to get the run data
 // back. Node's own zlib is fine here — the test doesn't need to exercise
 // fflate, only prove the CLI's write side round-trips.
+/** @param {string} dataJs @returns {import('@sparkforensics/core/export').ExportRunData} */
 function parseRunPayload(dataJs) {
   const match = dataJs.match(/window\.__SPARKFORENSICS_RUN_GZ__ = "([^"]+)";/);
   if (!match) throw new Error(`data.js didn't contain the expected __SPARKFORENSICS_RUN_GZ__ assignment:\n${dataJs}`);
@@ -37,6 +38,7 @@ function parseRunPayload(dataJs) {
 
 // Mirrors analyze.test.js's runMainInProcess: fast, no pack/install, used for
 // argument-validation behavior that doesn't depend on the vendored template.
+/** @param {string[]} argv @param {{ fetchImpl?: typeof fetch }} [mainOpts] */
 async function runMainInProcess(argv, mainOpts) {
   const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -134,8 +136,8 @@ describe('--export-html argument handling', () => {
       expect(parsed.skippedLines).toBe(1);
       // evidenceAvailability is derived inside resolveFromShs with its own skippedLines value;
       // the two numbers in the same payload must agree.
-      const executorMetricsEntry = parsed.evidenceAvailability.entries.find((e) => e.key === 'executorMetrics');
-      expect(executorMetricsEntry.reasonCode).toBe('parseIncomplete');
+      const executorMetricsEntry = parsed.evidenceAvailability?.entries.find((e) => e.key === 'executorMetrics');
+      expect(executorMetricsEntry?.reasonCode).toBe('parseIncomplete');
     } finally {
       rmSync(parentDir, { recursive: true, force: true });
     }
@@ -147,7 +149,7 @@ describe('--export-html argument handling', () => {
     writeFileSync(logPath, minimalNdjson());
     const parentDir = mkdtempSync(join(tmpdir(), 'sparkforensics-export-out-'));
     const destDir = join(parentDir, 'export-out');
-    renameSync.mockImplementationOnce(() => {
+    vi.mocked(renameSync).mockImplementationOnce(() => {
       throw new Error('EBUSY: resource busy or locked, rename');
     });
     try {
@@ -172,7 +174,9 @@ describe('--export-html argument handling', () => {
 // suite. This is the only way to exercise export-template/'s `files`
 // allowlist and prove writeHtmlExport finds its template from a real install.
 const packageDir = process.cwd();
+/** @type {string[]} */
 const cleanupDirs = [];
+/** @type {string} */
 let binPath;
 
 beforeAll(() => {
@@ -185,6 +189,7 @@ afterAll(() => {
   for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true });
 });
 
+/** @param {string[]} args */
 function runCli(args) {
   const { stdout, stderr, status } = spawnSync(binPath, args, { encoding: 'utf8' });
   return { stdout, stderr, status };
@@ -208,7 +213,7 @@ describe('--export-html (published bin)', () => {
       expect(existsSync(join(destDir, 'docs'))).toBe(false);
       const dataJs = readFileSync(join(destDir, 'data.js'), 'utf8');
       expect(dataJs).toContain('window.__SPARKFORENSICS_RUN_GZ__');
-      expect(parseRunPayload(dataJs).app.id).toBe('app-export-1');
+      expect(parseRunPayload(dataJs).app?.id).toBe('app-export-1');
     } finally {
       rmSync(logDir, { recursive: true, force: true });
       rmSync(parentDir, { recursive: true, force: true });
@@ -227,7 +232,7 @@ describe('--export-html (published bin)', () => {
       const dataJs = readFileSync(join(destDir, 'data.js'), 'utf8');
       expect(dataJs).not.toContain('app-export-1');
       const parsed = parseRunPayload(dataJs);
-      expect(parsed.app.id).toMatch(/^app-\d+$/);
+      expect(parsed.app?.id).toMatch(/^app-\d+$/);
     } finally {
       rmSync(logDir, { recursive: true, force: true });
       rmSync(parentDir, { recursive: true, force: true });

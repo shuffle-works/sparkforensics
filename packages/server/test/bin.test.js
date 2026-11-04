@@ -20,6 +20,7 @@ const execFileAsync = promisify(execFile);
 const serverDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const publicDir = join(serverDir, 'public');
 const vendorCoreDir = join(serverDir, 'vendor-core');
+/** @type {string[]} */
 const cleanupDirs = [];
 
 afterAll(() => {
@@ -36,7 +37,7 @@ describe('published bin entrypoint', () => {
 
       const port = 20000 + Math.floor(Math.random() * 10000);
       const child = spawn(binPath, ['--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
-      let spawnError = null;
+      let spawnError = /** @type {Error | null} */ (null);
       child.on('error', (err) => { spawnError = err; });
       let stderr = '';
       child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });

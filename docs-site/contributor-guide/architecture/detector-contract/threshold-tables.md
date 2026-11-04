@@ -76,6 +76,7 @@ These detector entries set `impactBand` themselves, and nothing overwrites it. E
 - `memoryUtilization`: idle cores warning above `idleCoreWarn`; the memory band is an info over-provisioning note under `bandTooHigh`. It has no near-capacity band, since heap used counts uncollected garbage.
 - `rightSizing`: always warning and low confidence. It needs a run peak of at least `minBaselineCores` cores, and fires when the smallest core count whose modeled stage time stays within `tolerancePct` of the observed one is at most `maxCoreShare` of that peak. It stays silent when the model error at the peak exceeds `maxModelErrorPct`.
 - `cachingOpportunity`: a single info tier. It fires when the same input relation, or join or union subtree, is scanned by at least `minExecutions` SQL executions in one run.
+- `speculationWaste`: always warning, with at least `minWasted` losing speculative copies wasting at least `minWasteMs` of core time. It is cost-only: losing copies run on spare slots beside their originals, so it has no wallClock estimate.
 - `configAudit`: `spark.executor.memoryOverhead` below the larger of the minimum and the factor times executor memory is info. The minimum is `spark.executor.minMemoryOverhead` on Spark 4+, else `floorMB`; the factor is `spark.executor.memoryOverheadFactor` on Spark 3.3+, else `floorPct`.
 
 ### Fixed fallback bands
@@ -98,7 +99,6 @@ These rules have no *band* tiers in `packages/core/src/detectors/` (`gradeFindin
 | Slow host: multi-dimensional, task-time dimension | `info` |
 | Stage slowness: absolute fallback, suppressed when `slowHost` already fired | `info` |
 | Straggler / speculative-execution | `info` |
-| Speculation waste | `warning` |
 | Retry waste | `warning` |
 | Tiny tasks | `info` |
 | Duplicate plan subtree | `warning` |

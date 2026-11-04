@@ -16,13 +16,15 @@ const root = resolve(import.meta.dirname, '..');
 const docsContent = resolve(root, 'packages/core/src/docs-content');
 
 // Splits a rendered page into its parsed YAML frontmatter and body.
+/** @param {string} page */
 function parsePage(page) {
   const m = /^---\n([\s\S]*?)\n---\n\n/.exec(page);
   if (!m) throw new Error('page has no frontmatter');
-  return { front: loadYaml(m[1]), body: page.slice(m[0].length) };
+  return { front: /** @type {{ title: string, titleTemplate: string | false, description: string }} */ (loadYaml(m[1])), body: page.slice(m[0].length) };
 }
 
 // Mirrors the real pageForAnchor sub-anchor resolution for the test.
+/** @param {string} a */
 const resolvePage = (a) => {
   if (a.startsWith('metric-')) return 'metrics';
   if (a.startsWith('config-')) return 'config';
@@ -31,6 +33,7 @@ const resolvePage = (a) => {
 // Mirrors isKnownDocAnchor: takes a '#'-prefixed anchor. Includes page anchors
 // AND sub-anchors, exactly like KNOWN_DOC_ANCHORS.
 const known = new Set(['#intro', '#joins', '#metrics', '#config', '#metric-task-duration', '#config-serializer']);
+/** @param {string} a */
 const isKnown = (a) => known.has(a);
 
 describe('injectHeadingAnchor', () => {
@@ -82,10 +85,11 @@ describe('rewriteDiagramPaths', () => {
 describe('renderPage frontmatter', () => {
   // The generated nav-index comes from the pinned upstream manifest (the
   // vitest globalSetup runs ensureTuningDocs first).
+  /** @type {{ anchor: string, title: string, brief: string, store: string, slug: string }[]} */
   const nav = JSON.parse(readFileSync(resolve(docsContent, 'chapters/nav-index.json'), 'utf8'));
 
   it('names the Spark Tuning Reference and uses the manifest brief as the description', () => {
-    const entry = nav.find((e) => e.anchor === 'bottleneck-skew');
+    const entry = /** @type {(typeof nav)[number]} */ (nav.find((e) => e.anchor === 'bottleneck-skew'));
     const md = readFileSync(resolve(docsContent, entry.store, `${entry.slug}.md`), 'utf8');
     const { front, body } = parsePage(renderPage(entry, md, isKnownDocAnchor, pageForAnchor));
     expect(front.title).toBe(entry.title);

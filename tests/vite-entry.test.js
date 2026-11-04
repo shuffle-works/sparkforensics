@@ -32,22 +32,27 @@ describe('Vite entry template', () => {
 
   describe('vendor chunk layout', () => {
     const assets = resolve(root, 'dist/assets');
-    const chunkFile = (name) => readdirSync(assets).find((f) => f.startsWith(`${name}-`) && f.endsWith('.js'));
+    /** @param {string} name */
+    const chunkFile = (name) => /** @type {string} */ (readdirSync(assets).find((f) => f.startsWith(`${name}-`) && f.endsWith('.js')));
+    /** @param {string} file */
     const chunkText = (file) => readFile(resolve(assets, file), 'utf8');
     // The chunks a chunk imports statically, and the chunks it pulls in, as the browser loads them.
+    /** @param {string} text */
     const importsOf = (text) => [...text.matchAll(/(?:from|import)\s*["']\.\/([^"']+\.js)["']/g)].map((m) => m[1]);
+    /** @param {string} file */
     async function staticClosure(file) {
       const seen = new Set();
       const queue = [file];
       while (queue.length > 0) {
-        const next = queue.pop();
+        const next = /** @type {string} */ (queue.pop());
         if (seen.has(next)) continue;
         seen.add(next);
         queue.push(...importsOf(await chunkText(next)));
       }
       return seen;
     }
-    const vendorNames = (files) => [...files].map((f) => /^([a-z0-9-]+-vendor)-/.exec(f.split('/').pop())?.[1]).filter(Boolean).sort();
+    /** @param {Iterable<string>} files */
+    const vendorNames = (files) => [...files].map((f) => /^([a-z0-9-]+-vendor)-/.exec(/** @type {string} */ (f.split('/').pop()))?.[1]).filter(Boolean).sort();
 
     it('preloads only react-vendor among the vendor chunks on the landing page', async () => {
       const html = await readFile(resolve(root, 'dist/index.html'), 'utf8');
@@ -55,7 +60,7 @@ describe('Vite entry template', () => {
       expect(loaded.length).toBeGreaterThan(0);
       expect(vendorNames(loaded)).toEqual(['react-vendor']);
       // The entry chunk's own static imports are the other half of what a visitor downloads.
-      const entry = loaded.find((f) => f.startsWith('index-'));
+      const entry = /** @type {string} */ (loaded.find((f) => f.startsWith('index-')));
       expect(vendorNames(await staticClosure(entry))).toEqual(['react-vendor']);
     });
 
@@ -73,11 +78,11 @@ describe('Vite entry template', () => {
       expect(vendorNames(await staticClosure(dashboard))).toEqual(expect.not.arrayContaining(['plan-graph-vendor']));
       // The entry chunk preloads a lazily imported view's dependencies from its map of file lists.
       const index = await chunkText(chunkFile('index'));
-      const table = JSON.parse(/m\.f\|\|\(m\.f=(\[[^\]]*\])/.exec(index)[1]);
+      const table = JSON.parse(/** @type {RegExpExecArray} */ (/m\.f\|\|\(m\.f=(\[[^\]]*\])/.exec(index))[1]);
       const rows = [...index.matchAll(/__vite__mapDeps\(\[([0-9,]+)\]\)/g)].map((m) => m[1].split(',').map(Number));
       const dashboardRow = rows.find((row) => table[row[0]]?.includes('Dashboard-'));
       expect(dashboardRow).toBeDefined();
-      expect(dashboardRow.map((i) => table[i]).filter((f) => f.includes('plan-graph-vendor'))).toEqual([]);
+      expect(dashboardRow?.map((i) => table[i]).filter((f) => f.includes('plan-graph-vendor'))).toEqual([]);
     });
   });
 

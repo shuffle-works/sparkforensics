@@ -7,6 +7,11 @@ import { join } from 'node:path';
 // the only way to exercise its `files` allowlist, `prepack` vendoring, and the
 // installed `.bin` symlink like `npx` would. `cleanupDirs` is the caller's
 // afterAll-drained array.
+/**
+ * @param {string} packageDir
+ * @param {string} binName
+ * @param {string[]} cleanupDirs
+ */
 export function packAndInstall(packageDir, binName, cleanupDirs) {
   const packOutDir = mkdtempSync(join(tmpdir(), `${binName}-pack-`));
   cleanupDirs.push(packOutDir);

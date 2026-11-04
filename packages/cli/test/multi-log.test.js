@@ -6,18 +6,21 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
 import { parseEnvelope, parseNdjsonLines } from './envelope-helpers.js';
 
+/** @typedef {typeof import('../../core/src/run-comparison.ts')} RunComparison */
+/** @typedef {import('./envelope-helpers.js').NdjsonLine} NdjsonLine */
+
 // The bin loads core from vendor-core/ when a fresh copy exists, else from core/src/: fail the
 // comparison of one sentinel app in either, to reach the per-candidate internal-error path.
 const { FAILING_APP_ID, failComparisonFor } = vi.hoisted(() => {
   const failingAppId = 'application_0000000000000_0666';
   return {
     FAILING_APP_ID: failingAppId,
-    failComparisonFor: async (importOriginal) => {
+    failComparisonFor: async (/** @type {() => Promise<RunComparison>} */ importOriginal) => {
       const actual = await importOriginal();
       return {
         ...actual,
-        buildComparison: (baseline, candidate) => {
-          if (candidate.appModel.app.id === failingAppId) throw new Error('comparison failed');
+        buildComparison: (/** @type {Parameters<RunComparison['buildComparison']>[0]} */ baseline, /** @type {Parameters<RunComparison['buildComparison']>[1]} */ candidate) => {
+          if (candidate.appModel.app?.id === failingAppId) throw new Error('comparison failed');
           return actual.buildComparison(baseline, candidate);
         },
       };
@@ -28,8 +31,9 @@ vi.mock('../../core/src/run-comparison.ts', failComparisonFor);
 vi.mock('../vendor-core/run-comparison.js', failComparisonFor);
 
 // Synthetic single-stage log: ten tasks, the last `slowMs` long, finishing at `slowMs`.
+/** @param {{ slowMs: number }} options */
 function log({ slowMs }) {
-  const task = (id, ms) => JSON.stringify({
+  const task = (/** @type {number} */ id, /** @type {number} */ ms) => JSON.stringify({
     Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
     'Task Info': { 'Task ID': id, 'Launch Time': 0, 'Finish Time': ms, Failed: false, Killed: false, Speculative: false },
     'Task Metrics': { 'Executor Run Time': ms, 'JVM GC Time': ms / 10, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0 },
@@ -51,8 +55,9 @@ const CUT_OFF = [
   '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10}}',
 ].join('\n');
 
+/** @type {string} */
 let dir;
-const p = (name) => join(dir, name);
+const p = (/** @type {string} */ name) => join(dir, name);
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'sparkforensics-multi-'));
@@ -71,6 +76,7 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+/** @param {string[]} argv @param {{ fetchImpl?: typeof fetch }} [options] */
 async function run(argv, options) {
   const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -100,15 +106,15 @@ describe('several candidate logs', () => {
     expect(lines.map((l) => l.log)).toEqual([p('same'), p('slower')]);
     for (const l of lines) {
       expect(l).toMatchObject({ status: 'pass', exitCode: 0, error: null, budgets: [] });
-      expect(Object.keys(l.comparison)).toEqual([
+      expect(Object.keys(l.comparison ?? {})).toEqual([
         'generator', 'verdict', 'baselineApp', 'candidateApp', 'baselineSkippedLines', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
         'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment', 'comparability',
       ]);
-      expect(l.run.summary).toBeDefined();
+      expect(l.run?.summary).toBeDefined();
     }
-    const wall = (l) => l.comparison.metrics.find((m) => m.key === 'wallClock');
-    expect(wall(lines[0]).delta).toBe(0);
-    expect(wall(lines[1]).delta).toBe(2000);
+    const wall = (/** @type {NdjsonLine} */ l) => l.comparison?.metrics.find((m) => m.key === 'wallClock');
+    expect(wall(lines[0])?.delta).toBe(0);
+    expect(wall(lines[1])?.delta).toBe(2000);
   });
 
   it.each([[[]], [['--redact']]])('carries the single-candidate run object, metrics and effectiveConf included (%j)', async (extra) => {
@@ -117,8 +123,8 @@ describe('several candidate logs', () => {
     const single = parseEnvelope((await run([p('with-conf'), ...flags, '--format', 'json'])).stdout).run;
     const [line] = (await run([p('with-conf'), ...flags, '--format', 'ndjson'])).lines;
     expect(line.run).toEqual(single);
-    expect(line.run.metrics.schemaVersion).toBeDefined();
-    expect(line.run.effectiveConf).toMatchObject({
+    expect(line.run?.metrics.schemaVersion).toBeDefined();
+    expect(line.run?.effectiveConf).toMatchObject({
       values: { 'spark.executor.memory': '2g' },
       maskedKeys: ['spark.custom.hidden'],
       absentKeys: ['spark.missing'],
@@ -143,7 +149,7 @@ describe('several candidate logs', () => {
 
   it('holds a regression budget on a metric a cut-off candidate cannot provide inconclusive', async () => {
     const { lines } = await run([p('cut-off'), '--baseline', p('baseline'), '--regression-budget', 'executorRunTime:10', '--format', 'ndjson']);
-    const executorRunTime = lines[0].comparison.metrics.find((m) => m.key === 'executorRunTime');
+    const executorRunTime = lines[0].comparison?.metrics.find((m) => m.key === 'executorRunTime');
     expect(executorRunTime).toMatchObject({ candidate: null, delta: null, direction: 'unavailable' });
     expect(lines[0].budgets).toContainEqual(expect.objectContaining({ name: 'max-regression', metric: 'executorRunTime', status: 'inconclusive' }));
     expect(lines[0].status).toBe('inconclusive');
@@ -152,7 +158,7 @@ describe('several candidate logs', () => {
   it('turns a candidate that cannot be read or parsed into an exit-4 error line, and keeps going', async () => {
     const { status, lines } = await run([p('garbage'), p('same'), p('nope'), '--baseline', p('baseline')]);
     expect(lines.map((l) => l.status)).toEqual(['error', 'pass', 'error']);
-    for (const [i, name] of [[0, 'garbage'], [2, 'nope']]) {
+    for (const [i, name] of /** @type {[number, string][]} */ ([[0, 'garbage'], [2, 'nope']])) {
       expect(lines[i]).toMatchObject({ log: p(name), exitCode: 4, run: null, comparison: null, budgets: [] });
       expect(lines[i].error).toEqual(expect.any(String));
     }
@@ -161,6 +167,7 @@ describe('several candidate logs', () => {
 
   it('ranks the aggregate exit code 4 over 1 over 3 over 0', async () => {
     const budget = ['--baseline', p('baseline'), '--regression-budget', 'wallClock:10'];
+    /** @type {[string[], number[], number][]} */
     const cases = [
       [[p('slower'), p('garbage'), p('cut-off'), p('same')], [1, 4, 3, 0], 4],
       [[p('same'), p('cut-off'), p('slower')], [0, 3, 1], 1],
@@ -410,7 +417,7 @@ describe('skipped log lines across several candidates', () => {
     const damaged = log({ slowMs: 2000 }).replace('{"Event":"SparkListenerTaskEnd"', '{corrupt').split('\n');
     writeFileSync(p('damaged'), damaged.join('\n'));
     const { status, lines } = await run([p('same'), p('damaged'), '--baseline', p('baseline')]);
-    expect(lines.map((l) => l.run.summary.skippedLines)).toEqual([0, 1]);
+    expect(lines.map((l) => l.run?.summary.skippedLines)).toEqual([0, 1]);
     expect(lines.map((l) => l.status)).toEqual(['pass', 'inconclusive']);
     expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive' })]);
     expect(status).toBe(3);
@@ -420,8 +427,8 @@ describe('skipped log lines across several candidates', () => {
     const damaged = log({ slowMs: 2000 }).replace('{"Event":"SparkListenerTaskEnd"', '{corrupt');
     writeFileSync(p('damaged-baseline'), damaged);
     const { status, lines } = await run([p('same'), p('baseline'), '--baseline', p('damaged-baseline')]);
-    expect(lines.map((l) => l.comparison.baselineSkippedLines)).toEqual([1, 1]);
-    expect(lines.map((l) => l.run.summary.skippedLines)).toEqual([0, 0]);
+    expect(lines.map((l) => l.comparison?.baselineSkippedLines)).toEqual([1, 1]);
+    expect(lines.map((l) => l.run?.summary.skippedLines)).toEqual([0, 0]);
     expect(lines.map((l) => l.status)).toEqual(['inconclusive', 'inconclusive']);
     expect(lines[0].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', detail: expect.stringContaining('baseline 1 line') })]);
     expect(status).toBe(3);
