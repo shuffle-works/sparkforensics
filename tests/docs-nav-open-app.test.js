@@ -3,11 +3,15 @@ import docsConfig from '../docs-site/.vitepress/config.ts';
 
 // VitePress's withBase (client/app/utils): prefix a root-relative nav link with
 // the site base, collapsing repeated slashes.
+/**
+ * @param {string} base
+ * @param {string} path
+ */
 const withBase = (base, path) => `${base}${path}`.replace(/\/+/g, '/');
 
 describe('docs header "Open app" link', () => {
-  const { nav } = docsConfig.themeConfig;
-  const openApp = nav.find((item) => item.text === 'Open app');
+  const { nav } = /** @type {{ nav: { text: string, link: string, target?: string }[] }} */ (docsConfig.themeConfig);
+  const openApp = /** @type {(typeof nav)[number]} */ (nav.find((item) => item.text === 'Open app'));
 
   it('is a nav entry, so desktop and the phone menu both render it', () => {
     expect(openApp).toBeDefined();

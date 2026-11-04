@@ -28,10 +28,14 @@ const KNOWN_SUB_ANCHORS = new Set([
   'config-memory-overhead',
 ]);
 
+/**
+ * @param {readonly { docAnchor?: string }[]} detectors
+ * @param {readonly { anchor: string, section: string }[]} anchors
+ */
 export function computeDocAnchorCoverage(detectors, anchors) {
   const anchorIds = new Set(anchors.map((a) => a.anchor));
   const detectorAnchors = new Set(
-    detectors.map((d) => d.docAnchor).filter(Boolean).map((a) => a.replace(/^#/, '')),
+    /** @type {string[]} */ (detectors.map((d) => d.docAnchor).filter(Boolean)).map((a) => a.replace(/^#/, '')),
   );
 
   const deadLinks = [...detectorAnchors]

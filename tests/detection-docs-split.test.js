@@ -10,6 +10,7 @@ const guideFile = resolve(root, 'docs-site/user-guide/understanding-findings.md'
 const guide = readFileSync(guideFile, 'utf8');
 const detectionDir = resolve(root, 'packages/core/src/docs-content/detection');
 
+/** @param {string} d */
 const files = (d) => readdirSync(d).sort();
 const expectedFiles = () => splitDetectionDocs(guide).map((s) => `${s.anchor}.md`).sort();
 
@@ -38,6 +39,7 @@ describe('splitDetectionDocs', () => {
 });
 
 describe('ensureDetectionDocs', () => {
+  /** @type {string} */
   let dir;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'detection-docs-'));

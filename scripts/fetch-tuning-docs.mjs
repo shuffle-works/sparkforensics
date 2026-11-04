@@ -33,6 +33,12 @@ import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
 import { KNOWN_DOC_ANCHORS, tuningDocSlugForAnchor } from '../packages/core/src/docs-config.ts';
 
+/** @typedef {{ repository: string, commit: string }} Pin */
+/** @typedef {{ source: string, commit?: string | null, dir?: string, dirty?: boolean, transformVersion: number }} Stamp */
+/** @typedef {{ anchor: string, title: string, file: string, brief?: string, keywords?: string[] }} ManifestEntry */
+/** @typedef {{ groups: { title: string, entries: ManifestEntry[] }[] }} Manifest */
+/** @typedef {Error & { stderr?: Buffer | string }} GitError */
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The browser view (src/) and the shared core (packages/core/src/, where the
 // detectors, docs-config.ts and the MCP tools live) both link to docs anchors.
@@ -50,6 +56,7 @@ const LOCK_NAME = '.fetch.lock';
 // vendor-core.mjs leaves them out of every published tarball. That includes
 // the <lock>.<pid> file reclaimDeadLock moves a dead lock to.
 const LOCAL_ONLY_ENTRIES = new Set([STAMP_NAME, STAGING_NAME, LOCK_NAME]);
+/** @param {string} name */
 export function isLocalOnlyEntry(name) {
   return LOCAL_ONLY_ENTRIES.has(name) || name.startsWith(`${LOCK_NAME}.`);
 }
@@ -72,10 +79,15 @@ export class DieError extends Error {}
 // paper over (allowStale). A fetched tree failing the gate is not one.
 class FetchError extends DieError {}
 
+/**
+ * @param {string} msg
+ * @returns {never}
+ */
 function die(msg) {
   throw new DieError(msg);
 }
 
+/** @param {string} bin */
 function have(bin) {
   try {
     execFileSync(bin, ['--version'], { stdio: 'ignore' });
@@ -85,6 +97,7 @@ function have(bin) {
   }
 }
 
+/** @param {number} ms */
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
@@ -95,9 +108,14 @@ function sleepSync(ms) {
 // through, which adds page anchors like '#joins'). The text scan also catches
 // a JSX `DocsLink anchor="..."` literal missing from the allowlist. Exported
 // (defaults are the real repo) so it's unit-tested without a live clone.
+/**
+ * @param {string[]} [scanDirs]
+ * @param {Iterable<string>} [knownAnchors]
+ */
 export function collectRequiredAnchors(scanDirs = ANCHOR_SCAN_DIRS, knownAnchors = KNOWN_DOC_ANCHORS) {
   const anchors = new Set([...knownAnchors].map((a) => a.replace(/^#/, '')));
   const re = /#(?:metric|bottleneck|config)-[a-z0-9-]+/g;
+  /** @param {string} dir */
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, entry.name);
@@ -116,6 +134,7 @@ export function collectRequiredAnchors(scanDirs = ANCHOR_SCAN_DIRS, knownAnchors
 // the render step, the docs-site sidebar, and doc-anchor-coverage. `store`/
 // `slug` locate each entry's generated markdown; `brief` becomes the page's
 // meta description.
+/** @param {Manifest} manifest */
 export function projectNavIndex(manifest) {
   const out = [];
   for (const group of manifest.groups) {
@@ -140,6 +159,7 @@ export function projectNavIndex(manifest) {
 // Maps required '#bottleneck-*' anchors to the content/bottlenecks/<slug>.md
 // filenames to vendor, via docs-config.ts's tuningDocSlugForAnchor. Exported
 // (no filesystem access) so it's unit-tested without a live clone.
+/** @param {Iterable<string>} anchors */
 export function requiredTuningSlugs(anchors) {
   const slugs = new Set();
   for (const a of anchors) {
@@ -152,9 +172,13 @@ export function requiredTuningSlugs(anchors) {
 // Validates parsed upstream.json: an HTTPS git URL and a full 40-character
 // commit SHA (a short SHA can't be fetched by id, and a branch name isn't
 // reproducible). Returns the pin; throws on anything else.
+/**
+ * @param {unknown} pin
+ * @returns {Pin}
+ */
 export function parsePin(pin) {
   if (!pin || typeof pin !== 'object') throw new Error('upstream.json must be a JSON object');
-  const { repository, commit } = pin;
+  const { repository, commit } = /** @type {Record<string, unknown>} */ (pin);
   if (typeof repository !== 'string' || !/^https:\/\/\S+\.git$/.test(repository)) {
     throw new Error(`upstream.json "repository" must be an https:// git URL ending in .git, got ${JSON.stringify(repository)}`);
   }
@@ -166,16 +190,23 @@ export function parsePin(pin) {
 
 // Upstream stores many files with CRLF; normalize so the generated copy (and
 // the pages and MCP payloads built from it) stays LF-only on every platform.
+/** @param {string} text */
 export function normalizeEol(text) {
   return text.replace(/\r\n/g, '\n');
 }
 
+/**
+ * @param {string} repository
+ * @param {string} fromCommit
+ * @param {string} toCommit
+ */
 export function compareUrl(repository, fromCommit, toCommit) {
   return `${repository.replace(/\.git$/, '')}/compare/${fromCommit}...${toCommit}`;
 }
 
 // Parses `bump`'s arguments: an optional `--check` and an optional full SHA,
 // in either order. Throws on anything else.
+/** @param {string[]} args */
 export function parseBumpArgs(args) {
   const positional = args.filter((a) => a !== '--check');
   const checkFlags = args.length - positional.length;
@@ -192,6 +223,13 @@ export function parseBumpArgs(args) {
 // The one-line result `bump --check` prints once upstream has moved past the
 // pin. Under GitHub Actions it's prefixed as a workflow annotation, so the
 // result and the compare link show on the run's summary page.
+/**
+ * @param {string} repository
+ * @param {string} fromCommit
+ * @param {string} toCommit
+ * @param {boolean} gatePassed
+ * @param {boolean} [annotate]
+ */
 export function driftReport(repository, fromCommit, toCommit, gatePassed, annotate = false) {
   const url = compareUrl(repository, fromCommit, toCommit);
   const text = gatePassed
@@ -202,6 +240,11 @@ export function driftReport(repository, fromCommit, toCommit, gatePassed, annota
 }
 
 // The changeset a bump writes: every published package ships the vendored docs.
+/**
+ * @param {string} repository
+ * @param {string} fromCommit
+ * @param {string} toCommit
+ */
 export function bumpChangeset(repository, fromCommit, toCommit) {
   const name = basename(repository).replace(/\.git$/, '');
   return (
@@ -215,11 +258,19 @@ export function bumpChangeset(repository, fromCommit, toCommit) {
 // True when a cache stamp (parsed .generated.json, or null) describes exactly
 // the copy `want` asks for. Nothing involving a checkout with uncommitted
 // content/ edits counts as fresh, on either side: the edits may have moved on.
+/**
+ * @param {Stamp | null} stamp
+ * @param {Stamp} want
+ */
 export function stampIsFresh(stamp, want) {
   if (!stamp || stamp.dirty || want.dirty) return false;
-  return ['source', 'commit', 'dir', 'transformVersion'].every((k) => stamp[k] === want[k]);
+  return /** @type {(keyof Stamp)[]} */ (['source', 'commit', 'dir', 'transformVersion']).every((k) => stamp[k] === want[k]);
 }
 
+/**
+ * @param {string[]} args
+ * @param {string} [cwd]
+ */
 function git(args, cwd) {
   // GIT_TERMINAL_PROMPT=0: if the repo ever moves or stops being public, fail
   // at once instead of hanging on a credentials prompt.
@@ -232,6 +283,7 @@ function git(args, cwd) {
   }).trim();
 }
 
+/** @param {string} docsContentDir */
 function docsPaths(docsContentDir) {
   return {
     root: docsContentDir,
@@ -244,20 +296,28 @@ function docsPaths(docsContentDir) {
   };
 }
 
+/**
+ * @param {string} pinFile
+ * @returns {Pin}
+ */
 function readPin(pinFile) {
   let raw;
   try {
     raw = JSON.parse(readFileSync(pinFile, 'utf8'));
   } catch (err) {
-    die(`can't read ${relative(REPO_ROOT, pinFile)}: ${err.message}`);
+    die(`can't read ${relative(REPO_ROOT, pinFile)}: ${/** @type {Error} */ (err).message}`);
   }
   try {
     return parsePin(raw);
   } catch (err) {
-    die(err.message);
+    die(/** @type {Error} */ (err).message);
   }
 }
 
+/**
+ * @param {string} stampFile
+ * @returns {Stamp | null}
+ */
 function readStamp(stampFile) {
   try {
     return JSON.parse(readFileSync(stampFile, 'utf8'));
@@ -267,12 +327,13 @@ function readStamp(stampFile) {
 }
 
 // Default-branch head, resolved without an API token.
+/** @param {string} repository */
 function resolveUpstreamHead(repository) {
   let out;
   try {
     out = git(['ls-remote', repository, 'HEAD']);
   } catch (err) {
-    die(`git ls-remote ${repository} failed (network down, or the repo moved?):\n${err.stderr || err.message}`);
+    die(`git ls-remote ${repository} failed (network down, or the repo moved?):\n${/** @type {GitError} */ (err).stderr || /** @type {GitError} */ (err).message}`);
   }
   const sha = out.split(/\s/)[0];
   if (!/^[0-9a-f]{40}$/.test(sha)) die(`git ls-remote ${repository} HEAD returned no commit`);
@@ -282,8 +343,14 @@ function resolveUpstreamHead(repository) {
 // A fresh `git init` plus a depth-1 fetch of the exact commit: no history, no
 // branch to drift, and the enclosing checkout's credential config isn't used.
 // Retries once, so a single network blip doesn't fail CI.
+/**
+ * @param {string} repository
+ * @param {string} commit
+ * @param {string} dir
+ */
 function fetchCommit(repository, commit, dir) {
   git(['init', '--quiet'], dir);
+  /** @type {GitError | null | undefined} */
   let lastErr;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -291,7 +358,7 @@ function fetchCommit(repository, commit, dir) {
       lastErr = null;
       break;
     } catch (err) {
-      lastErr = err;
+      lastErr = /** @type {GitError} */ (err);
     }
   }
   if (lastErr) {
@@ -306,6 +373,7 @@ function fetchCommit(repository, commit, dir) {
 }
 
 // Every `{#id}` heading attr across the .md files directly inside dirs.
+/** @param {string[]} dirs */
 function headingIds(dirs) {
   const ids = new Set();
   for (const dir of dirs) {
@@ -323,6 +391,10 @@ function headingIds(dirs) {
 // '#bottleneck-*' anchor resolves to, or the diagrams directory. Both layouts
 // go through it: an upstream checkout before it's rendered, and the generated
 // copy on every call.
+/**
+ * @param {{ pageAnchors: Set<string>, markdownDirs: string[], tuningDir: string, diagramsDir: string }} tree
+ * @param {string[]} anchors
+ */
 function treeProblems({ pageAnchors, markdownDirs, tuningDir, diagramsDir }, anchors) {
   const ids = headingIds(markdownDirs);
   const problems = anchors.filter((a) => !pageAnchors.has(a) && !ids.has(a)).map((a) => `missing anchor #${a}`);
@@ -340,11 +412,17 @@ function treeProblems({ pageAnchors, markdownDirs, tuningDir, diagramsDir }, anc
 // Throws before anything is written if an upstream checkout (a fresh fetch or
 // the override dir) lacks an anchor or a tuning doc the app links to. Returns
 // the parsed manifest.
+/**
+ * @param {string} upstreamDir
+ * @param {string[]} anchors
+ * @param {string} label
+ * @returns {Manifest}
+ */
 function validateUpstreamTree(upstreamDir, anchors, label) {
   const content = join(upstreamDir, 'content');
   const manifestPath = join(content, 'manifest.yaml');
   if (!existsSync(manifestPath)) die(`${label} has no content/manifest.yaml; did upstream move its Markdown source?`);
-  const manifest = loadYaml(readFileSync(manifestPath, 'utf8'));
+  const manifest = /** @type {Manifest} */ (loadYaml(readFileSync(manifestPath, 'utf8')));
   const problems = treeProblems(
     {
       pageAnchors: new Set(manifest.groups.flatMap((g) => g.entries.map((e) => e.anchor))),
@@ -361,12 +439,17 @@ function validateUpstreamTree(upstreamDir, anchors, label) {
 }
 
 // Re-validates the generated copy in place, with no network.
+/**
+ * @param {ReturnType<typeof docsPaths>} paths
+ * @param {string[]} anchors
+ * @param {string} commitLabel
+ */
 function validateGenerated(paths, anchors, commitLabel) {
   if (!existsSync(paths.navIndex)) die(`no generated ${relative(REPO_ROOT, paths.navIndex)}`);
   const nav = JSON.parse(readFileSync(paths.navIndex, 'utf8'));
   const problems = treeProblems(
     {
-      pageAnchors: new Set(nav.map((e) => e.anchor)),
+      pageAnchors: new Set(nav.map((/** @type {{ anchor: string }} */ e) => e.anchor)),
       markdownDirs: [join(paths.root, 'chapters'), join(paths.root, 'tuning')],
       tuningDir: join(paths.root, 'tuning'),
       diagramsDir: join(paths.root, 'diagrams'),
@@ -386,6 +469,12 @@ function validateGenerated(paths, anchors, commitLabel) {
 // destDir, EOL-normalized. Only text is vendored (vendor-core.mjs reads every
 // vendored file as UTF-8), and a directory is created only when a file lands
 // in it.
+/**
+ * @param {string} srcDir
+ * @param {string} destDir
+ * @param {(relPath: string) => boolean} keep
+ * @param {string} [rel]
+ */
 function copyNormalized(srcDir, destDir, keep, rel = '') {
   for (const entry of readdirSync(join(srcDir, rel), { withFileTypes: true })) {
     const relPath = rel ? join(rel, entry.name) : entry.name;
@@ -400,10 +489,16 @@ function copyNormalized(srcDir, destDir, keep, rel = '') {
 }
 
 // Writes GENERATED_DIRS into outDir from a validated upstream tree.
+/**
+ * @param {string} upstreamDir
+ * @param {Manifest} sparkManifest
+ * @param {string} outDir
+ */
 function renderDocsContent(upstreamDir, sparkManifest, outDir) {
   const content = join(upstreamDir, 'content');
   // Top-level chapters -> chapters/ (bottlenecks and meta handled elsewhere or
   // not vendored at all).
+  /** @param {string} p */
   const isChapterFile = (p) => {
     const top = p.split(/[\\/]/)[0];
     return top !== 'bottlenecks' && top !== 'meta' && p.endsWith('.md');
@@ -422,6 +517,12 @@ function renderDocsContent(upstreamDir, sparkManifest, outDir) {
 // GENERATED_DIRS with it. The stamp goes first and comes back last, so an
 // interrupted swap leaves no stamp and the next call regenerates. Caller holds
 // the lock.
+/**
+ * @param {ReturnType<typeof docsPaths>} paths
+ * @param {string} upstreamDir
+ * @param {Manifest} manifest
+ * @param {Stamp} stamp
+ */
 function writeGenerated(paths, upstreamDir, manifest, stamp) {
   rmSync(paths.staging, { recursive: true, force: true });
   try {
@@ -439,15 +540,18 @@ function writeGenerated(paths, upstreamDir, manifest, stamp) {
 
 // Drops this process's staging dir, and the shared staging root once no other
 // process still has one inside it.
+/** @param {ReturnType<typeof docsPaths>} paths */
 function removeStaging(paths) {
   rmSync(paths.staging, { recursive: true, force: true });
   try {
     rmdirSync(paths.stagingRoot);
   } catch (err) {
-    if (err.code !== 'ENOTEMPTY' && err.code !== 'ENOENT') throw err;
+    const { code } = /** @type {NodeJS.ErrnoException} */ (err);
+    if (code !== 'ENOTEMPTY' && code !== 'ENOENT') throw err;
   }
 }
 
+/** @param {string} lockFile */
 function lockHolder(lockFile) {
   try {
     const pid = Number.parseInt(readFileSync(lockFile, 'utf8'), 10);
@@ -460,29 +564,34 @@ function lockHolder(lockFile) {
 // Moves a dead holder's lock aside before deleting it, so two waiters that saw
 // the same dead pid can't delete each other's fresh lock. If the moved file
 // turns out to be a newer lock, it is linked back (never over a third one).
+/**
+ * @param {string} lockFile
+ * @param {number} deadPid
+ */
 function reclaimDeadLock(lockFile, deadPid) {
   const aside = `${lockFile}.${process.pid}`;
   try {
     renameSync(lockFile, aside);
   } catch (err) {
-    if (err.code === 'ENOENT') return;
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT') return;
     throw err;
   }
   try {
     if (lockHolder(aside) !== deadPid) linkSync(aside, lockFile);
   } catch (err) {
-    if (err.code !== 'EEXIST') throw err;
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'EEXIST') throw err;
   } finally {
     rmSync(aside, { force: true });
   }
 }
 
+/** @param {number} pid */
 function processAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    return err.code === 'EPERM';
+    return /** @type {NodeJS.ErrnoException} */ (err).code === 'EPERM';
   }
 }
 
@@ -491,8 +600,16 @@ function processAlive(pid) {
 // reach this at once, so a busy lock is waited on, not an error: the waiter
 // usually finds the holder already wrote the copy it wanted. A lock whose pid
 // is gone (a killed run) is reclaimed. Exported for its unit test.
+/**
+ * @template T
+ * @param {string} lockFile
+ * @param {() => T} fn
+ * @param {{ timeoutMs?: number, pollMs?: number, log?: (msg: string) => void }} [options]
+ * @returns {T}
+ */
 export function withLock(lockFile, fn, { timeoutMs = LOCK_WAIT_MS, pollMs = LOCK_POLL_MS, log = console.log } = {}) {
   const deadline = Date.now() + timeoutMs;
+  /** @type {number} */
   let fd;
   let announced = false;
   for (;;) {
@@ -500,7 +617,7 @@ export function withLock(lockFile, fn, { timeoutMs = LOCK_WAIT_MS, pollMs = LOCK
       fd = openSync(lockFile, 'wx');
       break;
     } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
+      if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'EEXIST') throw err;
     }
     // null: the holder created the file but hasn't written its pid yet.
     const holder = lockHolder(lockFile);
@@ -531,6 +648,14 @@ export function withLock(lockFile, fn, { timeoutMs = LOCK_WAIT_MS, pollMs = LOCK
 
 // Fetches `commit` into a temp dir, validates it, and hands the tree and its
 // manifest to fn; the temp dir goes away afterwards.
+/**
+ * @template T
+ * @param {string} repository
+ * @param {string} commit
+ * @param {string[]} anchors
+ * @param {(cloneDir: string, manifest: Manifest) => T} fn
+ * @returns {T}
+ */
 function withValidatedFetch(repository, commit, anchors, fn) {
   const tmp = mkdtempSync(join(tmpdir(), 'spark-tuning-reference-'));
   try {
@@ -553,6 +678,12 @@ function requireAnchors() {
 // Describes the SPARK_TUNING_REFERENCE_DIR checkout as the stamp its copy
 // would carry. Strict mode refuses anything but a clean checkout of the pin,
 // so a tarball or CI build can't ship unpinned docs.
+/**
+ * @param {string} rawDir
+ * @param {Pin} pin
+ * @param {boolean} strict
+ * @returns {{ dir: string, stamp: Stamp }}
+ */
 function overrideSource(rawDir, pin, strict) {
   const dir = resolve(rawDir);
   if (!existsSync(join(dir, 'content', 'manifest.yaml'))) {
@@ -589,6 +720,9 @@ function overrideSource(rawDir, pin, strict) {
 // options exist for tests. Returns the stamp of the copy in place ({ source,
 // commit, dir? }) plus whether this call wrote it and whether it is a stale
 // copy kept by allowStale.
+/**
+ * @param {{ allowStale?: boolean, strict?: boolean, docsContentDir?: string, anchors?: string[], env?: NodeJS.ProcessEnv, warn?: (msg: string) => void }} [options]
+ */
 export function ensureTuningDocs({
   allowStale = false,
   strict = false,
@@ -605,6 +739,7 @@ export function ensureTuningDocs({
   const pin = readPin(paths.pin);
   const required = anchors ?? requireAnchors();
   const override = env[OVERRIDE_ENV] ? overrideSource(env[OVERRIDE_ENV], pin, strict) : null;
+  /** @type {Stamp} */
   const want = override?.stamp ?? { source: 'pin', commit: pin.commit, transformVersion: TRANSFORM_VERSION };
   const isFresh = () => stampIsFresh(readStamp(paths.stamp), want) && existsSync(paths.navIndex);
 
@@ -650,6 +785,7 @@ export function ensureTuningDocs({
   return { source: used.source, commit: used.commit, dir: used.dir, regenerated, stale: used !== want };
 }
 
+/** @param {boolean} allowStale */
 function runEnsure(allowStale) {
   const { source, commit, dir, regenerated, stale } = ensureTuningDocs({ allowStale });
   const from = `${source === 'local' ? `${dir} at ` : ''}${commit ? commit.slice(0, 7) : 'no git HEAD'}`;
@@ -657,6 +793,7 @@ function runEnsure(allowStale) {
   console.log(`fetch-tuning-docs: docs-content/{${GENERATED_DIRS.join(',')}} ${state} ${from}.`);
 }
 
+/** @param {string | undefined} requested */
 function runBump(requested) {
   if (!have('git')) die('`git` not found: install git to fetch the upstream docs repo.');
   const paths = docsPaths(DOCS_CONTENT_DIR);
@@ -684,6 +821,7 @@ function runBump(requested) {
 // Fetches and gates `requested` (default: upstream head) like a bump would,
 // then reports instead of writing: the pin, docs-content/ and .changeset/ are
 // untouched. Exits 1 when the gate fails, so the scheduled workflow goes red.
+/** @param {string | undefined} requested */
 function runBumpCheck(requested) {
   if (!have('git')) die('`git` not found: install git to fetch the upstream docs repo.');
   const { repository, commit: from } = readPin(docsPaths(DOCS_CONTENT_DIR).pin);
@@ -705,6 +843,7 @@ function runBumpCheck(requested) {
   if (!gatePassed) process.exitCode = 1;
 }
 
+/** @param {string[]} args */
 function main(args) {
   const [first, ...rest] = args;
   if (first === undefined) return runEnsure(false);
@@ -714,7 +853,7 @@ function main(args) {
     try {
       parsed = parseBumpArgs(rest);
     } catch (err) {
-      die(err.message);
+      die(/** @type {Error} */ (err).message);
     }
     return parsed.check ? runBumpCheck(parsed.sha) : runBump(parsed.sha);
   }

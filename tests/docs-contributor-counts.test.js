@@ -18,6 +18,10 @@ const COUNTED = new RegExp(
   'i',
 );
 
+/**
+ * @param {string} dir
+ * @returns {string[]}
+ */
 function markdownFiles(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory() ? markdownFiles(join(dir, entry.name)) : entry.name.endsWith('.md') ? [join(dir, entry.name)] : [],

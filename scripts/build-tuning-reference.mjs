@@ -9,6 +9,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pageForAnchor, isKnownDocAnchor } from '../packages/core/src/docs-config.ts';
 
+/** @typedef {{ anchor: string, title: string, brief?: string }} PageEntry */
+/** @typedef {PageEntry & { store: string, slug: string }} NavEntry */
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DOCS_CONTENT = join(REPO_ROOT, 'packages', 'core', 'src', 'docs-content');
 const OUT_SPARK = join(REPO_ROOT, 'docs-site', 'tuning-reference');
@@ -18,6 +21,10 @@ const DIAGRAMS_SRC = join(DOCS_CONTENT, 'diagrams');
 // disk, so diagrams must be real files reachable by a plain relative path.
 const OUT_DIAGRAMS = join(OUT_SPARK, 'diagrams');
 
+/**
+ * @param {string} md
+ * @param {string} anchor
+ */
 export function injectHeadingAnchor(md, anchor) {
   const lines = md.split('\n');
   const i = lines.findIndex((l) => /^# \S/.test(l));
@@ -28,6 +35,12 @@ export function injectHeadingAnchor(md, anchor) {
 
 // isKnown takes a '#'-prefixed anchor (matches isKnownDocAnchor); resolvePage
 // takes the bare anchor (matches pageForAnchor).
+/**
+ * @param {string} md
+ * @param {string} pageAnchor
+ * @param {(anchor: string) => boolean} isKnown
+ * @param {(anchor: string) => string} resolvePage
+ */
 export function rewriteCrossLinks(md, pageAnchor, isKnown, resolvePage) {
   return md.replace(/\]\(#([a-z0-9-]+)\)/g, (whole, target) => {
     if (!isKnown(`#${target}`)) return whole;
@@ -46,6 +59,7 @@ export const REFERENCE_DESCRIPTION =
   'Spark Tuning Reference: move from a job symptom to the Spark mechanics and settings that can change its outcome.';
 
 // JSON.stringify yields a valid YAML double-quoted scalar for any string.
+/** @param {PageEntry} entry */
 export function pageFrontmatter(entry) {
   if (!entry.brief?.trim()) {
     throw new Error(`Tuning reference entry "${entry.anchor}" has no brief in content/manifest.yaml; every page needs one for its meta description.`);
@@ -62,6 +76,12 @@ export function pageFrontmatter(entry) {
 }
 
 // Turns one entry's generated markdown into the full VitePress page source.
+/**
+ * @param {PageEntry} entry
+ * @param {string} md
+ * @param {(anchor: string) => boolean} isKnown
+ * @param {(anchor: string) => string} resolvePage
+ */
 export function renderPage(entry, md, isKnown, resolvePage) {
   let body = injectHeadingAnchor(md, entry.anchor);
   body = rewriteCrossLinks(body, entry.anchor, isKnown, resolvePage);
@@ -69,6 +89,7 @@ export function renderPage(entry, md, isKnown, resolvePage) {
   return pageFrontmatter(entry) + body;
 }
 
+/** @param {NavEntry} entry */
 function sourceFileFor(entry) {
   return join(DOCS_CONTENT, entry.store, `${entry.slug}.md`);
 }
@@ -77,6 +98,7 @@ function sourceFileFor(entry) {
 // pages land flat in OUT_SPARK, so normalize both to './diagrams/x.svg'. The
 // leading './' is required: Vue's asset-url transform treats a bare
 // 'diagrams/...' as a module specifier, and Rollup then fails to resolve it.
+/** @param {string} md */
 export function rewriteDiagramPaths(md) {
   return md.replace(/(?:\.\.\/)?diagrams\//g, './diagrams/');
 }
@@ -94,6 +116,7 @@ function copyDiagrams() {
 // manifest anchor is "index", so *.md except index.md is safe to remove).
 // Clearing all of them (not just the current anchor set) also drops stale pages
 // left behind when an upstream anchor is renamed or removed.
+/** @param {string} outDir */
 function cleanGenerated(outDir) {
   if (!existsSync(outDir)) { mkdirSync(outDir, { recursive: true }); return; }
   for (const f of readdirSync(outDir)) {
@@ -104,6 +127,12 @@ function cleanGenerated(outDir) {
 
 // isKnown/resolvePage drive rewriteCrossLinks; the docs-config pair also
 // resolves metric/config/stage sub-anchors that aren't their own nav entries.
+/**
+ * @param {string} navIndexPath
+ * @param {string} outDir
+ * @param {(anchor: string) => boolean} isKnown
+ * @param {(anchor: string) => string} resolvePage
+ */
 function renderCorpus(navIndexPath, outDir, isKnown, resolvePage) {
   const nav = JSON.parse(readFileSync(navIndexPath, 'utf8'));
   cleanGenerated(outDir);

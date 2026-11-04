@@ -13,7 +13,9 @@ const docsSrc = path.join(import.meta.dirname, '../docs-site');
 const docsCss = path.join(import.meta.dirname, '../docs-site/.vitepress/theme/custom.css');
 
 const { document } = new JSDOM().window;
+/** @type {Element} */
 let block;
+/** @type {Element} */
 let comment;
 
 beforeAll(async () => {
@@ -23,8 +25,8 @@ beforeAll(async () => {
   page.className = 'vp-doc';
   page.innerHTML = md.render('```sh\n# Speculatively relaunch straggler tasks\nspark.speculation true\n```\n');
   document.body.append(page);
-  block = page.querySelector("div[class*='language-']");
-  comment = [...page.querySelectorAll('.line span')].find((el) => el.textContent.startsWith('#'));
+  block = /** @type {Element} */ (page.querySelector("div[class*='language-']"));
+  comment = /** @type {Element} */ ([...page.querySelectorAll('.line span')].find((el) => el.textContent?.startsWith('#')));
 });
 
 describe('docs code-block comment color', () => {

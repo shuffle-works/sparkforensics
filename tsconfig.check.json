@@ -7,6 +7,12 @@
     "packages/server/index.js",
     "packages/server/lib",
     "packages/core/test/*.test.ts",
+    "tests/*.js",
+    "tests/helpers/*.d.ts",
+    "docs-site/.vitepress/*.d.ts",
+    "packages/cli/test/*.js",
+    "packages/mcp/test/*.js",
+    "packages/server/test/*.js",
     "packages/core/test/*.js"
   ],
   "exclude": [

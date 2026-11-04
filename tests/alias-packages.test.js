@@ -14,8 +14,10 @@ const ALIASES = {
   sparkforensics: 'packages/sparkforensics',
 };
 
+/** @type {string} */
 let logDir;
 
+/** @param {{ complete: boolean }} options */
 function eventLog({ complete }) {
   const lines = [
     '{"Event":"SparkListenerApplicationStart","App ID":"application_0000000000000_0001","App Name":"t","Timestamp":0}',
@@ -33,6 +35,10 @@ function eventLog({ complete }) {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * @param {string} bin
+ * @param {string[]} args
+ */
 function run(bin, args) {
   const { stdout, stderr, status } = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
   return { stdout, stderr, status };

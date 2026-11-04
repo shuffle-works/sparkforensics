@@ -5,6 +5,7 @@ import { build } from 'vite';
 const root = path.resolve(import.meta.dirname, '..');
 
 /** Every url(...) target in the template's CSS, quotes stripped. */
+/** @param {string} html */
 function cssUrls(html) {
   return [...html.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g)].map((match) => match[2]);
 }
@@ -12,14 +13,17 @@ function cssUrls(html) {
 describe('export template fonts', () => {
   it('embeds every font as a data URI so the file opened from disk makes no font request', async () => {
     // Same graph as the template build `npm run build` ships, bundled in memory.
-    const { output } = await build({
+    const { output } = /** @type {Extract<Awaited<ReturnType<typeof build>>, { output: unknown }>} */ (await build({
       root,
       configFile: path.join(root, 'vite.export.config.ts'),
       mode: 'guard',
       logLevel: 'silent',
       build: { write: false },
-    });
-    const html = output.find((chunk) => chunk.fileName.endsWith('.html'))?.source;
+    }));
+    const asset = /** @type {Extract<(typeof output)[number], { source: unknown }> | undefined} */ (
+      output.find((chunk) => chunk.fileName.endsWith('.html'))
+    );
+    const html = /** @type {string} */ (asset?.source);
     expect(typeof html).toBe('string');
 
     const fontFaces = html.match(/@font-face\{[^}]*\}/g) ?? [];
