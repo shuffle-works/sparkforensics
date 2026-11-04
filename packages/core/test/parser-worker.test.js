@@ -2624,10 +2624,11 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     expect(msg.data.wastedAttempts).toBe(0);
   });
 
-  it('counts the tasks a copy won apart from the attempts speculation discarded', () => {
+  it('counts the tasks a copy won apart from the losing copies', () => {
     const s = createState();
     setupStage(s);
     // Task 0: the copy wins and the original is killed. Tasks 1 and 2: the original wins and the copy is killed.
+    // Only the two losing copies are wasted attempts.
     processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true, taskId: 10 }), s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 300, killed: true, taskId: 0 }), s);
     for (const index of [1, 2]) {
@@ -2637,7 +2638,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s);
 
     expect(msg.data.speculativeTasks).toBe(1);
-    expect(msg.data.speculationWastedAttempts).toBe(3);
+    expect(msg.data.speculationWastedAttempts).toBe(2);
   });
 
   it('claims no tail for a speculative winner among tasks under STRAGGLER_FACTOR x P50', () => {
