@@ -2681,7 +2681,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, taskId: 3 }), s);
     processEvent(specTaskEnd(1, 0, { launch: 50, finish: 150, speculative: true, taskId: 103, attemptNumber: 1 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
 
     expect(msg.data.retryWasteMs).toBe(100);
     expect(msg.data.wastedAttempts).toBe(1);
@@ -2696,7 +2696,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     setupStage(s);
     processEvent(specTaskEnd(1, 0, { launch: 50, finish: 120, failed: true, speculative: true, taskId: 103, attemptNumber: 1 }), s);
     processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, failed: true, taskId: 3 }), s);
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 } }, s));
 
     expect(msg.data.retryWasteMs).toBe(100);
     expect(msg.data.wastedAttempts).toBe(1);
@@ -2711,7 +2711,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       processEvent(specTaskEnd(1, i, { launch: 50000, finish: 60000, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
       processEvent(specTaskEnd(1, i, { launch: 0, finish: 3_600_000, killed: true, taskId: i }), s);
     }
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 3_700_000 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 3_700_000 } }, s));
 
     expect(analyzedRunFrom({ app: null, stages: new Map([[1, msg.data]]) }).catalog.some((f) => f.type === 'speculationWaste')).toBe(false);
   });
@@ -2729,7 +2729,7 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       processEvent(specTaskEnd(1, i, { launch: 50, finish: 100, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
       processEvent(specTaskEnd(1, i, { launch: 0, finish: 900, killed: true, taskId: i }), s);
     }
-    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 1000 } }, s);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 1000 } }, s));
 
     expect(msg.data.speculationWasteMs).toBe(5 * 120);
     expect(msg.data.speculationWastedAttempts).toBe(5);
