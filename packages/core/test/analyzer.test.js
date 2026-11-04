@@ -567,10 +567,12 @@ describe('analyze: speculative / straggler', () => {
   });
 
   it('emits straggler when any speculative task present', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 2, stragglerCount: 0 })]]);
+    const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 2, stragglerCount: 0, tailReplayRecoveryMs: 0 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('info');
+    expect(b.impactEstimate.wallClock.high).toBe(0);
+    expect(b.recommendation).toContain('2 tasks finished on a speculative copy');
     expect(b.metric).toBe('speculativeTasks');
     expect(b.value).toBe(2);
   });

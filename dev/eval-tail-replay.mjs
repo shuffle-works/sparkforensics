@@ -9,12 +9,11 @@ import { createState, runParse, runParseFiles, reassembleRollingEntries } from '
 import { nodeFileFromPath, dispatch, isRollingLogDirectory } from '../packages/core/src/cli/collect-run.ts';
 import { createModelCallbacks } from '../packages/core/src/model-assembler.ts';
 import { emptyAppModel } from '../packages/core/src/run-serialization.ts';
-import { FIELDS } from '../packages/core/src/stage-quantiles.ts';
+import { FIELDS, STRAGGLER_FACTOR } from '../packages/core/src/stage-quantiles.ts';
 import { analyzeRun } from '../packages/core/src/analyzed-run.ts';
 import { parseThresholdOverrides } from '../packages/core/src/threshold-overrides.ts';
 
 const FLOOR_PCT = 0.005;
-const STRAGGLER_MULTIPLE = 4;
 
 function listScheduleEnd(tasks, slots) {
   const free = new Array(slots).fill(0);
@@ -41,7 +40,7 @@ function replayRecoverableMs(arr, p50) {
   let running = 0, slots = 1;
   for (const [, delta] of events) { running += delta; if (running > slots) slots = running; }
   tasks.sort((a, b) => a.launch - b.launch);
-  const fixed = tasks.map((t) => ({ ...t, dur: t.dur > STRAGGLER_MULTIPLE * p50 ? p50 : t.dur }));
+  const fixed = tasks.map((t) => ({ ...t, dur: t.dur > STRAGGLER_FACTOR * p50 ? p50 : t.dur }));
   return listScheduleEnd(tasks, slots) - listScheduleEnd(fixed, slots);
 }
 

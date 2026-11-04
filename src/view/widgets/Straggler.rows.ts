@@ -26,7 +26,7 @@ export function stragglerDetail(f: StragglerFinding): string {
   const value = numericValue(f);
   if (f.unit === 'ratio') return `task duration ${f.metric} ${value}×`;
   return f.unit === 'count'
-    ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded`
+    ? `${value} task${value === 1 ? '' : 's'} finished on a speculative copy`
     : `${formatMetricValue('pct', value)} of tasks straggled`;
 }
 
