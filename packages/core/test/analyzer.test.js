@@ -675,7 +675,7 @@ describe('analyze: speculative / straggler', () => {
     const b = present(analyze(makeApp(), stages, [], []).find(ofType('straggler')));
     expect(b).toBeTruthy();
     expect(b.impactBand).toBe('info');
-    expect(b.impactEstimate.wallClock.high).toBe(0);
+    expect(wallClockOf(b).high).toBe(0);
     expect(b.recommendation).toContain('2 tasks finished on a speculative copy');
     expect(b.metric).toBe('speculativeTasks');
     expect(b.value).toBe(2);
