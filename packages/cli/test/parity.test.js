@@ -19,7 +19,9 @@ import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js
 // side alone fails here. A difference that is meant to stay goes in an allowlist below with its
 // reason. Public corpus logs only.
 const CORPUS = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
-const BASELINE = corpusLog('external/external-app-20161115172038-0000.ndjson');
+const CORPUS_BASELINE = corpusLog('external/external-app-20161115172038-0000.ndjson');
+// The tests that read it sit under describe.skipIf(!CORPUS_BASELINE), so it is a path there.
+const BASELINE = /** @type {string} */ (CORPUS_BASELINE);
 // Two runs of one generated workload, with and without a cached table: 5 stages against 4.
 const GENERATED = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs');
 const REPLAN_BASELINE = join(GENERATED, 'pairwise-01.ndjson');
@@ -29,10 +31,13 @@ const CANDIDATES = [
   join(CORPUS, 'external-application_1516285256255_0012.ndjson'),
 ];
 
+/** @typedef {{ path: string | RegExp, only?: 'cli' | 'mcp' | 'differs', reason: string }} Allowed */
+
 // ---- Allowlists of intentional differences. `path` is a key path ("a.b", "list[0].x") and covers
 // everything under it. An entry that matches no difference fails the test, so the list cannot rot.
 
 // CLI single-run JSON (`run`) against MCP diagnose_run with every `include`.
+/** @type {Allowed[]} */
 const RUN_REPORT_ALLOWED = [
   { path: 'schemaVersion', only: 'cli', reason: 'The CLI stamps its report with the evidence schema version; MCP tool results are not versioned.' },
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
@@ -44,6 +49,7 @@ const RUN_REPORT_ALLOWED = [
 ];
 
 // CLI `comparison` against MCP compare_runs.
+/** @type {Allowed[]} */
 const COMPARISON_ALLOWED = [
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
   { path: 'baselineRunId', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
@@ -52,10 +58,12 @@ const COMPARISON_ALLOWED = [
 ];
 
 // CLI NDJSON `budgets` against MCP evaluate_budgets `results`: nothing differs.
+/** @type {Allowed[]} */
 const BUDGETS_ALLOWED = [];
 
 // ---- Generic diff.
 
+/** @param {unknown} value @param {string} [path] @param {Map<string, unknown>} [out] */
 function flatten(value, path = '', out = new Map()) {
   if (Array.isArray(value)) {
     if (value.length === 0) out.set(path, []);
@@ -63,24 +71,26 @@ function flatten(value, path = '', out = new Map()) {
   } else if (value !== null && typeof value === 'object') {
     const keys = Object.keys(value);
     if (keys.length === 0) out.set(path, {});
-    for (const key of keys) flatten(value[key], path ? `${path}.${key}` : key, out);
+    for (const key of keys) flatten(/** @type {Record<string, unknown>} */ (value)[key], path ? `${path}.${key}` : key, out);
   } else {
     out.set(path, value);
   }
   return out;
 }
 
-const covers = (prefix, path) => (prefix instanceof RegExp
+const covers = (/** @type {string | RegExp} */ prefix, /** @type {string} */ path) => (prefix instanceof RegExp
   ? prefix.test(path)
   : path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[`));
 
 // Returns the differences no allowlist entry explains, plus the entries that explained nothing.
+/** @param {unknown} cli @param {unknown} mcp @param {Allowed[]} allowed */
 function diffSurfaces(cli, mcp, allowed) {
   const a = flatten(cli);
   const b = flatten(mcp);
+  /** @type {string[]} */
   const problems = [];
   const used = new Set();
-  const explained = (path, kind) => {
+  const explained = (/** @type {string} */ path, /** @type {'cli' | 'mcp' | 'differs'} */ kind) => {
     const entry = allowed.find((e) => covers(e.path, path) && (e.only === undefined || e.only === kind));
     if (entry) used.add(entry);
     return entry !== undefined;
@@ -102,7 +112,7 @@ function diffSurfaces(cli, mcp, allowed) {
 describe('MCP tools and their CLI twins', () => {
   const COMPARED_HERE = new Set(['diagnose_run', 'get_run_summary', 'compare_runs', 'evaluate_budgets', 'get_finding_evidence', 'list_detectors']);
 
-  it.each(mcpToolEntries().map((entry) => [entry.name, entry.cli]))('%s has a CLI twin this file compares, or says why it has none', (name, cli) => {
+  it.each(mcpToolEntries().map((entry) => /** @type {const} */ ([entry.name, entry.cli])))('%s has a CLI twin this file compares, or says why it has none', (name, cli) => {
     if ('twin' in cli) {
       expect(cli.twin).toMatch(/^sparkforensics-analyze/);
       expect(COMPARED_HERE.has(name), `${name} names a CLI twin but no test here compares its values`).toBe(true);
@@ -115,8 +125,9 @@ describe('MCP tools and their CLI twins', () => {
   it('names an existing CLI subcommand where a twin is a subcommand', () => {
     const subcommands = new Set(CLI_SUBCOMMANDS.map((c) => c.name));
     for (const { cli } of mcpToolEntries()) {
-      const [, word] = ('twin' in cli ? cli.twin : '').split(' ');
-      if (word && !word.startsWith('<') && !word.startsWith('-')) expect(subcommands.has(word), cli.twin).toBe(true);
+      const twin = 'twin' in cli ? cli.twin : '';
+      const [, word] = twin.split(' ');
+      if (word && !word.startsWith('<') && !word.startsWith('-')) expect(subcommands.has(word), twin).toBe(true);
     }
   });
 });
@@ -136,6 +147,7 @@ describe('diffSurfaces', () => {
 
 // ---- Surfaces.
 
+/** @param {string[]} argv */
 async function cliOutput(argv) {
   const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -150,14 +162,15 @@ async function cliOutput(argv) {
   }
 }
 
-const cliJson = async (argv) => JSON.parse((await cliOutput(argv)).stdout);
-const cliRun = async (argv) => parseRun((await cliOutput(argv)).stdout);
-const cliEnvelope = async (argv) => parseEnvelope((await cliOutput(argv)).stdout);
-const cliLines = async (argv) => parseNdjsonLines((await cliOutput(argv)).stdout);
+const cliJson = async (/** @type {string[]} */ argv) => JSON.parse((await cliOutput(argv)).stdout);
+const cliRun = async (/** @type {string[]} */ argv) => parseRun((await cliOutput(argv)).stdout);
+const cliEnvelope = async (/** @type {string[]} */ argv) => parseEnvelope((await cliOutput(argv)).stdout);
+const cliLines = async (/** @type {string[]} */ argv) => parseNdjsonLines((await cliOutput(argv)).stdout);
 
 // The block the MCP server reports; the CLI reads its own package.json.
 const MCP_GENERATOR = { name: 'sparkforensics-mcp', version: '0.0.0-test', buildId: 'test' };
 
+/** @type {Client} */
 let mcp;
 beforeAll(async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -167,16 +180,18 @@ beforeAll(async () => {
 });
 afterAll(async () => { await mcp?.close(); });
 
+/** @param {string} name @param {Record<string, unknown>} args */
 async function mcpCall(name, args) {
   const result = await mcp.callTool({ name, arguments: args });
-  if (result.isError) throw new Error(`${name} failed: ${result.content[0].text}`);
+  if (result.isError) throw new Error(`${name} failed: ${/** @type {{ text: string }[]} */ (result.content)[0].text}`);
   // The in-memory transport skips the JSON step stdio does, which drops undefined-valued keys.
   return JSON.parse(JSON.stringify(result.structuredContent));
 }
 
 // What the dashboard does: parse both runs, analyze, diff the two snapshots.
+/** @param {string} baselinePath @param {string} candidatePath */
 async function dashboardComparison(baselinePath, candidatePath) {
-  const prepare = async (path) => {
+  const prepare = async (/** @type {string} */ path) => {
     const { appModel, catalog } = await analyzedRunFrom(path);
     return { appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) };
   };
@@ -187,6 +202,7 @@ async function dashboardComparison(baselinePath, candidatePath) {
 const INCLUDE_ALL = ['summary', 'evidenceAvailability', 'detectors'];
 
 // The fields of the comparison block (stage pairs and the run-time coverage they feed).
+/** @type {(keyof NonNullable<import('@sparkforensics/core/node').CliEnvelope['comparison']>)[]} */
 const COMPARISON_BLOCK_FIELDS = [
   'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'runtimeCoverage',
   'executionAlignment', 'comparability',
@@ -194,7 +210,7 @@ const COMPARISON_BLOCK_FIELDS = [
 // compare_runs leaves stagePairs out unless asked (see COMPARISON_ALLOWED).
 const MCP_DEFAULT_FIELDS = COMPARISON_BLOCK_FIELDS.filter((f) => f !== 'stagePairs');
 
-describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs', () => {
+describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpus logs', () => {
   describe.each(CANDIDATES)('%s', (candidate) => {
     it.each([[false], [true]])('reports the same run (redact: %s) through the CLI and diagnose_run', async (redact) => {
       const cli = await cliRun([candidate, '--format', 'json', ...(redact ? ['--redact'] : [])]);
@@ -232,17 +248,17 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       for (const block of ['recommendations', 'writeTargets', 'metrics', 'effectiveConf', 'runComplete', 'runId']) {
         expect(compact[block]).toEqual(full[block]);
       }
-      const withoutLead = (steps) => steps.map((step) => ({ ...step, leadFinding: undefined }));
+      const withoutLead = (/** @type {{ leadFinding?: unknown }[]} */ steps) => steps.map((step) => ({ ...step, leadFinding: undefined }));
       expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
       expect(compact.findings).toHaveLength(full.findings.length);
-      compact.findings.forEach((row, i) => {
+      compact.findings.forEach((/** @type {Record<string, unknown>} */ row, /** @type {number} */ i) => {
         // Every compact field is the full row's own.
         for (const [field, value] of Object.entries(row)) expect(full.findings[i][field]).toEqual(value);
         expect(row.key).toEqual(expect.any(String));
       });
       // One finding is one key in the CLI report too.
       const cliKeys = (await cliRun([candidate, '--format', 'json'])).findings.map((f) => f.key);
-      expect(compact.findings.map((f) => f.key)).toEqual(cliKeys);
+      expect(compact.findings.map((/** @type {{ key: string }} */ f) => f.key)).toEqual(cliKeys);
     });
 
     it.each([[false], [true]])('reports the same comparison (redact: %s) through the CLI and compare_runs', async (redact) => {
@@ -251,7 +267,7 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       const single = await cliEnvelope([candidate, '--baseline', BASELINE, '--format', 'json', ...flags]);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, redact });
 
-      expect(line.comparison.metrics.find((m) => m.key === 'wallClock')).toMatchObject({ baseline: expect.any(Number), candidate: expect.any(Number) });
+      expect(line.comparison?.metrics.find((m) => m.key === 'wallClock')).toMatchObject({ baseline: expect.any(Number), candidate: expect.any(Number) });
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
       // The two CLI outputs carry the same run, comparison and budgets.
       expect(single).toEqual({ schemaVersion: line.schemaVersion, run: line.run, comparison: line.comparison, budgets: line.budgets });
@@ -266,7 +282,7 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, include: ['stagePairs'] });
       const viaMcpDefault = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate } });
-      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison.generator)));
+      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison?.generator)));
       for (const surface of [line.comparison, viaMcp, dashboard]) {
         expect(Object.keys(surface)).toEqual(expect.arrayContaining(COMPARISON_BLOCK_FIELDS));
         expect(surface.comparisonSchemaVersion).toBe(1);
@@ -277,18 +293,18 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
         });
         expect(surface.confidence).toMatch(/^(ok|low|insufficient)$/);
       }
-      for (const field of COMPARISON_BLOCK_FIELDS) expect(viaMcp[field]).toEqual(line.comparison[field]);
+      for (const field of COMPARISON_BLOCK_FIELDS) expect(viaMcp[field]).toEqual(line.comparison?.[field]);
       // The default MCP view carries every other field and leaves only stagePairs out.
       expect(Object.keys(viaMcpDefault)).toEqual(expect.arrayContaining(MCP_DEFAULT_FIELDS));
       expect(viaMcpDefault).not.toHaveProperty('stagePairs');
-      for (const field of MCP_DEFAULT_FIELDS) expect(viaMcpDefault[field]).toEqual(line.comparison[field]);
+      for (const field of MCP_DEFAULT_FIELDS) expect(viaMcpDefault[field]).toEqual(line.comparison?.[field]);
       // The corpus pair may share no stage: the shape of a pair is read from a run against itself.
       const [self] = await cliLines([BASELINE, '--baseline', BASELINE, '--format', 'ndjson']);
-      expect(self.comparison.stagePairs[0]).toEqual({
+      expect(self.comparison?.stagePairs?.[0]).toEqual({
         pairId: expect.any(String), baseStageIds: expect.any(Array), candStageIds: expect.any(Array),
         quality: 'exact', score: 1, deltas: expect.any(Object), stageLabel: expect.any(String),
       });
-      expect(Object.keys(self.comparison.stagePairs[0].deltas)).toEqual([
+      expect(Object.keys(self.comparison?.stagePairs?.[0].deltas ?? {})).toEqual([
         'executorRunTime', 'executorCpuTime', 'memoryBytesSpilled', 'diskBytesSpilled',
         'inputBytes', 'outputBytes', 'shuffleReadBytes', 'shuffleWriteBytes',
       ]);
@@ -308,9 +324,9 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
         sourceA: { path: BASELINE }, sourceB: { path: candidate }, ignoreConf: ['^spark\\.sql\\.', 'unused'], noiseBand: 0.1,
       });
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
-      expect(line.comparison.comparability.noiseBand).toBe(0.1);
-      expect(line.comparison.comparability.conf.differences.some((d) => d.key.startsWith('spark.sql.'))).toBe(false);
-      expect(line.comparison.metrics.every((m) => typeof m.withinNoise === 'boolean')).toBe(true);
+      expect(line.comparison?.comparability.noiseBand).toBe(0.1);
+      expect(line.comparison?.comparability.conf.differences.some((d) => d.key.startsWith('spark.sql.'))).toBe(false);
+      expect(line.comparison?.metrics.every((m) => typeof m.withinNoise === 'boolean')).toBe(true);
     });
 
     it('applies the caveat threshold flags and their MCP inputs the same way', async () => {
@@ -323,7 +339,7 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
 
     it('reports the same comparison as the dashboard\'s compareRuns', async () => {
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
-      expect(line.comparison).toEqual(JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison.generator))));
+      expect(line.comparison).toEqual(JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison?.generator))));
     });
 
     // A pair whose runs differ in stage count under one execution (a cached and an uncached join): the
@@ -331,9 +347,9 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
     it('reports a replanned group the same on the CLI, compare_runs and the dashboard', async () => {
       const [line] = await cliLines([REPLAN_CANDIDATE, '--baseline', REPLAN_BASELINE, '--format', 'ndjson']);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: REPLAN_BASELINE }, sourceB: { path: REPLAN_CANDIDATE }, include: ['stagePairs'] });
-      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(REPLAN_BASELINE, REPLAN_CANDIDATE), 'full', line.comparison.generator)));
-      expect(line.comparison.replanned).toHaveLength(1);
-      expect(Object.keys(line.comparison.replanned[0])).toEqual([
+      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(REPLAN_BASELINE, REPLAN_CANDIDATE), 'full', line.comparison?.generator)));
+      expect(line.comparison?.replanned).toHaveLength(1);
+      expect(Object.keys(line.comparison?.replanned[0] ?? {})).toEqual([
         'baseExecutionId', 'candExecutionId', 'baseStageIds', 'candStageIds', 'deltas',
       ]);
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED.filter((a) => a.path !== 'stagePairs'))).toEqual([]);
@@ -427,11 +443,11 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
       expect(bad.exitCode).toBe(2);
       expect(bad.stderr).toMatch(/--noise-band-pct needs a number from 0 to 100/);
     }
-    for (const [flag, value, message] of [
+    for (const [flag, value, message] of /** @type {[string, string, RegExp][]} */ ([
       ['--executor-ratio', '0.5', /--executor-ratio needs a number of 1 or more/],
       ['--unmatched-stages-pct', '101', /--unmatched-stages-pct needs a number from 0 to 100/],
       ['--task-count-change-pct', 'abc', /--task-count-change-pct needs a non-negative decimal number/],
-    ]) {
+    ])) {
       const bad = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, flag, value]);
       expect(bad.exitCode).toBe(2);
       expect(bad.stderr).toMatch(message);
@@ -455,7 +471,9 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
   });
 
   describe('tuned thresholds in Markdown', () => {
+    /** @type {string} */
     let dir;
+    /** @type {string} */
     let thresholdsPath;
     beforeAll(() => {
       dir = mkdtempSync(join(tmpdir(), 'sparkforensics-parity-'));
@@ -480,7 +498,7 @@ describe.skipIf(!BASELINE)('CLI, MCP and dashboard parity on public corpus logs'
         const result = await client.callTool({
           name: 'compare_runs', arguments: { sourceA: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, format: 'md' },
         });
-        expect(result.content[0].text.match(note)).toHaveLength(1);
+        expect(/** @type {{ text: string }[]} */ (result.content)[0].text.match(note)).toHaveLength(1);
       } finally {
         await client.close();
       }

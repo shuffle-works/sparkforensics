@@ -60,6 +60,6 @@ describe('published package licenses', () => {
         encoding: 'utf8',
       }),
     );
-    expect(packed.files.map((file) => file.path)).toContain('LICENSE');
+    expect(packed.files.map((/** @type {{ path: string }} */ file) => file.path)).toContain('LICENSE');
   });
 });

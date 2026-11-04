@@ -12,7 +12,7 @@ const { transformWithEsbuild } = await import(pathToFileURL(join(vitepressVite, 
 
 describe('docs anchor offset head script', () => {
   it('keeps the hub bar marker out of the emitted page source', async () => {
-    const scripts = docsConfig.head.filter(([tag]) => tag === 'script');
+    const scripts = /** @type {NonNullable<typeof docsConfig.head>} */ (docsConfig.head).filter(([tag]) => tag === 'script');
     expect(scripts).toHaveLength(1);
     const [[, , headScript]] = scripts;
     const emitted = (await transformWithEsbuild(headScript, 'inline-script.js', { minify: true })).code;

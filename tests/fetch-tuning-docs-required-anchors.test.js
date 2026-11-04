@@ -8,6 +8,7 @@ import { KNOWN_DOC_ANCHORS } from '@sparkforensics/core/view-model';
 import { collectRequiredAnchors } from '../scripts/fetch-tuning-docs.mjs';
 
 describe('collectRequiredAnchors', () => {
+  /** @type {string} */
   let root;
 
   beforeAll(() => {
@@ -38,7 +39,7 @@ describe('collectRequiredAnchors', () => {
   // The scan must cover packages/core/src/ as well as src/, where the detectors live.
   it('covers every detector docAnchor and every allowlisted anchor in the real repo', () => {
     const required = new Set(collectRequiredAnchors());
-    const detectorAnchors = [...new Set(DETECTORS.map((d) => d.docAnchor).filter(Boolean))];
+    const detectorAnchors = [...new Set(/** @type {string[]} */ (DETECTORS.map((d) => d.docAnchor).filter(Boolean)))];
     expect(detectorAnchors.filter((a) => !required.has(a.replace(/^#/, '')))).toEqual([]);
     expect([...KNOWN_DOC_ANCHORS].filter((a) => !required.has(a.replace(/^#/, '')))).toEqual([]);
   });

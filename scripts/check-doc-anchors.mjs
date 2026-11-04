@@ -15,6 +15,7 @@ const GENERATED_DIRS = ['tuning-reference', 'detectors'];
 const BLOB = /^https:\/\/github\.com\/shuffle-works\/sparkforensics\/blob\/[^/]+\/(docs-site\/[^#\s]+\.md)(#[^\s]*)?$/;
 
 // Same slug rules as VitePress's markdown-it-anchor (vitepress/dist/node).
+/** @param {string} text */
 export function slugify(text) {
   return text
     .normalize('NFKD')
@@ -29,6 +30,7 @@ export function slugify(text) {
 
 // Anchors a markdown file defines: explicit `{#id}` or the slug of each ATX
 // heading, ignoring fenced code.
+/** @param {string} markdown */
 export function anchorsOf(markdown) {
   const anchors = new Set();
   let fenced = false;
@@ -47,6 +49,10 @@ export function anchorsOf(markdown) {
   return anchors;
 }
 
+/**
+ * @param {string} dir
+ * @returns {string[]}
+ */
 function listMarkdown(dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
@@ -58,7 +64,9 @@ function listMarkdown(dir) {
   return out;
 }
 
+/** @param {string} markdown */
 function linksIn(markdown) {
+  /** @type {{ url: string, line: number }[]} */
   const links = [];
   let fenced = false;
   markdown.split('\n').forEach((line, i) => {
@@ -70,15 +78,24 @@ function linksIn(markdown) {
 }
 
 // Returns a list of "file:line: problem" strings; empty when every link holds.
+/** @param {string} root */
 export function checkDocAnchors(root) {
   const docsSite = join(root, 'docs-site');
   const cache = new Map();
+  /** @param {string} file */
   const anchorsFor = (file) => {
     if (!cache.has(file)) cache.set(file, anchorsOf(readFileSync(file, 'utf8')));
     return cache.get(file);
   };
+  /** @type {string[]} */
   const problems = [];
 
+  /**
+   * @param {string} from
+   * @param {number} line
+   * @param {string} targetFile
+   * @param {string} fragment
+   */
   const check = (from, line, targetFile, fragment) => {
     if (!existsSync(targetFile)) {
       problems.push(`${relative(root, from)}:${line}: no such page ${relative(root, targetFile)}`);
@@ -95,13 +112,13 @@ export function checkDocAnchors(root) {
       const published = url.match(PUBLISHED);
       const blob = url.match(BLOB);
       if (published || blob) {
-        const fragment = ((published ? published[2] : blob[2]) ?? '').slice(1);
+        const fragment = ((published ? published[2] : /** @type {RegExpMatchArray} */ (blob)[2]) ?? '').slice(1);
         if (published) {
           const page = published[1].replace(/\/$/, '');
           if (GENERATED_DIRS.some((dir) => page === dir || page.startsWith(`${dir}/`))) continue;
           check(file, line, join(docsSite, page === '' ? 'index' : page) + '.md', fragment);
         } else {
-          check(file, line, join(root, blob[1]), fragment);
+          check(file, line, join(root, /** @type {RegExpMatchArray} */ (blob)[1]), fragment);
         }
         continue;
       }

@@ -7,8 +7,9 @@ import { zipSync, strToU8 } from '@sparkforensics/core/export';
 import { parseEnvelope, parseNdjsonLines } from './envelope-helpers.js';
 
 // Synthetic single-stage log: ten tasks, the last `slowMs` long, finishing at `slowMs`.
+/** @param {{ slowMs: number, appId: string, appName?: string }} options */
 function log({ slowMs, appId, appName = 't' }) {
-  const task = (id, ms) => JSON.stringify({
+  const task = (/** @type {number} */ id, /** @type {number} */ ms) => JSON.stringify({
     Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
     'Task Info': { 'Task ID': id, 'Launch Time': 0, 'Finish Time': ms, Failed: false, Killed: false, Speculative: false },
     'Task Metrics': { 'Executor Run Time': ms, 'JVM GC Time': ms / 10, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0 },
@@ -33,6 +34,7 @@ const BASELINE_HOST = 'baseline-history.example.test';
 const CANDIDATE_HOST = 'candidate-history.example.test';
 const BASELINE_NAME = 'ip-10-20-30-40';
 
+/** @type {Record<string, string>} */
 const LOGS = {
   [BASE_ID]: log({ slowMs: 2000, appId: BASE_ID, appName: BASELINE_NAME }),
   [FAST_ID]: log({ slowMs: 2000, appId: FAST_ID }),
@@ -43,10 +45,11 @@ const LOGS = {
 // A fake History Server: serves the log of the application named in /api/v1/applications/<id>[/<attempt>]/logs
 // and 404s any other. Every requested URL is recorded.
 function fakeShs() {
+  /** @type {string[]} */
   const requested = [];
-  const fetchImpl = vi.fn(async (url) => {
+  const fetchImpl = vi.fn(async (/** @type {string | URL | Request} */ url) => {
     requested.push(String(url));
-    const appId = new URL(url).pathname.split('/')[4];
+    const appId = new URL(String(url)).pathname.split('/')[4];
     if (!LOGS[appId]) return new Response(null, { status: 404 });
     return new Response(zipSync({ eventlog: strToU8(LOGS[appId]) }), { status: 200 });
   });
@@ -55,12 +58,13 @@ function fakeShs() {
 
 // Created at load time: the it.each tables below build their argument lists while collecting.
 const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-shs-baseline-'));
-const p = (name) => join(dir, name);
+const p = (/** @type {string} */ name) => join(dir, name);
 writeFileSync(p('baseline'), LOGS[BASE_ID]);
 writeFileSync(p('slow'), LOGS[SLOW_ID]);
 writeFileSync(p('garbage'), 'this is not an event log\n');
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+/** @param {string[]} argv @param {{ fetchImpl?: typeof fetch }} [options] */
 async function run(argv, options) {
   const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -85,10 +89,10 @@ async function run(argv, options) {
 const baselineShs = (appId = BASE_ID, host = BASELINE_HOST) => [
   '--baseline-shs-base-url', `http://${host}:18080`, '--baseline-app-id', appId,
 ];
-const candidateShs = (...appIds) => [
+const candidateShs = (/** @type {string[]} */ ...appIds) => [
   '--shs-base-url', `http://${CANDIDATE_HOST}:18080`, ...appIds.flatMap((id) => ['--app-id', id]),
 ];
-const wallClock = (comparison) => comparison.metrics.find((m) => m.key === 'wallClock');
+const wallClock = (/** @type {import('./envelope-helpers.js').NdjsonLine['comparison']} */ comparison) => comparison?.metrics.find((m) => m.key === 'wallClock');
 
 describe('--baseline-shs-base-url argument validation', () => {
   it.each([
@@ -250,7 +254,7 @@ describe('a History Server baseline', () => {
 });
 
 describe('--redact with a History Server baseline', () => {
-  const leaks = (text) => [BASE_ID, BASELINE_NAME, BASELINE_HOST, CANDIDATE_HOST, SLOW_ID]
+  const leaks = (/** @type {string} */ text) => [BASE_ID, BASELINE_NAME, BASELINE_HOST, CANDIDATE_HOST, SLOW_ID]
     .filter((token) => text.includes(token));
 
   it('writes no baseline app id, app name or server host to JSON, Markdown or a file', async () => {
@@ -304,7 +308,7 @@ describe('several History Server candidates', () => {
     const { status, lines } = await run([...candidateShs(FAST_ID, SLOW_ID, SLOWER_ID), '--baseline', p('baseline')], { fetchImpl });
     expect(status).toBe(0);
     expect(lines.map((l) => l.log)).toEqual([FAST_ID, SLOW_ID, SLOWER_ID]);
-    expect(lines.map((l) => wallClock(l.comparison).delta)).toEqual([0, 2000, 4000]);
+    expect(lines.map((l) => wallClock(l.comparison)?.delta)).toEqual([0, 2000, 4000]);
     expect(lines.every((l) => l.status === 'pass' && l.exitCode === 0 && l.error === null)).toBe(true);
     expect(requested.map((u) => new URL(u).host)).toEqual(Array(3).fill(`${CANDIDATE_HOST}:18080`));
   });

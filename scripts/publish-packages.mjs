@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 // are aliases that depend on sparkforensics-cli, so they come after cli.
 export const PACKAGES = ['cli', 'analyze', 'sparkforensics', 'mcp', 'server'];
 
+/** @param {string} name */
 function publishedVersion(name) {
   try {
     return execFileSync('npm', ['view', name, 'version'], { encoding: 'utf8' }).trim();
@@ -19,7 +20,7 @@ function publishedVersion(name) {
     // Only a specific E404 means "never published". Registry/network/auth
     // hiccups also throw here; treating those as "not published yet" would let
     // the publish below run over an already-live version. Rethrow anything else.
-    const stderr = err.stderr?.toString() ?? '';
+    const stderr = /** @type {{ stderr?: Buffer | string }} */ (err).stderr?.toString() ?? '';
     const isNotFound = stderr.includes('E404') || stderr.includes('is not in this registry');
     if (isNotFound) {
       return null;
@@ -33,6 +34,11 @@ function publishedVersion(name) {
 // to push tags, create GitHub Releases and fill its `publishedPackages` output.
 // Same record shape the Changesets CLI writes (packages/cli/src/utils/output.ts
 // in changesets/changesets). Unset outside the action: then write nothing.
+/**
+ * @param {string | undefined} outputPath
+ * @param {string} name
+ * @param {string} version
+ */
 export function recordPublishedTag(outputPath, name, version) {
   if (!outputPath) return;
   const record = { type: 'git-tag', tag: `${name}@${version}`, packageName: name };
@@ -41,6 +47,10 @@ export function recordPublishedTag(outputPath, name, version) {
 
 // A package whose dependency failed to publish in this run would point at a
 // version missing from the registry, so it must not be published either.
+/**
+ * @param {{ dependencies?: Record<string, string> }} manifest
+ * @param {Set<string>} failedNames
+ */
 export function failedDependency(manifest, failedNames) {
   return Object.keys(manifest.dependencies ?? {}).find((dep) => failedNames.has(dep));
 }
@@ -51,6 +61,7 @@ function main() {
   // publishes nothing leaves an empty report instead of a "failed to read" warning.
   if (outputPath) appendFileSync(outputPath, '');
 
+  /** @type {{ published: string[], skipped: string[], failed: string[] }} */
   const results = { published: [], skipped: [], failed: [] };
   const failedNames = new Set();
 
@@ -86,7 +97,7 @@ function main() {
       // One package's failure must not abort the loop: packages that don't
       // depend on it still publish. Record it and move on; the summary below
       // still exits non-zero.
-      console.error(`Failed to publish ${name}@${version}:`, err.message);
+      console.error(`Failed to publish ${name}@${version}:`, /** @type {Error} */ (err).message);
       results.failed.push(`${name}@${version}`);
       failedNames.add(name);
     }

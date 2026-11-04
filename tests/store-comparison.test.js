@@ -37,7 +37,7 @@ describe('comparison store slice', () => {
     store.getState().openComparison('active::1::2', 'other::3::4');
     const snap = store.getState().sessionCache.get('active::1::2');
     expect(snap?.app).toEqual({ name: 'Active App' });
-    expect(snap.catalog).toMatchObject([{ type: 'gc', impactBand: 'info' }]);
+    expect(snap?.catalog).toMatchObject([{ type: 'gc', impactBand: 'info' }]);
   });
 
   it('openComparison snapshots nothing when no run is active', () => {

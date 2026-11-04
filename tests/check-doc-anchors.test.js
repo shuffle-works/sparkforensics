@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { anchorsOf, checkDocAnchors, slugify } from '../scripts/check-doc-anchors.mjs';
 
 const repoRoot = resolve(import.meta.dirname, '..');
+/** @type {string | undefined} */
 let tmp;
 afterEach(() => tmp && rmSync(tmp, { recursive: true, force: true }));
 

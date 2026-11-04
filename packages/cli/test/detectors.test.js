@@ -4,6 +4,7 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 
 // `sparkforensics-analyze detectors`, run in process: the bin's wiring (stdout, exit code, the usage text).
 // The argument parsing is covered in packages/core/test/detectors-command.test.js.
+/** @param {string[]} argv */
 async function run(argv) {
   const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -24,7 +25,7 @@ describe('sparkforensics-analyze detectors', () => {
     const { status, stdout, stderr } = await run(['detectors']);
     expect(status).toBe(0);
     expect(stderr).toBe('');
-    const result = JSON.parse(stdout);
+    const result = /** @type {{ count: number, detectors: { type: string }[] }} */ (JSON.parse(stdout));
     expect(result.count).toBe(buildDetectorCatalog().length);
     expect(result.detectors.map((r) => r.type)).toEqual(buildDetectorCatalog().map((r) => r.type));
   });

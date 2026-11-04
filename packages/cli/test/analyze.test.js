@@ -20,7 +20,9 @@ import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js
 // vendor-core/ and the `files` allowlist; a direct `node bin/...mjs` spawn
 // wouldn't catch a broken standalone install.
 const packageDir = process.cwd();
+/** @type {string[]} */
 const cleanupDirs = [];
+/** @type {string} */
 let binPath;
 
 beforeAll(() => {
@@ -32,6 +34,7 @@ afterAll(() => {
   for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true });
 });
 
+/** @param {string[]} args */
 function runCli(args) {
   const { stdout, stderr, status } = spawnSync(binPath, args, { encoding: 'utf8' });
   return { stdout, stderr, status };
@@ -40,7 +43,7 @@ function runCli(args) {
 function ndjsonWithSkew({ dataTail = false } = {}) {
   // One stage with 10 tasks: 9 fast (100ms) + 1 slow (2000ms). No task reads data, so the tail has
   // no measured cause and is a straggler; with dataTail the slow task reads 20x the data => skew.
-  const input = (mib) => (dataTail ? { 'Input Metrics': { 'Bytes Read': mib * 1048576, 'Records Read': mib * 1000 } } : {});
+  const input = (/** @type {number} */ mib) => (dataTail ? { 'Input Metrics': { 'Bytes Read': mib * 1048576, 'Records Read': mib * 1000 } } : {});
   const lines = [
     '{"Event":"SparkListenerApplicationStart","App ID":"app-parity","App Name":"t","Timestamp":0}',
     '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10}}',
@@ -67,6 +70,7 @@ function ndjsonWithSkew({ dataTail = false } = {}) {
 // Captures a `main()` in-process run: mocks stdout/stderr and restores
 // process.exitCode so it doesn't leak into the vitest process. Imports `main`
 // directly (for in-process fetchImpl mocking), not through the packed tarball.
+/** @param {string[]} argv @param {{ fetchImpl?: typeof fetch }} [mainOpts] */
 async function runMainInProcess(argv, mainOpts) {
   const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -111,6 +115,7 @@ describe('sparkforensics-analyze CLI', () => {
     const path = join(dir, 'eventlog');
     const start = 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart';
     // A plan deeper than the parser's 500-node limit fails validation and is skipped whole.
+    /** @type {{ nodeName: string, simpleString: string, children: object[], metrics: object[] }} */
     let deep = { nodeName: 'Execute InsertIntoHadoopFsRelationCommand', simpleString: 'Execute InsertIntoHadoopFsRelationCommand /prod/t, false, Parquet', children: [], metrics: [] };
     for (let i = 0; i < 600; i++) deep = { nodeName: 'Project', simpleString: 'Project', children: [deep], metrics: [] };
     const cutOff = JSON.stringify({ Event: start, executionId: 2, time: 2, sparkPlanInfo: { nodeName: 'X', simpleString: 'Execute InsertIntoHadoopFsRelationCommand /prod/u', children: [], metrics: [] } });
@@ -138,7 +143,7 @@ describe('sparkforensics-analyze CLI', () => {
   it('reports SQL write targets in the JSON output', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-writes-'));
     const path = join(dir, 'eventlog');
-    const write = (id, nodeName, simpleString, metrics = []) => JSON.stringify({
+    const write = (/** @type {number} */ id, /** @type {string} */ nodeName, /** @type {string} */ simpleString, /** @type {object[]} */ metrics = []) => JSON.stringify({
       Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, time: id,
       sparkPlanInfo: { nodeName, simpleString, children: [], metrics },
     });
@@ -197,7 +202,7 @@ describe('sparkforensics-analyze CLI', () => {
     const appId = 'application_0000000000000_0001';
     const ndjson = Buffer.from(ndjsonWithSkew());
     const half = Math.floor(ndjson.length / 2);
-    const zstd = (bytes) => new Uint8Array(zstdCompressSync(bytes));
+    const zstd = (/** @type {Uint8Array} */ bytes) => new Uint8Array(zstdCompressSync(bytes));
     const logPath = join(dir, 'eventlog');
     const singlePath = join(dir, 'single.zip');
     const rollingPath = join(dir, 'rolling.zip');
@@ -372,8 +377,8 @@ describe('sparkforensics-analyze CLI', () => {
       const parsed = parseRun(stdout);
       const findingWithEstimate = parsed.findings.find((f) => f.impactEstimate != null);
       expect(findingWithEstimate).toBeDefined();
-      expect(findingWithEstimate.impactEstimate).toHaveProperty('basis');
-      expect(findingWithEstimate.impactEstimate).toHaveProperty('estimateMethod');
+      expect(findingWithEstimate?.impactEstimate).toHaveProperty('basis');
+      expect(findingWithEstimate?.impactEstimate).toHaveProperty('estimateMethod');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -390,12 +395,12 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const tuned = parseRun(runCli([path, '--thresholds', loose]).stdout);
       const skew = tuned.findings.find((f) => f.type === 'skew');
-      expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+      expect(skew?.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
       expect(tuned.summary.tunedThresholds).toEqual({ skew: { ratioWarn: { value: 2, default: 3 } } });
 
       const silenced = parseRun(runCli([path, '--thresholds', strict]).stdout);
       expect(silenced.findings.some((f) => f.type === 'skew')).toBe(false);
-      expect(silenced.cleanChecks.find((c) => c.type === 'skew').tunedThresholds).toEqual({ ratioWarn: { value: 100, default: 3 } });
+      expect(silenced.cleanChecks.find((c) => c.type === 'skew')?.tunedThresholds).toEqual({ ratioWarn: { value: 100, default: 3 } });
 
       const { stdout } = runCli([path, '--thresholds', loose, '--format', 'md']);
       expect(stdout).toContain('- Tuned thresholds: skew ratioWarn 2 (default 3).');
@@ -599,6 +604,7 @@ describe('sparkforensics-analyze CLI', () => {
       return `${lines.join('\n')}\n`;
     }
 
+    /** @param {(paths: { baselinePath: string, candidatePath: string }) => void} fn */
     function withBaselineAndCandidate(fn) {
       const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-baseline-'));
       const baselinePath = join(dir, 'baseline');
@@ -622,11 +628,11 @@ describe('sparkforensics-analyze CLI', () => {
         expect(parsed.budgets).toEqual([]);
         expect(Array.isArray(parsed.run.findings)).toBe(true);
         expect(parsed.comparison).toMatchObject({ confidence: expect.any(String) });
-        expect(parsed.comparison.verdict).toMatchObject({ title: expect.any(String), tone: expect.any(String) });
-        expect(Array.isArray(parsed.comparison.verdict.sentences)).toBe(true);
-        expect(Array.isArray(parsed.comparison.metrics)).toBe(true);
-        expect(parsed.comparison.findings).toHaveProperty('introduced');
-        expect(parsed.comparison.findings).toHaveProperty('resolved');
+        expect(parsed.comparison?.verdict).toMatchObject({ title: expect.any(String), tone: expect.any(String) });
+        expect(Array.isArray(parsed.comparison?.verdict.sentences)).toBe(true);
+        expect(Array.isArray(parsed.comparison?.metrics)).toBe(true);
+        expect(parsed.comparison?.findings).toHaveProperty('introduced');
+        expect(parsed.comparison?.findings).toHaveProperty('resolved');
         expect(parsed.comparison).not.toHaveProperty('baselineLabel');
         expect(parsed.comparison).not.toHaveProperty('candidateLabel');
         expect(parsed.comparison).not.toHaveProperty('stageSkew');
@@ -787,6 +793,7 @@ describe('sparkforensics-analyze CLI', () => {
     // App Name is free text the redactor's host/IP scan reaches; an
     // ip-10-20-30-40-shaped name exercises host pseudonymization without a
     // full slowHost fixture.
+    /** @param {string} appId */
     function ndjsonWithHostName(appId) {
       const lines = [
         `{"Event":"SparkListenerApplicationStart","App ID":"${appId}","App Name":"ip-10-20-30-40","Timestamp":0}`,
@@ -983,7 +990,9 @@ describe('sparkforensics-analyze CLI', () => {
 });
 
 describe('sparkforensics-analyze --out', () => {
+  /** @type {string} */
   let dir;
+  /** @type {string} */
   let logPath;
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'sparkforensics-out-'));
@@ -1057,6 +1066,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     return `${lines.join('\n')}\n`;
   }
 
+  /** @param {string} content @param {(path: string) => void} fn */
   function withLog(content, fn) {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-metrics-'));
     const path = join(dir, 'eventlog');
@@ -1085,7 +1095,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
       const { name, version } = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'));
       const { generator } = parseRun(runCli([path]).stdout);
       expect(generator).toEqual({ name, version, buildId: expect.any(String) });
-      expect(generator.buildId).not.toBe('');
+      expect(generator?.buildId).not.toBe('');
       // The stamp holds no run identifiers, so redaction leaves it as is.
       expect(parseRun(runCli([path, '--redact']).stdout).generator).toEqual(generator);
     });
@@ -1114,10 +1124,10 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     withLog(ndjsonWithConf(), (path) => {
       const { stdout } = runCli([path]);
       const { effectiveConf } = parseRun(stdout);
-      expect(effectiveConf.values['spark.sql.shuffle.partitions']).toBe('64');
+      expect(effectiveConf?.values['spark.sql.shuffle.partitions']).toBe('64');
       // The default secret pattern matches the JDBC URL's value ("password"), as in Spark.
-      expect(effectiveConf.maskedKeys).toEqual(['spark.hadoop.fs.s3a.secret.key', 'spark.jdbc.url']);
-      expect(effectiveConf.values['spark.storage.url']).toContain('sig=[redacted]');
+      expect(effectiveConf?.maskedKeys).toEqual(['spark.hadoop.fs.s3a.secret.key', 'spark.jdbc.url']);
+      expect(effectiveConf?.values['spark.storage.url']).toContain('sig=[redacted]');
       for (const leaked of ['top-secret-value', 'hunter2', 'SASSIGNATURE']) expect(stdout).not.toContain(leaked);
     });
   });
@@ -1125,10 +1135,10 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
   it('narrows the conf with --conf-keys and adds a --conf-redact-regex pattern', () => {
     withLog(ndjsonWithConf(), (path) => {
       const narrowed = parseRun(runCli([path, '--conf-keys', 'spark.executor.memory,spark.nope']).stdout).effectiveConf;
-      expect(narrowed.values).toEqual({ 'spark.executor.memory': '4g' });
-      expect(narrowed.absentKeys).toEqual(['spark.nope']);
+      expect(narrowed?.values).toEqual({ 'spark.executor.memory': '4g' });
+      expect(narrowed?.absentKeys).toEqual(['spark.nope']);
       const extra = parseRun(runCli([path, '--conf-redact-regex', 'shuffle']).stdout).effectiveConf;
-      expect(extra.maskedKeys).toContain('spark.sql.shuffle.partitions');
+      expect(extra?.maskedKeys).toContain('spark.sql.shuffle.partitions');
     });
   });
 
@@ -1150,8 +1160,8 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
       expect(status).toBe(0);
       const parsed = parseEnvelope(stdout);
       expect(parsed.run.metrics.schemaVersion).toBe(1);
-      expect(parsed.run.effectiveConf.schemaVersion).toBe(1);
-      const keys = parsed.comparison.metrics.map((m) => m.key);
+      expect(parsed.run.effectiveConf?.schemaVersion).toBe(1);
+      const keys = parsed.comparison?.metrics.map((m) => m.key);
       expect(keys).toContain('executorCpuTime');
       expect(keys).toContain('allocatedCoreHours');
       expect(runCli([path, '--baseline', path, '--max-regression-pct', '10', '--regression-metric', 'executorCpuTime']).status).not.toBe(2);
@@ -1168,7 +1178,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
       const { stdout } = runCli([path, '--redact']);
       expect(stdout).not.toContain('node-7.internal');
       expect(stdout).not.toContain('customer-job');
-      const { values } = parseRun(stdout).effectiveConf;
+      const values = parseRun(stdout).effectiveConf?.values ?? {};
       expect(values['spark.driver.host']).toMatch(/^host-\d+$/);
       expect(values['spark.driver.appUIAddress']).toBe(`http://${values['spark.driver.host']}:4040`);
       expect(values['spark.a']).toBe('1');
@@ -1178,6 +1188,7 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
 
 describe('skipped log lines', () => {
   // The skew fixture is a complete log; corrupting 6 of its TaskEnd lines leaves it complete but short of records.
+  /** @param {boolean} damage @param {(path: string) => void} fn */
   function withDamagedLog(damage, fn) {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-skipped-'));
     const path = join(dir, 'eventlog');
@@ -1216,7 +1227,7 @@ describe('skipped log lines', () => {
       const { stdout, stderr, status } = runCli([clean, '--baseline', damagedBaseline]);
       const payload = parseEnvelope(stdout);
       expect(payload.run.summary.skippedLines).toBe(0);
-      expect(payload.comparison.baselineSkippedLines).toBe(6);
+      expect(payload.comparison?.baselineSkippedLines).toBe(6);
       expect(stderr).toMatch(/\[inconclusive\] parse-incomplete: .*baseline 6 lines/);
       expect(status).toBe(3);
       expect(runCli([clean, '--baseline', damagedBaseline, '--format', 'md']).stdout).toContain('- Baseline skipped lines: 6');
@@ -1226,7 +1237,7 @@ describe('skipped log lines', () => {
   it('reports zero baseline skipped lines for a clean baseline', () => {
     withDamagedLog(false, (clean) => {
       const { stdout, status } = runCli([clean, '--baseline', clean]);
-      expect(parseEnvelope(stdout).comparison.baselineSkippedLines).toBe(0);
+      expect(parseEnvelope(stdout).comparison?.baselineSkippedLines).toBe(0);
       expect(status).toBe(0);
     });
   });
@@ -1234,6 +1245,7 @@ describe('skipped log lines', () => {
 
 describe('sparkforensics-analyze JSON envelope', () => {
   // A baseline, a candidate and a file that is not an event log, to cover pass and error lines.
+  /** @param {(paths: { baseline: string, candidate: string, other: string, garbage: string }) => void} fn */
   function withLogs(fn) {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-envelope-'));
     const paths = { baseline: join(dir, 'baseline'), candidate: join(dir, 'candidate'), other: join(dir, 'other'), garbage: join(dir, 'garbage') };
@@ -1284,7 +1296,7 @@ describe('sparkforensics-analyze JSON envelope', () => {
       expect(lines.map((l) => l.status)).toEqual(['pass', 'error', 'pass']);
       expect(lines.every((l) => l.schemaVersion === 1)).toBe(true);
       expect(lines[1]).toMatchObject({ exitCode: 4, run: null, comparison: null, budgets: [] });
-      expect(lines[0].run.findings).toBeDefined();
+      expect(lines[0].run?.findings).toBeDefined();
       expect(status).toBe(4);
     });
   });
