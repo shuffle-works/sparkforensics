@@ -326,6 +326,7 @@ describe('TaskEndEventSchema', () => {
       'Task Info': { Index: 0, 'Launch Time': 0, 'Finish Time': 1 },
     });
     expect(result.success).toBe(true);
+    expect(dataOf(result)['Task Info']).toBeDefined();
     expect(dataOf(result)['Task Info']?.['Task ID']).toBeUndefined();
     expect(dataOf(result)['Task Info']?.['Attempt Number']).toBeUndefined();
   });
