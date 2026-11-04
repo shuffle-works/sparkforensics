@@ -24,7 +24,9 @@ describe('planTreeToDot', () => {
   });
 
   it('emits two boxes and a linking edge for a split Exchange pair', () => {
+    /** @type {import('../src/types.ts').PlanNode} */
     const write = { name: 'Exchange', detail: '', metrics: [], children: [{ name: 'Scan parquet', detail: '', metrics: [], children: [] }], exchangeRole: 'write' };
+    /** @type {import('../src/types.ts').PlanNode} */
     const read = { name: 'Exchange', detail: 'hashpartitioning(200)', metrics: [], children: [write], exchangeRole: 'read' };
     const tree = { name: 'Project', detail: '', metrics: [], children: [read] };
     const dot = planTreeToDot(tree, { title: 'q1' });

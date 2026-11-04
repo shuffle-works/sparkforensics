@@ -15,6 +15,7 @@ describe('mergeIntervals', () => {
 });
 
 describe('computeWallClock', () => {
+  /** @param {number} id @param {number} submittedAt @param {number} completedAt */
   function makeStage(id, submittedAt, completedAt) {
     return { id, submittedAt, completedAt };
   }

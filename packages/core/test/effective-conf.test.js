@@ -1,11 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { buildEffectiveConf, stripUrlCredentials, compileJvmPattern } from '../src/effective-conf.ts';
 
+/** @param {Record<string, string>} config */
 const app = (config) => ({ config });
+
+// buildEffectiveConf for an app known to record Spark Properties: never null.
+/** @type {(...args: Parameters<typeof buildEffectiveConf>) => NonNullable<ReturnType<typeof buildEffectiveConf>>} */
+const definedConf = (...args) => {
+  const conf = buildEffectiveConf(...args);
+  if (conf == null) throw new Error('expected an effective conf');
+  return conf;
+};
 
 describe('buildEffectiveConf', () => {
   it('lists every key, withholding values whose key matches the default secret pattern', () => {
-    const conf = buildEffectiveConf(app({
+    const conf = definedConf(app({
       'spark.executor.memory': '4g',
       'spark.hadoop.fs.s3a.secret.key': 's3cr3t',
       'spark.hadoop.fs.s3a.access.key': 'AKIA',
@@ -23,7 +32,7 @@ describe('buildEffectiveConf', () => {
   });
 
   it('applies the job\'s own spark.redaction.regex to keys and values', () => {
-    const conf = buildEffectiveConf(app({
+    const conf = definedConf(app({
       'spark.redaction.regex': '(?i)private|jdbc',
       'spark.my.PRIVATE.thing': 'x',
       'spark.plain': 'jdbc:postgresql://db/x',
@@ -34,7 +43,7 @@ describe('buildEffectiveConf', () => {
   });
 
   it('applies the default secret pattern to values as well as keys, as Spark does', () => {
-    const conf = buildEffectiveConf(app({
+    const conf = definedConf(app({
       'spark.driver.extraJavaOptions': '-Djavax.net.ssl.keyStorePassword=x',
       'spark.api.url': 'https://h/api?access_token=x',
       'spark.plain': 'value',
@@ -44,19 +53,19 @@ describe('buildEffectiveConf', () => {
   });
 
   it('withholds every value when the job\'s pattern cannot be evaluated', () => {
-    const conf = buildEffectiveConf(app({ 'spark.redaction.regex': '(?<n>a)\\k<m>(', 'spark.a': '1' }));
+    const conf = definedConf(app({ 'spark.redaction.regex': '(?<n>a)\\k<m>(', 'spark.a': '1' }));
     expect(conf.values).toEqual({});
     expect(conf.maskedKeys).toEqual(['spark.a', 'spark.redaction.regex']);
   });
 
   it('applies a user-supplied pattern and rejects an invalid one', () => {
-    const conf = buildEffectiveConf(app({ 'spark.internal.url': 'x', 'spark.a': 'b' }), { userPattern: 'internal' });
+    const conf = definedConf(app({ 'spark.internal.url': 'x', 'spark.a': 'b' }), { userPattern: 'internal' });
     expect(conf.maskedKeys).toEqual(['spark.internal.url']);
     expect(() => buildEffectiveConf(app({}), { userPattern: '(' })).toThrow(/invalid secret pattern/);
   });
 
   it('narrows to the requested keys and reports the ones the log lacks', () => {
-    const conf = buildEffectiveConf(app({ 'spark.a': '1', 'spark.b': '2', 'spark.x.password': 'p' }), {
+    const conf = definedConf(app({ 'spark.a': '1', 'spark.b': '2', 'spark.x.password': 'p' }), {
       keys: ['spark.a', 'spark.x.password', 'spark.missing'],
     });
     expect(conf.values).toEqual({ 'spark.a': '1' });
@@ -70,7 +79,7 @@ describe('buildEffectiveConf', () => {
   });
 
   it('never emits a hash or other derivative of a withheld value', () => {
-    const conf = buildEffectiveConf(app({ 'spark.a.password': 'hunter2' }));
+    const conf = definedConf(app({ 'spark.a.password': 'hunter2' }));
     expect(Object.keys(conf).sort()).toEqual(['absentKeys', 'maskedKeys', 'schemaVersion', 'values']);
     expect(JSON.stringify(conf)).not.toContain('hunter2');
   });
@@ -107,8 +116,8 @@ describe('stripUrlCredentials', () => {
 
 describe('compileJvmPattern', () => {
   it('reads JVM inline flags and rejects JVM-only syntax', () => {
-    expect(compileJvmPattern('(?i)secret').test('SECRET')).toBe(true);
-    expect(compileJvmPattern('secret').test('SECRET')).toBe(false);
+    expect(compileJvmPattern('(?i)secret')?.test('SECRET')).toBe(true);
+    expect(compileJvmPattern('secret')?.test('SECRET')).toBe(false);
     expect(compileJvmPattern('(?x)a b')).toBeNull();
   });
 });
@@ -125,13 +134,13 @@ describe('credential forms beyond the Spark default pattern', () => {
     ['spark.myapp.accountKey'],
     ['spark.myapp.privateKey'],
   ])('withholds the value of key %s', (key) => {
-    const conf = buildEffectiveConf(app({ [key]: 'hunter2-value', 'spark.plain': 'ok' }));
+    const conf = definedConf(app({ [key]: 'hunter2-value', 'spark.plain': 'ok' }));
     expect(conf.maskedKeys).toEqual([key]);
     expect(JSON.stringify(conf)).not.toContain('hunter2-value');
   });
 
   it('does not withhold look-alike keys', () => {
-    const conf = buildEffectiveConf(app({
+    const conf = definedConf(app({
       'spark.authenticate.enableSaslEncryption': 'true', 'spark.sql.passthrough': 'x', 'spark.executor.memory': '4g',
     }));
     expect(conf.maskedKeys).toEqual([]);
@@ -146,7 +155,7 @@ describe('credential forms beyond the Spark default pattern', () => {
     ['user=u password="hunter 2" x=1', 'user=u password=[redacted] x=1'],
   ])('strips the credential from a value that is not a URL: %s', (value, expected) => {
     expect(stripUrlCredentials(value)).toBe(expected);
-    const conf = buildEffectiveConf(app({ 'spark.myapp.connection': value }));
+    const conf = definedConf(app({ 'spark.myapp.connection': value }));
     expect(JSON.stringify(conf)).not.toContain('hunter2');
   });
 });

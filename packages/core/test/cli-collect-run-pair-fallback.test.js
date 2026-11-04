@@ -34,7 +34,7 @@ describe('collectRunInWorker when the worker thread fails', () => {
       expect(await collectRunInWorker(AQE_SKEW)).toEqual(await collectRun(AQE_SKEW));
       const { baseline, candidate } = await collectRunPair(AQE_SKEW, AQE_SKEW, { minOffloadBytes: 0 });
       expect(baseline.status).toBe('fulfilled');
-      expect(candidate.status).toBe('fulfilled');
+      expect(candidate?.status).toBe('fulfilled');
     } finally {
       behavior.throwOnStart = false;
     }
@@ -44,7 +44,7 @@ describe('collectRunInWorker when the worker thread fails', () => {
     behavior.event = 'error';
     const { baseline, candidate } = await collectRunPair(AQE_SKEW, AQE_SKEW, { minOffloadBytes: 0 });
     const own = await collectRun(AQE_SKEW);
-    expect(baseline.value).toEqual(own);
-    expect(candidate.value).toEqual(own);
+    expect(baseline).toEqual({ status: 'fulfilled', value: own });
+    expect(candidate).toEqual({ status: 'fulfilled', value: own });
   });
 });

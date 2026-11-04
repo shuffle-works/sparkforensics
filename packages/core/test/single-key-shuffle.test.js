@@ -1,10 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
-import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
-const skewOf = (findings) => findings.find((f) => f.type === 'partitionSizing' && f.rule === 'shufflePartitionSkew');
+
+/** @param {import('../src/types.ts').Finding} f @returns {f is import('../src/finding-types.ts').PartitionSizingFinding} */
+const isShuffleSkew = (f) => f.type === 'partitionSizing' && f.rule === 'shufflePartitionSkew';
+/** @param {import('../src/types.ts').Finding[]} findings */
+function skewOf(findings) {
+  const found = findings.find(isShuffleSkew);
+  if (!found) throw new Error('no shufflePartitionSkew finding');
+  return found;
+}
 
 // One 10-task stage: nine tasks read nothing and one reads 400 MiB.
 describe('single-key shuffle in a hand-made log', () => {
@@ -20,7 +28,8 @@ describe('single-key shuffle in a hand-made log', () => {
 });
 
 describe('single-key shuffle rule', () => {
-  const run = (stage) => skewOf(analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeStage(stage)]]) }).catalog);
+  /** @param {Record<string, unknown>} stage */
+  const run = (stage) => skewOf(analyzedRunFrom({ app: makeApp(), stages: new Map([[1, makeTypedStage(stage)]]) }).catalog);
   const base = { shuffleReadP50: 0, shuffleReadMax: 360 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 };
 
   it('fires at 90% of the stage read with an empty median', () => {
@@ -37,16 +46,34 @@ describe('single-key shuffle rule', () => {
 describe('single-key shuffle next to a missed broadcast', () => {
   const small = 5 * MiB;
   const large = 20 * 1024 * MiB;
+  /**
+   * @param {number} bytes
+   * @param {string} id
+   * @param {number[]} stageIds
+   * @returns {import('../src/types.ts').PlanNode}
+   */
   const exchange = (bytes, id, stageIds) => ({
     name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 200)', id: `r${id}`, exchangeRole: 'read', metrics: [], stageIds,
     children: [{ name: 'Exchange', detail: '', id: `w${id}`, exchangeRole: 'write', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [], stageIds }],
   });
+  /**
+   * @param {number[]} buildStageIds
+   * @param {number[]} streamStageIds
+   * @returns {import('../src/types.ts').PlanNode}
+   */
   const plan = (buildStageIds, streamStageIds) => ({
     name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [b#2L], Inner', metrics: [],
     children: [exchange(small, 'L', buildStageIds), exchange(large, 'R', streamStageIds)],
   });
+  /**
+   * @param {Record<string, string>} [config]
+   * @param {number[]} [buildStageIds]
+   * @param {number[]} [streamStageIds]
+   * @param {number} [skewStage]
+   */
   const findings = (config, buildStageIds = [0, 1], streamStageIds = buildStageIds, skewStage = 1) => {
-    const stages = new Map([[skewStage, makeStage({ id: skewStage, shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
+    const stages = new Map([[skewStage, makeTypedStage({ id: skewStage, shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
+    /** @type {Map<number, import('../src/types.ts').SqlExecution>} */
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [skewStage], planTree: plan(buildStageIds, streamStageIds) }]]);
     return analyzedRunFrom({ app: makeApp({ config, sparkVersion: '3.5.3' }), stages, sql }).catalog;
   };
@@ -63,6 +90,7 @@ describe('single-key shuffle next to a missed broadcast', () => {
     expect(f.recommendation).toContain('automatic broadcast is disabled');
   });
   it('does not link a join whose stages are unknown, so only the whole execution is known', () => {
+    // @ts-expect-error null stage ids stand for a join whose stages are unknown
     const all = findings(undefined, null);
     expect(all.some((f) => f.type === 'underBroadcast')).toBe(true);
     expect(skewOf(all).recommendation).not.toContain('missed broadcast');

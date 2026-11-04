@@ -1,12 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, findingId } from '../src/analyzer.js';
-import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+
+/** @typedef {import('../src/types.ts').Finding} Finding */
+
+/**
+ * @param {Finding[]} findings
+ * @param {Finding['type']} type
+ * @param {number} stageId
+ */
+function findAt(findings, type, stageId) {
+  const found = findings.find((f) => f.type === type && f.stageId === stageId);
+  if (!found) throw new Error(`no ${type} finding at stage ${stageId}`);
+  return found;
+}
 
 // Fixture with two flagging stages + a GB shuffle so we get >1 finding.
 function fixture() {
   const stages = new Map([
-    [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })],       // skew critical
-    [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024 })],         // shuffle critical
+    [1, makeTypedStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })],       // skew critical
+    [2, makeTypedStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024 })],         // shuffle critical
   ]);
   return { app: makeApp(), stages, added: [], removed: [], jobs: new Map() };
 }
@@ -18,7 +31,7 @@ describe('analyze: finding identity + detector version', () => {
     expect(findings.length).toBeGreaterThan(0);
     for (const f of findings) {
       expect(typeof f.id).toBe('string');
-      expect(f.id.length).toBeGreaterThan(0);
+      expect(f.id?.length).toBeGreaterThan(0);
       expect(typeof f.detectorVersion).toBe('number');
       expect(f.detectorVersion).toBeGreaterThanOrEqual(1);
     }
@@ -36,15 +49,15 @@ describe('analyze: finding identity + detector version', () => {
   it('derives the id from type + location + metric (no timestamp/randomness)', () => {
     const { app, stages, added, removed, jobs } = fixture();
     const findings = analyze(app, stages, added, removed, jobs);
-    const skew = findings.find((f) => f.type === 'skew' && f.stageId === 1);
-    const skewAgain = analyze(app, stages, added, removed, jobs).find((f) => f.type === 'skew' && f.stageId === 1);
+    const skew = findAt(findings, 'skew', 1);
+    const skewAgain = findAt(analyze(app, stages, added, removed, jobs), 'skew', 1);
     expect(skew.id).toBe(skewAgain.id);
-    const shuffle = findings.find((f) => f.type === 'shuffle' && f.stageId === 2);
+    const shuffle = findAt(findings, 'shuffle', 2);
     expect(shuffle.id).not.toBe(skew.id);
   });
 
   it('id is decoupled from detectorVersion: a version bump alone does not change the id', () => {
-    const base = { type: 'skew', stageId: 1, metric: 'taskDurationP95Ratio', value: 6 };
+    const base = /** @type {Finding} */ ({ type: 'skew', stageId: 1, metric: 'P95/median', value: 6 });
     const idV1 = findingId({ ...base, detectorVersion: 1 });
     const idV2 = findingId({ ...base, detectorVersion: 2 });
     expect(idV1).toBe(idV2);
@@ -86,8 +99,8 @@ function collisionFixture() {
     ['2', { jvmHeapMemory: Math.round(0.4 * ALLOC_BYTES) }],
   ]);
   const stages = new Map([
-    [1, makeStage({ id: 1, taskCount: 100, hostStats })],
-    [2, makeStage({ id: 2, taskCount: 10, executorMetrics })],
+    [1, makeTypedStage({ id: 1, taskCount: 100, hostStats })],
+    [2, makeTypedStage({ id: 2, taskCount: 10, executorMetrics })],
   ]);
   const app = makeApp({ resources: { executor: { memoryMB: ALLOC_MB } } });
   return { app, stages, added: [], removed: [], jobs: new Map() };
@@ -113,6 +126,12 @@ describe('analyze: finding id uniqueness across multi-emit detectors', () => {
 // SQL Plan-Advisor detectors emit multiple findings per execution differing only by
 // discriminator fields: smallFiles (direction/nodeName), duplicatePlanSubtree (rootName/subtreeSize).
 const MB = 1024 * 1024;
+/**
+ * @param {string} name
+ * @param {{ name: string, value: number }[]} [metrics]
+ * @param {import('../src/types.ts').PlanNode[]} [children]
+ * @returns {import('../src/types.ts').PlanNode}
+ */
 const planNode = (name, metrics = [], children = []) => ({
   name, detail: '', metrics: metrics.map((m) => ({ ...m, metricType: 'sum' })), children,
 });
@@ -133,7 +152,7 @@ function sqlCollisionFixture() {
   const planTree = planNode('Project', [], [readScan, writeExec, dupA(), dupA(), dupB(), dupB()]);
   const sqlExec = { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree };
   const sql = new Map([[1, sqlExec]]);
-  const stages = new Map([[1, makeStage({ id: 1, sqlExecutionId: 1 })]]);
+  const stages = new Map([[1, makeTypedStage({ id: 1, sqlExecutionId: 1 })]]);
   return { app: makeApp(), stages, sql };
 }
 
@@ -154,8 +173,8 @@ describe('analyze: finding id uniqueness across SQL plan-advisor detectors', () 
 
 describe('analyze, finding id uniqueness for app-scope, per-instance findings', () => {
   it('rddId discriminates cacheUtilization findings sharing type/metric/value with no stage/execution/property location', () => {
-    const a = { type: 'cacheUtilization', stageId: null, variant: 'partialCache', metric: 'cachedRatio', value: 40, rddId: 1 };
-    const b = { type: 'cacheUtilization', stageId: null, variant: 'partialCache', metric: 'cachedRatio', value: 40, rddId: 2 };
+    const a = /** @type {Finding} */ ({ type: 'cacheUtilization', stageId: null, variant: 'partialCache', metric: 'cachedRatio', value: 40, rddId: 1 });
+    const b = /** @type {Finding} */ ({ type: 'cacheUtilization', stageId: null, variant: 'partialCache', metric: 'cachedRatio', value: 40, rddId: 2 });
     expect(findingId(a)).not.toBe(findingId(b));
   });
 
@@ -163,20 +182,20 @@ describe('analyze, finding id uniqueness for app-scope, per-instance findings', 
   // relations; only relation/format distinguish them. Composites additionally share
   // relation across distinct operators and can share everything but executionIds.
   it('relation/format discriminate leaf cachingOpportunity findings sharing type/stageId/metric/value', () => {
-    const a = { type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1', format: 'parquet', executionIds: [1, 2] };
-    const b = { type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t2', format: 'parquet', executionIds: [1, 2] };
+    const a = /** @type {Finding} */ ({ type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1', format: 'parquet', executionIds: [1, 2] });
+    const b = /** @type {Finding} */ ({ type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t2', format: 'parquet', executionIds: [1, 2] });
     expect(findingId(a)).not.toBe(findingId(b));
   });
 
   it('operator discriminates composite cachingOpportunity findings sharing type/stageId/metric/value/relation', () => {
-    const a = { type: 'cachingOpportunity', variant: 'composite', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1 join db.t2', operator: 'join', executionIds: [1, 2] };
-    const b = { type: 'cachingOpportunity', variant: 'composite', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1 join db.t2', operator: 'union', executionIds: [1, 2] };
+    const a = /** @type {Finding} */ ({ type: 'cachingOpportunity', variant: 'composite', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1 join db.t2', operator: 'join', executionIds: [1, 2] });
+    const b = /** @type {Finding} */ ({ type: 'cachingOpportunity', variant: 'composite', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1 join db.t2', operator: 'union', executionIds: [1, 2] });
     expect(findingId(a)).not.toBe(findingId(b));
   });
 
   it('executionIds discriminates cachingOpportunity findings sharing type/stageId/metric/value/relation/format/operator', () => {
-    const a = { type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1', format: 'parquet', executionIds: [1, 2] };
-    const b = { type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1', format: 'parquet', executionIds: [3, 4] };
+    const a = /** @type {Finding} */ ({ type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1', format: 'parquet', executionIds: [1, 2] });
+    const b = /** @type {Finding} */ ({ type: 'cachingOpportunity', stageId: null, metric: 'executionReuse', value: 2, relation: 'db.t1', format: 'parquet', executionIds: [3, 4] });
     expect(findingId(a)).not.toBe(findingId(b));
   });
 });

@@ -11,7 +11,7 @@ export function makeStage(overrides = {}) {
     sqlExecutionId: null,
     taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 100,
     gcPct: 0,
-    spillClassification: 'unclassified',
+    spillClassification: /** @type {const} */ ('unclassified'),
     parentIds: [], hostStats: [], executorStats: [], speculativeTasks: 0,
     failureReasons: [], stragglerCount: 0,
     wastedAttempts: 0, retryWasteMs: 0,
@@ -19,6 +19,18 @@ export function makeStage(overrides = {}) {
     spillMemP50: 0, spillMemMax: 0, spillDiskP50: 0, spillDiskMax: 0,
     ...overrides,
   };
+}
+
+/**
+ * `makeStage` typed as a `Stage` for APIs that take one; the fixture carries the fields detectors
+ * read in tests, not every `finalizeStage` field.
+ * @param {Partial<import('../../src/types.ts').Stage>} [overrides]
+ * @returns {import('../../src/types.ts').Stage}
+ */
+export function makeTypedStage(overrides = {}) {
+  /** @type {Partial<import('../../src/types.ts').Stage>} */
+  const stage = makeStage(overrides);
+  return /** @type {import('../../src/types.ts').Stage} */ (stage);
 }
 
 export function makeApp(overrides = {}) {
@@ -36,6 +48,11 @@ export function dataTail(overrides = {}) {
 
 // One executor's participation row as finalizeStage builds it from that executor's task durations:
 // the count, the summed duration and the sum and M2 of ln(1 + duration) slowHost tests against.
+/**
+ * @param {string} executorId
+ * @param {number[]} durationsMs
+ * @param {Record<string, unknown>} [overrides]
+ */
 export function executorRow(executorId, durationsMs, overrides = {}) {
   const logs = durationsMs.map(Math.log1p);
   const logDurationSum = logs.reduce((a, b) => a + b, 0);

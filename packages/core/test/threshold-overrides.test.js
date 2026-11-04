@@ -9,7 +9,22 @@ import { loadThresholdOverrides } from '../src/cli/threshold-config.ts';
 import { DETECTORS } from '../src/detectors.ts';
 import { detectorCatalog } from '../src/detector-catalog.ts';
 
-const entry = (type) => DETECTORS.find((d) => d.type === type);
+/**
+ * @param {string} type
+ * @returns {import('../src/detectors/types.ts').Detector}
+ */
+function entry(type) {
+  const found = DETECTORS.find((d) => d.type === type);
+  if (!found) throw new Error(`no detector "${type}"`);
+  return found;
+}
+
+/** @param {import('../src/detectors/types.ts').Detector} detector */
+function ratioTiersOf(detector) {
+  const tiers = detector.thresholds.ratioTiers;
+  if (typeof tiers === 'number') throw new Error(`${detector.type}.ratioTiers is not a tier table`);
+  return tiers;
+}
 
 describe('parseThresholdOverrides', () => {
   it('accepts numbers and same-length ascending tier tables, and freezes the result', () => {
@@ -17,6 +32,7 @@ describe('parseThresholdOverrides', () => {
     expect(parsed).toEqual({ skew: { ratioWarn: 5 }, slowHost: { ratioTiers: [1.5, 2, 4, 12] }, tinyTask: {} });
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(Object.isFrozen(parsed.skew)).toBe(true);
+    if (!parsed.slowHost) throw new Error('slowHost override missing');
     expect(Object.isFrozen(parsed.slowHost.ratioTiers)).toBe(true);
   });
 
@@ -53,7 +69,7 @@ describe('tuned threshold labels', () => {
   });
 
   it('compares tier tables by value', () => {
-    const tiers = [...entry('slowHost').thresholds.ratioTiers];
+    const tiers = [...ratioTiersOf(entry('slowHost'))];
     expect(tunedThresholdsOf(entry('slowHost'), parseThresholdOverrides({ slowHost: { ratioTiers: tiers } }))).toBeNull();
     expect(describeTunedThresholds({ ratioTiers: { value: [1, 2], default: [3, 4] } })).toBe('ratioTiers [1, 2] (default [3, 4])');
   });
@@ -61,6 +77,7 @@ describe('tuned threshold labels', () => {
   it('shows a tuned row\'s effective thresholds in the catalog and leaves the others as they are', () => {
     const catalog = tunedDetectorCatalog(parseThresholdOverrides({ skew: { ratioWarn: 5 } }));
     const skew = catalog.find((row) => row.type === 'skew');
+    if (!skew) throw new Error('skew missing from the catalog');
     expect(skew.thresholds).toEqual({ ...entry('skew').thresholds, ratioWarn: 5 });
     expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 5, default: 3 } });
     const others = catalog.filter((row) => row.type !== 'skew');
@@ -71,6 +88,10 @@ describe('tuned threshold labels', () => {
 
 describe('loadThresholdOverrides', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sf-thresholds-'));
+  /**
+   * @param {string} name
+   * @param {string} text
+   */
   const write = (name, text) => {
     const path = join(dir, name);
     writeFileSync(path, text);

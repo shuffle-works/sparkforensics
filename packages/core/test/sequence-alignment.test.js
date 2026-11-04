@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { alignSequences, FULL_ALIGNMENT_MAX_CELLS, BAND_BASE_HALF_WIDTH } from '../src/sequence-alignment.js';
 
+/** @param {number} i */
 const ids = (i) => i;
 // Sequences of labels; two items score 1000 when equal and 0 otherwise.
+/**
+ * @param {string[]} a
+ * @param {string[]} b
+ * @param {number} [min]
+ */
 const align = (a, b, min = 500) => alignSequences(a.length, b.length, (i, j) => (a[i] === b[j] ? 1000 : 0), min, ids, ids);
 
 describe('alignSequences', () => {
@@ -11,6 +17,7 @@ describe('alignSequences', () => {
   });
 
   it('matches the first iterations of a loop and leaves the extra last one unmatched', () => {
+    /** @param {number} n */
     const loop = (n) => Array.from({ length: n }, () => 'q');
     expect(align(loop(3), loop(5)).pairs).toEqual([[0, 0], [1, 1], [2, 2]]);
     expect(align(loop(5), loop(3)).pairs).toEqual([[0, 0], [1, 1], [2, 2]]);
@@ -24,7 +31,10 @@ describe('alignSequences', () => {
 
   it('maximizes the summed score, not the number of matches', () => {
     // One strong crossing match beats two weak ones.
-    const score = (i, j) => ({ '0,1': 1000, '1,0': 1000, '0,0': 600, '1,1': 600 })[`${i},${j}`] ?? 0;
+    /** @type {Record<string, number>} */
+    const scores = { '0,1': 1000, '1,0': 1000, '0,0': 600, '1,1': 600 };
+    /** @param {number} i @param {number} j */
+    const score = (i, j) => scores[`${i},${j}`] ?? 0;
     expect(alignSequences(2, 2, score, 500, ids, ids).pairs).toEqual([[0, 0], [1, 1]]);
     expect(alignSequences(2, 2, (i, j) => (i === 0 && j === 1 ? 2000 : score(i, j)), 500, ids, ids).pairs).toEqual([[0, 1]]);
   });
@@ -33,7 +43,7 @@ describe('alignSequences', () => {
     // a = [x, y], b = [y, x]: matching either pair is optimal. The ids differ between the sides, as
     // two runs' execution ids usually do; equal ids on a self-mirrored tie have no mirror-symmetric answer.
     const a = ['x', 'y'], b = ['y', 'x'];
-    const idA = (i) => i, idB = (j) => 10 + j;
+    const idA = (/** @type {number} */ i) => i, idB = (/** @type {number} */ j) => 10 + j;
     const forward = alignSequences(2, 2, (i, j) => (a[i] === b[j] ? 1000 : 0), 500, idA, idB).pairs;
     const backward = alignSequences(2, 2, (i, j) => (b[i] === a[j] ? 1000 : 0), 500, idB, idA).pairs;
     expect(forward).toHaveLength(1);

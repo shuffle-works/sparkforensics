@@ -4,6 +4,7 @@ import { makeApp } from './fixtures/stage-app-fixtures.js';
 
 const HOUR = 3_600_000;
 // One 1-core executor alive for one hour, so memoryGbHours is the container size in GiB.
+/** @param {Record<string, string> | undefined} config @param {string | null} [sparkVersion] */
 function gbHours(config, sparkVersion) {
   const input = {
     app: makeApp({ endTime: HOUR, config, ...(sparkVersion !== undefined ? { sparkVersion } : {}) }),
@@ -64,8 +65,14 @@ describe('computeAllocation memory', () => {
 });
 
 describe('computeAllocation executors', () => {
+  /** @param {string} executorId @param {number} timestamp */
   const added = (executorId, timestamp, totalCores = 2) => ({ kind: 'added', executorId, timestamp, totalCores });
+  /** @param {string} executorId @param {number} timestamp */
   const removed = (executorId, timestamp) => ({ kind: 'removed', executorId, timestamp });
+  /**
+   * @param {Record<string, string> | undefined} config
+   * @param {import('../src/allocation.ts').AllocationInput['executors']} executors
+   */
   const allocate = (config, executors, app = {}) =>
     computeAllocation({ app: makeApp({ startTime: 0, endTime: HOUR, config, ...app }), stages: new Map(), executors });
 
@@ -120,12 +127,16 @@ describe('computeAllocation executors', () => {
 });
 
 describe('allocatedCoreMsWithin', () => {
+  /** @param {string} executorId @param {number} timestamp */
   const added = (executorId, timestamp, totalCores = 2) => ({ kind: 'added', executorId, timestamp, totalCores });
+  /** @param {string} executorId @param {number} timestamp */
+  const removed = (executorId, timestamp) => ({ kind: 'removed', executorId, timestamp });
+  /** @param {import('../src/allocation.ts').AllocationInput['executors']} executors */
   const input = (executors) => ({ app: makeApp({ startTime: 0, endTime: 100_000 }), stages: new Map(), executors });
 
   it('counts each executor only for the time it was alive inside the windows', () => {
     // e1 alive 0-100 s, e2 joins at 50 s and leaves at 80 s; windows 40-60 s and 70-90 s.
-    const i = input({ added: [added('1', 0), added('2', 50_000)], removed: [{ kind: 'removed', executorId: '2', timestamp: 80_000 }] });
+    const i = input({ added: [added('1', 0), added('2', 50_000)], removed: [removed('2', 80_000)] });
     // e1: 2 cores x 40 s; e2: 2 cores x (10 s in the first window + 10 s in the second).
     expect(allocatedCoreMsWithin(i, [[40_000, 60_000], [70_000, 90_000]])).toBe(2 * 40_000 + 2 * 20_000);
   });

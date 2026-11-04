@@ -27,13 +27,13 @@ describe('estimateImpact: false-zero regression guard (2026-08-30 N1 occupancy r
         // Single-stage findings key by `stageId`; SQL/plan-scope findings (duplicatePlanSubtree,
         // stage-mappable smallFiles/overBroadcast/underBroadcast) key by `stageIds` instead: this
         // guard treats a multi-stage finding as "ran alone" only when EVERY one of its stages did.
-        const stageIds = f.stageId != null ? [f.stageId] : (Array.isArray(f.stageIds) ? f.stageIds : null);
+        const stageIds = f.stageId != null ? [f.stageId] : ('stageIds' in f && Array.isArray(f.stageIds) ? f.stageIds : null);
         if (!stageIds || stageIds.length === 0) continue;
         if (f.type === 'stageShape') continue; // lowParallelism/dataExplosion/taskStageSkew are permanently resourceOnly by design, not a wall-clock claim ever
         // A measured zero, not a clip artifact: the shuffle claim is capped at the fetch wait its tasks measured.
-        if (f.type === 'shuffle' && appModel.stages.get(f.stageId)?.fetchWaitTime === 0) continue;
-        const infos = stageIds.map((id) => occupancy.get(id));
-        if (infos.some((info) => !info)) continue; // some stage excluded from the sweep
+        if (f.type === 'shuffle' && f.stageId != null && appModel.stages.get(f.stageId)?.fetchWaitTime === 0) continue;
+        const infos = stageIds.map((id) => occupancy.get(id)).filter((info) => info !== undefined);
+        if (infos.length < stageIds.length) continue; // some stage excluded from the sweep
         const minGate = Math.min(...infos.map((info) => info.gate));
         if (minGate < 0.95) continue;
         const rawWasteValue = f.impactEstimate?.rawWaste?.value;

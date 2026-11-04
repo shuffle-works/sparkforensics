@@ -10,10 +10,19 @@ const TABLE_PATH = '/tmp/spark-workload-output/data-delta-table';
 // The initial save names its table as a plain path; a DML command's target is read from the
 // `_delta_log` scans of its executions, which print it as a file URI.
 const SAVE = { command: 'SaveIntoDataSourceCommand', kind: 'path', target: TABLE_PATH };
+/** @param {string} command */
 const dml = (command) => ({ command, kind: 'path', target: `file://${TABLE_PATH}` });
 
+/** @param {string} name */
+function corpusPath(name) {
+  const log = corpusLog(`${name}.ndjson`);
+  if (log === null) throw new Error(`The corpus log ${name} is missing.`);
+  return log;
+}
+
+/** @param {string} name */
 async function writesOf(name) {
-  const { appModel, skippedLines } = await collectRun(corpusLog(`${name}.ndjson`));
+  const { appModel, skippedLines } = await collectRun(corpusPath(name));
   const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
   expect(writeTargets.skippedLines).toBe(skippedLines);
   expect(writeTargets.executionsWithoutPlan).toEqual([]);
@@ -65,10 +74,13 @@ describe('Delta DML write targets on public corpus logs', () => {
 describe('MERGE row counts on public corpus logs', () => {
   const MERGE_ROWS = { inserted: 100000, updated: 200000, deleted: 0, copied: 800000 };
 
+  /** @param {string} name */
   async function mergeWrite(name) {
-    const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
+    const { appModel } = await collectRun(corpusPath(name));
     const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
-    return writeTargets.writes.find((w) => w.command === 'MergeIntoCommand');
+    const write = writeTargets.writes.find((w) => w.command === 'MergeIntoCommand');
+    if (write === undefined) throw new Error(`No MergeIntoCommand write in ${name}.`);
+    return write;
   }
 
   it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('reads them from a SQL MERGE node', async () => {
@@ -85,11 +97,13 @@ describe('MERGE row counts on public corpus logs', () => {
 // Rows and bytes a MERGE, UPDATE or DELETE wrote to new files come from its command node's counters,
 // and equal the stage sums of its root execution.
 describe('DML output figures on public corpus logs', () => {
+  /** @param {string} name */
   async function dmlWrites(name) {
-    const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
+    const { appModel } = await collectRun(corpusPath(name));
     const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
     return writeTargets.writes.filter((w) => w.command !== 'SaveIntoDataSourceCommand');
   }
+  /** @param {import('../src/write-targets.ts').WriteTarget} write */
   const figures = ({ outputRows, outputRowsSource, outputBytes }) => ({ outputRows, outputRowsSource, outputBytes });
 
   it.skipIf(!corpusLog('delta-merge-sql.ndjson'))('reports inserted + updated + copied rows and the bytes added for a SQL MERGE', async () => {

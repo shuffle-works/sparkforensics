@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { classifyNode, parseOperatorDetail, buildDurationMap, isExchangeNode, isBroadcastExchangeNode } from '../src/plan-node-detail.js';
+import { emptyAppModel } from '../src/run-serialization.ts';
+import { makeTypedStage } from './fixtures/stage-app-fixtures.js';
 
 describe('plan-node-detail', () => {
   describe('classifyNode', () => {
@@ -109,22 +111,20 @@ describe('buildDurationMap', () => {
   it('derives stage linkage from stage.sqlExecutionId even when sqlExec.stageIds is empty (real-data shape)', () => {
     const leaf = { name: 'Scan parquet', detail: '', metrics: [{ name: 'duration', value: 100, metricType: 'timing' }], children: [] };
     const root = { name: 'SortMergeJoin', detail: '', metrics: [], children: [leaf] };
-    const appModel = {
-      stages: new Map([[1, { id: 1, sqlExecutionId: 7, submittedAt: 0, completedAt: 500 }]]),
-      sql: new Map(),
-    };
-    const sqlExec = { executionId: 7, planTree: root, stageIds: [] };
+    const appModel = emptyAppModel();
+    appModel.stages.set(1, makeTypedStage({ id: 1, sqlExecutionId: 7, submittedAt: 0, completedAt: 500 }));
+    const sqlExec = { id: 7, planTree: root, stageIds: [] };
 
     const durationMap = buildDurationMap(root, appModel, sqlExec, 7);
 
     expect(durationMap).not.toBeNull();
-    expect(durationMap.get(root)).not.toBeNull();
+    expect(durationMap?.get(root)).not.toBeNull();
   });
 
   it('returns null when no stage links back to this executionId at all', () => {
     const root = { name: 'SortMergeJoin', detail: '', metrics: [], children: [] };
-    const appModel = { stages: new Map(), sql: new Map() };
-    const sqlExec = { executionId: 7, planTree: root, stageIds: [] };
+    const appModel = emptyAppModel();
+    const sqlExec = { id: 7, planTree: root, stageIds: [] };
 
     expect(buildDurationMap(root, appModel, sqlExec, 7)).toBeNull();
   });

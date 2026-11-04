@@ -3,6 +3,7 @@ import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
 import { corpusLog } from './corpus-log.js';
 
+/** @param {Record<string, number>} values */
 const metrics = (values) => Object.entries(values).map(([name, value]) => ({ name, value, metricType: 'sum' }));
 
 // A MERGE command node with the counters Delta reports; `extra` overrides any of them.
@@ -19,6 +20,7 @@ function mergeNode(extra = {}) {
   };
 }
 
+/** @param {import('../src/types.ts').PlanNode} node */
 function mergeFindings(node) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: node }]]);
   return analyzedRunFrom({ app: makeApp(), sql }).catalog.filter((f) => f.type === 'mergeRewrite');
@@ -85,8 +87,11 @@ describe('mergeRewrite', () => {
 
 // dev/log-corpus is a git submodule: the suite skips without it.
 
+/** @param {string} name */
 async function corpusFindings(name) {
-  const run = await analyzedRunFrom(corpusLog(`${name}.ndjson`));
+  const log = corpusLog(`${name}.ndjson`);
+  if (log === null) throw new Error(`The corpus log ${name} is missing.`);
+  const run = await analyzedRunFrom(log);
   return run.catalog.filter((f) => f.type === 'mergeRewrite');
 }
 

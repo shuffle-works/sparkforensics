@@ -6,6 +6,8 @@ import {
   parseRegressionBudgetFlag, parseBudgetsFile, loadBudgetsFile, combineRegressionBudgets,
 } from '../src/cli/regression-budgets.ts';
 import { evaluateBudgets } from '../src/cli/budgets.ts';
+import { buildComparison } from '../src/run-comparison.ts';
+import { emptyAppModel } from '../src/run-serialization.ts';
 
 describe('parseRegressionBudgetFlag', () => {
   it('parses <metric>:<pct>', () => {
@@ -51,6 +53,10 @@ describe('parseBudgetsFile', () => {
 });
 
 describe('combineRegressionBudgets', () => {
+  /**
+   * @param {string} origin
+   * @param {string} metric
+   */
   const src = (origin, metric) => ({ origin, budget: { metric, maxPct: 1 } });
   it('refuses a metric budgeted twice, naming both origins', () => {
     expect(() => combineRegressionBudgets([src('--budgets', 'gcTime'), src('--regression-budget', 'gcTime')]))
@@ -61,15 +67,28 @@ describe('combineRegressionBudgets', () => {
   });
 });
 
+/** @param {import('../src/run-comparison.ts').MetricDeltaRow[]} rows */
 function comparison(rows) {
-  return { metrics: rows, findings: { introduced: [], resolved: [] } };
+  const run = { label: 'run', appModel: emptyAppModel(), catalog: [] };
+  return { ...buildComparison(run, run), metrics: rows };
 }
+/**
+ * @param {string} key
+ * @param {number | null} baseline
+ * @param {number | null} candidate
+ * @param {import('../src/run-comparison.ts').MetricDeltaRow['direction']} direction
+ * @returns {import('../src/run-comparison.ts').MetricDeltaRow}
+ */
 const row = (key, baseline, candidate, direction) => ({
-  key, label: key, baseline, candidate, delta: baseline == null || candidate == null ? null : candidate - baseline, direction,
+  key, label: key, baseline, candidate, delta: baseline == null || candidate == null ? null : candidate - baseline, direction, withinNoise: false,
 });
 
 describe('evaluateBudgets regressionBudgets', () => {
-  const appModel = { app: { startTime: 0, endTime: 1 }, stages: new Map(), executors: { added: [], removed: [] } };
+  const appModel = emptyAppModel();
+  /**
+   * @param {import('../src/cli/budgets.ts').BudgetsConfig} budgets
+   * @param {import('../src/run-comparison.ts').CompareRunsResult | undefined} cmp
+   */
   const run = (budgets, cmp) => evaluateBudgets({ appModel, catalog: [], budgets, comparison: cmp });
 
   it('evaluates each budget and tags the result with its metric', () => {

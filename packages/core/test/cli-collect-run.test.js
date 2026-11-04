@@ -12,11 +12,12 @@ import { createState, runParse } from '../src/parser-worker.js';
 import { createModelCallbacks } from '../src/model-assembler.js';
 
 // Pass-through spies, so tests can count descriptor opens against closes.
-vi.mock('node:fs', async (importOriginal) => {
+vi.mock('node:fs', /** @param {() => Promise<typeof import('node:fs')>} importOriginal */ async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, openSync: vi.fn(actual.openSync), closeSync: vi.fn(actual.closeSync) };
 });
 
+/** @param {string | Uint8Array} contents */
 function tmpFile(contents, name = 'eventlog') {
   const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-cli-'));
   const path = join(dir, name);
@@ -31,8 +32,8 @@ describe('collectRun', () => {
     const { dir, path } = tmpFile(ndjson);
     try {
       const { appModel, skippedLines } = await collectRun(path);
-      expect(appModel.app.id).toBe('app-1');
-      expect(appModel.app.endTime).toBe(2);
+      expect(appModel.app?.id).toBe('app-1');
+      expect(appModel.app?.endTime).toBe(2);
       expect(skippedLines).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -63,8 +64,8 @@ describe('collectRun', () => {
     writeFileSync(join(dir, 'events_1_app-1'), '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":1}\n');
     try {
       const { appModel } = await collectRun(dir);
-      expect(appModel.app.id).toBe('app-1');
-      expect(appModel.app.endTime).toBe(2);
+      expect(appModel.app?.id).toBe('app-1');
+      expect(appModel.app?.endTime).toBe(2);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -97,10 +98,11 @@ describe('collectRun', () => {
 const sampleNdjson = gunzipSync(readFileSync(fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url))));
 
 // The same log parsed from an in-memory Blob, the shape the browser hands the parser.
+/** @param {BlobPart} bytes */
 async function parseInMemory(bytes) {
   const appModel = emptyAppModel();
   const cb = createModelCallbacks(appModel, { onProgress() {}, onDone() {}, onError() {} });
-  await runParse(new Blob([bytes]), createState(), { emit: (msg) => dispatch(msg, cb) });
+  await runParse(new File([bytes], 'eventlog'), createState(), { emit: (msg) => dispatch(msg, cb) });
   return appModel;
 }
 
@@ -136,7 +138,7 @@ describe('nodeFileFromPath', () => {
       const file = nodeFileFromPath(path);
       truncateSync(path, 100);
       await expect(file.slice(0, 1024).arrayBuffer()).rejects.toThrow(/shrank/);
-      expect(fs.closeSync).toHaveBeenCalledTimes(fs.openSync.mock.calls.length);
+      expect(fs.closeSync).toHaveBeenCalledTimes(vi.mocked(fs.openSync).mock.calls.length);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -167,6 +169,7 @@ describe('collectRun streaming', () => {
     vi.mocked(fs.closeSync).mockClear();
   });
 
+  /** @type {[string, (b: Buffer) => Uint8Array][]} */
   const encodings = [
     ['uncompressed', (b) => b],
     ['gzip', (b) => gzipSync(b)],
@@ -182,8 +185,8 @@ describe('collectRun streaming', () => {
       expect(appModel.app).toEqual(expected.app);
       expect([...appModel.stages.keys()]).toEqual([...expected.stages.keys()]);
       expect(appModel.sql.size).toBe(expected.sql.size);
-      expect(fs.openSync.mock.calls.length).toBeGreaterThan(0);
-      expect(fs.closeSync).toHaveBeenCalledTimes(fs.openSync.mock.calls.length);
+      expect(vi.mocked(fs.openSync).mock.calls.length).toBeGreaterThan(0);
+      expect(fs.closeSync).toHaveBeenCalledTimes(vi.mocked(fs.openSync).mock.calls.length);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -199,7 +202,7 @@ describe('collectRun streaming', () => {
     try {
       const { appModel } = await collectRun(dir);
       expect([...appModel.stages.keys()]).toEqual([...expected.stages.keys()]);
-      expect(fs.closeSync).toHaveBeenCalledTimes(fs.openSync.mock.calls.length);
+      expect(fs.closeSync).toHaveBeenCalledTimes(vi.mocked(fs.openSync).mock.calls.length);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -211,8 +214,8 @@ describe('collectRun streaming', () => {
     const { dir, path } = tmpFile(corrupt);
     try {
       await expect(collectRun(path)).rejects.toThrow();
-      expect(fs.openSync.mock.calls.length).toBeGreaterThan(0);
-      expect(fs.closeSync).toHaveBeenCalledTimes(fs.openSync.mock.calls.length);
+      expect(vi.mocked(fs.openSync).mock.calls.length).toBeGreaterThan(0);
+      expect(fs.closeSync).toHaveBeenCalledTimes(vi.mocked(fs.openSync).mock.calls.length);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -222,7 +225,7 @@ describe('collectRun streaming', () => {
     const { dir, path } = tmpFile('not an event log\n'.repeat(1000));
     try {
       await expect(collectRun(path)).rejects.toThrow(/Not a Spark event log/);
-      expect(fs.closeSync).toHaveBeenCalledTimes(fs.openSync.mock.calls.length);
+      expect(fs.closeSync).toHaveBeenCalledTimes(vi.mocked(fs.openSync).mock.calls.length);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -247,26 +250,25 @@ describe('dispatch', () => {
   it.each(dataTypes)('routes a %s message\'s data to %s', (type, handlerName) => {
     const handlers = { [handlerName]: vi.fn() };
     const payload = { id: 'x' };
+    // @ts-expect-error a minimal payload stands in for each message's real data
     dispatch({ type, data: payload }, handlers);
     expect(handlers[handlerName]).toHaveBeenCalledWith(payload);
   });
 
   it('routes a done message to onDone with its whole summary', () => {
     const handlers = { onDone: vi.fn() };
-    const msg = { type: 'done', data: { skippedLines: 3, unreadableSqlExecutions: [7] } };
-    dispatch(msg, handlers);
+    dispatch({ type: 'done', data: { skippedLines: 3, unreadableSqlExecutions: [7] } }, handlers);
     expect(handlers.onDone).toHaveBeenCalledWith({ skippedLines: 3, unreadableSqlExecutions: [7] });
   });
 
   it('routes an error message to onError', () => {
     const handlers = { onError: vi.fn() };
-    const msg = { type: 'error', message: 'boom' };
-    dispatch(msg, handlers);
+    dispatch({ type: 'error', message: 'boom' }, handlers);
     expect(handlers.onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }));
   });
 
   it('does not throw on a progress or taskData message with no matching handler', () => {
-    expect(() => dispatch({ type: 'progress' }, {})).not.toThrow();
-    expect(() => dispatch({ type: 'taskData', reqId: '0' }, {})).not.toThrow();
+    expect(() => dispatch({ type: 'progress', pct: null, linesProcessed: 0 }, {})).not.toThrow();
+    expect(() => dispatch({ type: 'taskData', stageId: 0, reqId: '0', metrics: new Float64Array(0), fieldNames: [] }, {})).not.toThrow();
   });
 });

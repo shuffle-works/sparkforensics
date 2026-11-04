@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeTablePath, soleLogPath } from '../src/delta-log-paths.ts';
 
+/** @param {string} path */
 const scan = (path) => ({ id: 'n0', name: `Scan State - ${path}/_delta_log`, detail: '', metrics: [], children: [] });
+/** @param {string[]} paths */
 const execWith = (...paths) => ({ planTree: { id: 'r', name: 'Root', detail: '', metrics: [], children: paths.map(scan) } });
 
 describe('normalizeTablePath', () => {

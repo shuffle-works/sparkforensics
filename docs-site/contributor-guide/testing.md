@@ -9,7 +9,8 @@ Before opening a PR:
    `npm run build` first on a fresh checkout: `tests/vite-entry.test.js`
    checks the production bundle in `dist/`.
 2. Typecheck: `npx tsc --noEmit`, and `npx tsc --noEmit -p tsconfig.check.json`
-   for the CLI, MCP and server entry points and the core `.test.ts` files.
+   for the CLI, MCP and server entry points and the core package's tests
+   (`.test.ts` and `.js`, minus the files in its `exclude` list).
 3. Lint: `npm run lint` (eslint on JS, oxlint on `.ts`/`.tsx`). A pre-commit
    hook (`.githooks/pre-commit`) lints the staged files, so run the full lint
    yourself before committing.

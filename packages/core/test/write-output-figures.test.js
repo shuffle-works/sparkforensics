@@ -4,16 +4,22 @@ import { emptyAppModel } from '../src/run-serialization.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { extractWriteTargets } from '../src/write-targets.ts';
 import { corpusLog } from './corpus-log.js';
+import { makeTypedStage } from './fixtures/stage-app-fixtures.js';
 
 // Output rows and bytes of a write, on public corpus logs. dev/log-corpus is a git submodule: the
 // corpus cases skip without it.
 
+/** @param {string} name */
 async function reportOf(name) {
-  const { appModel } = await collectRun(corpusLog(`${name}.ndjson`));
+  const path = corpusLog(`${name}.ndjson`);
+  if (!path) throw new Error(`corpus log ${name} is missing`);
+  const { appModel } = await collectRun(path);
   return buildEvidenceReport(appModel, { markdown: false }).json;
 }
 
+/** @param {import('../src/write-targets.ts').WriteTarget} w */
 const figures = (w) => ({ command: w.command, rows: w.outputRows, source: w.outputRowsSource, hasBytes: w.outputBytes !== null });
+/** @param {import('../src/evidence-report.ts').EvidenceReportJson} json */
 const noFigureCheck = (json) => json.notRunChecks.find((c) => c.type === 'writeOutputRows');
 
 describe('write output figures on public corpus logs', () => {
@@ -47,13 +53,25 @@ describe('write output figures on public corpus logs', () => {
     const [save, merge] = (await reportOf('delta-merge-sql')).writeTargets.writes;
     expect(save).toMatchObject({ command: 'SaveIntoDataSourceCommand', outputRows: 1_000_000, outputRowsSource: 'stageSum' });
     expect(merge).toMatchObject({ command: 'MergeIntoCommand', outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_600 });
-    expect(merge.mergeRows.inserted).toBeGreaterThan(0);
+    expect(merge.mergeRows?.inserted).toBeGreaterThan(0);
   });
 });
 
 describe('write output figures on a hand-built plan', () => {
+  /** @param {string} command */
   const write = (command) => ({ name: `Execute ${command}`, detail: `Execute ${command}`, metrics: [], children: [] });
-  const stage = (id, sqlExecutionId, outputRecords, outputBytes = 10) => [id, { id, sqlExecutionId, outputRecords, outputBytes }];
+  /**
+   * @param {number} id
+   * @param {number} sqlExecutionId
+   * @param {number | null} outputRecords
+   * @param {number} [outputBytes]
+   * @returns {[number, import('../src/types.ts').Stage]}
+   */
+  const stage = (id, sqlExecutionId, outputRecords, outputBytes = 10) => [id, makeTypedStage({ id, sqlExecutionId, outputRecords, outputBytes })];
+  /**
+   * @param {(Pick<import('../src/types.ts').SqlExecution, 'id'> & Partial<import('../src/types.ts').SqlExecution>)[]} execs
+   * @param {[number, import('../src/types.ts').Stage][]} stages
+   */
   const run = (execs, stages) => {
     const sql = new Map(execs.map((e) => [e.id, { planTree: null, ...e }]));
     return extractWriteTargets(sql, { stages: new Map(stages) }).writes;
@@ -73,7 +91,7 @@ describe('write output figures on a hand-built plan', () => {
 
   it('leaves outputBytes null when no stage of the root reports bytes written', () => {
     const [w] = run([{ id: 0, rootExecutionId: 0, planTree: write('SaveIntoDataSourceCommand') }, { id: 1, rootExecutionId: 0 }],
-      [[1, { id: 1, sqlExecutionId: 1 }]]);
+      [[1, /** @type {import('../src/types.ts').Stage} */ ({ id: 1, sqlExecutionId: 1 })]]);
     expect(w.outputBytes).toBeNull();
   });
 
@@ -92,11 +110,12 @@ describe('write output figures on a hand-built plan', () => {
   });
 
   it('lists a plain write without a figure in notRunChecks, and not an UPDATE', () => {
+    /** @param {string} command */
     const report = (command) => {
       const sql = new Map([[0, { id: 0, rootExecutionId: 0, planTree: write(command) }]]);
       return buildEvidenceReport({ ...emptyAppModel(), sql }, { markdown: false }).json;
     };
-    expect(noFigureCheck(report('SaveIntoDataSourceCommand')).reason).toContain('execution 0 SaveIntoDataSourceCommand');
+    expect(noFigureCheck(report('SaveIntoDataSourceCommand'))?.reason).toContain('execution 0 SaveIntoDataSourceCommand');
     expect(noFigureCheck(report('UpdateCommand'))).toBeUndefined();
   });
 });

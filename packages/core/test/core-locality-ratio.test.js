@@ -54,7 +54,9 @@ describe('computeCoreLocalityRatio', () => {
   });
 
   it('does not throw when stages is not an array', () => {
+    // @ts-expect-error stages is deliberately not an array
     expect(() => computeCoreLocalityRatio(undefined)).not.toThrow();
+    // @ts-expect-error stages is deliberately not an array
     expect(computeCoreLocalityRatio(undefined).topStages).toEqual([]);
   });
 

@@ -19,6 +19,17 @@ import {
   parseSparkPlanInfoTree,
 } from '../src/event-schemas.ts';
 
+/**
+ * The parsed value of a safeParse result that must have succeeded.
+ * @template T
+ * @param {{ success: boolean, data?: T }} result
+ * @returns {T}
+ */
+function dataOf(result) {
+  if (!result.success || result.data === undefined) throw new Error('Expected a successful parse.');
+  return result.data;
+}
+
 describe('LogStartEventSchema', () => {
   it('accepts a valid LogStart', () => {
     const result = LogStartEventSchema.safeParse({
@@ -304,8 +315,8 @@ describe('TaskEndEventSchema', () => {
       },
     });
     expect(result.success).toBe(true);
-    expect(result.data['Task Info']['Task ID']).toBe(42);
-    expect(result.data['Task Info']['Attempt Number']).toBe(1);
+    expect(dataOf(result)['Task Info']?.['Task ID']).toBe(42);
+    expect(dataOf(result)['Task Info']?.['Attempt Number']).toBe(1);
   });
 
   it('still parses a TaskEnd omitting Task ID and Attempt Number', () => {
@@ -315,8 +326,9 @@ describe('TaskEndEventSchema', () => {
       'Task Info': { Index: 0, 'Launch Time': 0, 'Finish Time': 1 },
     });
     expect(result.success).toBe(true);
-    expect(result.data['Task Info']['Task ID']).toBeUndefined();
-    expect(result.data['Task Info']['Attempt Number']).toBeUndefined();
+    expect(dataOf(result)['Task Info']).toBeDefined();
+    expect(dataOf(result)['Task Info']?.['Task ID']).toBeUndefined();
+    expect(dataOf(result)['Task Info']?.['Attempt Number']).toBeUndefined();
   });
 
   // Spark writes internal.metrics.updatedBlockStatuses (Spark 2.x, or with block-status tracking
@@ -335,7 +347,7 @@ describe('TaskEndEventSchema', () => {
       },
     });
     expect(result.success).toBe(true);
-    expect(result.data['Task Info'].Accumulables.map((a) => a.ID)).toEqual([1, 10]);
+    expect(dataOf(result)['Task Info']?.Accumulables?.map((a) => a.ID)).toEqual([1, 10]);
   });
 
   it('rejects a TaskEnd whose Accumulables array exceeds the size limit', () => {
@@ -518,6 +530,7 @@ describe('parseSparkPlanInfoTree', () => {
   });
 
   it('does not stack-overflow on a deliberately deep synthetic tree', () => {
+    /** @type {{ nodeName: string, children: unknown[] }} */
     let node = { nodeName: 'leaf', children: [] };
     for (let i = 0; i < 1000; i++) {
       node = { nodeName: `n${i}`, children: [node] };
@@ -532,14 +545,14 @@ describe('SqlExecutionStartEventSchema modifiedConfigs', () => {
   it('parses a string-to-string map', () => {
     const result = SqlExecutionStartEventSchema.safeParse({ ...base, modifiedConfigs: { 'spark.sql.shuffle.partitions': '8' } });
     expect(result.success).toBe(true);
-    expect(result.data.modifiedConfigs).toEqual({ 'spark.sql.shuffle.partitions': '8' });
+    expect(dataOf(result).modifiedConfigs).toEqual({ 'spark.sql.shuffle.partitions': '8' });
   });
 
   it('drops a malformed map without rejecting the event', () => {
     for (const modifiedConfigs of [{ 'spark.a': 1 }, 'x', null]) {
       const result = SqlExecutionStartEventSchema.safeParse({ ...base, modifiedConfigs });
       expect(result.success).toBe(true);
-      expect(result.data.modifiedConfigs).toBeUndefined();
+      expect(dataOf(result).modifiedConfigs).toBeUndefined();
     }
   });
 });

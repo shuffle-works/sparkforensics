@@ -5,8 +5,10 @@ import { makeApp } from './fixtures/stage-app-fixtures.js';
 import { corpusLog } from './corpus-log.js';
 
 const GIB = 1024 ** 3;
+/** @param {Record<string, number>} values */
 const metrics = (values) => Object.entries(values).map(([name, value]) => ({ name, value, metricType: 'sum' }));
 
+/** @param {string} partitionFilters @param {string} dataFilters */
 const scanDetail = (partitionFilters, dataFilters) =>
   `FileScan parquet [k#1L,d#2] Batched: true, DataFilters: [${dataFilters}], Format: Parquet, `
   + `Location: PreparedDeltaFileIndex(1 paths)[file:/tmp/events], PartitionFilters: [${partitionFilters}], `
@@ -20,6 +22,10 @@ function scanNode({ partitionFilters = '', dataFilters = 'isnotnull(k#1L), (k#1L
   };
 }
 
+/**
+ * @param {import('../src/types.ts').PlanNode} node
+ * @param {import('../src/detectors.ts').ThresholdOverrides} [thresholds]
+ */
 function unprunedFindings(node, thresholds) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: node }]]);
   return analyzedRunFrom({ app: makeApp(), sql }, { thresholds }).catalog.filter((f) => f.type === 'unprunedScan');
@@ -129,8 +135,11 @@ describe('unprunedScan', () => {
 
 // dev/log-corpus is a git submodule: the suite skips without it.
 
+/** @param {string} name @param {import('../src/detectors.ts').ThresholdOverrides} [thresholds] */
 async function corpusFindings(name, thresholds) {
-  const run = await analyzedRunFrom(corpusLog(`${name}.ndjson`), { thresholds });
+  const log = corpusLog(`${name}.ndjson`);
+  if (!log) throw new Error(`the corpus log ${name} is missing`);
+  const run = await analyzedRunFrom(log, { thresholds });
   return run.catalog
     .filter((f) => f.type === 'unprunedScan');
 }

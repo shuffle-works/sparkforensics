@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { summarizeComparison } from '../src/comparison-verdict.ts';
 
+/**
+ * @param {string} key
+ * @param {string} label
+ * @param {number} baseline
+ * @param {number} candidate
+ * @param {import('../src/comparison-verdict.ts').VerdictMetric['direction']} direction
+ * @returns {import('../src/comparison-verdict.ts').VerdictMetric}
+ */
 function metric(key, label, baseline, candidate, direction) {
   return { key, label, baseline, candidate, delta: candidate - baseline, direction };
 }
@@ -21,6 +29,7 @@ describe('summarizeComparison', () => {
   });
 
   it('says so when run time cannot be compared', () => {
+    /** @type {import('../src/comparison-verdict.ts').VerdictMetric} */
     const unavailable = { key: 'wallClock', label: 'Wall-clock duration', baseline: null, candidate: 5, delta: null, direction: 'unavailable' };
     expect(summarizeComparison([unavailable], noFindings).tone).toBe('unknown');
   });
@@ -72,6 +81,7 @@ describe('summarizeComparison', () => {
   });
 
   it('says nothing about cost metrics when none has values in both runs', () => {
+    /** @type {import('../src/comparison-verdict.ts').VerdictMetric} */
     const unavailable = { key: 'gcTime', label: 'GC time', baseline: null, candidate: null, delta: null, direction: 'unavailable' };
     const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged'), unavailable], noFindings);
     expect(sentences).toEqual([]);
@@ -153,12 +163,21 @@ describe('summarizeComparison with failed jobs', () => {
 
 
 describe('summarizeComparison with comparability', () => {
+  /** @type {import('../src/comparison-verdict.ts').VerdictComparability} */
   const agree = {
     noiseBand: 0.02,
     conf: { equal: true, differences: [], ignoredKeys: [], withheldKeys: [] },
     plan: { equal: true, unmatched: { baseline: 0, candidate: 0 }, replanned: 0 },
-    volume: { inputBytes: {}, outputRows: {}, outputBytes: {}, equal: true },
-    capacity: { baseline: {}, candidate: {} },
+    volume: {
+      inputBytes: { baseline: null, candidate: null, relativeDifference: null },
+      outputRows: { baseline: null, candidate: null, relativeDifference: null },
+      outputBytes: { baseline: null, candidate: null, relativeDifference: null },
+      equal: true,
+    },
+    capacity: {
+      baseline: { meanExecutors: null, peakExecutors: null },
+      candidate: { meanExecutors: null, peakExecutors: null },
+    },
     caveats: { executors: null, unmatchedStages: null, taskCount: null, queue: null, codeFiles: null },
     wallClockBridge: {
       wallClock: { baseline: 100, candidate: 149, ratio: 1.49 },
@@ -198,7 +217,7 @@ describe('summarizeComparison with comparability', () => {
   });
 
   it('keeps the wall-clock tone and calls the gap unexplained when no capacity factor moved', () => {
-    const still = { ratio: 1 };
+    const still = { baseline: null, candidate: null, ratio: 1 };
     const unexplained = { ...agree, wallClockBridge: { ...agree.wallClockBridge, taskTime: still, meanExecutors: still, taskShareOfAllocation: still } };
     const verdict = summarizeComparison(slower, noFindings, undefined, unexplained);
     expect(verdict.tone).toBe('worse');
@@ -225,6 +244,10 @@ describe('summarizeComparison with comparability', () => {
     const fewer = { ...agree.caveats, executors: { baseline: 217, candidate: 91 } };
     const more = { ...agree.caveats, executors: { baseline: 104, candidate: 228 } };
     const faster = [metric('wallClock', 'Wall-clock duration', 100_000, 70_000, 'improvement')];
+    /**
+     * @param {import('../src/comparison-verdict.ts').VerdictMetric[]} metrics
+     * @param {import('../src/comparison-verdict.ts').VerdictComparability['caveats']} caveats
+     */
     const said = (metrics, caveats) => summarizeComparison(metrics, noFindings, undefined, { ...agree, plan, caveats }).sentences.join(' ');
     expect(said(faster, fewer)).not.toContain('Mean executors');
     expect(said(slower, more)).not.toContain('Mean executors');

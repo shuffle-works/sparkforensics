@@ -4,15 +4,18 @@ import { comparisonVerdict } from '../src/comparison-verdict.js';
 import { comparisonOutput, buildComparisonOutput } from '../src/comparison-output.js';
 import { redactComparison } from '../src/redact.js';
 import { runOutputBlocks } from '../src/run-output.js';
+import { emptyAppModel } from '../src/run-serialization.js';
 
+/**
+ * @param {string} name
+ * @param {string} id
+ * @returns {import('../src/types.ts').AppModel & { app: import('../src/types.ts').SparkAppInfo }}
+ */
 function appModel(name, id) {
-  return {
-    app: { id, name, startTime: 0, endTime: 1000, config: {} },
-    stages: new Map(), jobs: new Map(), sql: new Map(),
-    executors: { added: [], removed: [] }, runAggregates: null,
-  };
+  return { ...emptyAppModel(), app: { id, name, startTime: 0, endTime: 1000, config: {} } };
 }
 
+/** @param {string} label @param {string} name @param {string} id */
 const run = (label, name, id) => ({ label, appModel: appModel(name, id), catalog: [] });
 
 describe('comparisonOutput', () => {
@@ -64,7 +67,7 @@ describe('buildComparisonOutput', () => {
   });
 
   it('compares the config audit findings with the detector findings', () => {
-    const config = { id: 'configAudit-1', type: 'configAudit', stageId: null, impactBand: 'warning', recommendation: 'Set it.' };
+    const config = /** @type {import('../src/types.ts').Finding} */ ({ id: 'configAudit-1', type: 'configAudit', stageId: null, impactBand: 'warning', recommendation: 'Set it.' });
     const { comparison } = buildComparisonOutput(run('baseline', 'App', 'app-1'), { ...run('candidate', 'App', 'app-2'), configFindings: [config] });
     expect(comparison.findings.introduced.map((f) => f.type)).toEqual(['configAudit']);
   });
@@ -72,7 +75,8 @@ describe('buildComparisonOutput', () => {
   it('applies redaction to both the comparison and its projection', () => {
     const base = run('baseline', 'App', 'app-1');
     const cand = run('candidate', 'App', 'app-2');
-    const withHost = (r) => ({ ...r, appModel: { ...r.appModel, stages: new Map([[1, { id: 1, name: 'collect at ip-10-1-2-3.ec2.internal:42', status: 'COMPLETE' }]]) } });
+    /** @param {ReturnType<typeof run>} r */
+    const withHost = (r) => ({ ...r, appModel: { ...r.appModel, stages: new Map([[1, /** @type {import('../src/types.ts').Stage} */ ({ id: 1, name: 'collect at ip-10-1-2-3.ec2.internal:42' })]]) } });
     const raw = buildComparisonOutput(withHost(base), withHost(cand));
     const redacted = buildComparisonOutput(withHost(base), withHost(cand), { redact: true });
     expect(JSON.stringify(raw.comparison)).toContain('ip-10-1-2-3.ec2.internal');

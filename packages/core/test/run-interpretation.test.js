@@ -8,20 +8,33 @@ import { isCaveat, rankedRollup } from '../src/recommendation-rollup.ts';
 import { interpretRun } from '../src/run-interpretation.ts';
 import { computeRunShape } from '../src/run-shape.ts';
 import { buildRunVerdict, FINDING_DISPLAY_ORDER } from '../src/run-verdict.ts';
-import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeApp, makeTypedStage } from './fixtures/stage-app-fixtures.js';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
 
+/** @typedef {import('../src/types.ts').Finding} Finding */
+
+/**
+ * @param {'spill' | 'skew' | 'gc' | 'straggler'} type
+ * @param {number} stageId
+ * @param {number} highMs
+ * @param {import('../src/types.ts').ImpactBand} [impactBand]
+ * @returns {Finding}
+ */
 function timed(type, stageId, highMs, impactBand = 'warning') {
-  return {
-    id: `${type}-${stageId}`, type, stageId, impactBand, recommendation: `Fix ${type} in Stage ${stageId}.`,
+  const base = {
+    id: `${type}-${stageId}`, stageId, impactBand, recommendation: `Fix ${type} in Stage ${stageId}.`,
+    /** @type {import('../src/types.ts').ImpactEstimate} */
     impactEstimate: { basis: 'serial', wallClock: { low: highMs, high: highMs }, estimateMethod: 'modeled' },
   };
+  if (type === 'straggler') return { ...base, type, unit: 'count', speculativeTasks: 0, stragglerCount: 0 };
+  return { ...base, type };
 }
 
+/** @param {Partial<import('../src/types.ts').AppModel>} [overrides] @returns {import('../src/types.ts').AppModel} */
 function appModel(overrides = {}) {
   return {
     app: makeApp({ startTime: 0, endTime: 20_000 }),
-    stages: new Map([[7, makeStage({ id: 7, submittedAt: 0, completedAt: 15_000 })], [3, makeStage({ id: 3 })]]),
+    stages: new Map([[7, makeTypedStage({ id: 7, submittedAt: 0, completedAt: 15_000 })], [3, makeTypedStage({ id: 3 })]]),
     executors: { added: [], removed: [] },
     sql: new Map(),
     jobs: new Map(),
@@ -31,6 +44,7 @@ function appModel(overrides = {}) {
   };
 }
 
+/** @param {number} id @param {number[]} stageIds @returns {import('../src/types.ts').Job} */
 const failedJob = (id, stageIds) => ({
   id, submissionTime: 0, stageIds, sqlExecutionId: null, result: 'JobFailed', succeeded: false, exception: null, completionTime: 1,
 });
@@ -38,7 +52,7 @@ const failedJob = (id, stageIds) => ({
 describe('idle share grading', () => {
   // 4 cores for 20s hold 80s of core time and 16s of it ran tasks: 80% idle.
   const idleModel = () => appModel({
-    executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+    executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 4, resourceProfileId: null }], removed: [] },
     runAggregates: { busyCoreMs: 16_000, perStage: {} },
   });
   const note = "80% of the run's core time went unused, so the cluster may be larger than this job needs.";
@@ -58,16 +72,20 @@ describe('idle share grading', () => {
 
 describe('interpretRun', () => {
   it('refers to findings by id, with savings keyed by id', () => {
+    /** @type {Finding[]} */
     const catalog = [timed('spill', 3, 1_000), timed('skew', 7, 2_400)];
-    const config = [{ id: 'config-serializer', type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    /** @type {Finding[]} */
+    const config = [{ id: 'config-serializer', type: 'configAudit', property: 'spark.serializer', valueText: 'unset', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
     const interpretation = interpretRun(appModel(), catalog, config);
     const byId = new Map([...catalog, ...config].map((finding) => [finding.id, finding]));
 
     expect(Object.keys(interpretation.savings).sort()).toEqual(['config-serializer', 'skew-7', 'spill-3']);
-    expect(interpretation.savings[catalog[1].id]).toEqual({
+    const skewId = catalog[1].id;
+    if (skewId === undefined) throw new Error('the skew finding has no id');
+    expect(interpretation.savings[skewId]).toEqual({
       figure: impactFigure(catalog[1]),
       meaning: 'of run time',
-      board: impactEstimateFigure(catalog[1].impactEstimate).text,
+      board: impactEstimateFigure(catalog[1].impactEstimate)?.text,
       compact: impactEstimateCompact(catalog[1].impactEstimate),
       provenance: expect.stringContaining('point estimate'),
     });
@@ -78,8 +96,10 @@ describe('interpretRun', () => {
   });
 
   it('gives the same conclusions whatever order the findings arrive in', () => {
+    /** @type {Finding[]} */
     const catalog = [timed('spill', 3, 1_000), timed('skew', 7, 2_400), timed('gc', 7, 500, 'critical')];
-    const config = [{ id: 'config-serializer', type: 'configAudit', property: 'spark.serializer', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
+    /** @type {Finding[]} */
+    const config = [{ id: 'config-serializer', type: 'configAudit', property: 'spark.serializer', valueText: 'unset', stageId: null, impactBand: 'info', recommendation: 'Use Kryo.' }];
     const forward = interpretRun(appModel(), catalog, config);
     const shuffled = interpretRun(appModel(), [catalog[2], catalog[0], catalog[1]], config);
 
@@ -95,6 +115,7 @@ describe('interpretRun', () => {
 
   it('words the verdict exactly as buildRunVerdict does', () => {
     const model = appModel();
+    /** @type {Finding[]} */
     const catalog = [timed('skew', 7, 2_400), timed('straggler', 7, 2_300), timed('spill', 3, 1_000)];
     const expected = buildRunVerdict(model, catalog);
     const { verdict } = interpretRun(model, catalog, []);
@@ -108,7 +129,10 @@ describe('interpretRun', () => {
   });
 
   it('carries the failure: its reason and the quoted-reason step text', () => {
-    const stageFailed = { id: 'stageFailed-3', type: 'stageFailed', stageId: 3, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
+    /** @type {Finding} */
+    const stageFailed = {
+      variant: 'stageFailure', numTasks: 0, memoryBytesSpilled: 0, failedTaskDetails: [],
+      id: 'stageFailed-3', type: 'stageFailed', stageId: 3, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
     const model = appModel({ jobs: new Map([[1, failedJob(1, [3])]]) });
     const interpretation = interpretRun(model, [timed('skew', 7, 2_400), stageFailed], []);
 
@@ -118,8 +142,9 @@ describe('interpretRun', () => {
   });
 
   it('records which checks could not run, with the reasons checkCoverage gives', () => {
-    const model = appModel({ stages: new Map([[1, makeStage({ id: 1, completedAt: undefined })]]) });
-    const incomplete = { id: 'incompleteRun', type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
+    const model = appModel({ stages: new Map([[1, makeTypedStage({ id: 1, completedAt: undefined })]]) });
+    /** @type {Finding} */
+    const incomplete = { id: 'incompleteRun', type: 'incompleteRun', valueText: 'missing', stageId: null, impactBand: 'warning', recommendation: 'r' };
     const { coverage } = interpretRun(model, [incomplete], []);
     const expected = checkCoverage(model.stages, [incomplete]);
 
@@ -139,6 +164,7 @@ describe('interpretRun', () => {
     const run = analyzeRun(model);
     const { interpretation } = run;
     const { cleanChecks, notRunChecks } = buildEvidenceReport(model, { markdown: false }).json;
+    /** @param {{ type: string }[]} checks */
     const typesOf = (checks) => checks.map((check) => check.type);
 
     expect(typesOf(interpretation.coverage.clean)).toEqual(typesOf(cleanChecks));
@@ -167,9 +193,12 @@ describe('interpretRun', () => {
   });
 
   it('orders a stage\'s finding types by its own verdict step, then worst band', () => {
+    /** @type {Finding} */
     const info = { id: 'tinyTask-7', type: 'tinyTask', stageId: 7, impactBand: 'info', recommendation: 'r' };
+    /** @type {Finding} */
     const critical = { id: 'gc-7', type: 'gc', stageId: 7, impactBand: 'critical', recommendation: 'r' };
     const quantified = timed('skew', 7, 2_400, 'warning');
+    /** @type {Finding} */
     const unrankable = { id: 'spill-7', type: 'spill', stageId: 7, impactBand: 'critical' };
     const catalog = [info, critical, quantified, unrankable];
     const { stages } = interpretRun(appModel(), catalog, []);
@@ -181,7 +210,7 @@ describe('interpretRun', () => {
 
   it('agrees with the evidence report the same core prints for the same run', () => {
     const model = appModel({
-      stages: new Map([[1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 9_000, taskCount: 10 })]]),
+      stages: new Map([[1, makeTypedStage({ id: 1, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 9_000, taskCount: 10 })]]),
     });
     const catalog = analyzedRunFrom(model).catalog;
     const interpretation = interpretRun(model, catalog, auditConfig(model.app));
@@ -194,7 +223,7 @@ describe('interpretRun', () => {
     const { wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag } = json.summary.runShape;
     expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct, efficiencyFlag, unusedCoreTimeFlag });
     // The Findings board lists the report's "Fix these first" groups, members in the same order.
-    const eligible = catalog.filter((f) => interpretation.rollup.eligibleIds.includes(f.id));
+    const eligible = catalog.filter((f) => f.id !== undefined && interpretation.rollup.eligibleIds.includes(f.id));
     expect(rankedRollup(eligible, model.stages).map((group) => ({ type: group.type, ids: group.members.map((f) => f.id) })))
       .toEqual(json.recommendations.map((row) => ({ type: row.type, ids: row.findingIds })));
     expect(json.recommendations.length).toBeGreaterThan(0);
@@ -204,14 +233,16 @@ describe('interpretRun', () => {
     // Executor 1 leaves at 50s as its same-size replacement joins: 4 cores are ever concurrent
     // although 8 were added. One busy core for the whole run leaves 75% of the capacity idle;
     // summing every addition would have put the tile at 88% beside a 75% verdict.
+    /** @type {import('../src/types.ts').ExecutorAddedEvent[]} */
     const added = [
       { kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 4, resourceProfileId: null },
       { kind: 'added', executorId: '2', timestamp: 50_000, host: 'host-2', totalCores: 4, resourceProfileId: null },
     ];
+    /** @type {import('../src/types.ts').ExecutorRemovedEvent[]} */
     const removed = [{ kind: 'removed', executorId: '1', timestamp: 50_000, reason: 'replaced' }];
     const model = appModel({
       app: makeApp({ startTime: 0, endTime: 100_000 }),
-      stages: new Map([[1, makeStage({ id: 1, submittedAt: 0, completedAt: 100_000 })]]),
+      stages: new Map([[1, makeTypedStage({ id: 1, submittedAt: 0, completedAt: 100_000 })]]),
       executors: { added, removed },
       runAggregates: { busyCoreMs: 100_000, perStage: { 1: { totalTaskDurationSum: 100_000, taskCount: 100 } } },
     });
@@ -219,14 +250,15 @@ describe('interpretRun', () => {
     const interpretation = interpretRun(model, catalog, []);
 
     const idleCores = catalog.find((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
-    expect(idleCores.value).toBe(75);
+    expect(idleCores?.value).toBe(75);
     expect(interpretation.runShape.unusedCoreTimePct).toBe(75);
-    expect(interpretation.efficiency.wastagePct).toBe(75);
+    expect(interpretation.efficiency?.wastagePct).toBe(75);
     expect(interpretation.wastedCoreHours.totalCores).toBe(4);
   });
 
   it('carries the Findings board: the eligible finding ids, which rankedRollup groups in fix-first order', () => {
-    const incomplete = { id: 'incompleteRun', type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
+    /** @type {Finding} */
+    const incomplete = { id: 'incompleteRun', type: 'incompleteRun', valueText: 'missing', stageId: null, impactBand: 'warning', recommendation: 'r' };
     const bigInfo = timed('skew', 7, 5_000, 'info');
     const smallCritical = timed('skew', 3, 1_000, 'critical');
     const spill = timed('spill', 3, 800);
@@ -235,7 +267,7 @@ describe('interpretRun', () => {
     const { rollup } = interpretRun(model, catalog, []);
 
     expect(rollup.eligibleIds).toEqual([bigInfo.id, smallCritical.id, spill.id]);
-    const groups = rankedRollup(catalog.filter((f) => rollup.eligibleIds.includes(f.id)), model.stages);
+    const groups = rankedRollup(catalog.filter((f) => f.id !== undefined && rollup.eligibleIds.includes(f.id)), model.stages);
     expect(groups.map((group) => group.type)).toEqual(['skew', 'spill']);
     // Members representative first; the group sits under its worst member's band.
     expect(groups[0]).toMatchObject({ kind: 'time', band: 'critical', stat: '×2 · 6.0s recoverable' });

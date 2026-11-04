@@ -1,6 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { computeStageUnionMs, rollupGroupStat } from '../src/recommendation-rollup.ts';
 
+/** @typedef {import('../src/types.ts').Finding} Finding */
+/** @typedef {import('../src/recommendation-rollup.ts').RollupGroup} RollupGroup */
+
+// The evidence the detectors' own findings carry beyond the columns a rollup reads.
+/** @type {Omit<import('../src/finding-types.ts').UtilizationFinding, 'type' | 'impactBand'>} */
+const UTILIZATION_EVIDENCE = { utilizationFraction: 0.5, appDurationMs: 1000, totalCores: 4, allocatedCoreMs: 4000, cpuUtilizationPct: null };
+/** @type {Omit<import('../src/finding-types.ts').MemoryIdleCoresFinding, 'type' | 'impactBand'>} */
+const MEMORY_IDLE_CORES_EVIDENCE = { variant: 'idleCores', idleRateFraction: 0.5, allocatedMBSeconds: null };
+
+/** @param {RollupGroup | undefined} group */
+function timeGroup(group) {
+  if (group?.kind !== 'time') throw new Error('expected a time group');
+  return group;
+}
+
 describe('computeStageUnionMs', () => {
   it('sums non-overlapping stage durations', () => {
     const stages = new Map([
@@ -51,11 +66,12 @@ describe('buildRecommendationRollup', () => {
   ]);
 
   it('sums wallClock.high across a time-based group, capped at the stage union', () => {
+    /** @type {Finding[]} */
     const findings = [
       { type: 'spill', impactBand: 'warning', stageId: 1, impactEstimate: { basis: 'serial', wallClock: { low: 900, high: 900 }, estimateMethod: 'modeled' } },
       { type: 'spill', impactBand: 'warning', stageId: 2, impactEstimate: { basis: 'serial', wallClock: { low: 900, high: 900 }, estimateMethod: 'modeled' } },
     ];
-    const [group] = buildRecommendationRollup(findings, stages);
+    const group = timeGroup(buildRecommendationRollup(findings, stages)[0]);
     expect(group.kind).toBe('time');
     expect(group.type).toBe('spill');
     expect(group.findingCount).toBe(2);
@@ -65,24 +81,27 @@ describe('buildRecommendationRollup', () => {
   });
 
   it('sums rawWaste within a resourceOnly group, kept in its own unit', () => {
+    /** @type {Finding[]} */
     const findings = [
-      { type: 'utilization', impactBand: 'info', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 4, unit: 'coreHours' } } },
-      { type: 'utilization', impactBand: 'info', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 6, unit: 'coreHours' } } },
+      { type: 'utilization', ...UTILIZATION_EVIDENCE, impactBand: 'info', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 4, unit: 'coreHours' } } },
+      { type: 'utilization', ...UTILIZATION_EVIDENCE, impactBand: 'info', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 6, unit: 'coreHours' } } },
     ];
     const [group] = buildRecommendationRollup(findings, stages);
     expect(group).toEqual({ kind: 'resource', type: 'utilization', findingCount: 2, unit: 'coreHours', total: 10, findings });
   });
 
   it('counts an informational group by impact band with no numeric aggregation', () => {
+    /** @type {Finding[]} */
     const findings = [
-      { type: 'stageFailed', impactBand: 'critical', impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } },
-      { type: 'stageFailed', impactBand: 'warning', impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } },
+      { type: 'stageFailed', variant: 'stageFailure', numTasks: 0, memoryBytesSpilled: 0, failedTaskDetails: [], valueText: 'x', impactBand: 'critical', impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } },
+      { type: 'stageFailed', variant: 'stageFailure', numTasks: 0, memoryBytesSpilled: 0, failedTaskDetails: [], valueText: 'x', impactBand: 'warning', impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } },
     ];
     const [group] = buildRecommendationRollup(findings, stages);
     expect(group).toEqual({ kind: 'count', type: 'stageFailed', findingCount: 2, byImpactBand: { critical: 1, warning: 1 }, findings });
   });
 
   it('splits a mixed-basis group (e.g. gc) by basis before aggregating each half', () => {
+    /** @type {Finding[]} */
     const findings = [
       { type: 'gc', impactBand: 'warning', stageId: 3, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'modeled' } },
       { type: 'gc', impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 50, unit: 'coreMs' } } },
@@ -95,9 +114,10 @@ describe('buildRecommendationRollup', () => {
   });
 
   it('sorts time-based groups first, then resource-only, then count-only', () => {
+    /** @type {Finding[]} */
     const findings = [
-      { type: 'stageFailed', impactBand: 'critical', impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } },
-      { type: 'utilization', impactBand: 'info', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 4, unit: 'coreHours' } } },
+      { type: 'stageFailed', variant: 'stageFailure', numTasks: 0, memoryBytesSpilled: 0, failedTaskDetails: [], valueText: 'x', impactBand: 'critical', impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' } },
+      { type: 'utilization', ...UTILIZATION_EVIDENCE, impactBand: 'info', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 4, unit: 'coreHours' } } },
       { type: 'spill', impactBand: 'warning', stageId: 1, impactEstimate: { basis: 'serial', wallClock: { low: 900, high: 900 }, estimateMethod: 'modeled' } },
     ];
     const kinds = buildRecommendationRollup(findings, stages).map((g) => g.kind);
@@ -105,9 +125,10 @@ describe('buildRecommendationRollup', () => {
   });
 
   it('orders resource/count groups by worst impact band when the kind ties, never by their incomparable raw magnitudes', () => {
+    /** @type {Finding[]} */
     const findings = [
-      { type: 'memoryUtilization', impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 1024, unit: 'bytes' } } },
-      { type: 'utilization', impactBand: 'critical', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 4, unit: 'coreHours' } } },
+      { type: 'memoryUtilization', ...MEMORY_IDLE_CORES_EVIDENCE, impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 1024, unit: 'bytes' } } },
+      { type: 'utilization', ...UTILIZATION_EVIDENCE, impactBand: 'critical', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 4, unit: 'coreHours' } } },
     ];
     const groups = buildRecommendationRollup(findings, stages);
     expect(groups.map((g) => g.type)).toEqual(['utilization', 'memoryUtilization']);
@@ -118,10 +139,11 @@ describe('buildRecommendationRollup', () => {
   });
 
   it('recovers stageless time-based findings with the naive sum, not capped to 0', () => {
+    /** @type {Finding[]} */
     const findings = [
       { type: 'coldStart', impactBand: 'warning', impactEstimate: { basis: 'serial', wallClock: { low: 500, high: 500 }, estimateMethod: 'modeled' } },
     ];
-    const [group] = buildRecommendationRollup(findings, stages);
+    const group = timeGroup(buildRecommendationRollup(findings, stages)[0]);
     expect(group.kind).toBe('time');
     expect(group.findingCount).toBe(1);
     expect(group.stageCount).toBe(0);
@@ -129,20 +151,22 @@ describe('buildRecommendationRollup', () => {
   });
 
   it('splits same-type resource findings by unit to prevent mixing incompatible units', () => {
+    /** @type {Finding[]} */
     const findings = [
-      { type: 'stageShape', impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 100, unit: 'coreMs' } } },
-      { type: 'stageShape', impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 1024, unit: 'bytes' } } },
+      { type: 'stageShape', rule: 'lowParallelism', impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 100, unit: 'coreMs' } } },
+      { type: 'stageShape', rule: 'lowParallelism', impactBand: 'warning', impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 1024, unit: 'bytes' } } },
     ];
     const groups = buildRecommendationRollup(findings, stages);
     const stageShapeGroups = groups.filter((g) => g.type === 'stageShape');
     expect(stageShapeGroups).toHaveLength(2);
-    expect(stageShapeGroups.find((g) => g.unit === 'coreMs')).toMatchObject({ findingCount: 1, total: 100 });
-    expect(stageShapeGroups.find((g) => g.unit === 'bytes')).toMatchObject({ findingCount: 1, total: 1024 });
+    expect(stageShapeGroups.find((g) => g.kind === 'resource' && g.unit === 'coreMs')).toMatchObject({ findingCount: 1, total: 100 });
+    expect(stageShapeGroups.find((g) => g.kind === 'resource' && g.unit === 'bytes')).toMatchObject({ findingCount: 1, total: 1024 });
   });
 
   it('routes a config-scope (configAudit) finding into a RollupGroup, not just runtime bottleneck types', () => {
+    /** @type {Finding[]} */
     const findings = [
-      { type: 'configAudit', property: 'spark.serializer', impactBand: 'info', recommendation: 'x' },
+      { type: 'configAudit', property: 'spark.serializer', valueText: 'unset', impactBand: 'info', recommendation: 'x' },
     ];
     const groups = buildRecommendationRollup(findings, stages);
     expect(groups).toEqual([
@@ -163,18 +187,18 @@ describe('isCaveat', () => {
   });
 
   it('does not match an ordinary memoryUtilization finding', () => {
-    expect(isCaveat({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning' })).toBe(false);
+    expect(isCaveat({ type: 'memoryUtilization', ...MEMORY_IDLE_CORES_EVIDENCE, impactBand: 'warning' })).toBe(false);
   });
 
   it('does not match any other type, including incompleteRun', () => {
-    expect(isCaveat({ type: 'incompleteRun', impactBand: 'warning' })).toBe(false);
+    expect(isCaveat({ type: 'incompleteRun', valueText: 'missing', impactBand: 'warning' })).toBe(false);
     expect(isCaveat({ type: 'skew', impactBand: 'critical' })).toBe(false);
   });
 });
 
 describe('isEligible', () => {
   it('excludes incompleteRun', () => {
-    expect(isEligible({ type: 'incompleteRun', impactBand: 'warning' })).toBe(false);
+    expect(isEligible({ type: 'incompleteRun', valueText: 'missing', impactBand: 'warning' })).toBe(false);
   });
 
   it('excludes both caveats', () => {
@@ -188,7 +212,9 @@ describe('isEligible', () => {
 });
 
 describe('rollupGroupStat', () => {
+  /** @param {number} total @returns {RollupGroup} */
   const resource = (total) => ({ kind: 'resource', type: 'memoryUtilization', findingCount: 2, unit: 'coreHours', total, findings: [] });
+  /** @param {Partial<Record<import('../src/types.ts').ImpactBand, number>>} byImpactBand @returns {RollupGroup} */
   const count = (byImpactBand) => ({ kind: 'count', type: 'configAudit', findingCount: 3, byImpactBand, findings: [] });
 
   it('gives a resource group its summed waste, and only the count when that total reads as zero', () => {
@@ -197,6 +223,7 @@ describe('rollupGroupStat', () => {
   });
 
   it('prints a task-time resource group as core time', () => {
+    /** @type {RollupGroup} */
     const group = { kind: 'resource', type: 'cacheUtilization', findingCount: 1, unit: 'ms', total: 594_000, findings: [] };
     expect(rollupGroupStat(group).stat).toBe('×1 · 0.2 core-h');
   });

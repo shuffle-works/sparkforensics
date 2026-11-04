@@ -14,6 +14,7 @@ describe('computeTotalCores', () => {
 
   it('falls back to peakExecutors × configured cores when real totalCores is missing or zero', () => {
     const app = { resources: { executor: { cores: 4 } } };
+    /** @type {{executorId: string, totalCores?: number}[]} */
     const executorsAdded = [
       { executorId: '1' },
       { executorId: '2' },
@@ -29,11 +30,13 @@ describe('computeTotalCores', () => {
       { executorId: '2', totalCores: null },
       { executorId: '3' },
     ];
+    // @ts-expect-error totalCores: null is deliberately outside the declared type
     expect(computeTotalCores(app, executorsAdded)).toBe(12);
   });
 
   it('returns 0 when cores config is missing and totalCores is zero', () => {
     const app = { resources: { executor: {} } };
+    /** @type {{executorId: string, totalCores?: number}[]} */
     const executorsAdded = [
       { executorId: '1' },
       { executorId: '2' },
@@ -43,6 +46,7 @@ describe('computeTotalCores', () => {
 
   it('returns 0 when app has no resources config', () => {
     const app = {};
+    /** @type {{executorId: string, totalCores?: number}[]} */
     const executorsAdded = [
       { executorId: '1' },
       { executorId: '2' },
@@ -52,6 +56,7 @@ describe('computeTotalCores', () => {
 
   it('returns 0 when executorsAdded is empty', () => {
     const app = { resources: { executor: { cores: 4 } } };
+    /** @type {{executorId: string, totalCores?: number}[]} */
     const executorsAdded = [];
     expect(computeTotalCores(app, executorsAdded)).toBe(0);
   });

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { extractResources } from '../src/event-handlers.js';
 import { estimatedStageDurationAtCores, simulateScaling, smallestCoresWithinTolerance } from '../src/scaling-sim.js';
 
 describe('estimatedStageDurationAtCores', () => {
@@ -17,11 +18,12 @@ describe('estimatedStageDurationAtCores', () => {
 });
 
 describe('simulateScaling', () => {
-  const app = { startTime: 0, endTime: 1000, resources: { executor: { cores: 2 } } };
+  const app = { startTime: 0, endTime: 1000, resources: extractResources({ 'spark.executor.cores': '2' }) };
   // The one stage ran 0-1000ms, so stages were active for the whole run.
   const observedActiveMs = 1000;
   const runAggregates = { perStage: { 1: { totalTaskDurationSum: 2000, taskCount: 4 } }, busyCoreMs: 2000, peakConcurrentCores: 2 };
-  const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
+  /** @type {import('../src/types.ts').ExecutorAddedEvent[]} */
+  const executorsAdded = [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 2, resourceProfileId: null }];
 
   it('produces one prediction per test percentage', () => {
     const r = simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded });
@@ -31,8 +33,14 @@ describe('simulateScaling', () => {
 
   it('estimates a shorter makespan at more cores', () => {
     const r = simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded });
-    const at100 = r.predictions.find(p => p.pct === 100).estMakespanMs;
-    const at200 = r.predictions.find(p => p.pct === 200).estMakespanMs;
+    /** @param {number} pct */
+    const makespanAt = (pct) => {
+      const prediction = r.predictions.find(p => p.pct === pct);
+      if (!prediction) throw new Error(`no prediction at ${pct}%`);
+      return prediction.estMakespanMs;
+    };
+    const at100 = makespanAt(100);
+    const at200 = makespanAt(200);
     expect(at200).toBeLessThan(at100);
   });
 
@@ -45,6 +53,7 @@ describe('simulateScaling', () => {
 describe('smallestCoresWithinTolerance', () => {
   // One stage of 8 tasks, 10 s of work per core at 8 cores: more than 8 cores buys nothing.
   const perStage = { 1: { totalTaskDurationSum: 80000, taskCount: 8 } };
+  /** @param {Partial<Parameters<typeof smallestCoresWithinTolerance>[0]>} [overrides] */
   const fit = (overrides) => smallestCoresWithinTolerance({
     perStage, baselineCores: 16, observedActiveMs: 10000, tolerancePct: 10, ...overrides,
   });
@@ -55,18 +64,18 @@ describe('smallestCoresWithinTolerance', () => {
 
   it('allows fewer cores as the tolerance grows', () => {
     // 80000/7 = 11429 ms is 14% over 10 s, 80000/6 = 13333 ms is 33% over.
-    expect(fit({ tolerancePct: 0 }).cores).toBe(8);
-    expect(fit({ tolerancePct: 15 }).cores).toBe(7);
-    expect(fit({ tolerancePct: 40 }).cores).toBe(6);
+    expect(fit({ tolerancePct: 0 })?.cores).toBe(8);
+    expect(fit({ tolerancePct: 15 })?.cores).toBe(7);
+    expect(fit({ tolerancePct: 40 })?.cores).toBe(6);
   });
 
   it('keeps the baseline when every core is in use', () => {
     const busy = { 1: { totalTaskDurationSum: 160000, taskCount: 64 } };
-    expect(fit({ perStage: busy, observedActiveMs: 10000, tolerancePct: 0 }).cores).toBe(16);
+    expect(fit({ perStage: busy, observedActiveMs: 10000, tolerancePct: 0 })?.cores).toBe(16);
   });
 
   it('reports the model error against the observed makespan', () => {
-    expect(fit({ observedActiveMs: 20000 }).modelErrorPct).toBe(50);
+    expect(fit({ observedActiveMs: 20000 })?.modelErrorPct).toBe(50);
   });
 
   it('returns null with nothing to model', () => {

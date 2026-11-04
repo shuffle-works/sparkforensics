@@ -10,15 +10,16 @@ describe('routeMessage', () => {
     const resolve = vi.fn();
     const reject = vi.fn();
     const pending = new Map([['0', { resolve, reject }]]);
-    routeMessage({ type: 'taskData', reqId: '0', metrics: [1, 2], fieldNames: ['a', 'b'] }, {}, pending);
-    expect(resolve).toHaveBeenCalledWith({ metrics: [1, 2], fieldNames: ['a', 'b'] });
+    const metrics = new Float64Array([1, 2]);
+    routeMessage({ type: 'taskData', stageId: 0, reqId: '0', metrics, fieldNames: ['a', 'b'] }, {}, pending);
+    expect(resolve).toHaveBeenCalledWith({ metrics, fieldNames: ['a', 'b'] });
     expect(pending.has('0')).toBe(false);
   });
 
   it('no-ops for a taskData message whose reqId has no pending request', () => {
     const resolve = vi.fn();
     const pending = new Map([['0', { resolve, reject: vi.fn() }]]);
-    expect(() => routeMessage({ type: 'taskData', reqId: '1', metrics: [], fieldNames: [] }, {}, pending)).not.toThrow();
+    expect(() => routeMessage({ type: 'taskData', stageId: 0, reqId: '1', metrics: new Float64Array(0), fieldNames: [] }, {}, pending)).not.toThrow();
     expect(resolve).not.toHaveBeenCalled();
     expect(pending.has('0')).toBe(true);
   });

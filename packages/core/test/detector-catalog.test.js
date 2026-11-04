@@ -4,7 +4,12 @@ import { ENTRY_BY_TYPE } from '../src/detectors.js';
 import { DETECTOR_FAMILIES, FINDING_PRESENTATION } from '../src/finding-presentation.js';
 
 const catalog = buildDetectorCatalog();
-const byType = (type) => catalog.find((record) => record.type === type);
+/** @param {string} type */
+function byType(type) {
+  const record = catalog.find((r) => r.type === type);
+  if (!record) throw new Error(`no catalog record for ${type}`);
+  return record;
+}
 
 // A new detector must arrive with its presentation row, and so with its pitch and family: the row
 // type requires them. These tests cover what the type cannot: one record per type, and copy that
@@ -43,7 +48,7 @@ describe('detector catalog special cases', () => {
     for (const type of ['failures', 'stageFailed']) expect(byType(type).tuning).toMatchObject({ kind: 'shared', anchor: '#bottleneck-failures' });
     for (const type of ['overBroadcast', 'underBroadcast']) expect(byType(type).tuning).toMatchObject({ kind: 'shared', anchor: '#bottleneck-broadcast-sizing' });
     expect(byType('stageShape').tuning).toMatchObject({ kind: 'section', anchor: '#bottleneck-stage-shape' });
-    expect(byType('stageShape').tuning.path).toContain('bottleneck-skew.html');
+    expect(byType('stageShape').tuning?.path).toContain('bottleneck-skew.html');
     expect(byType('pythonUdf').tuning).toMatchObject({ kind: 'chapter', anchor: '#pyspark' });
     expect(byType('configAudit').tuning).toBeNull();
     expect(byType('incompleteRun').tuning).toBeNull();
@@ -59,8 +64,8 @@ describe('detector catalog special cases', () => {
     const gated = catalog.filter((r) => r.gate);
     expect(gated.map((r) => r.type).sort()).toEqual(['failures', 'skew', 'spill', 'utilization']);
     for (const { gate } of gated) {
-      expect(gate.cliFlag).toEqual(expect.stringMatching(/\S/));
-      expect(gate.airflowParam).toEqual(expect.stringMatching(/\S/));
+      expect(gate?.cliFlag).toEqual(expect.stringMatching(/\S/));
+      expect(gate?.airflowParam).toEqual(expect.stringMatching(/\S/));
     }
   });
 
