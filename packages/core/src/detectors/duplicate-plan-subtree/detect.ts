@@ -204,6 +204,8 @@ export interface Emits {
   duplicatePlanSubtree: { finding: DuplicatePlanSubtreeFinding; evidence: DuplicatePlanSubtreeEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [duplicatePlanSubtreeDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

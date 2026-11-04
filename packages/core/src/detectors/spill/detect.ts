@@ -251,6 +251,8 @@ export interface Emits {
   spill: { finding: SpillFinding; evidence: SpillEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [spillDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

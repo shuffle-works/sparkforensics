@@ -72,4 +72,11 @@ describe('export analysis guard', () => {
     expect(exportModuleViolation('packages/core/src/units.ts')).toBeNull();
     expect(exportModuleViolation('src/view/Dashboard.tsx')).toBeNull();
   });
+
+  it('allows a listed detector presentation module and flags an unlisted detector module', () => {
+    expect(exportModuleViolation('packages/core/src/detectors/skew/presentation.ts')).toBeNull();
+    expect(exportModuleViolation('packages/core/src/detectors/presentation-shared.ts')).toBeNull();
+    expect(exportModuleViolation('packages/core/src/detectors/skew/detect.ts')).toBe('core module not on the export allowlist');
+    expect(exportModuleViolation('packages/core/src/detectors/new-detector/presentation.ts')).toBe('core module not on the export allowlist');
+  });
 });

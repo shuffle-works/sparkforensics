@@ -21,6 +21,16 @@ export const ALLOWED_EXPORT_CORE_MODULES = [
     'recommendation-rollup', 'run-payload', 'run-serialization', 'run-timing', 'scaling-sim', 'sql-stages', 'task-failure',
     'text-format', 'units', 'view-model',
   ].map((name) => `packages/core/src/${name}.ts`),
+  // Each detector folder's presentation half, its shared helpers and the index that lists them.
+  ...['presentation-shared', 'presentations'].map((name) => `packages/core/src/detectors/${name}.ts`),
+  ...[
+    'autoscaling-churn', 'broadcast-sizing', 'cache-utilization', 'caching-opportunity',
+    'cold-start', 'config-audit', 'core-locality', 'duplicate-plan-subtree', 'failures', 'gc',
+    'incomplete-run', 'job-failure-rate', 'join-key-cast', 'memory-utilization', 'merge-rewrite',
+    'nested-loop-join', 'partition-sizing', 'python-udf', 'retry-waste', 'right-sizing', 'shuffle',
+    'skew', 'slow-host', 'small-files', 'speculation-waste', 'spill', 'stage-failed', 'stage-shape',
+    'stage-slowness', 'straggler', 'tiny-task', 'unpruned-scan', 'utilization',
+  ].map((folder) => `packages/core/src/detectors/${folder}/presentation.ts`),
   'packages/core/src/vendor/fflate.js',
 ];
 
@@ -34,14 +44,10 @@ export const LIVE_ONLY_MODULES = [
 
 const CORE_PREFIX = 'packages/core/';
 
-/** The presentation half of each detector folder and its shared helpers: `finding-presentation.ts`
- * assembles them, and they import detector code only as types. */
-const DETECTOR_PRESENTATION = /^packages\/core\/src\/detectors\/(?:[a-z-]+\/presentation|presentation-shared)\.ts$/;
-
 /** Why `module` may not be in the export graph, or null when it may. */
 export function exportModuleViolation(module) {
   if (LIVE_ONLY_MODULES.includes(module)) return 'live-only module';
-  if (module.startsWith(CORE_PREFIX) && !ALLOWED_EXPORT_CORE_MODULES.includes(module) && !DETECTOR_PRESENTATION.test(module)) {
+  if (module.startsWith(CORE_PREFIX) && !ALLOWED_EXPORT_CORE_MODULES.includes(module)) {
     return 'core module not on the export allowlist';
   }
   return null;

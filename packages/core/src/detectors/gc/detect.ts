@@ -109,6 +109,8 @@ export interface Emits {
   gc: { finding: GcFinding; evidence: GcEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [gcDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

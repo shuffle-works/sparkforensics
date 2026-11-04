@@ -96,6 +96,8 @@ export interface Emits {
   configAudit: { finding: ConfigAuditFinding; evidence: ConfigAuditEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [configAuditAutoscaleBoundsDetector, configAuditSerializerDetector, configAuditMemoryOverheadDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

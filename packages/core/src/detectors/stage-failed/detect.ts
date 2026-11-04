@@ -47,6 +47,8 @@ export interface Emits {
   stageFailed: { finding: StageFailedFinding; evidence: StageFailedEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [stageFailedDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

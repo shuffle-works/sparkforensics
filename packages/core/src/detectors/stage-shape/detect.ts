@@ -119,6 +119,8 @@ export interface Emits {
   stageShape: { finding: StageShapeFinding; evidence: StageShapeEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [stageShapeDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

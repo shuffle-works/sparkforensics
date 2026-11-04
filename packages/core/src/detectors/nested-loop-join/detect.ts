@@ -107,6 +107,8 @@ export interface Emits {
   nestedLoopJoin: { finding: NestedLoopJoinFinding; evidence: NestedLoopJoinEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [nestedLoopJoinDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

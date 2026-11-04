@@ -44,6 +44,8 @@ export interface Emits {
   speculationWaste: { finding: SpeculationWasteFinding; evidence: SpeculationWasteEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [speculationWasteDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

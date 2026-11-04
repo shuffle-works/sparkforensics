@@ -232,6 +232,8 @@ export interface Emits {
   cachingOpportunity: { finding: CachingRelationFinding | CachingCompositeFinding; evidence: CachingOpportunityEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [cachingOpportunityDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

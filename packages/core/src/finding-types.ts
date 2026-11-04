@@ -5,44 +5,13 @@
 // Renaming or removing an evidence field is a breaking change to the report and needs an
 // EVIDENCE_SCHEMA_VERSION bump.
 //
-// This module holds what several detectors share, re-exports every member so the `types` entry
-// point exports them, and assembles `Finding`, a union discriminated on `type`, from each folder's
-// `Emits`. `FindingType` (detectors.ts) derives the same set from `DETECTORS`' `emits` lists, and a
-// compile-time check there keeps the two equal.
+// This module holds what several detectors share, re-exports every member from detectors/index.ts
+// so the `types` entry point exports them, and assembles `Finding`, a union discriminated on `type`,
+// from each folder's `emits`. `FindingType` (detectors.ts) derives the same set from `DETECTORS`'
+// `emits` lists, and a compile-time check there keeps the two equal.
 
-import type * as skew from './detectors/skew/detect.ts';
-import type * as stageShape from './detectors/stage-shape/detect.ts';
-import type * as shuffle from './detectors/shuffle/detect.ts';
-import type * as partitionSizing from './detectors/partition-sizing/detect.ts';
-import type * as spill from './detectors/spill/detect.ts';
-import type * as gc from './detectors/gc/detect.ts';
-import type * as slowHost from './detectors/slow-host/detect.ts';
-import type * as stageSlowness from './detectors/stage-slowness/detect.ts';
-import type * as stageFailed from './detectors/stage-failed/detect.ts';
-import type * as failures from './detectors/failures/detect.ts';
-import type * as straggler from './detectors/straggler/detect.ts';
-import type * as speculationWaste from './detectors/speculation-waste/detect.ts';
-import type * as retryWaste from './detectors/retry-waste/detect.ts';
-import type * as tinyTask from './detectors/tiny-task/detect.ts';
-import type * as incompleteRun from './detectors/incomplete-run/detect.ts';
-import type * as coldStart from './detectors/cold-start/detect.ts';
-import type * as utilization from './detectors/utilization/detect.ts';
-import type * as rightSizing from './detectors/right-sizing/detect.ts';
-import type * as memoryUtilization from './detectors/memory-utilization/detect.ts';
-import type * as cacheUtilization from './detectors/cache-utilization/detect.ts';
-import type * as coreLocality from './detectors/core-locality/detect.ts';
-import type * as autoscalingChurn from './detectors/autoscaling-churn/detect.ts';
-import type * as cachingOpportunity from './detectors/caching-opportunity/detect.ts';
-import type * as jobFailureRate from './detectors/job-failure-rate/detect.ts';
-import type * as configAudit from './detectors/config-audit/detect.ts';
-import type * as duplicatePlanSubtree from './detectors/duplicate-plan-subtree/detect.ts';
-import type * as smallFiles from './detectors/small-files/detect.ts';
-import type * as mergeRewrite from './detectors/merge-rewrite/detect.ts';
-import type * as unprunedScan from './detectors/unpruned-scan/detect.ts';
-import type * as pythonUdf from './detectors/python-udf/detect.ts';
-import type * as nestedLoopJoin from './detectors/nested-loop-join/detect.ts';
-import type * as joinKeyCast from './detectors/join-key-cast/detect.ts';
-import type * as broadcastSizing from './detectors/broadcast-sizing/detect.ts';
+import type detectFolders from './detectors/index.ts';
+import type { UnionToIntersection } from './detectors/types.ts';
 
 /** One concrete change a finding's fix makes, alongside its prose `recommendation`. Entries are
  * applied together unless the recommendation words them as alternatives ("either ... or"), as an
@@ -120,78 +89,14 @@ export type TailCause = 'data' | 'gc' | 'fetchWait' | 'host' | 'unexplained' | '
 /** Every key of any member of a union: `keyof` alone sees only the keys the members share. */
 export type AllKeys<U> = U extends unknown ? keyof U : never;
 
+export type * from './detectors/index.ts';
+
 /** The finding member for one `type`. */
 export type FindingOf<T extends Finding['type']> = Extract<Finding, { type: T }>;
 
-export type { SpillOperator, ExchangeWidth, SpillExchange, SpillEvidence, SpillFinding } from './detectors/spill/detect.ts';
-export type { GcEvidence, GcFinding } from './detectors/gc/detect.ts';
-export type { StageShapeEvidence, StageShapeFinding } from './detectors/stage-shape/detect.ts';
-export type { ShuffleEvidence, ShuffleFinding } from './detectors/shuffle/detect.ts';
-export type { PartitionSizingEvidence, PartitionSizingFinding } from './detectors/partition-sizing/detect.ts';
-export type { StageSlownessEvidence, StageSlownessFinding } from './detectors/stage-slowness/detect.ts';
-export type { TinyTaskEvidence, TinyTaskFinding } from './detectors/tiny-task/detect.ts';
-export type { ColdStartEvidence, ColdStartFinding } from './detectors/cold-start/detect.ts';
-export type { SlowHostMeanTimeEvidence, SlowHostDurationShareEvidence, SlowHostMultiDimEvidence, SlowHostEvidence, SlowHostMeanTimeFinding, SlowHostDurationShareFinding, SlowHostMultiDimFinding, SlowHostFinding } from './detectors/slow-host/detect.ts';
-export type { StragglerEvidence, StragglerFinding } from './detectors/straggler/detect.ts';
-export type { SkewEvidence, SkewFinding } from './detectors/skew/detect.ts';
-export type { SpeculationWasteEvidence, SpeculationWasteFinding } from './detectors/speculation-waste/detect.ts';
-export type { FailuresEvidence, FailuresFinding } from './detectors/failures/detect.ts';
-export type { StageFailedEvidence, StageFailedFinding } from './detectors/stage-failed/detect.ts';
-export type { RetryWasteEvidence, RetryWasteFinding } from './detectors/retry-waste/detect.ts';
-export type { JobFailureRateEvidence, JobFailureRateFinding } from './detectors/job-failure-rate/detect.ts';
-export type { MemoryIdleCoresEvidence, MemoryIdleCoresFinding, MemoryBandUnavailableEvidence, MemoryBandUnavailableFinding, MemoryHeapOverProvisionedEvidence, MemoryHeapOverProvisionedFinding, MemoryWasteModelEvidence, MemoryWasteModelFinding, MemoryUtilizationEvidence, MemoryUtilizationFinding } from './detectors/memory-utilization/detect.ts';
-export type { CachePartialCacheEvidence, CacheDiskSpilloverEvidence, CacheStorageUnobservedEvidence, CacheUtilizationEvidence, CachePartialCacheFinding, CacheDiskSpilloverFinding, CacheStorageUnobservedFinding, CacheUtilizationFinding } from './detectors/cache-utilization/detect.ts';
-export type { CoreLocalityEvidence, CoreLocalityFinding } from './detectors/core-locality/detect.ts';
-export type { UtilizationEvidence, UtilizationFinding } from './detectors/utilization/detect.ts';
-export type { RightSizingEvidence, RightSizingFinding } from './detectors/right-sizing/detect.ts';
-export type { AutoscalingChurnEvidence, AutoscalingChurnFinding } from './detectors/autoscaling-churn/detect.ts';
-export type { CachingRelationEvidence, CachingCompositeEvidence, CachingOpportunityEvidence, CachingRelationFinding, CachingCompositeFinding, CachingOpportunityFinding } from './detectors/caching-opportunity/detect.ts';
-export type { BroadcastThreshold, UnderBroadcastEvidence, UnderBroadcastFinding, OverBroadcastEvidence, OverBroadcastFinding } from './detectors/broadcast-sizing/detect.ts';
-export type { DuplicatePlanSubtreeEvidence, DuplicatePlanSubtreeFinding } from './detectors/duplicate-plan-subtree/detect.ts';
-export type { PythonUdfEvidence, PythonUdfFinding } from './detectors/python-udf/detect.ts';
-export type { SmallFilesEvidence, SmallFilesFinding } from './detectors/small-files/detect.ts';
-export type { NestedLoopJoinEvidence, NestedLoopJoinFinding } from './detectors/nested-loop-join/detect.ts';
-export type { MergeRewriteEvidence, MergeRewriteFinding } from './detectors/merge-rewrite/detect.ts';
-export type { UnprunedScanEvidence, UnprunedScanFinding } from './detectors/unpruned-scan/detect.ts';
-export type { JoinKeyCastEvidence, JoinKeyCastFinding } from './detectors/join-key-cast/detect.ts';
-export type { ConfigAuditEvidence, ConfigAuditFinding } from './detectors/config-audit/detect.ts';
-export type { IncompleteRunEvidence, IncompleteRunFinding } from './detectors/incomplete-run/detect.ts';
 
 /** What every detector emits, merged from the detector folders. */
-type Emitted =
-  skew.Emits &
-  stageShape.Emits &
-  shuffle.Emits &
-  partitionSizing.Emits &
-  spill.Emits &
-  gc.Emits &
-  slowHost.Emits &
-  stageSlowness.Emits &
-  stageFailed.Emits &
-  failures.Emits &
-  straggler.Emits &
-  speculationWaste.Emits &
-  retryWaste.Emits &
-  tinyTask.Emits &
-  incompleteRun.Emits &
-  coldStart.Emits &
-  utilization.Emits &
-  rightSizing.Emits &
-  memoryUtilization.Emits &
-  cacheUtilization.Emits &
-  coreLocality.Emits &
-  autoscalingChurn.Emits &
-  cachingOpportunity.Emits &
-  jobFailureRate.Emits &
-  configAudit.Emits &
-  duplicatePlanSubtree.Emits &
-  smallFiles.Emits &
-  mergeRewrite.Emits &
-  unprunedScan.Emits &
-  pythonUdf.Emits &
-  nestedLoopJoin.Emits &
-  joinKeyCast.Emits &
-  broadcastSizing.Emits;
+type Emitted = UnionToIntersection<(typeof detectFolders)[number]['emits']>;
 
 /** Public evidence fields per finding type: what a report row's `evidence` carries. */
 export type FindingEvidenceMap = { [T in keyof Emitted]: Emitted[T]['evidence'] };

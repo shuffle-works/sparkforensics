@@ -63,6 +63,8 @@ export interface Emits {
   jobFailureRate: { finding: JobFailureRateFinding; evidence: JobFailureRateEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [jobFailureRateDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

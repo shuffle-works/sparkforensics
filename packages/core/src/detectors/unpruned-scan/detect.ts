@@ -77,6 +77,8 @@ export interface Emits {
   unprunedScan: { finding: UnprunedScanFinding; evidence: UnprunedScanEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [unprunedScanDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

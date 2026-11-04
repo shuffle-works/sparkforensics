@@ -90,7 +90,7 @@ grouping reads `detectors[type].scope`.
 
 Each finding type has its own shape in its folder's `detect.ts`:
 `finding-types.ts` assembles `Finding`, a union discriminated on `type`, from each folder's
-`Emits`, and a compile-time check in `detectors.ts` fails when its members and
+`Emits` (through its type-only `emits` export), and a compile-time check in `detectors.ts` fails when its members and
 `FindingType` differ. Each member
 splits into a `<Type>Evidence` interface, the fields the evidence report
 publishes (listed again in the folder's `evidenceKeys`, checked
@@ -100,10 +100,18 @@ a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
 `valueText` instead. So a new detector type is one folder,
 `packages/core/src/detectors/<type>/`. Its `detect.ts` holds the `DETECTORS` entry (with its
 `emits` list and an `estimate()` that covers it), the finding members with their `Emits`,
-`evidenceKeys` and `idDiscriminators`; its `presentation.ts` holds the presentation row. Each
-assembling module takes one line for the folder: `detectors.ts` (`DETECTORS`), `finding-meta.ts`
-(`EVIDENCE_KEYS` and `ID_DISCRIMINATORS`), `finding-types.ts` (`Finding`, `FindingEvidenceMap`
-and the member re-exports) and `finding-presentation.ts` (`FINDING_PRESENTATION`). The view adds
+`evidenceKeys` and `idDiscriminators`; its `presentation.ts` holds the presentation row. Two
+index files list the folders, one entry each:
+
+- `detectors/index.ts`: the import of `detect.ts`, the `export type` line for its finding
+  members, and its place in the list, which is the render order. `detectors.ts` (`DETECTORS`),
+  `finding-meta.ts` (`EVIDENCE_KEYS` and `ID_DISCRIMINATORS`) and `finding-types.ts` (`Finding`,
+  `FindingEvidenceMap` and the member re-exports) read it.
+- `detectors/presentations.ts`: the import of `presentation.ts` and its place in the list.
+  `finding-presentation.ts` (`FINDING_PRESENTATION`) reads it.
+
+The `presentation.ts` also goes on `ALLOWED_EXPORT_CORE_MODULES` in
+`scripts/export-analysis-guard.mjs`, because the HTML export renders its row. The view adds
 a `REGISTRY` entry with its row model (see
 [Finding widget shell](./widget-rendering/finding-widget-shell.md)). The compiler
 reports each one that is missing. Tests and process, not the compiler, cover
@@ -156,8 +164,10 @@ the render order, see [Widget rendering](./widget-rendering.md#widget-rendering-
 
 | Module | Holds |
 | --- | --- |
-| `<type>/detect.ts` | one folder per detector, named for its type in kebab-case (`slow-host/`): the `DETECTORS` entry, its finding members and `Emits`, `evidenceKeys` and `idDiscriminators`. `config-audit/` holds the three `configAudit` entries and `broadcast-sizing/` the entry that emits `underBroadcast` and `overBroadcast` |
+| `<type>/detect.ts` | one folder per detector, named for its type in kebab-case (`slow-host/`): the `DETECTORS` entry, its finding members and `Emits` (with the type-only `emits` export), `evidenceKeys` and `idDiscriminators`. `config-audit/` holds the three `configAudit` entries and `broadcast-sizing/` the entry that emits `underBroadcast` and `overBroadcast` |
 | `<type>/presentation.ts` | the folder's `FINDING_PRESENTATION` row |
+| `index.ts` | every folder's `detect.ts` once, in render order, with its finding-member re-exports |
+| `presentations.ts` | every folder's `presentation.ts` once |
 | `presentation-shared.ts` | the helpers several presentation rows share |
 | `finding-bases.ts` | the finding columns every member extends (`FindingCore`, `NumericFinding`, `TextFinding`) and the plan-finding evidence |
 | `speculation.ts` | the speculation rule `slowHost`, `straggler` and `speculationWaste` share |

@@ -35,6 +35,8 @@ export interface Emits {
   incompleteRun: { finding: IncompleteRunFinding; evidence: IncompleteRunEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [incompleteRunDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

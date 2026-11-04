@@ -1,83 +1,18 @@
-// The DETECTORS list: every detector entry, assembled in render order. Each entry is declared in
-// its detector's folder, detectors/<type>/detect.ts, built by the define*Detector helper for its
-// scope (detectors/define.ts). The shared types are in detectors/types.ts. Only analyzer.ts and
-// detector-catalog.ts import this module by value; every other module reaches the entries through
-// detector-catalog.ts and the helpers through the detectors/ modules, or imports types from here
-// with `import type`.
+// The DETECTORS list: every detector entry, assembled in render order from detectors/index.ts. Each
+// entry is declared in its detector's folder, detectors/<type>/detect.ts, built by the
+// define*Detector helper for its scope (detectors/define.ts). The shared types are in
+// detectors/types.ts. Only analyzer.ts and detector-catalog.ts import this module by value; every
+// other module reaches the entries through detector-catalog.ts and the helpers through the
+// detectors/ modules, or imports types from here with `import type`.
 import { mergeThresholds } from './detectors/define.ts';
-import * as skew from './detectors/skew/detect.ts';
-import * as stageShape from './detectors/stage-shape/detect.ts';
-import * as shuffle from './detectors/shuffle/detect.ts';
-import * as partitionSizing from './detectors/partition-sizing/detect.ts';
-import * as spill from './detectors/spill/detect.ts';
-import * as gc from './detectors/gc/detect.ts';
-import * as slowHost from './detectors/slow-host/detect.ts';
-import * as stageSlowness from './detectors/stage-slowness/detect.ts';
-import * as stageFailed from './detectors/stage-failed/detect.ts';
-import * as failures from './detectors/failures/detect.ts';
-import * as straggler from './detectors/straggler/detect.ts';
-import * as speculationWaste from './detectors/speculation-waste/detect.ts';
-import * as retryWaste from './detectors/retry-waste/detect.ts';
-import * as tinyTask from './detectors/tiny-task/detect.ts';
-import * as incompleteRun from './detectors/incomplete-run/detect.ts';
-import * as coldStart from './detectors/cold-start/detect.ts';
-import * as utilization from './detectors/utilization/detect.ts';
-import * as rightSizing from './detectors/right-sizing/detect.ts';
-import * as memoryUtilization from './detectors/memory-utilization/detect.ts';
-import * as cacheUtilization from './detectors/cache-utilization/detect.ts';
-import * as coreLocality from './detectors/core-locality/detect.ts';
-import * as autoscalingChurn from './detectors/autoscaling-churn/detect.ts';
-import * as cachingOpportunity from './detectors/caching-opportunity/detect.ts';
-import * as jobFailureRate from './detectors/job-failure-rate/detect.ts';
-import * as configAudit from './detectors/config-audit/detect.ts';
-import * as duplicatePlanSubtree from './detectors/duplicate-plan-subtree/detect.ts';
-import * as smallFiles from './detectors/small-files/detect.ts';
-import * as broadcastSizing from './detectors/broadcast-sizing/detect.ts';
-import * as pythonUdf from './detectors/python-udf/detect.ts';
-import * as nestedLoopJoin from './detectors/nested-loop-join/detect.ts';
-import * as mergeRewrite from './detectors/merge-rewrite/detect.ts';
-import * as unprunedScan from './detectors/unpruned-scan/detect.ts';
-import * as joinKeyCast from './detectors/join-key-cast/detect.ts';
+import detectFolders from './detectors/index.ts';
 import type { Detector, SkewThresholds } from './detectors/types.ts';
 import type { Finding } from './types.ts';
 
-// The order is the render order (see widget-rendering.md): `order` is a display field, and this
-// list's declaration order breaks ties between equal `order` values.
-export const DETECTORS = [
-  ...skew.detectors,
-  ...stageShape.detectors,
-  ...shuffle.detectors,
-  ...partitionSizing.detectors,
-  ...spill.detectors,
-  ...gc.detectors,
-  ...slowHost.detectors,
-  ...stageSlowness.detectors,
-  ...stageFailed.detectors,
-  ...failures.detectors,
-  ...straggler.detectors,
-  ...speculationWaste.detectors,
-  ...retryWaste.detectors,
-  ...tinyTask.detectors,
-  ...incompleteRun.detectors,
-  ...coldStart.detectors,
-  ...utilization.detectors,
-  ...rightSizing.detectors,
-  ...memoryUtilization.detectors,
-  ...cacheUtilization.detectors,
-  ...coreLocality.detectors,
-  ...autoscalingChurn.detectors,
-  ...cachingOpportunity.detectors,
-  ...jobFailureRate.detectors,
-  ...configAudit.detectors,
-  ...duplicatePlanSubtree.detectors,
-  ...smallFiles.detectors,
-  ...broadcastSizing.detectors,
-  ...pythonUdf.detectors,
-  ...nestedLoopJoin.detectors,
-  ...mergeRewrite.detectors,
-  ...unprunedScan.detectors,
-  ...joinKeyCast.detectors,
-] as const satisfies readonly Detector[];
+// detectors/index.ts lists the folders in render order (see widget-rendering.md): `order` is a
+// display field, and this list's order breaks ties between equal `order` values.
+type DetectorEntry = (typeof detectFolders)[number]['detectors'][number];
+export const DETECTORS: readonly DetectorEntry[] = detectFolders.flatMap<DetectorEntry>((folder) => folder.detectors);
 
 /** The entry that emits each finding type: the one whose estimate prices it and whose thresholds
  * and order describe it. Several entries can emit one type (the three configAudit audits), and the
@@ -96,7 +31,6 @@ export type DetectorType = (typeof DETECTORS)[number]['type'];
 /** Every finding `type` a detector can emit, from the entries' `emits` lists. */
 export type FindingType = (typeof DETECTORS)[number]['emits'][number];
 
-type DetectorEntry = (typeof DETECTORS)[number];
 type EntryEmitting<T extends FindingType, D extends DetectorEntry = DetectorEntry> =
   D extends { emits: readonly (infer E)[] } ? (T extends E ? D : never) : never;
 
@@ -108,6 +42,7 @@ export type ThresholdsOf<T extends FindingType> = EntryEmitting<T>['thresholds']
 type SameUnion<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type AssertTrue<T extends true> = T;
 export type FindingTypesMatchDetectors = AssertTrue<SameUnion<FindingType, Finding['type']>>;
+export type EntriesAreDetectors = AssertTrue<[DetectorEntry] extends [Detector] ? true : false>;
 
 // A `suppressedBy` that names no entry would never suppress anything; this makes it a compile error.
 // An entry without one infers the bare `string` constraint, which contributes nothing here.

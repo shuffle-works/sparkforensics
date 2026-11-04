@@ -81,6 +81,8 @@ export interface Emits {
   autoscalingChurn: { finding: AutoscalingChurnFinding; evidence: AutoscalingChurnEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [autoscalingChurnDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

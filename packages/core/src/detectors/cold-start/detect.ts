@@ -71,6 +71,8 @@ export interface Emits {
   coldStart: { finding: ColdStartFinding; evidence: ColdStartEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [coldStartDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

@@ -216,6 +216,8 @@ export interface Emits {
   memoryUtilization: { finding: MemoryIdleCoresFinding | MemoryBandUnavailableFinding | MemoryHeapOverProvisionedFinding | MemoryWasteModelFinding; evidence: MemoryUtilizationEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [memoryUtilizationDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

@@ -184,6 +184,8 @@ export interface Emits {
   overBroadcast: { finding: OverBroadcastFinding; evidence: OverBroadcastEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [broadcastSizingDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */

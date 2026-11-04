@@ -262,6 +262,8 @@ export interface Emits {
   slowHost: { finding: SlowHostMeanTimeFinding | SlowHostDurationShareFinding | SlowHostMultiDimFinding; evidence: SlowHostEvidence };
 }
 
+export declare const emits: Emits;
+
 export const detectors = [slowHostDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */
