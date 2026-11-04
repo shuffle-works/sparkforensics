@@ -191,7 +191,14 @@
       "type": "smallFiles"
     }
   },
-  "speculationWaste": null,
+  "speculationWaste": {
+    "source": "synthetic",
+    "log": "speculation-waste.ndjson",
+    "finding": {
+      "id": "3ecf4421",
+      "type": "speculationWaste"
+    }
+  },
   "spill": {
     "source": "corpus",
     "log": "pairwise-03.ndjson",

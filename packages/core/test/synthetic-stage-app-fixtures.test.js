@@ -64,4 +64,15 @@ describe('synthetic stage and app fixtures', () => {
     expect(f.dynamicAllocation).toBe('on');
     expect(f.impactBand).toBe('warning');
   });
+
+  it('speculation-waste: six losing copies are flagged as core time, and the stage whose copies won is not', async () => {
+    const { appModel, findings } = await analyzeFixture('speculation-waste');
+    expect(appModel.skippedLines).toBe(0);
+    const [f, ...rest] = ofType(findings, 'speculationWaste');
+    expect(rest).toEqual([]);
+    expect(f.stageId).toBe(0);
+    expect(f.value).toBe(150000);
+    expect(f.impactBand).toBe('warning');
+    expect(f.impactEstimate).toMatchObject({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured' });
+  });
 });
