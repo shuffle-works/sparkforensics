@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { getThresholdSummary } from '../src/threshold-summary.ts';
 import { FINDING_PRESENTATION } from '../src/finding-presentation.ts';
-import { spillDetector } from '../src/detectors/speed-stages.ts';
-import { slowHostDetector } from '../src/detectors/speed-tasks.ts';
+import { spillDetector } from '../src/detectors/spill/detect.ts';
+import { slowHostDetector } from '../src/detectors/slow-host/detect.ts';
 
 describe('getThresholdSummary', () => {
   it('states the spill threshold from the detector\'s own thresholds', () => {
