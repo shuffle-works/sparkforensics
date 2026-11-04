@@ -262,7 +262,7 @@ The skew family's advice for a stage that reads a shuffle feeding a join comes f
 conditions Spark's `OptimizeSkewedJoin` checks (join shape, join type, thresholds, extra shuffle)
 and reads the thresholds through the same effective conf. It returns `null` when the plan cannot
 say, and the detector then keeps the general advice. A new case is a new `AqeSkewCase`, a row in
-`finding-presentation.ts`'s generic lines and a row in the user guide's `SKEW` table.
+`AQE_SKEW_GENERIC` (`detectors/presentation-shared.ts`) and a row in the user guide's `SKEW` table.
 
 ## Finding ids
 

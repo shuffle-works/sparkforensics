@@ -157,7 +157,7 @@ so the CLI (`packages/cli/bin/sparkforensics-analyze.mjs`) and the MCP tool (`di
 `packages/core/src/mcp-tools.ts`) get it too, not just the web markdown/JSON download.
 `FindingRow.actionLabel` is always present (a short imperative label like "Reduce shuffle
 size"), from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), which reads the
-type's `actionLabel` in `finding-presentation.ts` and falls back to the type's name. The
+type's `actionLabel` in its folder's `presentation.ts` and falls back to the type's name. The
 dashboard, the run verdict and the report rows all call it.
 `EvidenceReportJson.recommendations` is the same impact-ranked
 `buildRecommendationRollup` grouping (`packages/core/src/recommendation-rollup.ts`) that
