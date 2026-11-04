@@ -125,8 +125,11 @@ describe('rolling event-log directory cache key', () => {
       appendFileSync(part, `${JSON.stringify({ Event: 'SparkListenerApplicationEnd', Timestamp: 5 })}\n`);
       const second = await resolveOrCreateRun({ source: { path: dir } });
       expect(second.runId).not.toBe(first.runId);
-      expect(second.appModel.app?.endTime).toBe(5);
-      expect(first.appModel.app?.endTime ?? null).toBeNull();
+      const firstApp = first.appModel.app;
+      const secondApp = second.appModel.app;
+      if (!firstApp || !secondApp) throw new Error('a run of the rolling directory has no application');
+      expect(secondApp.endTime).toBe(5);
+      expect(firstApp.endTime ?? null).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -203,8 +206,12 @@ describe('compareRuns result cache', () => {
       expect(backward.baselineRunId).toBe(forward.candidateRunId);
       expect(builds()).toBe(2);
       /** @param {CompareResult} r */
-      const wall = (r) => r.metrics.find((m) => m.key === 'wallClock');
-      expect(wall(backward)?.baseline).toBe(wall(forward)?.candidate);
+      const wall = (r) => {
+        const metric = r.metrics.find((m) => m.key === 'wallClock');
+        if (!metric) throw new Error('the comparison has no wallClock metric');
+        return metric;
+      };
+      expect(wall(backward).baseline).toBe(wall(forward).candidate);
     });
   });
 

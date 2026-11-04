@@ -15,7 +15,7 @@ describe('resolveFromShs', () => {
       '{"Event":"SparkListenerApplicationEnd","Timestamp":100}',
     ].join('\n');
     const result = await resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl: shsZipFetch(ndjson) });
-    expect(result.appModel.app?.id).toBe('app-shs-skip');
+    expect(result.appModel.app.id).toBe('app-shs-skip');
     expect(result.skippedLines).toBe(1);
   });
 
