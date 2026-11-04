@@ -50,12 +50,13 @@ The view passed beside the model has a required `Row` and the optional `Lead`,
 
 ## Adding a finding widget
 
-1. Add the detector side first: the `DETECTORS` entry, the `finding-types.ts`
-   member and the other items in
+1. Add the detector side first: the folder `packages/core/src/detectors/<type>/` with its
+   `detect.ts` and its entry in `detectors/index.ts`, as listed in
    [Detector contract](../detector-contract.md). The compiler reports a missing
    piece.
-2. Add the presentation row in core, `FINDING_PRESENTATION` in
-   `packages/core/src/finding-presentation.ts`. It holds the finding's name, tag,
+2. Add the presentation row in core, in the folder's `presentation.ts`
+   (`FINDING_PRESENTATION` assembles it), its entry in `detectors/presentations.ts`
+   and its path on `ALLOWED_EXPORT_CORE_MODULES` in `scripts/export-analysis-guard.mjs`. It holds the finding's name, tag,
    family, one-sentence pitch and summary. The card title comes from the name.
 3. Add `src/view/widgets/<Widget>.rows.ts`. It exports the row type (extending
    `WidgetRow<'type'>`), the `rows` function and the model. Put every decision in

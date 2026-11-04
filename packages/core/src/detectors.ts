@@ -1,66 +1,18 @@
-// The DETECTORS list: every detector entry, assembled in render order. Each entry is declared in
-// its family's module under detectors/ (speed-tasks, speed-stages, reliability, cost, plan,
-// setup), built by the define*Detector helper for its scope (detectors/define.ts). The shared
-// types are in detectors/types.ts. Only analyzer.ts and detector-catalog.ts import this module by
-// value; every other module reaches the entries through detector-catalog.ts and the helpers
-// through the detectors/ modules, or imports types from here with `import type`.
+// The DETECTORS list: every detector entry, assembled in render order from detectors/index.ts. Each
+// entry is declared in its detector's folder, detectors/<type>/detect.ts, built by the
+// define*Detector helper for its scope (detectors/define.ts). The shared types are in
+// detectors/types.ts. Only analyzer.ts and detector-catalog.ts import this module by value; every
+// other module reaches the entries through detector-catalog.ts and the helpers through the
+// detectors/ modules, or imports types from here with `import type`.
 import { mergeThresholds } from './detectors/define.ts';
-import { coldStartDetector, gcDetector, partitionSizingDetector, shuffleDetector, spillDetector, stageShapeDetector, stageSlownessDetector, tinyTaskDetector } from './detectors/speed-stages.ts';
-import { skewDetector, slowHostDetector, speculationWasteDetector, stragglerDetector } from './detectors/speed-tasks.ts';
-import { failuresDetector, jobFailureRateDetector, retryWasteDetector, stageFailedDetector } from './detectors/reliability.ts';
-import {
-  autoscalingChurnDetector, cacheUtilizationDetector, cachingOpportunityDetector, coreLocalityDetector, memoryUtilizationDetector,
-  rightSizingDetector, utilizationDetector,
-} from './detectors/cost.ts';
-import {
-  broadcastSizingDetector, duplicatePlanSubtreeDetector, joinKeyCastDetector, mergeRewriteDetector, nestedLoopJoinDetector,
-  pythonUdfDetector, smallFilesDetector, unprunedScanDetector,
-} from './detectors/plan.ts';
-import {
-  configAuditAutoscaleBoundsDetector, configAuditMemoryOverheadDetector, configAuditSerializerDetector, incompleteRunDetector,
-} from './detectors/setup.ts';
+import detectFolders from './detectors/index.ts';
 import type { Detector, SkewThresholds } from './detectors/types.ts';
 import type { Finding } from './types.ts';
 
-// The order is the render order (see widget-rendering.md): `order` is a display field, and this
-// list's declaration order breaks ties between equal `order` values.
-export const DETECTORS = [
-  skewDetector,
-  stageShapeDetector,
-  shuffleDetector,
-  partitionSizingDetector,
-  spillDetector,
-  gcDetector,
-  slowHostDetector,
-  stageSlownessDetector,
-  stageFailedDetector,
-  failuresDetector,
-  stragglerDetector,
-  speculationWasteDetector,
-  retryWasteDetector,
-  tinyTaskDetector,
-  incompleteRunDetector,
-  coldStartDetector,
-  utilizationDetector,
-  rightSizingDetector,
-  memoryUtilizationDetector,
-  cacheUtilizationDetector,
-  coreLocalityDetector,
-  autoscalingChurnDetector,
-  cachingOpportunityDetector,
-  jobFailureRateDetector,
-  configAuditAutoscaleBoundsDetector,
-  configAuditSerializerDetector,
-  configAuditMemoryOverheadDetector,
-  duplicatePlanSubtreeDetector,
-  smallFilesDetector,
-  broadcastSizingDetector,
-  pythonUdfDetector,
-  nestedLoopJoinDetector,
-  mergeRewriteDetector,
-  unprunedScanDetector,
-  joinKeyCastDetector,
-] as const satisfies readonly Detector[];
+// detectors/index.ts lists the folders in render order (see widget-rendering.md): `order` is a
+// display field, and this list's order breaks ties between equal `order` values.
+type DetectorEntry = (typeof detectFolders)[number]['detectors'][number];
+export const DETECTORS: readonly DetectorEntry[] = detectFolders.flatMap<DetectorEntry>((folder) => folder.detectors);
 
 /** The entry that emits each finding type: the one whose estimate prices it and whose thresholds
  * and order describe it. Several entries can emit one type (the three configAudit audits), and the
@@ -79,7 +31,6 @@ export type DetectorType = (typeof DETECTORS)[number]['type'];
 /** Every finding `type` a detector can emit, from the entries' `emits` lists. */
 export type FindingType = (typeof DETECTORS)[number]['emits'][number];
 
-type DetectorEntry = (typeof DETECTORS)[number];
 type EntryEmitting<T extends FindingType, D extends DetectorEntry = DetectorEntry> =
   D extends { emits: readonly (infer E)[] } ? (T extends E ? D : never) : never;
 
@@ -91,6 +42,7 @@ export type ThresholdsOf<T extends FindingType> = EntryEmitting<T>['thresholds']
 type SameUnion<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type AssertTrue<T extends true> = T;
 export type FindingTypesMatchDetectors = AssertTrue<SameUnion<FindingType, Finding['type']>>;
+export type EntriesAreDetectors = AssertTrue<[DetectorEntry] extends [Detector] ? true : false>;
 
 // A `suppressedBy` that names no entry would never suppress anything; this makes it a compile error.
 // An entry without one infers the bare `string` constraint, which contributes nothing here.

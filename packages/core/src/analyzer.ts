@@ -13,9 +13,9 @@ import { MS_PER_CORE_HOUR } from './units.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import type {
-  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorAddedEvent, ExecutorRemovedEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
+  Finding, FindingOf, SparkAppInfo, Stage, ExecutorAddedEvent, ExecutorRemovedEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
-import type { AllKeys } from './finding-types.ts';
+import { APPENDED_SLOTS, DISCRIMINATOR_SLOTS, ID_DISCRIMINATORS, type DiscriminatorSlot } from './finding-meta.ts';
 
 // The runner reads each entry through the Detector contract, not its own precise `as const` shape:
 // the scope switch below calls each entry's bound detect with that scope's target.
@@ -39,38 +39,6 @@ export function fnv1a(str: string): string {
   }
   return (h >>> 0).toString(16).padStart(8, '0');
 }
-
-// The id hash's discriminator slots, in join order: reordering or renaming one changes every
-// finding id, which needs an EVIDENCE_SCHEMA_VERSION bump.
-const DISCRIMINATOR_SLOTS = [
-  'host', 'executorId', 'rule', 'variant', 'dimension',
-  'direction', 'nodeName', 'rootName', 'subtreeSize', 'groupIndex', 'largerSideBytes',
-  'rddId', 'relation', 'format', 'operator', 'executionIds',
-] as const;
-// Slots joined after DISCRIMINATOR_SLOTS only for the types that list them, so adding one leaves
-// every other finding id unchanged.
-const APPENDED_SLOTS = ['planNodeIds'] as const;
-type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number] | (typeof APPENDED_SLOTS)[number];
-
-// Per type, the fields that tell apart sibling findings sharing one location and metric; without
-// them those siblings hash to one id (see detector-contract.md, Finding ids). Notes:
-// duplicatePlanSubtree's groupIndex is the real uniqueness guarantee (rootName+subtreeSize can
-// collide across groups); memoryUtilization leaves out `rule` because its one heap band sits on
-// the busiest executor, so executorId is already unique; partitionSizing keeps `rule` because a
-// stage can emit several rules at once sharing stageId+metric.
-const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & AllKeys<FindingOf<T>>)[] } = {
-  skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],
-  slowHost: ['host', 'executorId', 'variant', 'dimension'], stageSlowness: [], stageFailed: ['variant'],
-  failures: [], straggler: [], speculationWaste: [], retryWaste: [], tinyTask: [],
-  incompleteRun: [], coldStart: [], utilization: [], rightSizing: [], memoryUtilization: ['executorId', 'variant'],
-  cacheUtilization: ['variant', 'rddId'], coreLocality: [], autoscalingChurn: [],
-  cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
-  jobFailureRate: [], configAudit: [],
-  duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'], mergeRewrite: ['rule'], unprunedScan: ['relation'],
-  pythonUdf: [],
-  nestedLoopJoin: ['nodeName'], joinKeyCast: ['nodeName', 'planNodeIds'],
-  underBroadcast: ['largerSideBytes'], overBroadcast: [],
-};
 
 // ID_DISCRIMINATORS as Sets, built once: findingId runs once per finding.
 const ID_DISCRIMINATOR_SETS = new Map<string, ReadonlySet<DiscriminatorSlot>>(
