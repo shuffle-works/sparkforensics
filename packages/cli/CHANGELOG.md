@@ -1,5 +1,14 @@
 # sparkforensics-cli
 
+## 0.12.1
+
+### Patch Changes
+
+- f572d91: The speculation waste finding counts only losing speculative copies, not originals that a copy beat. It reports their run time as core time with no wall-clock claim.
+- 830caf5: The speculation-driven straggler finding now reads "N tasks finished on a speculative copy". It said "N speculative attempts discarded", but N counts the tasks whose copy won, not the discarded attempts.
+- 797d6f2: The core `SqlExecution` type declares `sparkPlanInfo` and `hadAdaptiveUpdate`, which the parser already sets on the executions it sends.
+- c1b8b57: The root `.js` tests and the CLI, MCP and server `.js` tests are type-checked with JSDoc types.
+
 ## 0.12.0
 
 ### Minor Changes
