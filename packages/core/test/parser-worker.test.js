@@ -2624,6 +2624,38 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     expect(msg.data.wastedAttempts).toBe(0);
   });
 
+  it('counts the tasks a copy won apart from the losing copies', () => {
+    const s = createState();
+    setupStage(s);
+    // Task 0: the copy wins and the original is killed. Tasks 1 and 2: the original wins and the copy is killed.
+    // Only the two losing copies are wasted attempts.
+    processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true, taskId: 10 }), s);
+    processEvent(specTaskEnd(1, 0, { launch: 0, finish: 300, killed: true, taskId: 0 }), s);
+    for (const index of [1, 2]) {
+      processEvent(specTaskEnd(1, index, { launch: 0, finish: 100, taskId: index }), s);
+      processEvent(specTaskEnd(1, index, { launch: 50, finish: 120, killed: true, speculative: true, taskId: 10 + index }), s);
+    }
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s);
+
+    expect(msg.data.speculativeTasks).toBe(1);
+    expect(msg.data.speculationWastedAttempts).toBe(2);
+  });
+
+  it('claims no tail for a speculative winner among tasks under STRAGGLER_FACTOR x P50', () => {
+    const s = createState();
+    setupStage(s);
+    // Median 100 ms; the slowest tasks run 2x to 3.9x the median, so none is a straggler.
+    const durations = [100, 100, 100, 100, 100, 100, 200, 250, 300, 390];
+    durations.forEach((ms, index) => {
+      processEvent(specTaskEnd(1, index, { launch: 0, finish: ms, speculative: index === 9, taskId: index }), s);
+    });
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s);
+
+    expect(msg.data.speculativeTasks).toBe(1);
+    expect(msg.data.stragglerCount).toBe(0);
+    expect(msg.data.tailReplayRecoveryMs).toBe(0);
+  });
+
   it('attributes waste to a genuine failure-retry when neither attempt is speculative', () => {
     const s = createState();
     setupStage(s);

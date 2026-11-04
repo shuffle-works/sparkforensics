@@ -123,7 +123,7 @@ describe('speculation wording names the run\'s effective settings', () => {
   it('names them on a straggler driven by speculative attempts', () => {
     const stage = makeTypedStage({ taskCount: 100, speculativeTasks: 40, taskDurationP50: 100, taskDurationP95: 300, taskDurationMax: 400_000, completedAt: 600_000 });
     const f = present(firstOfType(catalogOf([stage], makeApp({ sparkVersion: '4.0.4', endTime: 600_000 })), 'straggler'));
-    expect(f.recommendation).toContain('40 speculative attempts discarded (with this run\'s settings, a task running over 3x the median');
+    expect(f.recommendation).toContain('40 tasks finished on a speculative copy (with this run\'s settings, a task running over 3x the median');
   });
 
   it('names them on a slow-host finding, whether speculation is on or off', () => {

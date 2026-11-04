@@ -31,11 +31,11 @@ test('renders nothing when the catalog has no straggler findings', () => {
 
 test('surfaces the speculative-count detail and the card\'s fix', () => {
   const catalog: Finding[] = [
-    { type: 'straggler', stageId: 9, impactBand: 'critical', metric: 'speculativeTasks', value: 4, unit: 'count', recommendation: '4 speculative attempts discarded: investigate stragglers.' } as Finding,
+    { type: 'straggler', stageId: 9, impactBand: 'critical', metric: 'speculativeTasks', value: 4, unit: 'count', recommendation: '4 tasks finished on a speculative copy: investigate stragglers.' } as Finding,
   ];
   renderStraggler(appModelWithStage(9), catalog, false);
   expect(screen.getByRole('heading', { name: 'Stragglers' })).toBeInTheDocument();
-  expect(screen.getByText(/4 speculative attempts discarded/)).toBeInTheDocument();
+  expect(screen.getByText(/4 tasks finished on a speculative copy/)).toBeInTheDocument();
   expect(screen.getByText(/^Nothing in the log attributes the slow tasks/)).toBeInTheDocument();
 });
 

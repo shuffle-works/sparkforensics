@@ -485,7 +485,7 @@ export function computePeakConcurrentTasks(arr: Float64Array): number {
 
 // Wall-clock a tail fix recovers, replayed from the stage's own tasks: list scheduling (tasks in
 // launch order, each on the slot that frees first) over `slots` slots, once with the real
-// durations and once with every task over 4x P50 (the straggler definition above) capped at P50.
+// durations and once with every task over STRAGGLER_FACTOR x P50 (the straggler definition above) capped at P50.
 // The difference is the claim; dev/eval-tail-replay.mjs keeps an independent copy as its ground
 // truth. Equal free times are interchangeable slots, so which one a min-heap picks can't change
 // the result. Equal launch times keep the task array's order.
@@ -496,7 +496,7 @@ export function computeTailReplayRecoveryMs(arr: Float64Array, p50: number, slot
   for (let i = 0; i < taskCount; i++) order[i] = i;
   order.sort((a, b) => arr[a * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] - arr[b * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] || a - b);
   const free = new Float64Array(Math.max(1, Math.min(slots, taskCount)));
-  const capAboveMs = 4 * p50;
+  const capAboveMs = STRAGGLER_FACTOR * p50;
   const actualEndMs = listScheduleEndMs(arr, order, free, Infinity, p50);
   const fixedEndMs = listScheduleEndMs(arr, order, free, capAboveMs, p50);
   return Math.max(0, actualEndMs - fixedEndMs);

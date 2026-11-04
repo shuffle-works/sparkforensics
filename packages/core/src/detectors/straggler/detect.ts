@@ -78,7 +78,7 @@ function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
   return {
     useSpeculativeMetric, value,
     detail: useSpeculativeMetric
-      ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded${speculationRuleNote(ctx.app)}`
+      ? `${value} task${value === 1 ? '' : 's'} finished on a speculative copy${speculationRuleNote(ctx.app)}`
       : `${value}% of tasks ran over ${STRAGGLER_FACTOR}× the median`,
     confidence: useSpeculativeMetric
       ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
