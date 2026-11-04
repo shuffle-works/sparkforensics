@@ -1,65 +1,82 @@
 // The DETECTORS list: every detector entry, assembled in render order. Each entry is declared in
-// its family's module under detectors/ (speed-tasks, speed-stages, reliability, cost, plan,
-// setup), built by the define*Detector helper for its scope (detectors/define.ts). The shared
-// types are in detectors/types.ts. Only analyzer.ts and detector-catalog.ts import this module by
-// value; every other module reaches the entries through detector-catalog.ts and the helpers
-// through the detectors/ modules, or imports types from here with `import type`.
+// its detector's folder, detectors/<type>/detect.ts, built by the define*Detector helper for its
+// scope (detectors/define.ts). The shared types are in detectors/types.ts. Only analyzer.ts and
+// detector-catalog.ts import this module by value; every other module reaches the entries through
+// detector-catalog.ts and the helpers through the detectors/ modules, or imports types from here
+// with `import type`.
 import { mergeThresholds } from './detectors/define.ts';
-import { coldStartDetector, gcDetector, partitionSizingDetector, shuffleDetector, spillDetector, stageShapeDetector, stageSlownessDetector, tinyTaskDetector } from './detectors/speed-stages.ts';
-import { skewDetector, slowHostDetector, speculationWasteDetector, stragglerDetector } from './detectors/speed-tasks.ts';
-import { failuresDetector, jobFailureRateDetector, retryWasteDetector, stageFailedDetector } from './detectors/reliability.ts';
-import {
-  autoscalingChurnDetector, cacheUtilizationDetector, cachingOpportunityDetector, coreLocalityDetector, memoryUtilizationDetector,
-  rightSizingDetector, utilizationDetector,
-} from './detectors/cost.ts';
-import {
-  broadcastSizingDetector, duplicatePlanSubtreeDetector, joinKeyCastDetector, mergeRewriteDetector, nestedLoopJoinDetector,
-  pythonUdfDetector, smallFilesDetector, unprunedScanDetector,
-} from './detectors/plan.ts';
-import {
-  configAuditAutoscaleBoundsDetector, configAuditMemoryOverheadDetector, configAuditSerializerDetector, incompleteRunDetector,
-} from './detectors/setup.ts';
+import * as skew from './detectors/skew/detect.ts';
+import * as stageShape from './detectors/stage-shape/detect.ts';
+import * as shuffle from './detectors/shuffle/detect.ts';
+import * as partitionSizing from './detectors/partition-sizing/detect.ts';
+import * as spill from './detectors/spill/detect.ts';
+import * as gc from './detectors/gc/detect.ts';
+import * as slowHost from './detectors/slow-host/detect.ts';
+import * as stageSlowness from './detectors/stage-slowness/detect.ts';
+import * as stageFailed from './detectors/stage-failed/detect.ts';
+import * as failures from './detectors/failures/detect.ts';
+import * as straggler from './detectors/straggler/detect.ts';
+import * as speculationWaste from './detectors/speculation-waste/detect.ts';
+import * as retryWaste from './detectors/retry-waste/detect.ts';
+import * as tinyTask from './detectors/tiny-task/detect.ts';
+import * as incompleteRun from './detectors/incomplete-run/detect.ts';
+import * as coldStart from './detectors/cold-start/detect.ts';
+import * as utilization from './detectors/utilization/detect.ts';
+import * as rightSizing from './detectors/right-sizing/detect.ts';
+import * as memoryUtilization from './detectors/memory-utilization/detect.ts';
+import * as cacheUtilization from './detectors/cache-utilization/detect.ts';
+import * as coreLocality from './detectors/core-locality/detect.ts';
+import * as autoscalingChurn from './detectors/autoscaling-churn/detect.ts';
+import * as cachingOpportunity from './detectors/caching-opportunity/detect.ts';
+import * as jobFailureRate from './detectors/job-failure-rate/detect.ts';
+import * as configAudit from './detectors/config-audit/detect.ts';
+import * as duplicatePlanSubtree from './detectors/duplicate-plan-subtree/detect.ts';
+import * as smallFiles from './detectors/small-files/detect.ts';
+import * as broadcastSizing from './detectors/broadcast-sizing/detect.ts';
+import * as pythonUdf from './detectors/python-udf/detect.ts';
+import * as nestedLoopJoin from './detectors/nested-loop-join/detect.ts';
+import * as mergeRewrite from './detectors/merge-rewrite/detect.ts';
+import * as unprunedScan from './detectors/unpruned-scan/detect.ts';
+import * as joinKeyCast from './detectors/join-key-cast/detect.ts';
 import type { Detector, SkewThresholds } from './detectors/types.ts';
 import type { Finding } from './types.ts';
 
 // The order is the render order (see widget-rendering.md): `order` is a display field, and this
 // list's declaration order breaks ties between equal `order` values.
 export const DETECTORS = [
-  skewDetector,
-  stageShapeDetector,
-  shuffleDetector,
-  partitionSizingDetector,
-  spillDetector,
-  gcDetector,
-  slowHostDetector,
-  stageSlownessDetector,
-  stageFailedDetector,
-  failuresDetector,
-  stragglerDetector,
-  speculationWasteDetector,
-  retryWasteDetector,
-  tinyTaskDetector,
-  incompleteRunDetector,
-  coldStartDetector,
-  utilizationDetector,
-  rightSizingDetector,
-  memoryUtilizationDetector,
-  cacheUtilizationDetector,
-  coreLocalityDetector,
-  autoscalingChurnDetector,
-  cachingOpportunityDetector,
-  jobFailureRateDetector,
-  configAuditAutoscaleBoundsDetector,
-  configAuditSerializerDetector,
-  configAuditMemoryOverheadDetector,
-  duplicatePlanSubtreeDetector,
-  smallFilesDetector,
-  broadcastSizingDetector,
-  pythonUdfDetector,
-  nestedLoopJoinDetector,
-  mergeRewriteDetector,
-  unprunedScanDetector,
-  joinKeyCastDetector,
+  ...skew.detectors,
+  ...stageShape.detectors,
+  ...shuffle.detectors,
+  ...partitionSizing.detectors,
+  ...spill.detectors,
+  ...gc.detectors,
+  ...slowHost.detectors,
+  ...stageSlowness.detectors,
+  ...stageFailed.detectors,
+  ...failures.detectors,
+  ...straggler.detectors,
+  ...speculationWaste.detectors,
+  ...retryWaste.detectors,
+  ...tinyTask.detectors,
+  ...incompleteRun.detectors,
+  ...coldStart.detectors,
+  ...utilization.detectors,
+  ...rightSizing.detectors,
+  ...memoryUtilization.detectors,
+  ...cacheUtilization.detectors,
+  ...coreLocality.detectors,
+  ...autoscalingChurn.detectors,
+  ...cachingOpportunity.detectors,
+  ...jobFailureRate.detectors,
+  ...configAudit.detectors,
+  ...duplicatePlanSubtree.detectors,
+  ...smallFiles.detectors,
+  ...broadcastSizing.detectors,
+  ...pythonUdf.detectors,
+  ...nestedLoopJoin.detectors,
+  ...mergeRewrite.detectors,
+  ...unprunedScan.detectors,
+  ...joinKeyCast.detectors,
 ] as const satisfies readonly Detector[];
 
 /** The entry that emits each finding type: the one whose estimate prices it and whose thresholds

@@ -30,6 +30,7 @@ import type {
   TunedThresholds, Remediation,
 } from './types.ts';
 import type { AllKeys } from './finding-types.ts';
+import { EVIDENCE_KEYS } from './finding-meta.ts';
 
 export const EVIDENCE_SCHEMA_VERSION: number = 5;
 
@@ -203,52 +204,6 @@ export interface EvidenceReportJson {
   cleanChecks: CleanCheckEntry[];
   notRunChecks: NotRunCheckEntry[];
 }
-
-// Each finding type's public evidence fields: exactly the keys of its FindingEvidenceMap entry
-// (finding-types.ts), checked both ways at compile time. A field a detector adds for another core
-// module (stageShape's totalCores, utilization's unrounded fraction) is left off both, so it never
-// reaches the report; adding, renaming or dropping a key here changes the report contract.
-const EVIDENCE_KEYS = {
-  skew: ['origin', 'aqeSkew', 'cause', 'dataRatio'],
-  stageShape: ['rule'],
-  shuffle: ['partitions'],
-  partitionSizing: ['rule', 'origin', 'aqeSkew', 'singleKey', 'partitions'],
-  spill: ['spillMagnitude', 'reads', 'spillToInputRatio', 'wideRows', 'operators', 'exchanges', 'sqlDescription'],
-  gc: ['direction'],
-  slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'executorCount', 'taskCount'],
-  stageSlowness: ['reads'],
-  stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
-  failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
-  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin', 'aqeSkew', 'cause', 'causeSharePct', 'host', 'hostTasks', 'cpuPct'],
-  speculationWaste: [],
-  retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
-  tinyTask: ['reads'],
-  incompleteRun: [],
-  coldStart: ['dynamicAllocation'],
-  utilization: ['cpuUtilizationPct'],
-  rightSizing: ['observedCores', 'observedActiveMs', 'modeledActiveMs', 'modelErrorPct'],
-  memoryUtilization: ['variant', 'rule', 'executorId', 'heap', 'dataUnavailable'],
-  cacheUtilization: [
-    'variant', 'rddId', 'rddName', 'memorySize', 'diskSize', 'numCachedPartitions', 'numPartitions', 'dataUnavailable',
-  ],
-  coreLocality: ['nonLocalTaskCount'],
-  autoscalingChurn: ['shortLivedExecutorCount', 'dynamicAllocation'],
-  cachingOpportunity: ['variant', 'relation', 'format', 'relations', 'operator', 'executionIds', 'totalReadBytes'],
-  jobFailureRate: ['failedJobs', 'totalJobs', 'failedTasks', 'totalTasks', 'avgJobDurationMs', 'taskFailureRate'],
-  configAudit: ['property'],
-  duplicatePlanSubtree: [
-    'executionId', 'stageIds', 'stageShares', 'occurrencesIdentical', 'readsDifferentVersions', 'rootAction', 'rootName', 'subtreeSize', 'sampleRelation',
-    'groupIndex',
-  ],
-  smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
-  mergeRewrite: ['executionId', 'stageIds', 'rule', 'rewrittenRows', 'changedRows', 'filesBefore', 'filesAfter', 'partitionsScanned', 'partitionsTouched', 'target'],
-  unprunedScan: ['executionId', 'stageIds', 'relation', 'partitionsRead', 'dataFilters'],
-  pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
-  nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
-  joinKeyCast: ['executionId', 'stageIds', 'nodeName', 'castKeys', 'exchangeKeys'],
-  underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'joinType', 'buildSide', 'broadcastThreshold'],
-  overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
-} as const satisfies { [T in FindingType]: readonly AllKeys<FindingEvidenceMap[T]>[] };
 
 // The other direction: an evidence field EVIDENCE_KEYS doesn't list fails here.
 type UnlistedEvidenceKey = {

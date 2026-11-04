@@ -18,5 +18,5 @@ function Row({ row: { finding, stated }, appModel }: FindingRowProps<StageSlowne
 }
 
 /** A stage whose wall-clock duration crossed the absolute-duration floor, suppressed when `slowHost`
- * already fired for the same stage (see `suppressedBy` on the entry in `detectors/speed-stages.ts`). */
+ * already fired for the same stage (see `suppressedBy` on the entry in `detectors/stage-slowness/detect.ts`). */
 export const StageSlowness = defineFindingWidget(stageSlownessModel, { Row });

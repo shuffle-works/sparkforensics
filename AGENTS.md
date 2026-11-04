@@ -58,8 +58,8 @@ build config needs a `.changeset/*.md` (`scripts/check-changeset.sh`,
   `--thresholds` overrides them, through `analyze()`'s `thresholds` option.
   Read `architecture/detector-contract.md` and `architecture/widget-rendering.md`
   before adding a detector, changing a threshold or changing render order.
-  Each finding type's name, tag, family, one-sentence pitch and summary is one row in
-  `packages/core/src/finding-presentation.ts` (the pitch uses generic Spark terms only); its widget is in
+  Each finding type's name, tag, family, one-sentence pitch and summary is one row in its
+  `packages/core/src/detectors/<type>/presentation.ts` (the pitch uses generic Spark terms only); its widget is in
   `src/view/detector-registry.tsx`'s `REGISTRY`.
 - Detector catalog: `buildDetectorCatalog()` (`packages/core/src/detector-listing.ts`) feeds
   the `list_detectors` MCP tool, the CLI `detectors` subcommand and the generated

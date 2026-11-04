@@ -1,15 +1,48 @@
-// Per-detector finding shapes. `Finding` is a union discriminated on `type`, one member per
-// emitted finding type; `FindingType` (detectors.ts) derives the same set from `DETECTORS`' `emits`
-// lists, and a compile-time check there keeps the two equal.
+// The finding shapes. Each detector folder (detectors/<type>/detect.ts) declares its own members:
+// `<Type>Evidence` is the public part, the fields the evidence report publishes (the folder's
+// `evidenceKeys` must list every one of them), and anything declared only on `<Type>Finding` is
+// internal, read by another core module (the impact estimator, mostly) and never published.
+// Renaming or removing an evidence field is a breaking change to the report and needs an
+// EVIDENCE_SCHEMA_VERSION bump.
 //
-// Each member is split in two: `<Type>Evidence` is the public part, the fields the evidence report
-// publishes as a finding row's `evidence` (EVIDENCE_KEYS in evidence-report.ts must list every one of
-// them), and anything declared only on `<Type>Finding` is internal, read by another core module (the
-// impact estimator, mostly) and never published. Renaming or removing an evidence field is a
-// breaking change to the report and needs an EVIDENCE_SCHEMA_VERSION bump.
-import type { MetricName } from './finding-presentation.ts';
-import type { ImpactBand, ImpactEstimate, StageId } from './types.ts';
-import type { TaskFailureGroup } from './task-failure.ts';
+// This module holds what several detectors share, re-exports every member so the `types` entry
+// point exports them, and assembles `Finding`, a union discriminated on `type`, from each folder's
+// `Emits`. `FindingType` (detectors.ts) derives the same set from `DETECTORS`' `emits` lists, and a
+// compile-time check there keeps the two equal.
+
+import type * as skew from './detectors/skew/detect.ts';
+import type * as stageShape from './detectors/stage-shape/detect.ts';
+import type * as shuffle from './detectors/shuffle/detect.ts';
+import type * as partitionSizing from './detectors/partition-sizing/detect.ts';
+import type * as spill from './detectors/spill/detect.ts';
+import type * as gc from './detectors/gc/detect.ts';
+import type * as slowHost from './detectors/slow-host/detect.ts';
+import type * as stageSlowness from './detectors/stage-slowness/detect.ts';
+import type * as stageFailed from './detectors/stage-failed/detect.ts';
+import type * as failures from './detectors/failures/detect.ts';
+import type * as straggler from './detectors/straggler/detect.ts';
+import type * as speculationWaste from './detectors/speculation-waste/detect.ts';
+import type * as retryWaste from './detectors/retry-waste/detect.ts';
+import type * as tinyTask from './detectors/tiny-task/detect.ts';
+import type * as incompleteRun from './detectors/incomplete-run/detect.ts';
+import type * as coldStart from './detectors/cold-start/detect.ts';
+import type * as utilization from './detectors/utilization/detect.ts';
+import type * as rightSizing from './detectors/right-sizing/detect.ts';
+import type * as memoryUtilization from './detectors/memory-utilization/detect.ts';
+import type * as cacheUtilization from './detectors/cache-utilization/detect.ts';
+import type * as coreLocality from './detectors/core-locality/detect.ts';
+import type * as autoscalingChurn from './detectors/autoscaling-churn/detect.ts';
+import type * as cachingOpportunity from './detectors/caching-opportunity/detect.ts';
+import type * as jobFailureRate from './detectors/job-failure-rate/detect.ts';
+import type * as configAudit from './detectors/config-audit/detect.ts';
+import type * as duplicatePlanSubtree from './detectors/duplicate-plan-subtree/detect.ts';
+import type * as smallFiles from './detectors/small-files/detect.ts';
+import type * as mergeRewrite from './detectors/merge-rewrite/detect.ts';
+import type * as unprunedScan from './detectors/unpruned-scan/detect.ts';
+import type * as pythonUdf from './detectors/python-udf/detect.ts';
+import type * as nestedLoopJoin from './detectors/nested-loop-join/detect.ts';
+import type * as joinKeyCast from './detectors/join-key-cast/detect.ts';
+import type * as broadcastSizing from './detectors/broadcast-sizing/detect.ts';
 
 /** One concrete change a finding's fix makes, alongside its prose `recommendation`. Entries are
  * applied together unless the recommendation words them as alternatives ("either ... or"), as an
@@ -32,29 +65,6 @@ export interface CodeRemediation {
   hint: string;
 }
 
-// The columns every finding carries, whatever its detector.
-interface FindingCore<T extends string> {
-  id?: string;
-  detectorVersion?: number;
-  type: T;
-  // Optional (not just nullable): config-scope findings key on `property` and sql-scope findings
-  // on `executionId`/`stageIds`, never setting a `stageId`. `auditConfig` backfills `null` for
-  // config-scope findings, but sql-scope findings reach consumers with the key absent.
-  stageId?: StageId | null;
-  impactBand: ImpactBand;
-  metric?: MetricName;
-  recommendation?: string;
-  // Structured form of the property changes `recommendation` names; absent when it names none.
-  remediation?: Remediation[];
-  docAnchor?: string;
-  confidence?: string;
-  validationRequired?: string;
-  impactEstimate?: ImpactEstimate;
-  // Set only when the CLI or MCP server ran this finding's detector with a user override that
-  // differs from the specification default: each overridden threshold, keyed by name.
-  tunedThresholds?: TunedThresholds;
-}
-
 /** One overridden threshold: the value the detector ran with, and its specification default. */
 export interface TunedThreshold {
   value: number | readonly number[];
@@ -62,20 +72,6 @@ export interface TunedThreshold {
 }
 
 export type TunedThresholds = Readonly<Record<string, TunedThreshold>>;
-
-// A finding whose `value` is a magnitude (a ratio, byte count, percentage, duration...). Absent on
-// an evidence caveat, which has nothing to measure.
-interface NumericFinding<T extends string> extends FindingCore<T> {
-  value?: number;
-  valueText?: undefined;
-}
-
-// A finding whose observed value is display text (a failure reason, an audited config's current
-// value), carried in `valueText` so `value` stays numeric across every finding.
-interface TextFinding<T extends string> extends FindingCore<T> {
-  value?: undefined;
-  valueText: string;
-}
 
 // A failed or retried task attempt, as a stage keeps a bounded sample of them.
 export interface TaskAttemptSample {
@@ -121,550 +117,83 @@ export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPa
  * duration is known. */
 export type TailCause = 'data' | 'gc' | 'fetchWait' | 'host' | 'unexplained' | 'unattributed';
 
-export interface SkewEvidence {
-  origin?: SkewOrigin;
-  // Only on origin 'shuffleJoin' with AQE skew-join handling on and the join resolved from the plan.
-  aqeSkew?: AqeSkewCase;
-  // Always 'data'; a stage whose tail is not data, or has no measured cause, does not get a skew finding.
-  cause?: TailCause;
-  // Median over the slow tasks of how many times the median task's data each read.
-  dataRatio?: number;
-}
-export interface SkewFinding extends NumericFinding<'skew'>, SkewEvidence {}
-
-export interface StageShapeEvidence {
-  rule: 'lowParallelism' | 'dataExplosion' | 'taskStageSkew';
-}
-export interface StageShapeFinding extends NumericFinding<'stageShape'>, StageShapeEvidence {
-  // Absolute core count behind pRatio/taskStageSkew, for the impact estimator's idle-core-ms figure.
-  totalCores?: number;
-}
-
-export interface ShuffleEvidence {
-  partitions?: ShufflePartitions;
-}
-export interface ShuffleFinding extends NumericFinding<'shuffle'>, ShuffleEvidence {}
-
-export interface PartitionSizingEvidence {
-  rule: 'shufflePartitionSkew' | 'lowShuffleParallelism' | 'maxPartitionTooBig';
-  // Only on 'shufflePartitionSkew': see SkewOrigin and AqeSkewCase.
-  origin?: SkewOrigin;
-  aqeSkew?: AqeSkewCase;
-  // Only on 'shufflePartitionSkew': true when the median partition is empty and one partition holds
-  // nearly all the stage's shuffle read, so one key carries the shuffle.
-  singleKey?: true;
-  // Only on 'lowShuffleParallelism': see ShufflePartitions ('raise', 'aqeCoalesced' or 'ownPartitioning').
-  partitions?: ShufflePartitions;
-}
-export interface PartitionSizingFinding extends NumericFinding<'partitionSizing'>, PartitionSizingEvidence {}
-
-/** An operator of the spilling stage with the "spill size" the plan reports for it. A Sort under a
- * SortMergeJoin names it in `feeds`. */
-export interface SpillOperator {
-  nodeId: string;
-  name: string;
-  spillBytes: number;
-  feeds?: string;
-  // The operator's plan arguments (a Sort's keys, an aggregate's keys and functions), cut at a word near 300 characters.
-  arguments?: string;
-  // Sort only: true for a global sort (ORDER BY), false for one within each partition.
-  global?: boolean;
-}
-
-/** The columns of an exchange's rows and their estimated bytes per row ("data size" over shuffle
- * records written). Each is absent when unknown. */
-export interface ExchangeWidth {
-  columns?: number;
-  bytesPerRow?: number;
-}
-
-/** The width of an exchange an operator reads from, with its read half's plan node id. */
-export interface SpillExchange extends ExchangeWidth {
-  nodeId: string;
-  // The partitioning as the plan prints it (`hashpartitioning(k#1, 200)`) and its partition count.
-  partitioning?: string;
-  partitions?: number;
-  // Why Spark planned the shuffle. REPARTITION_BY_NUM is the job's own repartition(n), so
-  // spark.sql.shuffle.partitions does not change its count.
-  origin?: string;
-}
-
-export interface SpillEvidence {
-  spillMagnitude?: 'severe' | 'high' | 'medium';
-  // What the stage reads: shuffle-partition advice applies only to 'shuffle'.
-  reads?: StageReads;
-  // Memory spill over the stage's input plus shuffle read; absent when that input is small.
-  spillToInputRatio?: number;
-  // Set with the ratio: true from 10x, which means the rows are wide.
-  wideRows?: boolean;
-  // Up to five operators that report a spill size, largest first.
-  operators?: SpillOperator[];
-  // The exchanges those operators read.
-  exchanges?: SpillExchange[];
-  // Description of the SQL execution the stage belongs to, cut at a word near 200 characters.
-  sqlDescription?: string;
-}
-export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}
-
-export interface GcEvidence {
-  // Only on the low-GC (over-provisioned memory) branch.
-  direction?: 'low';
-}
-export interface GcFinding extends NumericFinding<'gc'>, GcEvidence {}
-
-// Three shapes: a slow host by mean task time (no `variant`, so the key is absent at runtime), a host
-// doing most of the stage's task time ('durationShare'), and an executor deviating on one dimension
-// ('multiDim').
-interface SlowHostByHostEvidence {
-  host: string;
-  hostTaskShare: number;
-  // The host's mean task duration, ms: `value` is a ratio or share.
-  hostMeanMs: number;
-}
-export interface SlowHostMeanTimeEvidence extends SlowHostByHostEvidence {
-  variant?: undefined;
-}
-export interface SlowHostDurationShareEvidence extends SlowHostByHostEvidence {
-  variant: 'durationShare';
-}
-export interface SlowHostMultiDimEvidence {
-  variant: 'multiDim';
-  dimension: 'taskTime' | 'inputBytes' | 'shuffleBytes' | 'storageMemory';
-  executorId: string;
-  // The deviating executor's raw magnitude in `dimension`'s unit (ms for taskTime, else bytes).
-  execMaxValue: number;
-  // taskTime only: how many executors the deviating one was picked from, and the stage's task
-  // count. The largest of N samples reaches a high ratio by chance more often as N grows.
-  executorCount?: number;
-  taskCount?: number;
-}
-export type SlowHostEvidence = SlowHostMeanTimeEvidence | SlowHostDurationShareEvidence | SlowHostMultiDimEvidence;
-export interface SlowHostMeanTimeFinding extends NumericFinding<'slowHost'>, SlowHostMeanTimeEvidence {}
-export interface SlowHostDurationShareFinding extends NumericFinding<'slowHost'>, SlowHostDurationShareEvidence {}
-export interface SlowHostMultiDimFinding extends NumericFinding<'slowHost'>, SlowHostMultiDimEvidence {}
-export type SlowHostFinding = SlowHostMeanTimeFinding | SlowHostDurationShareFinding | SlowHostMultiDimFinding;
-
-export interface StageSlownessEvidence {
-  // What the stage reads, which decides the fix: a shuffle, input files, or neither.
-  reads?: StageReads;
-}
-export interface StageSlownessFinding extends NumericFinding<'stageSlowness'>, StageSlownessEvidence {}
-
-export interface StageFailedEvidence {
-  variant: 'stageFailure';
-  numTasks: number;
-  memoryBytesSpilled: number;
-  failedTaskDetails: TaskAttemptSample[];
-}
-// valueText is the stage's recorded failure reason.
-export interface StageFailedFinding extends TextFinding<'stageFailed'>, StageFailedEvidence {}
-
-export interface FailuresEvidence {
-  failedTasks: number;
-  dominantReason: string | null;
-  dominantError: string | null;
-  // One entry per distinct error, most frequent first; otherFailedTasks counts the failed tasks
-  // no listed group covers.
-  failureGroups: TaskFailureGroup[];
-  otherFailedTasks: number;
-}
-export interface FailuresFinding extends NumericFinding<'failures'>, FailuresEvidence {}
-
-export interface StragglerEvidence {
-  // 'ratio' when only skew's duration gate admits the tail: value is its ratio, metric its name.
-  unit: 'count' | 'pct' | 'ratio';
-  speculativeTasks: number;
-  stragglerCount: number;
-  // The case the skew advice in the recommendation was written for (see SkewOrigin); set only
-  // when the cause is 'data'.
-  origin?: SkewOrigin;
-  aqeSkew?: AqeSkewCase;
-  // 'data' only on a tail skew's own gate does not admit: skew reports every other data-driven tail.
-  cause?: TailCause;
-  // Share (0-100) of the slow tasks' extra time that the cause accounts for.
-  causeSharePct?: number;
-  // Set when the cause is 'host': the host most of the slow tasks ran on, and how many did.
-  host?: string;
-  hostTasks?: number;
-  // The slow tasks' CPU time as a share (0-100) of their run time, when the log has CPU time.
-  cpuPct?: number;
-}
-export interface StragglerFinding extends NumericFinding<'straggler'>, StragglerEvidence {}
-
-export type SpeculationWasteEvidence = Record<never, never>;
-export interface SpeculationWasteFinding extends NumericFinding<'speculationWaste'>, SpeculationWasteEvidence {}
-
-export interface RetryWasteEvidence {
-  numTasks: number;
-  memoryBytesSpilled: number;
-  retriedTaskDetails: TaskAttemptSample[];
-}
-export interface RetryWasteFinding extends NumericFinding<'retryWaste'>, RetryWasteEvidence {
-  // The dashboard's longer explanation of the waste, display copy rather than evidence.
-  extended?: string;
-}
-
-export interface TinyTaskEvidence {
-  // What the stage reads: the shuffle-partition remedy applies only to 'shuffle'.
-  reads?: StageReads;
-}
-export interface TinyTaskFinding extends NumericFinding<'tinyTask'>, TinyTaskEvidence {}
-
-export type IncompleteRunEvidence = Record<never, never>;
-// valueText is always 'missing': the ApplicationEnd event the log lacks.
-export interface IncompleteRunFinding extends TextFinding<'incompleteRun'>, IncompleteRunEvidence {}
-
-export interface ColdStartEvidence {
-  // 'off' when the run's conf turns dynamic allocation off: no executor-count property applies.
-  dynamicAllocation?: 'on' | 'off';
-}
-export interface ColdStartFinding extends NumericFinding<'coldStart'>, ColdStartEvidence {}
-
-export interface UtilizationEvidence {
-  // CPU-time share of capacity, a companion to the busy-time `value`.
-  cpuUtilizationPct: number | null;
-}
-export interface UtilizationFinding extends NumericFinding<'utilization'>, UtilizationEvidence {
-  // Impact-estimator inputs: the unrounded `value`, the run's span, its peak cores, and the
-  // allocated core-milliseconds (cores x time alive) the busy time was measured against.
-  utilizationFraction: number;
-  appDurationMs: number;
-  totalCores: number;
-  allocatedCoreMs: number;
-}
-
-// `value` is the modeled core count: the smallest whose makespan stays within the detector's
-// tolerance of the observed stages-active time (`observedActiveMs`), `modeledActiveMs` at that count.
-export interface RightSizingEvidence {
-  observedCores: number;
-  observedActiveMs: number;
-  modeledActiveMs: number;
-  // Idealized makespan at `observedCores` against `observedActiveMs`: how far to trust the model.
-  modelErrorPct: number;
-}
-export interface RightSizingFinding extends NumericFinding<'rightSizing'>, RightSizingEvidence {}
-
-// Four shapes: idle core-time, the executor heap band (over-provisioned, or the caveat for a log
-// with no executor metrics) and the allocated-vs-used memory-time waste model.
-export interface MemoryIdleCoresEvidence {
-  variant: 'idleCores';
-}
-export interface MemoryIdleCoresFinding extends NumericFinding<'memoryUtilization'>, MemoryIdleCoresEvidence {
-  // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time.
-  idleRateFraction: number;
-  allocatedMBSeconds: number | null;
-}
-// The memoryBand caveat for a log with no executor metrics.
-export interface MemoryBandUnavailableEvidence {
-  variant: 'memoryBand';
-  rule?: undefined;
-  dataUnavailable: true;
-}
-export interface MemoryBandUnavailableFinding extends NumericFinding<'memoryUtilization'>, MemoryBandUnavailableEvidence {}
-export interface MemoryHeapOverProvisionedEvidence {
-  variant: 'memoryBand';
-  rule: 'heapOverProvisioned';
-  // The executor with the highest sampled heap peak.
-  executorId: string;
-  // That peak heap, bytes (a lower bound: Spark samples at heartbeat).
-  heap: number;
-  dataUnavailable?: undefined;
-}
-export interface MemoryHeapOverProvisionedFinding extends NumericFinding<'memoryUtilization'>, MemoryHeapOverProvisionedEvidence {
-  // Impact-estimator inputs behind the rounded ratio: the allocation, the executors with a
-  // measured peak, and the seconds the run's executors were alive.
-  allocatedBytes: number;
-  executorCount: number;
-  executorSeconds: number;
-}
-export interface MemoryWasteModelEvidence {
-  variant: 'wasteModel';
-}
-export interface MemoryWasteModelFinding extends NumericFinding<'memoryUtilization'>, MemoryWasteModelEvidence {
-  // Impact-estimator input: the run's allocated memory-time.
-  allocatedMBSeconds: number;
-}
-export type MemoryUtilizationEvidence =
-  | MemoryIdleCoresEvidence | MemoryBandUnavailableEvidence | MemoryHeapOverProvisionedEvidence | MemoryWasteModelEvidence;
-export type MemoryUtilizationFinding =
-  | MemoryIdleCoresFinding | MemoryBandUnavailableFinding | MemoryHeapOverProvisionedFinding | MemoryWasteModelFinding;
-
-// The cached RDD a partialCache or diskSpillover finding is about.
-interface CachedRddEvidence {
-  rddId: number;
-  rddName: string;
-  memorySize: number;
-  diskSize: number;
-  numCachedPartitions: number;
-  numPartitions: number;
-}
-export interface CachePartialCacheEvidence extends CachedRddEvidence {
-  variant: 'partialCache';
-}
-export interface CacheDiskSpilloverEvidence extends CachedRddEvidence {
-  variant: 'diskSpillover';
-}
-// The log has no cache-storage evidence at all.
-export interface CacheStorageUnobservedEvidence {
-  variant: 'storageUnobserved';
-  dataUnavailable: true;
-}
-export type CacheUtilizationEvidence = CachePartialCacheEvidence | CacheDiskSpilloverEvidence | CacheStorageUnobservedEvidence;
-export interface CachePartialCacheFinding extends NumericFinding<'cacheUtilization'>, CachePartialCacheEvidence {}
-export interface CacheDiskSpilloverFinding extends NumericFinding<'cacheUtilization'>, CacheDiskSpilloverEvidence {}
-export interface CacheStorageUnobservedFinding extends NumericFinding<'cacheUtilization'>, CacheStorageUnobservedEvidence {}
-export type CacheUtilizationFinding = CachePartialCacheFinding | CacheDiskSpilloverFinding | CacheStorageUnobservedFinding;
-
-export interface CoreLocalityEvidence {
-  nonLocalTaskCount: number;
-}
-export interface CoreLocalityFinding extends NumericFinding<'coreLocality'>, CoreLocalityEvidence {}
-
-export interface AutoscalingChurnEvidence {
-  shortLivedExecutorCount: number;
-  // 'off' when the run's conf turns dynamic allocation off: its properties have no effect.
-  dynamicAllocation?: 'on' | 'off';
-}
-export interface AutoscalingChurnFinding extends NumericFinding<'autoscalingChurn'>, AutoscalingChurnEvidence {}
-
-interface CachingReuseEvidence {
-  relation: string;
-  format: string;
-  executionIds: number[];
-  totalReadBytes: number;
-}
-// A relation scanned by several SQL executions (no `variant`, so the key is absent at runtime).
-export interface CachingRelationEvidence extends CachingReuseEvidence {
-  variant?: undefined;
-}
-// A join/union result several executions recompute, which lists its leaf relations.
-export interface CachingCompositeEvidence extends CachingReuseEvidence {
-  variant: 'composite';
-  relations: { relation: string; format: string }[];
-  operator: 'join' | 'union';
-}
-export type CachingOpportunityEvidence = CachingRelationEvidence | CachingCompositeEvidence;
-export interface CachingRelationFinding extends NumericFinding<'cachingOpportunity'>, CachingRelationEvidence {}
-export interface CachingCompositeFinding extends NumericFinding<'cachingOpportunity'>, CachingCompositeEvidence {}
-export type CachingOpportunityFinding = CachingRelationFinding | CachingCompositeFinding;
-
-export interface JobFailureRateEvidence {
-  failedJobs: number;
-  totalJobs: number;
-  failedTasks: number;
-  totalTasks: number;
-  // Mean wall-clock of the failed jobs that recorded both timestamps, ms (0 when none did).
-  avgJobDurationMs: number;
-  taskFailureRate: number;
-}
-export interface JobFailureRateFinding extends NumericFinding<'jobFailureRate'>, JobFailureRateEvidence {}
-
-export interface ConfigAuditEvidence {
-  property: string;
-}
-// valueText is the audited property's current value, or a note that it is unset.
-export interface ConfigAuditFinding extends TextFinding<'configAudit'>, ConfigAuditEvidence {}
-
-interface PlanFindingEvidence {
-  executionId: number;
-  stageIds: number[];
-}
-// View-layer plan-graph node ids the finding came from (plan-graph-model.ts). An array: a
-// duplicate subtree spans many nodes, and a broadcast finding can involve more than one.
-interface PlanNodeOrigin {
-  planNodeIds: string[];
-}
-
-export interface DuplicatePlanSubtreeEvidence extends PlanFindingEvidence {
-  // Share of each linked stage's operators that sit in the repeated subtree.
-  stageShares: Record<number, number>;
-  occurrencesIdentical: boolean;
-  readsDifferentVersions: boolean;
-  rootAction?: string;
-  rootName: string;
-  subtreeSize: number;
-  sampleRelation: string | null;
-  groupIndex: number;
-}
-export interface DuplicatePlanSubtreeFinding
-  extends NumericFinding<'duplicatePlanSubtree'>, DuplicatePlanSubtreeEvidence, PlanNodeOrigin {}
-
-export interface SmallFilesEvidence extends PlanFindingEvidence {
-  fileCount: number;
-  direction: 'read' | 'write';
-  nodeName: string;
-}
-export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
-
-/** A MergeIntoCommand that rewrote far more unmodified target rows than it changed (`rewrittenRows`),
- * or kept most target files after skipping although its changes touched few of the partitions it
- * scanned (`weakSkipping`). `value` is the unmodified rows rewritten, or the files kept. The file and
- * partition counts are null for a rule that does not read them. */
-export interface MergeRewriteEvidence extends PlanFindingEvidence {
-  rule: 'rewrittenRows' | 'weakSkipping';
-  rewrittenRows: number;
-  changedRows: number;
-  filesBefore: number | null;
-  filesAfter: number | null;
-  partitionsScanned: number | null;
-  partitionsTouched: number | null;
-  /** The table or path the MERGE writes, null when the log does not name exactly one. */
-  target: string | null;
-}
-export interface MergeRewriteFinding extends NumericFinding<'mergeRewrite'>, MergeRewriteEvidence, PlanNodeOrigin {}
-
-/** A scan of a partitioned table that filters the rows it reads but has no partition filter, one finding per table in an
- * execution. `value` is the bytes all its flagged scans read. The plan does not name the partition columns, so the finding asks
- * for confirmation. */
-export interface UnprunedScanEvidence extends PlanFindingEvidence {
-  /** The most partitions one scan read: scans of one table read the same partitions. */
-  partitionsRead: number;
-  /** The scan's row filters, without the null checks Spark adds. */
-  dataFilters: string[];
-  /** The scanned table or path, as the Sources list names it; the full path when two tables in the execution share that name. */
-  relation: string;
-}
-export interface UnprunedScanFinding extends NumericFinding<'unprunedScan'>, UnprunedScanEvidence, PlanNodeOrigin {}
-
-export interface PythonUdfEvidence extends PlanFindingEvidence {
-  // Bytes the executors sent to Python workers: the finding's `value`, repeated for the report.
-  dataSentBytes: number;
-  // Bytes the workers returned; null when the plan reports no such metric.
-  dataReturnedBytes: number | null;
-  // Summed wall-clock of the stages that ran the row-at-a-time UDFs, ms.
-  stageDurationMs: number;
-}
-export interface PythonUdfFinding extends NumericFinding<'pythonUdf'>, PythonUdfEvidence, PlanNodeOrigin {}
-/** A BroadcastNestedLoopJoin or CartesianProduct whose output is far larger than both inputs.
- * `nodeName` is the operator, `joinType` the Spark join type (null when the plan line has none)
- * and `condition` the join condition with expression ids removed (null for a join without one).
- * `leftRows` and `rightRows` are the input row counts the executors reported, null for a
- * CartesianProduct, which re-reads its inputs so their counts are not row counts. */
-export interface NestedLoopJoinEvidence extends PlanFindingEvidence {
-  nodeName: 'BroadcastNestedLoopJoin' | 'CartesianProduct';
-  joinType: string | null;
-  condition: string | null;
-  outputRows: number;
-  leftRows: number | null;
-  rightRows: number | null;
-}
-export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>, NestedLoopJoinEvidence, PlanNodeOrigin {}
-
-/** A shuffled join whose key carries a cast (two key columns of different types), followed by an
- * exchange on a column it cast, because the join's output is partitioned by the cast expression.
- * `value` is the data size of that exchange in bytes (0 when the log has none). `castKeys` and
- * `exchangeKeys` are plan expressions with expression ids removed. */
-export interface JoinKeyCastEvidence extends PlanFindingEvidence {
-  nodeName: 'SortMergeJoin' | 'ShuffledHashJoin';
-  castKeys: string[];
-  exchangeKeys: string[];
-}
-export interface JoinKeyCastFinding extends NumericFinding<'joinKeyCast'>, JoinKeyCastEvidence, PlanNodeOrigin {}
-
-/** How the effective broadcast threshold (spark.sql.autoBroadcastJoinThreshold, or its adaptive counterpart under AQE) relates to the finding: 'limits' (the
- * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
- * broadcast, so something else decided it) or 'disabled' (-1). */
-export type BroadcastThreshold = 'limits' | 'notLimiting' | 'disabled';
-
-export interface UnderBroadcastEvidence extends PlanFindingEvidence {
-  /** The join's other, larger side (`value` is the smaller, build side). */
-  largerSideBytes: number;
-  /** The join type and the side a broadcast would build from, the smaller of those the type allows. */
-  joinType: string;
-  buildSide: 'left' | 'right';
-  broadcastThreshold?: BroadcastThreshold;
-}
-export interface UnderBroadcastFinding extends NumericFinding<'underBroadcast'>, UnderBroadcastEvidence, PlanNodeOrigin {}
-
-export interface OverBroadcastEvidence extends PlanFindingEvidence {
-  broadcastThreshold?: BroadcastThreshold;
-}
-export interface OverBroadcastFinding extends NumericFinding<'overBroadcast'>, OverBroadcastEvidence, PlanNodeOrigin {}
-
-/** Public evidence fields per finding type: what a report row's `evidence` carries. */
-export interface FindingEvidenceMap {
-  skew: SkewEvidence;
-  stageShape: StageShapeEvidence;
-  shuffle: ShuffleEvidence;
-  partitionSizing: PartitionSizingEvidence;
-  spill: SpillEvidence;
-  gc: GcEvidence;
-  slowHost: SlowHostEvidence;
-  stageSlowness: StageSlownessEvidence;
-  stageFailed: StageFailedEvidence;
-  failures: FailuresEvidence;
-  straggler: StragglerEvidence;
-  speculationWaste: SpeculationWasteEvidence;
-  retryWaste: RetryWasteEvidence;
-  tinyTask: TinyTaskEvidence;
-  incompleteRun: IncompleteRunEvidence;
-  coldStart: ColdStartEvidence;
-  utilization: UtilizationEvidence;
-  rightSizing: RightSizingEvidence;
-  memoryUtilization: MemoryUtilizationEvidence;
-  cacheUtilization: CacheUtilizationEvidence;
-  coreLocality: CoreLocalityEvidence;
-  autoscalingChurn: AutoscalingChurnEvidence;
-  cachingOpportunity: CachingOpportunityEvidence;
-  jobFailureRate: JobFailureRateEvidence;
-  configAudit: ConfigAuditEvidence;
-  duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
-  smallFiles: SmallFilesEvidence;
-  mergeRewrite: MergeRewriteEvidence;
-  unprunedScan: UnprunedScanEvidence;
-  pythonUdf: PythonUdfEvidence;
-  nestedLoopJoin: NestedLoopJoinEvidence;
-  joinKeyCast: JoinKeyCastEvidence;
-  underBroadcast: UnderBroadcastEvidence;
-  overBroadcast: OverBroadcastEvidence;
-}
-
-export type Finding =
-  | SkewFinding
-  | StageShapeFinding
-  | ShuffleFinding
-  | PartitionSizingFinding
-  | SpillFinding
-  | GcFinding
-  | SlowHostMeanTimeFinding
-  | SlowHostDurationShareFinding
-  | SlowHostMultiDimFinding
-  | StageSlownessFinding
-  | StageFailedFinding
-  | FailuresFinding
-  | StragglerFinding
-  | SpeculationWasteFinding
-  | RetryWasteFinding
-  | TinyTaskFinding
-  | IncompleteRunFinding
-  | ColdStartFinding
-  | UtilizationFinding
-  | RightSizingFinding
-  | MemoryIdleCoresFinding
-  | MemoryBandUnavailableFinding
-  | MemoryHeapOverProvisionedFinding
-  | MemoryWasteModelFinding
-  | CachePartialCacheFinding
-  | CacheDiskSpilloverFinding
-  | CacheStorageUnobservedFinding
-  | CoreLocalityFinding
-  | AutoscalingChurnFinding
-  | CachingRelationFinding
-  | CachingCompositeFinding
-  | JobFailureRateFinding
-  | ConfigAuditFinding
-  | DuplicatePlanSubtreeFinding
-  | SmallFilesFinding
-  | MergeRewriteFinding
-  | UnprunedScanFinding
-  | PythonUdfFinding
-  | NestedLoopJoinFinding
-  | JoinKeyCastFinding
-  | UnderBroadcastFinding
-  | OverBroadcastFinding;
-
 /** Every key of any member of a union: `keyof` alone sees only the keys the members share. */
 export type AllKeys<U> = U extends unknown ? keyof U : never;
 
 /** The finding member for one `type`. */
 export type FindingOf<T extends Finding['type']> = Extract<Finding, { type: T }>;
+
+export type { SpillOperator, ExchangeWidth, SpillExchange, SpillEvidence, SpillFinding } from './detectors/spill/detect.ts';
+export type { GcEvidence, GcFinding } from './detectors/gc/detect.ts';
+export type { StageShapeEvidence, StageShapeFinding } from './detectors/stage-shape/detect.ts';
+export type { ShuffleEvidence, ShuffleFinding } from './detectors/shuffle/detect.ts';
+export type { PartitionSizingEvidence, PartitionSizingFinding } from './detectors/partition-sizing/detect.ts';
+export type { StageSlownessEvidence, StageSlownessFinding } from './detectors/stage-slowness/detect.ts';
+export type { TinyTaskEvidence, TinyTaskFinding } from './detectors/tiny-task/detect.ts';
+export type { ColdStartEvidence, ColdStartFinding } from './detectors/cold-start/detect.ts';
+export type { SlowHostMeanTimeEvidence, SlowHostDurationShareEvidence, SlowHostMultiDimEvidence, SlowHostEvidence, SlowHostMeanTimeFinding, SlowHostDurationShareFinding, SlowHostMultiDimFinding, SlowHostFinding } from './detectors/slow-host/detect.ts';
+export type { StragglerEvidence, StragglerFinding } from './detectors/straggler/detect.ts';
+export type { SkewEvidence, SkewFinding } from './detectors/skew/detect.ts';
+export type { SpeculationWasteEvidence, SpeculationWasteFinding } from './detectors/speculation-waste/detect.ts';
+export type { FailuresEvidence, FailuresFinding } from './detectors/failures/detect.ts';
+export type { StageFailedEvidence, StageFailedFinding } from './detectors/stage-failed/detect.ts';
+export type { RetryWasteEvidence, RetryWasteFinding } from './detectors/retry-waste/detect.ts';
+export type { JobFailureRateEvidence, JobFailureRateFinding } from './detectors/job-failure-rate/detect.ts';
+export type { MemoryIdleCoresEvidence, MemoryIdleCoresFinding, MemoryBandUnavailableEvidence, MemoryBandUnavailableFinding, MemoryHeapOverProvisionedEvidence, MemoryHeapOverProvisionedFinding, MemoryWasteModelEvidence, MemoryWasteModelFinding, MemoryUtilizationEvidence, MemoryUtilizationFinding } from './detectors/memory-utilization/detect.ts';
+export type { CachePartialCacheEvidence, CacheDiskSpilloverEvidence, CacheStorageUnobservedEvidence, CacheUtilizationEvidence, CachePartialCacheFinding, CacheDiskSpilloverFinding, CacheStorageUnobservedFinding, CacheUtilizationFinding } from './detectors/cache-utilization/detect.ts';
+export type { CoreLocalityEvidence, CoreLocalityFinding } from './detectors/core-locality/detect.ts';
+export type { UtilizationEvidence, UtilizationFinding } from './detectors/utilization/detect.ts';
+export type { RightSizingEvidence, RightSizingFinding } from './detectors/right-sizing/detect.ts';
+export type { AutoscalingChurnEvidence, AutoscalingChurnFinding } from './detectors/autoscaling-churn/detect.ts';
+export type { CachingRelationEvidence, CachingCompositeEvidence, CachingOpportunityEvidence, CachingRelationFinding, CachingCompositeFinding, CachingOpportunityFinding } from './detectors/caching-opportunity/detect.ts';
+export type { BroadcastThreshold, UnderBroadcastEvidence, UnderBroadcastFinding, OverBroadcastEvidence, OverBroadcastFinding } from './detectors/broadcast-sizing/detect.ts';
+export type { DuplicatePlanSubtreeEvidence, DuplicatePlanSubtreeFinding } from './detectors/duplicate-plan-subtree/detect.ts';
+export type { PythonUdfEvidence, PythonUdfFinding } from './detectors/python-udf/detect.ts';
+export type { SmallFilesEvidence, SmallFilesFinding } from './detectors/small-files/detect.ts';
+export type { NestedLoopJoinEvidence, NestedLoopJoinFinding } from './detectors/nested-loop-join/detect.ts';
+export type { MergeRewriteEvidence, MergeRewriteFinding } from './detectors/merge-rewrite/detect.ts';
+export type { UnprunedScanEvidence, UnprunedScanFinding } from './detectors/unpruned-scan/detect.ts';
+export type { JoinKeyCastEvidence, JoinKeyCastFinding } from './detectors/join-key-cast/detect.ts';
+export type { ConfigAuditEvidence, ConfigAuditFinding } from './detectors/config-audit/detect.ts';
+export type { IncompleteRunEvidence, IncompleteRunFinding } from './detectors/incomplete-run/detect.ts';
+
+/** What every detector emits, merged from the detector folders. */
+type Emitted =
+  skew.Emits &
+  stageShape.Emits &
+  shuffle.Emits &
+  partitionSizing.Emits &
+  spill.Emits &
+  gc.Emits &
+  slowHost.Emits &
+  stageSlowness.Emits &
+  stageFailed.Emits &
+  failures.Emits &
+  straggler.Emits &
+  speculationWaste.Emits &
+  retryWaste.Emits &
+  tinyTask.Emits &
+  incompleteRun.Emits &
+  coldStart.Emits &
+  utilization.Emits &
+  rightSizing.Emits &
+  memoryUtilization.Emits &
+  cacheUtilization.Emits &
+  coreLocality.Emits &
+  autoscalingChurn.Emits &
+  cachingOpportunity.Emits &
+  jobFailureRate.Emits &
+  configAudit.Emits &
+  duplicatePlanSubtree.Emits &
+  smallFiles.Emits &
+  mergeRewrite.Emits &
+  unprunedScan.Emits &
+  pythonUdf.Emits &
+  nestedLoopJoin.Emits &
+  joinKeyCast.Emits &
+  broadcastSizing.Emits;
+
+/** Public evidence fields per finding type: what a report row's `evidence` carries. */
+export type FindingEvidenceMap = { [T in keyof Emitted]: Emitted[T]['evidence'] };
+
+export type Finding = Emitted[keyof Emitted]['finding'];

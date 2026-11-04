@@ -34,10 +34,16 @@ export const LIVE_ONLY_MODULES = [
 
 const CORE_PREFIX = 'packages/core/';
 
+/** The presentation half of each detector folder and its shared helpers: `finding-presentation.ts`
+ * assembles them, and they import detector code only as types. */
+const DETECTOR_PRESENTATION = /^packages\/core\/src\/detectors\/(?:[a-z-]+\/presentation|presentation-shared)\.ts$/;
+
 /** Why `module` may not be in the export graph, or null when it may. */
 export function exportModuleViolation(module) {
   if (LIVE_ONLY_MODULES.includes(module)) return 'live-only module';
-  if (module.startsWith(CORE_PREFIX) && !ALLOWED_EXPORT_CORE_MODULES.includes(module)) return 'core module not on the export allowlist';
+  if (module.startsWith(CORE_PREFIX) && !ALLOWED_EXPORT_CORE_MODULES.includes(module) && !DETECTOR_PRESENTATION.test(module)) {
+    return 'core module not on the export allowlist';
+  }
   return null;
 }
 
