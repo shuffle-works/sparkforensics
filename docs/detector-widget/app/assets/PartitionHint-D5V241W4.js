@@ -1,0 +1,1 @@
+import{Qt as e}from"./finding-widget-Dko0c16-.js";var t=e();function n({hint:e}){return(0,t.jsxs)(`p`,{className:`text-xs text-muted-foreground`,children:[`Try `,(0,t.jsxs)(`code`,{children:[`spark.sql.shuffle.partitions = `,e.recommended]}),` (now `,e.current,` tasks; target 128 MB per partition)`]})}export{n as t};

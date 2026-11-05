@@ -1,0 +1,3 @@
+var e=`[redacted]`;function t(e){return e.className?e.className:e.lossReason?e.reason?`${e.reason}: ${e.lossReason}`:e.lossReason:e.reason}var n=/^\s*(?:at \S.*|\.\.\.(?: \d+ more)?)$/,r=/^((?:Caused by: |Suppressed: )?[\w$]+(?:\.[\w$]+)+)(?::.*)?$/;function i(e){let t=[];for(let i of e.split(`
+`)){if(n.test(i)){t.push(i);continue}let e=r.exec(i.trim());e&&t.push(e[1])}return t.join(`
+`)}function a(t){return{...t,message:t.message==null?null:e,stackExcerpt:t.stackExcerpt==null?null:i(t.stackExcerpt)}}function o(e){let t=e.className??e.reason??`Unknown failure`,n=[e.message,e.lossReason].filter(e=>e!=null).join(` · `);return n?`${t}: ${n}`:t}export{a as i,t as n,o as r,e as t};
