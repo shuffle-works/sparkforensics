@@ -52,7 +52,7 @@ describe('failedDependency', () => {
 });
 
 describe('published package licenses', () => {
-  // MIT asks for the notice to travel with every copy.
+  // FSL-1.1-MIT asks for the terms to travel with every copy.
   it.each(PACKAGES)('packages/%s packs LICENSE into its tarball', (pkg) => {
     const [packed] = JSON.parse(
       execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {

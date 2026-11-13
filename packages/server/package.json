@@ -2,7 +2,7 @@
   "name": "sparkforensics-server",
   "version": "0.10.1",
   "type": "module",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "description": "Local companion server for the SparkForensics dashboard: serves the app and proxies Spark History Server fetches to avoid browser CORS restrictions.",
   "repository": {
     "type": "git",

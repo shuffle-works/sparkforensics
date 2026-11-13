@@ -8,7 +8,7 @@
     ".",
     "packages/*"
   ],
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "author": "Agustin Recoba",
   "repository": {
     "type": "git",
