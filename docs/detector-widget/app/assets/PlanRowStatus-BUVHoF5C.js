@@ -1,0 +1,1 @@
+import{Qt as e}from"./finding-widget-Dko0c16-.js";import{i as t}from"./board-layout-C1zUK5P-.js";var n=e();function r({rows:e,density:r}){if(r!==`advanced`)return null;let i=e.every(({finding:t})=>t.confidence===e[0].finding.confidence)?e[0].finding:void 0;return(0,n.jsx)(t,{confidence:i?.confidence,validationRequired:i?.validationRequired,evidenceKey:`sqlPlan`})}export{r as t};

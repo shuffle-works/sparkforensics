@@ -1,0 +1,1 @@
+import{i as e}from"./react-vendor-C8VKIrl-.js";import{o as t}from"./board-layout-CJB47NA1.js";var n=e();function r({rows:e,density:r}){if(r!==`advanced`)return null;let i=e.every(({finding:t})=>t.confidence===e[0].finding.confidence)?e[0].finding:void 0;return(0,n.jsx)(t,{confidence:i?.confidence,validationRequired:i?.validationRequired,evidenceKey:`sqlPlan`})}export{r as t};

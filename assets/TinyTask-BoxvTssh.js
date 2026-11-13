@@ -1,0 +1,1 @@
+import{t as e}from"./finding-widget-Tj5Lcj4l.js";import{l as t}from"./detector-registry-CxnHaOEY.js";import{t as n}from"./StageGroup-BXKcho4A.js";var r=e(t,{Row:n});export{r as TinyTask};
