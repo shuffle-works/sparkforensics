@@ -1,5 +1,11 @@
 # sparkforensics-mcp
 
+## 0.12.2
+
+### Patch Changes
+
+- 023cb51: Relicense under FSL-1.1-MIT.
+
 ## 0.12.1
 
 ### Patch Changes
