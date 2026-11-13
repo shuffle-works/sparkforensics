@@ -1,5 +1,13 @@
 # sparkforensics
 
+## 0.12.2
+
+### Patch Changes
+
+- 023cb51: Relicense under FSL-1.1-MIT.
+- Updated dependencies [023cb51]
+  - sparkforensics-cli@0.12.2
+
 ## 0.12.1
 
 ### Patch Changes
