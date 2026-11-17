@@ -163,13 +163,25 @@ finding:
 - `memoryBytesSpilled`: `stage.memoryBytesSpilled` at detection time.
 - `stageFailed` only: `failedTaskDetails`: up to 20 `FailedTaskSample`
   records (`taskId`, `attemptNumber`, `host`, `executorId`, `reason`,
-  `peakExecMem`, `memSpilled`, `shuffleWrite`) for tasks still marked
-  failed when the stage was finalized (`finalizeStage`, `stage-quantiles.ts`).
+  `lossReason`, `exitCausedByApp`, `peakExecMem`, `memSpilled`,
+  `shuffleWrite`) for tasks still marked failed when the stage was finalized
+  (`finalizeStage`, `stage-quantiles.ts`). `lossReason` and `exitCausedByApp`
+  are set for `ExecutorLostFailure` attempts: `exitCausedByApp: false` means
+  Spark does not count the loss toward `spark.task.maxFailures`.
 - `retryWaste` only: `retriedTaskDetails`: up to 20 `FailedTaskSample`
   records for attempts discarded by the retry-dedup logic in
   `accumulateTask` (`event-handlers.ts`): captured at the moment they'd
   otherwise be thrown away, since by finalize time only the winning attempt
   survives.
+- `retryWaste` only: `executorLosses`: the `ExecutorLostFailure` attempts
+  among the discarded ones, one group per executor, loss reason and
+  `exitCausedByApp` value, with a `count`, most frequent first. Counts cover
+  every discarded attempt of the first 50 groups seen per stage
+  (`MAX_FAILURE_DETAILS_PER_STAGE`); later groups are not listed. The
+  recommendation says the losses are unrelated to the running tasks and gives
+  no application fix only when every discarded attempt is a listed loss with
+  `exitCausedByApp: false`. When only some losses are, it keeps the
+  application advice and adds a caveat.
 
 Both sample arrays are capped at 20 entries, filled in first-encountered
 order (finalize order for `failedTaskDetails`, discard order for

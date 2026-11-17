@@ -1,7 +1,7 @@
 import { coreCountHistogram } from './core-time-series.ts';
 import type { FailedTaskSample, StageRecord } from './event-handlers.ts';
 import { medianOfSorted } from './median.ts';
-import type { TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
+import type { ExecutorLossGroup, TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
 import type { StageAttemptTotals, TailAttribution } from './types.ts';
 
 // Single source of truth for the packed per-task numeric array: FIELDS (offset
@@ -141,6 +141,8 @@ export interface FinalizedStage {
   failureGroups: TaskFailureGroup[];
   // Failures of the attempts a retry superseded, most frequent first.
   retryFailureGroups: TaskFailureGroup[];
+  // Executor losses among them, by executor and cause, most frequent first.
+  retryExecutorLosses: ExecutorLossGroup[];
   localityStats: StageLocalityStat[];
   failedTaskSamples: FailedTaskSample[];
   retryTaskSamples: FailedTaskSample[];
@@ -189,7 +191,8 @@ export function finalizeStage(
       if (failedTaskSamples.length < MAX_TASK_SAMPLES) {
         failedTaskSamples.push({
           taskId: t.taskId, attemptNumber: t.attemptNumber, host: t.host, executorId: t.executorId,
-          reason: t.reason, peakExecMem: t.peakExecMem, memSpilled: t.memSpilled, shuffleWrite: t.shuffleWrite,
+          reason: t.reason, lossReason: failure?.lossReason ?? null, exitCausedByApp: failure?.exitCausedByApp ?? null,
+          peakExecMem: t.peakExecMem, memSpilled: t.memSpilled, shuffleWrite: t.shuffleWrite,
         });
       }
     }
@@ -292,6 +295,7 @@ export function finalizeStage(
   const retryFailureGroups: TaskFailureGroup[] = [...stage.retryFailures.entries()]
     .map(([detail, count]) => ({ ...detail, count }))
     .sort((a, b) => b.count - a.count);
+  const retryExecutorLosses = [...stage.retryExecutorLosses.values()].sort((a, b) => b.count - a.count);
   const localityStatsArr = [...localityStats.entries()].map(
     ([locality, count]) => ({ locality, count })
   );
@@ -325,6 +329,7 @@ export function finalizeStage(
     failureReasons: failureReasonsArr,
     failureGroups: failureGroupsArr,
     retryFailureGroups,
+    retryExecutorLosses,
     localityStats: localityStatsArr,
     failedTaskSamples,
     retryTaskSamples: stage.retryTaskSamples,

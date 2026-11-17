@@ -2,7 +2,9 @@
 // Spark's `Reason` is only the end-reason tag (ExceptionFailure, ExecutorLostFailure, ...); the
 // real error lives in tag-specific fields (JsonProtocol.taskEndReasonToJson):
 //   ExceptionFailure     Class Name, Description, Full Stack Trace
-//   ExecutorLostFailure  Loss Reason (e.g. "Container killed by YARN for exceeding memory limits")
+//   ExecutorLostFailure  Loss Reason (e.g. "Container killed by YARN for exceeding memory limits"),
+//                        Exit Caused By App (false: the loss is not the task's fault and does not
+//                        count toward spark.task.maxFailures)
 //   FetchFailed          Message (often a whole exception string, stack included)
 //   TaskKilled           Kill Reason
 // Every text field is bounded here, at ingest, so neither parser memory nor a report grows with
@@ -13,10 +15,19 @@ export interface TaskFailureDetail {
   className: string | null;
   message: string | null;
   lossReason: string | null;
+  exitCausedByApp?: boolean | null;
   stackExcerpt: string | null;
 }
 
 export interface TaskFailureGroup extends TaskFailureDetail {
+  count: number;
+}
+
+/** Executor losses of retried attempts, one group per executor and loss cause. */
+export interface ExecutorLossGroup {
+  executorId: string;
+  lossReason: string | null;
+  exitCausedByApp?: boolean | null;
   count: number;
 }
 
@@ -100,6 +111,7 @@ export function extractTaskFailureDetail(endReason: Record<string, unknown> | un
     className: firstLine(text(endReason['Class Name'])),
     message: messageLine(rawMessage),
     lossReason: firstLine(text(endReason['Loss Reason'])),
+    exitCausedByApp: typeof endReason['Exit Caused By App'] === 'boolean' ? endReason['Exit Caused By App'] : null,
     stackExcerpt: buildStackExcerpt(trace),
   };
 }
@@ -107,7 +119,7 @@ export function extractTaskFailureDetail(endReason: Record<string, unknown> | un
 /** Grouping key: one group per distinct error. The excerpt is left out, so two traces of the same
  * error share a group and the first one seen is kept. */
 export function taskFailureKey(d: TaskFailureDetail): string {
-  return JSON.stringify([d.reason, d.className, d.message, d.lossReason]);
+  return JSON.stringify([d.reason, d.className, d.message, d.lossReason, d.exitCausedByApp]);
 }
 
 /** Short name for the error: the exception class, or the end-reason tag with its loss reason. */

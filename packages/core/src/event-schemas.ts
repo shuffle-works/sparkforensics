@@ -266,6 +266,8 @@ export const TaskEndEventSchema = z.object({
     Description: z.unknown().optional(),
     'Full Stack Trace': z.unknown().optional(),
     'Loss Reason': z.unknown().optional(),
+    // ExecutorLostFailure: whether the loss counts toward spark.task.maxFailures. Read as a boolean only.
+    'Exit Caused By App': z.unknown().optional(),
     Message: z.unknown().optional(),
     'Kill Reason': z.unknown().optional(),
   }).optional(),

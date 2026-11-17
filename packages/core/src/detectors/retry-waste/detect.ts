@@ -4,12 +4,15 @@ import type { Finding, ImpactEstimate, FindingOf } from '../../types.ts';
 import { defineStageDetector } from '../define.ts';
 import type { NumericFinding } from '../finding-bases.ts';
 import type { AllKeys, TaskAttemptSample } from '../../finding-types.ts';
+import type { ExecutorLossGroup } from '../../task-failure.ts';
 import type { DiscriminatorSlot } from '../../finding-meta.ts';
 
 export interface RetryWasteEvidence {
   numTasks: number;
   memoryBytesSpilled: number;
   retriedTaskDetails: TaskAttemptSample[];
+  // Executor losses among the retried attempts, by executor and cause, most frequent first.
+  executorLosses: ExecutorLossGroup[];
 }
 
 export interface RetryWasteFinding extends NumericFinding<'retryWaste'>, RetryWasteEvidence {
@@ -17,8 +20,12 @@ export interface RetryWasteFinding extends NumericFinding<'retryWaste'>, RetryWa
   extended?: string;
 }
 
+const CLUSTER_LOSS_ADVICE = 'the executor exits were unrelated to the running tasks (for example preemption, node loss, or a container the resource manager or driver released), so they do not count toward spark.task.maxFailures. Check cluster events for the lost executors; application code is not the cause.';
+
+const MIXED_LOSS_CAVEAT = ' Some of the executor losses were not caused by the application and do not count toward spark.task.maxFailures (see executorLosses).';
+
 export const retryWasteDetector = defineStageDetector({
-  type: 'retryWaste', order: 45, bandPolicy: 'derived', fixEffort: 'code', version: 1,
+  type: 'retryWaste', order: 45, bandPolicy: 'derived', fixEffort: 'code', version: 2,
   emits: ['retryWaste'],
   docAnchor: '#bottleneck-retry-waste',
   thresholds: { minWasted: 3, minWasteMs: 30000 },
@@ -27,7 +34,17 @@ export const retryWasteDetector = defineStageDetector({
     const wastedMs = stage.retryWasteMs ?? 0;
     if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
     // From the retried attempts themselves: when the retries succeed, no failure stays on the stage.
-    const advice = adviseFailureGroup(stage.retryFailureGroups?.[0]);
+    const losses = stage.retryExecutorLosses ?? [];
+    const lossCount = losses.reduce((sum, g) => sum + g.count, 0);
+    const clusterLosses = losses.filter((g) => g.exitCausedByApp === false);
+    // Spark does not count these losses toward spark.task.maxFailures: the cluster took the executor.
+    // Claimed only when every retried attempt is such a loss (losses past the per-stage group cap
+    // leave lossCount short of the wasted attempts).
+    const allClusterLoss = losses.length > 0 && clusterLosses.length === losses.length && lossCount === wasted;
+    const advice = allClusterLoss ? null
+      : adviseFailureGroup(stage.retryFailureGroups?.find((g) => g.exitCausedByApp !== false));
+    const guidance = allClusterLoss ? CLUSTER_LOSS_ADVICE
+      : `${advice?.recommendation ?? 'investigate executor loss or fetch failures.'}${clusterLosses.length > 0 ? MIXED_LOSS_CAVEAT : ''}`;
     return {
       type: 'retryWaste', stageId: stage.id,
       impactBand: 'warning',
@@ -35,7 +52,8 @@ export const retryWasteDetector = defineStageDetector({
       numTasks: stage.taskCount,
       memoryBytesSpilled: stage.memoryBytesSpilled,
       retriedTaskDetails: stage.retryTaskSamples ?? [],
-      recommendation: `Retried task attempts wasted ${Math.round(wastedMs / 1000)}s of executor time (${wasted} attempt${wasted === 1 ? '' : 's'}) even though the stage completed: ${advice?.recommendation ?? 'investigate executor loss or fetch failures.'}`,
+      executorLosses: stage.retryExecutorLosses ?? [],
+      recommendation: `Retried task attempts wasted ${Math.round(wastedMs / 1000)}s of executor time (${wasted} attempt${wasted === 1 ? '' : 's'}) even though the stage completed: ${guidance}`,
       ...(advice && { remediation: advice.remediation }),
       extended: `${wasted} task attempts were superseded by a later retry, wasting ${Math.round(wastedMs / 1000)}s of executor time. Common causes: executor loss (OOM-kill, node death) or shuffle FetchFailed forcing a stage-map recompute. Check driver logs for the dominant reason (see the Failures widget) even if the final failure rate looks low; retries hide the true cost.`,
     };
@@ -63,7 +81,7 @@ export const detectors = [retryWasteDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */
 export const evidenceKeys = {
-  retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
+  retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails', 'executorLosses'],
 } as const satisfies {
   retryWaste: readonly AllKeys<RetryWasteEvidence>[];
 };

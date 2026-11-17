@@ -33,7 +33,7 @@ describe('extractTaskFailureDetail', () => {
     });
     expect(d).toEqual({
       reason: 'ExceptionFailure', className: 'java.io.FileNotFoundException', message: '/data/in/part-0001 (No such file)',
-      lossReason: null, stackExcerpt: ['java.io.FileNotFoundException: /data/in/part-0001 (No such file)', ...frames(2)].join('\n'),
+      lossReason: null, exitCausedByApp: null, stackExcerpt: ['java.io.FileNotFoundException: /data/in/part-0001 (No such file)', ...frames(2)].join('\n'),
     });
   });
 
