@@ -498,7 +498,8 @@ describe('diagnoseRun / getFindingEvidence', () => {
       expect(first.findings.map((f) => f.key)).toEqual(second.findings.map((f) => f.key));
       const straggler = first.findings.find((f) => f.type === 'straggler');
       // A stage's fingerprint is the key of its `metrics.stages` entry, so the two join without a table.
-      const fingerprint = Object.keys(first.metrics.stages).find((k) => first.metrics.stages[k].stageIds.includes(1));
+      const stages = present(first.metrics.stages);
+      const fingerprint = Object.keys(stages).find((k) => stages[k].stageIds.includes(1));
       expect(present(straggler).key).toBe(`straggler|straggler|stage:${fingerprint}`);
       // A run-level finding has no stage to name.
       expect(present(first.findings.find((f) => f.type === 'memoryUtilization')).key).toMatch(/^memoryUtilization\|[^|]+\|run$/);
@@ -515,31 +516,58 @@ describe('diagnoseRun / getFindingEvidence', () => {
       }
       expect('cleanChecks' in compact).toBe(false);
       expect('notRunChecks' in compact).toBe(false);
-      for (const kept of ['verdict', 'recommendations', 'metrics', 'writeTargets', 'effectiveConf']) expect(compact).toHaveProperty(kept);
+      for (const kept of ['verdict', 'recommendations', 'metrics', 'writeTargets']) expect(compact).toHaveProperty(kept);
+      expect(compact.metrics).not.toHaveProperty('stages');
+      expect(compact).not.toHaveProperty('effectiveConf');
+      expect(full.metrics).toHaveProperty('stages');
+      expect(full).toHaveProperty('effectiveConf');
       expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length);
     });
 
-    it('keeps the tuned thresholds on a compact row of a tuned detector', async () => {
-      const { dir, path } = tmpEventLogWithFindings();
+    it('adds the stage rows and effectiveConf to the compact view when include asks for them', async () => {
+      const full = await diagnose({ view: 'full' });
+      const stages = await diagnose({ view: 'compact', include: ['stages'] });
+      expect(stages.metrics).toEqual(full.metrics);
+      expect(stages).not.toHaveProperty('effectiveConf');
+      const conf = await diagnose({ view: 'compact', include: ['effectiveConf'] });
+      expect(conf.effectiveConf).toEqual(full.effectiveConf);
+      expect(conf.metrics).not.toHaveProperty('stages');
+    });
+
+    it('adds effectiveConf, narrowed to confKeys, to the compact view without include', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
       try {
+        const path = join(dir, 'eventlog');
+        writeFileSync(path, [
+          '{"Event":"SparkListenerApplicationStart","App ID":"app-conf","App Name":"t","Timestamp":0}',
+          '{"Event":"SparkListenerEnvironmentUpdate","Spark Properties":{"spark.executor.memory":"4g","spark.sql.shuffle.partitions":"200"}}',
+          '{"Event":"SparkListenerApplicationEnd","Timestamp":10}',
+        ].join('\n') + '\n');
         const { runId } = await resolveOrCreateRun({ source: { path } });
-        const thresholds = parseThresholdOverrides({ straggler: { minTasks: 2 } });
-        const { findings } = diagnoseRun(runId, { view: 'compact', thresholds });
-        expect(present(findings.find((f) => f.type === 'straggler')).tunedThresholds).toEqual({ minTasks: { value: 2, default: 10 } });
+        expect(diagnoseRun(runId, { view: 'compact' })).not.toHaveProperty('effectiveConf');
+        const narrowed = diagnoseRun(runId, { view: 'compact', confKeys: ['spark.executor.memory'] });
+        expect(present(narrowed.effectiveConf).values).toEqual({ 'spark.executor.memory': '4g' });
+        const included = diagnoseRun(runId, { view: 'compact', include: ['effectiveConf'], confKeys: ['spark.executor.memory'] });
+        expect(included.effectiveConf).toEqual(narrowed.effectiveConf);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
     });
 
-    it('puts the lead finding row in each verdict step, in the shape of the view', async () => {
-      for (const view of /** @type {const} */ (['compact', 'full'])) {
-        const result = await diagnose({ view });
-        expect(result.verdict.steps.length).toBeGreaterThan(0);
-        for (const step of result.verdict.steps) {
-          expect(present(step.leadFinding).id).toBe(step.leadFindingId);
-          expect(present(step.leadFinding).type).toBe(step.type);
-          expect('evidence' in present(step.leadFinding)).toBe(view === 'full');
-        }
+    it('names the lead finding by leadFindingId only in the compact view and carries its full row in the full view', async () => {
+      const compact = await diagnose({ view: 'compact' });
+      expect(compact.verdict.steps.length).toBeGreaterThan(0);
+      for (const step of compact.verdict.steps) {
+        expect(step).not.toHaveProperty('leadFinding');
+        expect(typeof step.leadFindingId).toBe('string');
+      }
+
+      const full = await diagnose({ view: 'full' });
+      for (const step of full.verdict.steps) {
+        const lead = present(step.leadFinding);
+        expect(lead.id).toBe(step.leadFindingId);
+        expect(lead.type).toBe(step.type);
+        expect(lead).toHaveProperty('evidence');
       }
     });
 

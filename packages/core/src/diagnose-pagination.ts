@@ -39,7 +39,7 @@ function itemsOf(result: DiagnoseRunResult): Item[] {
     ...result.findings.map((value): Item => ({ section: 'findings', value })),
     ...(result.cleanChecks ?? []).map((value): Item => ({ section: 'cleanChecks', value })),
     ...(result.notRunChecks ?? []).map((value): Item => ({ section: 'notRunChecks', value })),
-    ...Object.entries(result.metrics.stages).map(([key, value]): Item => ({ section: 'stages', key, value })),
+    ...Object.entries(result.metrics.stages ?? {}).map(([key, value]): Item => ({ section: 'stages', key, value })),
     ...result.writeTargets.writes.map((value): Item => ({ section: 'writes', value })),
   ];
 }
@@ -71,7 +71,7 @@ export function paginateDiagnose(
         ...result, findings: list('findings'),
         ...(result.cleanChecks && { cleanChecks: list('cleanChecks') }),
         ...(result.notRunChecks && { notRunChecks: list('notRunChecks') }),
-        metrics: { ...result.metrics, stages }, writeTargets: { ...result.writeTargets, writes: list('writes') }, pagination,
+        metrics: { ...result.metrics, ...(result.metrics.stages && { stages }) }, writeTargets: { ...result.writeTargets, writes: list('writes') }, pagination,
       } as DiagnoseRunResult & { pagination: Pagination };
     }
     const has = (section: Section) => rows.some((item) => item.section === section);
