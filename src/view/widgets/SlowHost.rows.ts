@@ -5,6 +5,7 @@ import {
   IMPACT_BAND_ORDER,
   numericValue,
   SLOW_HOST_DIMENSION_LABEL,
+  SLOW_HOST_DIMENSION_PER_TASK,
 } from '@sparkforensics/core/view-model';
 import type { SlowHostFinding } from '@sparkforensics/core/types';
 import { isStated, type RowsOf, type WidgetRow } from '@/view/evidence-panel';
@@ -28,7 +29,7 @@ export interface SlowHostRow extends WidgetRow<'slowHost'> {
 export function slowHostDetail(f: SlowHostFinding): string {
   const value = numericValue(f);
   if (f.variant === 'multiDim') {
-    return `Executor ${f.executorId}: ${formatMetricValue('ratio', value)} the median ${f.dimension ? SLOW_HOST_DIMENSION_LABEL[f.dimension] : 'value'}`;
+    return `Executor ${f.executorId}: ${formatMetricValue('ratio', value)} the median ${f.dimension ? `${SLOW_HOST_DIMENSION_LABEL[f.dimension]}${SLOW_HOST_DIMENSION_PER_TASK[f.dimension]}` : 'value'}`;
   }
   const taskSharePct = Math.round((f.hostTaskShare ?? 0) * 100);
   if (f.metric === 'hostDurationShare') {
@@ -49,10 +50,10 @@ function slowHostUnstatedDetail(f: SlowHostFinding): string | null {
 function slowHostMeasurement(f: SlowHostFinding): string | null {
   if (f.variant === 'multiDim') {
     if (f.execMaxValue == null || !f.dimension) return null;
-    const amount = f.dimension === 'taskTime' ? formatDuration(f.execMaxValue) : formatBytes(f.execMaxValue);
-    const of = f.executorCount != null ? `, the most of ${f.executorCount} executors` : '';
-    const tasks = f.taskCount != null ? ` (${f.taskCount} tasks in the stage)` : '';
-    return `Executor ${f.executorId}: ${amount} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}${of}${tasks}.`;
+    const format = f.dimension === 'taskTime' ? formatDuration : formatBytes;
+    const perTask = SLOW_HOST_DIMENSION_PER_TASK[f.dimension];
+    const tasks = f.taskCount != null ? `; ${f.taskCount} tasks in the stage` : '';
+    return `Executor ${f.executorId}: ${format(f.execMaxValue)}${perTask} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}, the most of ${f.executorCount} executors (median ${format(f.medianValue)}${perTask}${tasks}).`;
   }
   return f.hostMeanMs != null ? `${f.host}: mean task time ${formatDuration(f.hostMeanMs)}.` : null;
 }

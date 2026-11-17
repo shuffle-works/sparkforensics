@@ -1,6 +1,6 @@
 import { medianOfSorted } from '../../median.ts';
 import { costOnly, singleStageImpact } from '../../impact-model.ts';
-import { SLOW_HOST_DIMENSION_LABEL } from '../../finding-generic-recommendation.ts';
+import { SLOW_HOST_DIMENSION_LABEL, SLOW_HOST_DIMENSION_PER_TASK } from '../../finding-generic-recommendation.ts';
 import type { Finding, ImpactEstimate } from '../../types.ts';
 import type { FindingOf, AllKeys } from '../../finding-types.ts';
 import { loggedAs } from '../conf.ts';
@@ -35,11 +35,15 @@ export interface SlowHostMultiDimEvidence {
   variant: 'multiDim';
   dimension: 'taskTime' | 'inputBytes' | 'shuffleBytes' | 'storageMemory';
   executorId: string;
-  // The deviating executor's raw magnitude in `dimension`'s unit (ms for taskTime, else bytes).
+  // The deviating executor's compared value in `dimension`'s unit: ms per task for taskTime, bytes
+  // per task for inputBytes and shuffleBytes (so executors that lived for different spans compare),
+  // bytes for storageMemory. `medianValue` is the median of the same value over `executorCount` executors.
   execMaxValue: number;
-  // taskTime only: how many executors the deviating one was picked from, and the stage's task
-  // count. The largest of N samples reaches a high ratio by chance more often as N grows.
-  executorCount?: number;
+  medianValue: number;
+  // How many executors the deviating one was picked from. The largest of N samples reaches a high
+  // ratio by chance more often as N grows.
+  executorCount: number;
+  // taskTime only: the stage's task count.
   taskCount?: number;
 }
 
@@ -53,13 +57,17 @@ export interface SlowHostMultiDimFinding extends NumericFinding<'slowHost'>, Slo
 
 export type SlowHostFinding = SlowHostMeanTimeFinding | SlowHostDurationShareFinding | SlowHostMultiDimFinding;
 
+// `value` is what executors are compared on; `total` is the executor's absolute magnitude when
+// `value` is a rate, for the absolute-magnitude floor.
+interface DimensionSample { key: string; value: number; total?: number }
+
 // Max/median deviation ratio over a list of {key, value}; returns the
 // exceeding entry's key + ratio, or null when < 3 samples or median 0. `qualifies` narrows the
 // entries the maximum is taken from (the median still covers all of them).
 function maxMedianRatio(
-  samples: { key: string; value: number }[],
-  qualifies: (sample: { key: string; value: number }) => boolean = () => true,
-): { key: string; ratio: number; value: number } | null {
+  samples: DimensionSample[],
+  qualifies: (sample: DimensionSample) => boolean = () => true,
+): { key: string; ratio: number; value: number; median: number; total: number } | null {
   if (samples.length < 3) return null;
   const vals = samples.map(s => s.value).sort((a, b) => a - b);
   const median = medianOfSorted(vals);
@@ -67,7 +75,7 @@ function maxMedianRatio(
   const pool = samples.filter(qualifies);
   if (pool.length === 0) return null;
   const top = pool.reduce((a, b) => (b.value > a.value ? b : a));
-  return { key: top.key, ratio: top.value / median, value: top.value };
+  return { key: top.key, ratio: top.value / median, value: top.value, median, total: top.total ?? top.value };
 }
 
 // z a lone executor's mean must clear to stand out from `executors` chance draws at a family-wise
@@ -78,25 +86,29 @@ function chanceOutlierZ(executors: number, alpha: number): number {
   return Math.sqrt(2 * Math.log(executors / (2 * alpha)));
 }
 
-// How far each executor's task durations sit above the stage's median executor, in standard errors,
-// on the log scale: (executor mean - median of executor means) / (stage task sd / sqrt(executor
-// tasks)). The stage sd is rebuilt from the per-executor count, log sum and M2: within-executor
-// squared deviations plus each executor mean's distance from the grand mean. null when the stage
-// has under two tasks, no spread, or any executor lacks finite log stats, so an unknown spread
-// never flags an executor.
-function executorDurationZ(execs: DetectorExecutorStat[]): Map<string, number> | null {
+// How far each executor's tasks sit above the stage's median executor, in standard errors, on the
+// log scale of one per-task quantity: (executor mean - median of executor means) / (stage task sd /
+// sqrt(executor tasks)). The stage sd is rebuilt from the per-executor count, log sum and M2:
+// within-executor squared deviations plus each executor mean's distance from the grand mean. null
+// when the stage has under two tasks, no spread, or any executor lacks finite log stats, so an
+// unknown spread never flags an executor.
+function executorLogZ(
+  execs: DetectorExecutorStat[],
+  logSum: (e: DetectorExecutorStat) => number | undefined,
+  logM2: (e: DetectorExecutorStat) => number | undefined,
+): Map<string, number> | null {
   const active = execs.filter(e => e.taskCount > 0);
   let tasks = 0, logTotal = 0;
   for (const e of active) {
-    if (!Number.isFinite(e.logDurationSum) || !Number.isFinite(e.logDurationM2)) return null;
+    if (!Number.isFinite(logSum(e)) || !Number.isFinite(logM2(e))) return null;
     tasks += e.taskCount;
-    logTotal += e.logDurationSum as number;
+    logTotal += logSum(e) as number;
   }
   if (tasks < 2) return null;
   const grandMean = logTotal / tasks;
   let squares = 0;
-  const means = active.map(e => (e.logDurationSum as number) / e.taskCount);
-  active.forEach((e, i) => { squares += (e.logDurationM2 as number) + e.taskCount * (means[i] - grandMean) ** 2; });
+  const means = active.map(e => (logSum(e) as number) / e.taskCount);
+  active.forEach((e, i) => { squares += (logM2(e) as number) + e.taskCount * (means[i] - grandMean) ** 2; });
   const sd = Math.sqrt(squares / (tasks - 1));
   if (!(sd > 0) || !Number.isFinite(sd)) return null;
   const median = medianOfSorted([...means].sort((a, b) => a - b));
@@ -109,19 +121,19 @@ function executorDurationZ(execs: DetectorExecutorStat[]): Map<string, number> |
 // No `host` here: it is one of slowHost's id discriminators, so setting it would change the id.
 function executorTaskTimeCaveat(
   executorId: string, ratio: number, executorCount: number, taskCount: number,
-): Pick<SlowHostMultiDimFinding, 'confidence' | 'validationRequired' | 'executorCount' | 'taskCount'> {
+): Pick<SlowHostMultiDimFinding, 'confidence' | 'validationRequired' | 'taskCount'> {
   return {
     confidence: 'low',
     validationRequired:
       `One of ${executorCount} executors: the largest of ${executorCount} per-executor mean task times reaches ${Math.round(ratio * 10) / 10}x the median by chance ` +
       `when task durations vary widely or each executor ran few tasks (${taskCount} tasks over ${executorCount} executors here). ` +
       `Compare per-task times on executor ${executorId} in the Spark UI before acting.`,
-    executorCount, taskCount,
+    taskCount,
   };
 }
 
 export const slowHostDetector = defineStageDetector({
-  type: 'slowHost', order: 60, bandPolicy: 'derived', fixEffort: 'config', version: 2,
+  type: 'slowHost', order: 60, bandPolicy: 'derived', fixEffort: 'config', version: 3,
   emits: ['slowHost'],
   docAnchor: '#bottleneck-slow-host',
   thresholds: {
@@ -132,13 +144,13 @@ export const slowHostDetector = defineStageDetector({
     floorMs: 1000, floorBytes: 64 * MB,
     // stageFloorPct: the tiered detectors' 0.5% runtime floor. On a stage shorter than this share
     // of the run a slow host can't cost that much: duration findings are clipped to the stage
-    // and would grade info, and a byte-dimension imbalance (no time estimate, so its ratio tier
-    // is its band) is graded info there too. So the stage is skipped.
+    // and would grade info, so the stage is skipped.
     stageFloorPct: 0.005,
     // outlierAlpha: the nominal chance a stage of alike tasks gets any executor flagged on task
-    // time. The slowest of many executors always tops the median, so a task-time executor is
-    // flagged only when its mean sits further above the median than the stage's own task spread
-    // and its task count allow (chanceOutlierZ), more strictly the more executors there are.
+    // time, input bytes per task or shuffle bytes per task. The largest of many executors always
+    // tops the median, so an executor is flagged only when its mean sits further above the median
+    // than the stage's own task spread and its task count allow (chanceOutlierZ), more strictly the
+    // more executors there are.
     // The normal-tail bound behind that cutoff is loose: simulated alike stages flag well under it.
     outlierAlpha: 0.005,
   },
@@ -193,21 +205,28 @@ export const slowHostDetector = defineStageDetector({
       }
     }
     const execs = stage.executorStats ?? [];
-    const tiers = thresholds.ratioTiers;
-    const impactBandFor = (r: number): 'critical' | 'warning' | 'info' | null =>
-      r >= tiers[3] ? 'critical' : (r >= tiers[1] ? 'warning' : (r >= tiers[0] ? 'info' : null));
     const floorMs = thresholds.floorMs, floorBytes = thresholds.floorBytes;
     const taskTimeSamples = execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount }));
-    const taskTimeZs = executorDurationZ(execs);
-    const taskTimeZ = chanceOutlierZ(taskTimeSamples.length, thresholds.outlierAlpha);
-    const dims: { dimension: SlowHostMultiDimFinding['dimension']; floor: number; samples: { key: string; value: number }[]; qualifies?: (sample: { key: string; value: number }) => boolean }[] = [
+    const outlierZ = chanceOutlierZ(taskTimeSamples.length, thresholds.outlierAlpha);
+    // Only an executor the stage's own spread can't explain: with no known spread, none.
+    const beyondChance = (zs: Map<string, number> | null) => (sample: DimensionSample) => (zs?.get(sample.key) ?? -Infinity) >= outlierZ;
+    // Spark's per-executor stage summary has no lifetime, so an executor's byte total grows with how
+    // long it lived (dynamic allocation, executor loss). Bytes per task does not.
+    const bytesPerTask = (bytes: (e: DetectorExecutorStat) => number): DimensionSample[] =>
+      execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: bytes(e) / e.taskCount, total: bytes(e) }));
+    const dims: { dimension: SlowHostMultiDimFinding['dimension']; floor: number; samples: DimensionSample[]; qualifies?: (sample: DimensionSample) => boolean }[] = [
       {
         dimension: 'taskTime', floor: floorMs, samples: taskTimeSamples,
-        // Only an executor the stage's own spread can't explain: with no known spread, none.
-        qualifies: sample => (taskTimeZs?.get(sample.key) ?? -Infinity) >= taskTimeZ,
+        qualifies: beyondChance(executorLogZ(execs, e => e.logDurationSum, e => e.logDurationM2)),
       },
-      { dimension: 'inputBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: e.inputBytes ?? 0 })) },
-      { dimension: 'shuffleBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0) })) },
+      {
+        dimension: 'inputBytes', floor: floorBytes, samples: bytesPerTask(e => e.inputBytes ?? 0),
+        qualifies: beyondChance(executorLogZ(execs, e => e.logInputBytesSum, e => e.logInputBytesM2)),
+      },
+      {
+        dimension: 'shuffleBytes', floor: floorBytes, samples: bytesPerTask(e => (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0)),
+        qualifies: beyondChance(executorLogZ(execs, e => e.logShuffleBytesSum, e => e.logShuffleBytesM2)),
+      },
     ];
     // Storage-memory dimension: best-effort, only when executorMetrics present.
     const em = stage.executorMetrics instanceof Map ? stage.executorMetrics : null;
@@ -216,23 +235,18 @@ export const slowHostDetector = defineStageDetector({
     }
     for (const d of dims) {
       const r = maxMedianRatio(d.samples, d.qualifies);
-      if (!r || r.value < d.floor) continue; // absolute-magnitude floor: same ratio+floor shape as computeSpillMagnitude
-      const tier = impactBandFor(r.ratio);
-      if (!tier) continue;
-      // taskTime is the only wallClock-bearing dimension: it takes the fixed fallback band (see
-      // threshold-tables.md). The other three never get a wallClock estimate, so they keep the
-      // ratio tier.
-      const impactBand = d.dimension === 'taskTime' ? 'info' : tier;
+      if (!r || r.total < d.floor) continue; // absolute-magnitude floor: same ratio+floor shape as computeSpillMagnitude
+      if (r.ratio < thresholds.ratioTiers[0]) continue;
+      // No dimension has a cost estimate behind its ratio, so the band is `info` (see threshold-tables.md).
       out.push({
-        type: 'slowHost', stageId: stage.id, impactBand,
+        type: 'slowHost', stageId: stage.id, impactBand: 'info',
         variant: 'multiDim', dimension: d.dimension,
         metric: 'execMaxMedianRatio', value: Math.round(r.ratio * 10) / 10,
-        // `value` is a ratio; `execMaxValue` is the deviating sample's raw magnitude
-        // in this dimension's own unit (ms for taskTime, bytes for the rest).
-        execMaxValue: r.value,
+        // `value` is a ratio of `execMaxValue` to `medianValue`, in the dimension's own unit.
+        execMaxValue: r.value, medianValue: r.median, executorCount: d.samples.length,
         executorId: r.key,
         ...(d.dimension === 'taskTime' ? executorTaskTimeCaveat(r.key, r.ratio, d.samples.length, stage.taskCount) : {}),
-        recommendation: `Executor ${r.key}'s ${SLOW_HOST_DIMENSION_LABEL[d.dimension]} is ${Math.round(r.ratio * 10) / 10}× the median: investigate uneven partition assignment or a degraded executor.`,
+        recommendation: `Executor ${r.key}'s ${SLOW_HOST_DIMENSION_LABEL[d.dimension]}${SLOW_HOST_DIMENSION_PER_TASK[d.dimension]} is ${Math.round(r.ratio * 10) / 10}× the median: ${SLOW_HOST_DIMENSION_PER_TASK[d.dimension] ? 'its tasks got larger partitions than the rest (data skew); investigate uneven partition assignment.' : 'investigate uneven partition assignment or a degraded executor.'}`,
       });
     }
     return out;
@@ -268,7 +282,7 @@ export const detectors = [slowHostDetector] as const;
 
 /** The public evidence fields per emitted type, as the evidence report lists them. */
 export const evidenceKeys = {
-  slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'executorCount', 'taskCount'],
+  slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'medianValue', 'executorCount', 'taskCount'],
 } as const satisfies {
   slowHost: readonly AllKeys<SlowHostEvidence>[];
 };

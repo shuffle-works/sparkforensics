@@ -51,6 +51,9 @@ export interface StageExecutorStat {
   // Sum and Welford M2 of ln(1 + task duration) over the executor's tasks: the stage's task spread
   // on the log scale.
   logDurationSum: number; logDurationM2: number;
+  // The same for ln(1 + input bytes) and ln(1 + shuffle read + write bytes) per task.
+  logInputBytesSum: number; logInputBytesM2: number;
+  logShuffleBytesSum: number; logShuffleBytesM2: number;
   inputBytes: number; shuffleReadBytes: number; shuffleWriteBytes: number;
 }
 export interface StageFailureReason { reason: string; count: number; }
@@ -147,6 +150,14 @@ export interface FinalizedStage {
   speculationWastedAttempts: number;
 }
 
+// One more of an executor's `count` tasks into the running sum and Welford M2 of ln(1 + value).
+function addLogSample(sum: number, m2: number, count: number, value: number): [number, number] {
+  const x = Math.log1p(value);
+  const meanBefore = count > 0 ? sum / count : 0;
+  const meanAfter = (sum + x) / (count + 1);
+  return [sum + x, m2 + (x - meanBefore) * (x - meanAfter)];
+}
+
 export function finalizeStage(
   stageId: number,
   stage: StageRecord,
@@ -191,15 +202,20 @@ export function finalizeStage(
     }
     if (t.executorId) {
       let es = executorStats.get(t.executorId);
-      if (!es) { es = { taskCount: 0, totalDuration: 0, logDurationSum: 0, logDurationM2: 0, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 }; executorStats.set(t.executorId, es); }
-      // Task durations scatter multiplicatively, so the spread slowHost tests an executor against is
-      // kept on the log scale: a running sum and Welford's M2 of ln(1 + duration). A non-finite
-      // duration makes both NaN, which the detector reads as "no spread known".
-      const logDuration = Math.log1p(t.duration);
-      const logMeanBefore = es.taskCount > 0 ? es.logDurationSum / es.taskCount : 0;
-      const logMeanAfter = (es.logDurationSum + logDuration) / (es.taskCount + 1);
-      es.logDurationM2 += (logDuration - logMeanBefore) * (logDuration - logMeanAfter);
-      es.logDurationSum += logDuration;
+      if (!es) {
+        es = {
+          taskCount: 0, totalDuration: 0, logDurationSum: 0, logDurationM2: 0,
+          logInputBytesSum: 0, logInputBytesM2: 0, logShuffleBytesSum: 0, logShuffleBytesM2: 0,
+          inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0,
+        };
+        executorStats.set(t.executorId, es);
+      }
+      // Task durations and byte counts scatter multiplicatively, so the spread slowHost tests an
+      // executor against is kept on the log scale: a running sum and Welford's M2 of ln(1 + value).
+      // A non-finite value makes both NaN, which the detector reads as "no spread known".
+      [es.logDurationSum, es.logDurationM2] = addLogSample(es.logDurationSum, es.logDurationM2, es.taskCount, t.duration);
+      [es.logInputBytesSum, es.logInputBytesM2] = addLogSample(es.logInputBytesSum, es.logInputBytesM2, es.taskCount, t.inputBytes);
+      [es.logShuffleBytesSum, es.logShuffleBytesM2] = addLogSample(es.logShuffleBytesSum, es.logShuffleBytesM2, es.taskCount, t.shuffleRead + t.shuffleWrite);
       es.taskCount++;
       es.totalDuration += t.duration;
       es.inputBytes += t.inputBytes;
@@ -264,7 +280,7 @@ export function finalizeStage(
     ([host, s]) => ({ host, taskCount: s.taskCount, totalDuration: s.totalDuration })
   );
   const executorStatsArr = [...executorStats.entries()].map(
-    ([executorId, s]) => ({ executorId, taskCount: s.taskCount, totalDuration: s.totalDuration, logDurationSum: s.logDurationSum, logDurationM2: s.logDurationM2, inputBytes: s.inputBytes, shuffleReadBytes: s.shuffleReadBytes, shuffleWriteBytes: s.shuffleWriteBytes })
+    ([executorId, s]) => ({ executorId, taskCount: s.taskCount, totalDuration: s.totalDuration, logDurationSum: s.logDurationSum, logDurationM2: s.logDurationM2, logInputBytesSum: s.logInputBytesSum, logInputBytesM2: s.logInputBytesM2, logShuffleBytesSum: s.logShuffleBytesSum, logShuffleBytesM2: s.logShuffleBytesM2, inputBytes: s.inputBytes, shuffleReadBytes: s.shuffleReadBytes, shuffleWriteBytes: s.shuffleWriteBytes })
   );
   const failureReasonsArr = [...failureReasons.entries()].map(
     ([reason, count]) => ({ reason, count })

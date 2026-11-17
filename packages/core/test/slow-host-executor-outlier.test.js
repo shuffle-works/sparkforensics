@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { analyzedRunFrom } from './fixtures/analyzed-run.js';
-import { makeTypedStage, makeApp, executorRow } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp, executorRow, executorBytes } from './fixtures/stage-app-fixtures.js';
 
 /** @typedef {import('../src/types.ts').Stage} Stage */
 /** @typedef {Partial<Record<Exclude<keyof import('../src/stage-quantiles.ts').StageExecutorStat, 'executorId'>, number | null>>} LooseExecutorRow */
@@ -136,12 +136,76 @@ describe('slowHost task time: an executor must stand out from the stage\'s own s
     });
   });
 
-  it('keeps the byte dimensions on the plain ratio test', () => {
-    const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 16, logSpread: 0.05, slowdown: 1 });
-    firstStage(stages).executorStats.forEach((/** @type {LooseExecutorRow} */ e, i) => { e.inputBytes = i === 0 ? 200 * 1024 * 1024 : 20 * 1024 * 1024; delete e.logDurationM2; });
-    const found = analyzedRunFrom({ app, stages }).catalog.filter(isMultiDim).filter((f) => f.dimension === 'inputBytes');
-    expect(found).toHaveLength(1);
-    expect(found[0].executorId).toBe('exec-0');
+  describe('byte dimensions compare per-task rates, not executor totals', () => {
+    const MB = 1024 * 1024;
+    /**
+     * @param {string} dimension
+     * @param {{ app: import('../src/types.ts').SparkAppInfo, stages: Map<number, Stage> }} fixture
+     */
+    const byteFindings = (dimension, { app, stages }) =>
+      analyzedRunFrom({ app, stages }).catalog.filter(isMultiDim).filter((f) => f.dimension === dimension);
+
+    // Three executors lived the whole stage (16 tasks each); seven were short-lived (2 tasks each).
+    // Every task reads 10 MB, so the long-lived executors hold 8x the bytes at the same rate.
+    /** @param {number} [outlierRate] bytes per task of the first long-lived executor */
+    function mixedLifetimeStage(outlierRate = 10 * MB) {
+      const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 2, logSpread: 0.05, slowdown: 1 });
+      firstStage(stages).executorStats.forEach((/** @type {LooseExecutorRow} */ e, i) => {
+        const perTask = Array(i < 3 ? 16 : 2).fill(i === 0 ? outlierRate : 10 * MB);
+        Object.assign(e, executorBytes(perTask, perTask));
+      });
+      firstStage(stages).taskCount = 3 * 16 + 7 * 2;
+      return { app, stages };
+    }
+
+    // Nine executors lived the whole stage, each reading 11 partitions of 15 MB and 5 of 25 MB
+    // (about 18 MB per task). A late executor ran 3 tasks, all at the top of that range: 75 MB in
+    // total, over floorBytes, and 25 / 18.1 = 1.38x the median rate, over ratioTiers[0].
+    function lateExecutorStage() {
+      const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 16, logSpread: 0.05, slowdown: 1 });
+      const partitions = [...Array(11).fill(15 * MB), ...Array(5).fill(25 * MB)];
+      firstStage(stages).executorStats.forEach((/** @type {LooseExecutorRow} */ e, i) => {
+        const perTask = i === 0 ? Array(3).fill(25 * MB) : partitions;
+        Object.assign(e, executorBytes(perTask, perTask));
+      });
+      firstStage(stages).taskCount = 9 * 16 + 3;
+      return { app, stages };
+    }
+
+    it('does not flag long-lived executors that read more bytes at the same per-task rate', () => {
+      const fixture = mixedLifetimeStage();
+      expect(byteFindings('inputBytes', fixture)).toEqual([]);
+      expect(byteFindings('shuffleBytes', fixture)).toEqual([]);
+    });
+
+    it('flags an executor whose per-task rate is high, at info, with the median and executor count', () => {
+      const found = byteFindings('inputBytes', mixedLifetimeStage(60 * MB));
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatchObject({ executorId: 'exec-0', value: 6, impactBand: 'info', executorCount: 10 });
+      expect(found[0].execMaxValue).toBe(60 * MB);
+      expect(found[0].medianValue).toBe(10 * MB);
+    });
+
+    it('does not flag a late executor whose few tasks sit at the top of the ordinary partition range', () => {
+      const fixture = lateExecutorStage();
+      expect(byteFindings('inputBytes', fixture)).toEqual([]);
+      expect(byteFindings('shuffleBytes', fixture)).toEqual([]);
+    });
+
+    it('flags no executor on bytes when a row lacks the per-task byte spread', () => {
+      const { app, stages } = mixedLifetimeStage(60 * MB);
+      /** @type {LooseExecutorRow} */ (firstStage(stages).executorStats[5]).logInputBytesM2 = null;
+      expect(byteFindings('inputBytes', { app, stages })).toEqual([]);
+      expect(byteFindings('shuffleBytes', { app, stages })).toHaveLength(1);
+    });
+
+    it('leaves out executors that ran no task', () => {
+      const { app, stages } = mixedLifetimeStage(60 * MB);
+      firstStage(stages).executorStats.push(executorRow('exec-idle', []));
+      const found = byteFindings('inputBytes', { app, stages });
+      expect(found).toHaveLength(1);
+      expect(found[0].executorCount).toBe(10);
+    });
   });
 
   describe('on stages whose tasks are all alike', () => {

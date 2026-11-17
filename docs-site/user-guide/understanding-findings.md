@@ -293,8 +293,13 @@ flagged on stages that take at least 0.5% of the run.
 
 ### `HOST`: Slow host {#host}
 
-One executor is much slower than its peers, or carries most of the stage's
-task time or bytes. It may just hold data locality
+One executor is much slower than its peers, carries most of the stage's
+task time, or reads or shuffles far more bytes per task than the median
+executor. Bytes are compared per task, so executors that lived for different
+spans of the stage (dynamic allocation, executor loss) do not flag each other.
+A high byte rate means that executor's tasks got larger partitions (data
+skew); with no cost estimate behind it, the finding stays at `info`. A slow
+host may just hold data locality
 for its tasks or carry one heavy stage, rather than a hardware fault.
 Enable `spark.speculation` to relaunch a lagging task automatically. Only
 flagged on stages that take at least 0.5% of the run. A task-time grade
@@ -306,8 +311,10 @@ An executor whose tasks ran slower than the median executor's is flagged only
 when the gap is larger than the stage's own spread of task times and the
 executor's task count allow. The slowest of 75 executors tops the median by
 chance far more often than the slowest of 3, so the gap it needs grows with
-the number of executors. A stage whose per-task timings are missing flags no
-executor on task time.
+the number of executors. Input and shuffle bytes per task pass the same
+test, so a short-lived executor whose few tasks happened to be large is not
+flagged. A stage whose per-task timings or byte counts are missing flags no
+executor on that dimension.
 
 ## App-level
 

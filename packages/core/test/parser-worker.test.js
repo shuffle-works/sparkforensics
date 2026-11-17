@@ -3881,6 +3881,29 @@ describe('finalizeStage: per-executor stage participation stats', () => {
     expect(exec2.logDurationM2).toBe(0); // a single task has no spread
   });
 
+  it('accumulates the sum and M2 of ln(1 + bytes) per executor for input and shuffle read plus write', () => {
+    const s = createState();
+    setupStage(s);
+    let taskIndex = 0;
+    const taskEnd = (/** @type {number} */ input, /** @type {number} */ read, /** @type {number} */ written) => processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
+      'Task Info': { 'Index': ++taskIndex, 'Launch Time': 0, 'Finish Time': 100, 'Executor ID': 'exec-1' },
+      'Task Metrics': {
+        'Input Metrics': { 'Bytes Read': input },
+        'Shuffle Read Metrics': { 'Remote Bytes Read': read, 'Local Bytes Read': 0, 'Fetch Wait Time': 0 },
+        'Shuffle Write Metrics': { 'Shuffle Bytes Written': written },
+      } }, s);
+    taskEnd(1000, 30, 70);
+    taskEnd(9000, 200, 800);
+    const msg = messageOf('stage', processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 800 } }, s));
+    const exec1 = present(msg.data.executorStats.find((e) => e.executorId === 'exec-1'));
+    // Two values a, b: sum ln(1+a) + ln(1+b), M2 (ln(1+a) - ln(1+b))^2 / 2.
+    expect(exec1.logInputBytesSum).toBeCloseTo(Math.log(1001) + Math.log(9001), 10);
+    expect(exec1.logInputBytesM2).toBeCloseTo((Math.log(1001) - Math.log(9001)) ** 2 / 2, 10);
+    expect(exec1.logShuffleBytesSum).toBeCloseTo(Math.log(101) + Math.log(1001), 10);
+    expect(exec1.logShuffleBytesM2).toBeCloseTo((Math.log(101) - Math.log(1001)) ** 2 / 2, 10);
+  });
+
   it('omits tasks with no Executor ID from executorStats', () => {
     const s = createState();
     setupStage(s);
