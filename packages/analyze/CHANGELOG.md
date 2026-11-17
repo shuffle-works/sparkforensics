@@ -1,5 +1,28 @@
 # sparkforensics-analyze
 
+## 0.13.0
+
+### Patch Changes
+
+- 9076304: Budgets now report failed jobs. `evaluate_budgets` and the CLI add an always-on `no-failed-jobs` result: a run with one or more failed jobs is a violation that names the count and the failed job ids, and a run with none passes. **The CLI now exits 1 for a run with a failed job, with or without budget flags**, where it passed or exited 3 before. Every budget result list gains a `no-failed-jobs` row, and the JSON envelope schema accepts the new name. `maxFailedTaskRatePct` is unchanged.
+- a635c00: Run comparison no longer counts `spark.app.initial.jar.urls`, `spark.driver.appUIAddress` and the AmIpFilter `PROXY_URI_BASES` key as configuration differences. Two runs of the same job can now reach the "same configuration and plan" verdict.
+- 399095d: The run comparison verdict states a change in input or output volume with the same figures the Comparability section prints. It names introduced and resolved findings by category and impact band instead of netting counts per category, so a resolved critical finding stays visible. A `low` confidence comparison gets a one-sentence verdict that gives the reason. Output rows now use the noise band like the byte figures, so a small row-count change no longer marks the output as different.
+- 95bd273: The `LOCAL` band follows the modeled fetch cost as a share of run task time, so a high non-local ratio on a cheap run is no longer critical. Impact figures print in one unit per category (GB-h for memory, core-h for core time) whatever their size. Every finding row, in the CLI JSON report and in both MCP views, gains `rankImpactMs`, a millisecond ranking figure on the axis of `rankCostMs`, for ranking findings by impact.
+- 81a3862: `get_finding_documentation` and `get_reference_doc` list the valid values when given an unknown type or anchor (a long type list is capped, with the count of the rest and a pointer to `list_detectors`; the anchor list is complete). The ETL phase buckets in `runShape.etlPhasesMs` are now the union of their stages' intervals, so concurrent stages count once and no bucket exceeds wall-clock. The `get_run_summary` description explains how stages are assigned to phases and what a zero bucket means.
+- 023cb51: Relicense under FSL-1.1-MIT.
+- 39eff4f: `retryWaste` evidence tells an executor lost to the cluster from one lost to the application. The parser keeps `Exit Caused By App`, the flag Spark uses to decide whether a lost task counts toward `spark.task.maxFailures`. Each sampled attempt carries `lossReason` and `exitCausedByApp`, and the new `executorLosses` evidence groups the losses by executor and cause. When every retried attempt is a loss with `exitCausedByApp: false`, the recommendation says the executor exits were unrelated to the running tasks (for example preemption, node loss, or a container the resource manager or driver released) and do not count toward `spark.task.maxFailures`, and it gives no application fix. When only some are, it keeps the application advice and adds a caveat. `executorLosses` lists the first 50 groups seen per stage.
+- 0348ca9: The slow-host (`HOST`) detector compares input and shuffle bytes per task instead of per executor total, so executors that lived for different spans of a stage (dynamic allocation, executor loss) no longer flag each other. Executor findings on every dimension stay at `info` and carry `medianValue` and `executorCount` in their evidence. Their byte-dimension text says the figure is per task and names larger partitions (data skew), not a degraded executor, as the cause. Input and shuffle bytes now pass the same chance test as task time, so a short-lived executor whose few tasks were large is not flagged. Each `executorStats` row of a stage record carries four new additive fields, `logInputBytesSum`, `logInputBytesM2`, `logShuffleBytesSum` and `logShuffleBytesM2`; a stage recorded without them flags no executor on that byte dimension.
+- Updated dependencies [9076304]
+- Updated dependencies [a635c00]
+- Updated dependencies [399095d]
+- Updated dependencies [95bd273]
+- Updated dependencies [81a3862]
+- Updated dependencies [023cb51]
+- Updated dependencies [39eff4f]
+- Updated dependencies [67e9fb9]
+- Updated dependencies [0348ca9]
+  - sparkforensics-cli@0.13.0
+
 ## 0.12.1
 
 ### Patch Changes

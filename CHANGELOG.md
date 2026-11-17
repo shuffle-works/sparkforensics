@@ -1,5 +1,12 @@
 # sparkforensics-web
 
+## 0.31.2
+
+### Patch Changes
+
+- 399095d: The run comparison verdict states a change in input or output volume with the same figures the Comparability section prints. It names introduced and resolved findings by category and impact band instead of netting counts per category, so a resolved critical finding stays visible. A `low` confidence comparison gets a one-sentence verdict that gives the reason. Output rows now use the noise band like the byte figures, so a small row-count change no longer marks the output as different.
+- 0348ca9: The slow-host (`HOST`) detector compares input and shuffle bytes per task instead of per executor total, so executors that lived for different spans of a stage (dynamic allocation, executor loss) no longer flag each other. Executor findings on every dimension stay at `info` and carry `medianValue` and `executorCount` in their evidence. Their byte-dimension text says the figure is per task and names larger partitions (data skew), not a degraded executor, as the cause. Input and shuffle bytes now pass the same chance test as task time, so a short-lived executor whose few tasks were large is not flagged. Each `executorStats` row of a stage record carries four new additive fields, `logInputBytesSum`, `logInputBytesM2`, `logShuffleBytesSum` and `logShuffleBytesM2`; a stage recorded without them flags no executor on that byte dimension.
+
 ## 0.31.1
 
 ### Patch Changes
