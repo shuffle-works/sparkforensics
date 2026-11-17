@@ -153,7 +153,8 @@ Options:
                                     against Spark configuration keys: a key that matches is left out
                                     of the comparison's configuration check, for keys that differ by
                                     design, such as a per-run output path. Per-run identity keys
-                                    (application id, start time, driver address) are always left out.
+                                    (application id, start time, driver address, UI and proxy URLs)
+                                    are always left out.
                                     Same limits as --normalize-path.
   --noise-band-pct <pct>            Requires a baseline. A metric that differs from the baseline by
                                     less than this percentage is marked withinNoise (default 2). It
