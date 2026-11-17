@@ -54,12 +54,33 @@ export function dataTail(overrides = {}) {
  * @param {Record<string, unknown>} [overrides]
  */
 export function executorRow(executorId, durationsMs, overrides = {}) {
-  const logs = durationsMs.map(Math.log1p);
-  const logDurationSum = logs.reduce((a, b) => a + b, 0);
-  const logMean = logDurationSum / logs.length;
+  const duration = logStats(durationsMs);
+  const noBytes = logStats(durationsMs.map(() => 0));
   return {
     executorId, taskCount: durationsMs.length, totalDuration: durationsMs.reduce((a, b) => a + b, 0),
-    logDurationSum, logDurationM2: logs.reduce((sum, x) => sum + (x - logMean) ** 2, 0),
+    logDurationSum: duration.sum, logDurationM2: duration.m2,
+    logInputBytesSum: noBytes.sum, logInputBytesM2: noBytes.m2, logShuffleBytesSum: noBytes.sum, logShuffleBytesM2: noBytes.m2,
     inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, ...overrides,
+  };
+}
+
+// The sum and M2 of ln(1 + value) over one executor's tasks, as finalizeStage keeps them.
+/** @param {number[]} values */
+function logStats(values) {
+  const logs = values.map(Math.log1p);
+  const sum = logs.reduce((a, b) => a + b, 0);
+  const mean = sum / logs.length;
+  return { sum, m2: logs.reduce((acc, x) => acc + (x - mean) ** 2, 0) };
+}
+
+// The byte fields of an executor row whose tasks read `inputPerTask` bytes each and shuffled
+// `shufflePerTask` (read and write together) bytes each; the task count is the arrays' length.
+/** @param {number[]} inputPerTask @param {number[]} [shufflePerTask] */
+export function executorBytes(inputPerTask, shufflePerTask = inputPerTask.map(() => 0)) {
+  const input = logStats(inputPerTask), shuffle = logStats(shufflePerTask);
+  return {
+    taskCount: inputPerTask.length,
+    inputBytes: inputPerTask.reduce((a, b) => a + b, 0), shuffleReadBytes: shufflePerTask.reduce((a, b) => a + b, 0), shuffleWriteBytes: 0,
+    logInputBytesSum: input.sum, logInputBytesM2: input.m2, logShuffleBytesSum: shuffle.sum, logShuffleBytesM2: shuffle.m2,
   };
 }

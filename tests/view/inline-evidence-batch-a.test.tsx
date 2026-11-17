@@ -350,7 +350,7 @@ describe('SlowHost in an evidence panel', () => {
       variant: 'multiDim', execMaxValue: 9000, medianValue: 3000, executorCount: 3, taskCount: 200,
     }) as Finding;
     run([a], ['a']);
-    expect(screen.getByText('Executor 7: 9.0s of task time, the most of 3 executors (median 3.0s) (200 tasks in the stage).')).toBeInTheDocument();
+    expect(screen.getByText('Executor 7: 9.0s of task time, the most of 3 executors (median 3.0s; 200 tasks in the stage).')).toBeInTheDocument();
   });
 
   it('keeps everything outside a panel', () => {

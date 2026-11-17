@@ -5,7 +5,7 @@ import { detectorCatalog } from '../src/detector-catalog.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/units.js';
 import { FINDING_PRESENTATION } from '../src/finding-presentation.js';
-import { makeTypedStage, makeApp, dataTail, executorRow } from './fixtures/stage-app-fixtures.js';
+import { makeTypedStage, makeApp, dataTail, executorRow, executorBytes } from './fixtures/stage-app-fixtures.js';
 import { present } from './fixtures/present.js';
 
 /** @typedef {import('../src/types.ts').Finding} Finding */
@@ -94,8 +94,7 @@ function removedExecutor(executorId, timestamp) {
 /** @param {number} n @returns {import('../src/stage-quantiles.ts').StageExecutorStat[]} */
 function execs(n) {
   return Array.from({ length: n }, (_, i) => ({
-    executorId: `e${i}`, taskCount: 1, totalDuration: 0, logDurationSum: 0, logDurationM2: 0,
-    inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0,
+    ...executorRow(`e${i}`, [0]), totalDuration: 0,
   }));
 }
 
@@ -471,7 +470,7 @@ describe('analyze: host duration-share (§2a)', () => {
 });
 
 describe('analyze: executor multi-dim imbalance (§2b)', () => {
-  const base = { taskCount: 5, totalDuration: 5000, logDurationSum: 0, logDurationM2: 0, inputBytes: 500, shuffleReadBytes: 0, shuffleWriteBytes: 0 };
+  const base = { totalDuration: 5000, logDurationSum: 0, logDurationM2: 0, ...executorBytes(Array(5).fill(100)) };
   it('flags task-time deviation past the top tier as critical', () => {
     const executorStats = [
       executorRow('e1', Array(5).fill(100000)), // mean 100000
@@ -499,7 +498,7 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
 
   it('gives a byte dimension no confidence caveat, but its median and executor count', () => {
     const executorStats = [
-      { executorId: 'e1', ...base, inputBytes: 5_000_000_000 }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },
+      { executorId: 'e1', ...base, ...executorBytes(Array(5).fill(5_000_000_000 / 5)) }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },
     ];
     const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
     const [f] = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
@@ -530,9 +529,9 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
 
   it('does not flag inputBytes when the absolute byte volume is tiny (10× ratio, 100 bytes)', () => {
     const executorStats = [
-      { executorId: 'e1', ...base, inputBytes: 100 },
-      { executorId: 'e2', ...base, inputBytes: 10 },
-      { executorId: 'e3', ...base, inputBytes: 10 }, // max/median = 10×
+      { executorId: 'e1', ...base, ...executorBytes(Array(5).fill(100 / 5)) },
+      { executorId: 'e2', ...base, ...executorBytes(Array(5).fill(10 / 5)) },
+      { executorId: 'e3', ...base, ...executorBytes(Array(5).fill(10 / 5)) }, // max/median = 10×
     ];
     const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
     expect(analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'))).toHaveLength(0);
@@ -540,9 +539,9 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
 
   it('still flags inputBytes at the same 10× ratio when volumes are large (no regression)', () => {
     const executorStats = [
-      { executorId: 'e1', ...base, inputBytes: 200 * 1024 * 1024 },
-      { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
-      { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 }, // max/median = 10×
+      { executorId: 'e1', ...base, ...executorBytes(Array(5).fill(200 * 1024 * 1024 / 5)) },
+      { executorId: 'e2', ...base, ...executorBytes(Array(5).fill(20 * 1024 * 1024 / 5)) },
+      { executorId: 'e3', ...base, ...executorBytes(Array(5).fill(20 * 1024 * 1024 / 5)) }, // max/median = 10×
     ];
     const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
     const f = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
@@ -554,9 +553,9 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
   // A stage under 0.5% of the run is skipped, however large the imbalance.
   it('skips a slow host on a stage under 0.5% of the run, and keeps it on a longer one', () => {
     const executorStats = [
-      { executorId: 'e1', ...base, inputBytes: 200 * 1024 * 1024 },
-      { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
-      { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 },
+      { executorId: 'e1', ...base, ...executorBytes(Array(5).fill(200 * 1024 * 1024 / 5)) },
+      { executorId: 'e2', ...base, ...executorBytes(Array(5).fill(20 * 1024 * 1024 / 5)) },
+      { executorId: 'e3', ...base, ...executorBytes(Array(5).fill(20 * 1024 * 1024 / 5)) },
     ];
     const longRun = makeApp({ startTime: 0, endTime: 400_000 });
     /** @param {number} completedAt */

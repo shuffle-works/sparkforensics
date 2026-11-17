@@ -86,25 +86,29 @@ function chanceOutlierZ(executors: number, alpha: number): number {
   return Math.sqrt(2 * Math.log(executors / (2 * alpha)));
 }
 
-// How far each executor's task durations sit above the stage's median executor, in standard errors,
-// on the log scale: (executor mean - median of executor means) / (stage task sd / sqrt(executor
-// tasks)). The stage sd is rebuilt from the per-executor count, log sum and M2: within-executor
-// squared deviations plus each executor mean's distance from the grand mean. null when the stage
-// has under two tasks, no spread, or any executor lacks finite log stats, so an unknown spread
-// never flags an executor.
-function executorDurationZ(execs: DetectorExecutorStat[]): Map<string, number> | null {
+// How far each executor's tasks sit above the stage's median executor, in standard errors, on the
+// log scale of one per-task quantity: (executor mean - median of executor means) / (stage task sd /
+// sqrt(executor tasks)). The stage sd is rebuilt from the per-executor count, log sum and M2:
+// within-executor squared deviations plus each executor mean's distance from the grand mean. null
+// when the stage has under two tasks, no spread, or any executor lacks finite log stats, so an
+// unknown spread never flags an executor.
+function executorLogZ(
+  execs: DetectorExecutorStat[],
+  logSum: (e: DetectorExecutorStat) => number | undefined,
+  logM2: (e: DetectorExecutorStat) => number | undefined,
+): Map<string, number> | null {
   const active = execs.filter(e => e.taskCount > 0);
   let tasks = 0, logTotal = 0;
   for (const e of active) {
-    if (!Number.isFinite(e.logDurationSum) || !Number.isFinite(e.logDurationM2)) return null;
+    if (!Number.isFinite(logSum(e)) || !Number.isFinite(logM2(e))) return null;
     tasks += e.taskCount;
-    logTotal += e.logDurationSum as number;
+    logTotal += logSum(e) as number;
   }
   if (tasks < 2) return null;
   const grandMean = logTotal / tasks;
   let squares = 0;
-  const means = active.map(e => (e.logDurationSum as number) / e.taskCount);
-  active.forEach((e, i) => { squares += (e.logDurationM2 as number) + e.taskCount * (means[i] - grandMean) ** 2; });
+  const means = active.map(e => (logSum(e) as number) / e.taskCount);
+  active.forEach((e, i) => { squares += (logM2(e) as number) + e.taskCount * (means[i] - grandMean) ** 2; });
   const sd = Math.sqrt(squares / (tasks - 1));
   if (!(sd > 0) || !Number.isFinite(sd)) return null;
   const median = medianOfSorted([...means].sort((a, b) => a - b));
@@ -143,9 +147,10 @@ export const slowHostDetector = defineStageDetector({
     // and would grade info, so the stage is skipped.
     stageFloorPct: 0.005,
     // outlierAlpha: the nominal chance a stage of alike tasks gets any executor flagged on task
-    // time. The slowest of many executors always tops the median, so a task-time executor is
-    // flagged only when its mean sits further above the median than the stage's own task spread
-    // and its task count allow (chanceOutlierZ), more strictly the more executors there are.
+    // time, input bytes per task or shuffle bytes per task. The largest of many executors always
+    // tops the median, so an executor is flagged only when its mean sits further above the median
+    // than the stage's own task spread and its task count allow (chanceOutlierZ), more strictly the
+    // more executors there are.
     // The normal-tail bound behind that cutoff is loose: simulated alike stages flag well under it.
     outlierAlpha: 0.005,
   },
@@ -202,8 +207,9 @@ export const slowHostDetector = defineStageDetector({
     const execs = stage.executorStats ?? [];
     const floorMs = thresholds.floorMs, floorBytes = thresholds.floorBytes;
     const taskTimeSamples = execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount }));
-    const taskTimeZs = executorDurationZ(execs);
-    const taskTimeZ = chanceOutlierZ(taskTimeSamples.length, thresholds.outlierAlpha);
+    const outlierZ = chanceOutlierZ(taskTimeSamples.length, thresholds.outlierAlpha);
+    // Only an executor the stage's own spread can't explain: with no known spread, none.
+    const beyondChance = (zs: Map<string, number> | null) => (sample: DimensionSample) => (zs?.get(sample.key) ?? -Infinity) >= outlierZ;
     // Spark's per-executor stage summary has no lifetime, so an executor's byte total grows with how
     // long it lived (dynamic allocation, executor loss). Bytes per task does not.
     const bytesPerTask = (bytes: (e: DetectorExecutorStat) => number): DimensionSample[] =>
@@ -211,11 +217,16 @@ export const slowHostDetector = defineStageDetector({
     const dims: { dimension: SlowHostMultiDimFinding['dimension']; floor: number; samples: DimensionSample[]; qualifies?: (sample: DimensionSample) => boolean }[] = [
       {
         dimension: 'taskTime', floor: floorMs, samples: taskTimeSamples,
-        // Only an executor the stage's own spread can't explain: with no known spread, none.
-        qualifies: sample => (taskTimeZs?.get(sample.key) ?? -Infinity) >= taskTimeZ,
+        qualifies: beyondChance(executorLogZ(execs, e => e.logDurationSum, e => e.logDurationM2)),
       },
-      { dimension: 'inputBytes', floor: floorBytes, samples: bytesPerTask(e => e.inputBytes ?? 0) },
-      { dimension: 'shuffleBytes', floor: floorBytes, samples: bytesPerTask(e => (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0)) },
+      {
+        dimension: 'inputBytes', floor: floorBytes, samples: bytesPerTask(e => e.inputBytes ?? 0),
+        qualifies: beyondChance(executorLogZ(execs, e => e.logInputBytesSum, e => e.logInputBytesM2)),
+      },
+      {
+        dimension: 'shuffleBytes', floor: floorBytes, samples: bytesPerTask(e => (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0)),
+        qualifies: beyondChance(executorLogZ(execs, e => e.logShuffleBytesSum, e => e.logShuffleBytesM2)),
+      },
     ];
     // Storage-memory dimension: best-effort, only when executorMetrics present.
     const em = stage.executorMetrics instanceof Map ? stage.executorMetrics : null;

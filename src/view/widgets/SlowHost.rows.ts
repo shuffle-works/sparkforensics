@@ -52,8 +52,8 @@ function slowHostMeasurement(f: SlowHostFinding): string | null {
     if (f.execMaxValue == null || !f.dimension) return null;
     const format = f.dimension === 'taskTime' ? formatDuration : formatBytes;
     const perTask = SLOW_HOST_DIMENSION_PER_TASK[f.dimension];
-    const tasks = f.taskCount != null ? ` (${f.taskCount} tasks in the stage)` : '';
-    return `Executor ${f.executorId}: ${format(f.execMaxValue)}${perTask} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}, the most of ${f.executorCount} executors (median ${format(f.medianValue)}${perTask})${tasks}.`;
+    const tasks = f.taskCount != null ? `; ${f.taskCount} tasks in the stage` : '';
+    return `Executor ${f.executorId}: ${format(f.execMaxValue)}${perTask} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}, the most of ${f.executorCount} executors (median ${format(f.medianValue)}${perTask}${tasks}).`;
   }
   return f.hostMeanMs != null ? `${f.host}: mean task time ${formatDuration(f.hostMeanMs)}.` : null;
 }

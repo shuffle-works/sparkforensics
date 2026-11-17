@@ -2179,18 +2179,6 @@
      }
     },
     {
-     "key": "slowHost|9|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 7.8,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "slowHost|9|execMaxMedianRatio||multiDim||2|taskTime||||||",
      "type": "slowHost",
      "band": "warning",
@@ -2543,18 +2531,6 @@
      }
     },
     {
-     "key": "slowHost|9|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 13.1,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "smallFiles|1|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -2672,14 +2648,6 @@
     "shuffle": [
      "partitions"
     ],
-    "slowHost": [
-     "dimension",
-     "execMaxValue",
-     "executorCount",
-     "executorId",
-     "medianValue",
-     "variant"
-    ],
     "smallFiles": [
      "direction",
      "executionId",
@@ -2770,18 +2738,6 @@
       "value": 1129061110,
       "unit": "bytes"
      }
-    },
-    {
-     "key": "slowHost|6|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 3.7,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "slowHost|6|execMaxMedianRatio||multiDim||2|taskTime||||||",
@@ -3135,18 +3091,6 @@
      }
     },
     {
-     "key": "slowHost|3|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 26.3,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "spill|3|memoryBytesSpilled|||||||||||",
      "type": "spill",
      "band": "info",
@@ -3239,14 +3183,6 @@
     "shuffle": [
      "partitions"
     ],
-    "slowHost": [
-     "dimension",
-     "execMaxValue",
-     "executorCount",
-     "executorId",
-     "medianValue",
-     "variant"
-    ],
     "spill": [
      "exchanges",
      "operators",
@@ -3308,18 +3244,6 @@
       "value": 717053045,
       "unit": "bytes"
      }
-    },
-    {
-     "key": "slowHost|3|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 7.5,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "slowHost|3|execMaxMedianRatio||multiDim||1|taskTime||||||",
@@ -3579,18 +3503,6 @@
      }
     },
     {
-     "key": "slowHost|5|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 2.1,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "spill|4|memoryBytesSpilled|||||||||||",
      "type": "spill",
      "band": "critical",
@@ -3714,14 +3626,6 @@
     ],
     "shuffle": [
      "partitions"
-    ],
-    "slowHost": [
-     "dimension",
-     "execMaxValue",
-     "executorCount",
-     "executorId",
-     "medianValue",
-     "variant"
     ],
     "spill": [
      "exchanges",
