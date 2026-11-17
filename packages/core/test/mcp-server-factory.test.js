@@ -482,9 +482,12 @@ describe('createMcpServer', () => {
       expect(full.view).toBe('full');
       for (const answer of [compact, full]) {
         expect(answer).toHaveProperty('writeTargets');
-        expect(answer).toHaveProperty('effectiveConf');
         expect(answer).toHaveProperty('metrics');
       }
+      expect(compact).not.toHaveProperty('effectiveConf');
+      expect(compact.metrics).not.toHaveProperty('stages');
+      expect(full).toHaveProperty('effectiveConf');
+      expect(full.metrics).toHaveProperty('stages');
       expect(compact).not.toHaveProperty('cleanChecks');
       expect(full).toHaveProperty('cleanChecks');
       expect(compact.findings[0]).not.toHaveProperty('evidence');

@@ -277,6 +277,8 @@ dynamic-allocation property when it is `off`. `underBroadcast` and
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file.
+An application with several attempts needs an attempt id: without one the
+fetch fails before any download and the message lists the attempt ids.
 `--shs-base-url` defaults to the `SPARKFORENSICS_SHS_BASE_URL` environment
 variable when `--app-id` is given; the flag takes precedence. It also supports
 comparing a candidate run against a baseline with regression gating

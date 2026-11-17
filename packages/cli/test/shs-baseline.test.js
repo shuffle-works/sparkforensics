@@ -43,13 +43,17 @@ const LOGS = {
 };
 
 // A fake History Server: serves the log of the application named in /api/v1/applications/<id>[/<attempt>]/logs
-// and 404s any other. Every requested URL is recorded.
+// and 404s any other. It lists one attempt for each application at /api/v1/applications/<id>. Every
+// requested log URL is recorded.
 function fakeShs() {
   /** @type {string[]} */
   const requested = [];
   const fetchImpl = vi.fn(async (/** @type {string | URL | Request} */ url) => {
-    requested.push(String(url));
     const appId = new URL(String(url)).pathname.split('/')[4];
+    if (!String(url).endsWith('/logs')) {
+      return LOGS[appId] ? Response.json({ id: appId, attempts: [{}] }) : new Response(null, { status: 404 });
+    }
+    requested.push(String(url));
     if (!LOGS[appId]) return new Response(null, { status: 404 });
     return new Response(zipSync({ eventlog: strToU8(LOGS[appId]) }), { status: 200 });
   });
@@ -477,5 +481,45 @@ describe('SPARKFORENSICS_SHS_BASE_URL', () => {
     expect(status).toBe(2);
     expect(stderr).toMatch(/--app-id\/--attempt-id require --shs-base-url or SPARKFORENSICS_SHS_BASE_URL/);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('an application with more than one attempt and no attempt id', () => {
+  // A History Server that lists attempts 1 and 2 for every application it knows.
+  function twoAttemptShs() {
+    const shs = fakeShs();
+    const fetchImpl = vi.fn(async (/** @type {string | URL | Request} */ url) => {
+      const appId = new URL(String(url)).pathname.split('/')[4];
+      if (!String(url).endsWith('/logs') && LOGS[appId]) {
+        return Response.json({ id: appId, attempts: [{ attemptId: '2' }, { attemptId: '1' }] });
+      }
+      return shs.fetchImpl(url);
+    });
+    return { fetchImpl, requested: shs.requested };
+  }
+
+  // Each case: the arguments, the application with two attempts, the hint, and the arguments with the hint followed.
+  it.each([
+    [
+      'a single --app-id', candidateShs(SLOW_ID), SLOW_ID, '--attempt-id',
+      [...candidateShs(SLOW_ID), '--attempt-id', '2'],
+    ],
+    [
+      'several --app-id values', [...candidateShs(SLOW_ID, FAST_ID), '--baseline', p('baseline')], SLOW_ID, `--app-id ${SLOW_ID}:<attempt>`,
+      [...candidateShs(`${SLOW_ID}:2`, `${FAST_ID}:1`), '--baseline', p('baseline')],
+    ],
+    [
+      'a --baseline-app-id', [p('slow'), ...baselineShs()], BASE_ID, '--baseline-attempt-id',
+      [p('slow'), ...baselineShs(), '--baseline-attempt-id', '2'],
+    ],
+  ])('for %s, lists the attempts and names an argument the CLI accepts', async (_label, argv, appId, hint, followed) => {
+    const { fetchImpl, requested } = twoAttemptShs();
+    const { status, stderr } = await run(argv, { fetchImpl });
+    expect(status).not.toBe(0);
+    expect(stderr).toContain(`Application ${appId} has 2 attempts: 2, 1. Pass ${hint} to choose one.`);
+    expect(requested.some((url) => url.includes(`/${appId}/`))).toBe(false);
+    const retry = await run(followed, { fetchImpl: twoAttemptShs().fetchImpl });
+    expect(retry.stderr).not.toMatch(/Usage|attempts:/);
+    expect(retry.status).not.toBe(2);
   });
 });

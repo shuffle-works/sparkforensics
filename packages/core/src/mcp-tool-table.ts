@@ -166,7 +166,9 @@ const diagnoseRunOutput = {
 
 const getRunSummaryOutput = {
   runId: outputRunId,
-  app: z.object({ id: z.string().nullable(), name: z.string().nullable(), sparkVersion: z.string().nullable() }),
+  app: z.object({
+    id: z.string().nullable(), attemptId: z.string().nullable(), name: z.string().nullable(), sparkVersion: z.string().nullable(),
+  }),
   stageCount: z.number(), jobCount: z.number(), sqlExecutionCount: z.number(),
   executorCount: z.object({ added: z.number(), removed: z.number() }),
   durationMs: z.number().nullable(), skippedLines: z.number(), runComplete: z.boolean(),
@@ -214,26 +216,29 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
 
     tool({
       name: 'diagnose_run',
-      description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by stage task time or idle core time, then potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding and leaves out the clean-check and not-checked lists; view "full" returns every finding with its remediation text and evidence, and those lists. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown, and structuredContent holds it as markdown next to a few headline fields. A JSON result longer than ' + DEFAULT_PAGE_CHARS + ' characters comes in pages: pass pagination.nextCursor as cursor, with the other arguments unchanged, for the next one. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
+      description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by stage task time or idle core time, then potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding, names each verdict step\'s lead finding by leadFindingId only, and leaves out the clean-check and not-checked lists, the per-stage rows of metrics (metrics.stages) and effectiveConf; add "stages" or "effectiveConf" to include to get them, or pass confKeys to get effectiveConf narrowed to named Spark properties. View "full" returns every finding with its remediation text and evidence, each verdict step\'s lead finding row as leadFinding, those lists, metrics.stages and effectiveConf. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown, and structuredContent holds it as markdown next to a few headline fields. A JSON result longer than ' + DEFAULT_PAGE_CHARS + ' characters comes in pages: pass pagination.nextCursor as cursor, with the other arguments unchanged, for the next one. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
       inputSchema: {
         ...runRefSchema, redact: z.boolean().optional(),
         view: z.enum(['compact', 'full']).optional()
           .describe('compact (default): one short row per finding. full: the CLI report\'s rows, clean checks and not-checked checks.'),
-        include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
+        include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors', 'stages', 'effectiveConf'])).optional()
+          .describe('Extra blocks. "stages" and "effectiveConf" are always in the full view and only on request in the compact view, where confKeys also adds effectiveConf.'),
+        confKeys: z.array(z.string()).optional()
+          .describe('List only these Spark properties in effectiveConf. Adds effectiveConf to the compact view without include.'),
         impactBand: z.array(impactBandSchema).optional(), type: z.array(findingTypeSchema).optional(), stageId: z.number().int().nonnegative().optional(),
         minBand: impactBandSchema.optional()
           .describe('List only findings at this band or a more severe one. Without minBand or impactBand, info findings are left out and notesHidden counts them; "info" lists all.'),
         maxFindings: z.number().int().nonnegative().optional()
-          .describe('List at most this many findings, most severe first. findingsOmitted counts the ones left out; each verdict step still carries its lead finding.'),
+          .describe('List at most this many findings, most severe first. findingsOmitted counts the ones left out; each verdict step still names its lead finding (leadFindingId).'),
         cursor: z.string().optional()
           .describe('The pagination.nextCursor of the previous page. Not used with format "md".'),
         ...formatSchema,
       },
       outputSchema: diagnoseRunOutput,
       cli: { twin: 'sparkforensics-analyze <log>' },
-      handler: ({ source, runId, redact, include, format, impactBand, type, stageId, view, minBand, maxFindings, cursor }) => diagnoseToolResult(
+      handler: ({ source, runId, redact, include, confKeys, format, impactBand, type, stageId, view, minBand, maxFindings, cursor }) => diagnoseToolResult(
         resolveOrCreateRun({ source, runId }, { thresholds }).then(({ runId: id }) => paginateDiagnose(
-          diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds, generator, view: view ?? 'compact', minBand, maxFindings }),
+          diagnoseRun(id, { redact, include, confKeys, markdown: format === 'md', impactBand, type, stageId, thresholds, generator, view: view ?? 'compact', minBand, maxFindings }),
           { cursor },
         )),
       ),

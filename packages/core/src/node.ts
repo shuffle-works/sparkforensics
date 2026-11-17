@@ -14,7 +14,7 @@ export {
   parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities,
 } from './cli/regression-budgets.ts';
 export { loadThresholdOverrides } from './cli/threshold-config.ts';
-export { resolveFromShs } from './shs-load.ts';
+export { resolveFromShs, isShsAttemptsError } from './shs-load.ts';
 export { validateShsRequest } from './shs-request.js';
 export { analyzeRun } from './analyzed-run.ts';
 export { buildEvidenceReport, toFindingsFilter } from './evidence-report.ts';

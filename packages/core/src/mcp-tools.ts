@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { collectRun } from './cli/collect-run.ts';
 import { analyzeRun, runFindings, type AnalyzedRun } from './analyzed-run.ts';
-import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
+import { resolveFromShs, isShsAttemptsError, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
 import {
   buildEvidenceReport, toFindingsFilter,
@@ -17,6 +17,7 @@ import { buildComparisonOutput, type ComparisonOutput } from './comparison-outpu
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { compileConfIgnorePatterns } from './comparability.ts';
 import { runOutputBlocks, type ReportGenerator } from './run-output.ts';
+import type { RunMetrics } from './run-metrics.ts';
 import { evaluateBudgets, regressionPairingError, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { findingName, titleCase } from './finding-names.ts';
@@ -37,7 +38,7 @@ export type RunRef = { runId?: string; source?: RunSource };
 export interface RunSummary extends RunOutcomeSummary {
   runId: string;
   // string | null (not undefined): getRunSummary always sets these via `?? null`, never omits them.
-  app: { id: string | null; name: string | null; sparkVersion: string | null };
+  app: { id: string | null; attemptId: string | null; name: string | null; sparkVersion: string | null };
   stageCount: number; jobCount: number; sqlExecutionCount: number;
   executorCount: { added: number; removed: number };
   durationMs: number | null;
@@ -221,7 +222,11 @@ export async function resolveOrCreateRun(
     try {
       const { appModel: parsed } = 'path' in source
         ? await collectRun(source.path)
-        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs });
+        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs })
+          .catch((e: unknown) => {
+            if (isShsAttemptsError(e)) e.message += ' Pass source.attemptId to choose one.';
+            throw e;
+          });
       // The attempt the caller asked the History Server for, when the log itself does not name one.
       if (!('path' in source) && source.attemptId && parsed.app && !parsed.app.attemptId) parsed.app.attemptId = source.attemptId;
       const run = analyzeRun(parsed, { thresholds });
@@ -266,9 +271,12 @@ export function compactFindingRow(row: FindingRow): CompactFindingRow {
   };
 }
 
-/** A verdict step with its lead finding's row, which `findings` may not list under `maxFindings` or
- * `minBand`. Null for a step whose lead has no id. */
-export type DiagnoseVerdictStep = VerdictStepRow & { leadFinding: FindingRow | CompactFindingRow | null };
+/** A verdict step. The full view adds its lead finding's row, which `findings` may not list under
+ * `maxFindings` or `minBand` (null for a step whose lead has no id); the compact view names the
+ * lead by `leadFindingId` only. */
+export type DiagnoseVerdictStep = VerdictStepRow & { leadFinding?: FindingRow | null };
+
+type RunBlocks = ReturnType<typeof runOutputBlocks>;
 
 export type DiagnoseRunResult = {
   runId: string; view: DiagnoseView;
@@ -283,14 +291,20 @@ export type DiagnoseRunResult = {
   tunedThresholds?: Record<string, TunedThresholds>;
   // Only in the full view.
   cleanChecks?: CleanCheckEntry[]; notRunChecks?: NotRunCheckEntry[];
-} & Pick<EvidenceReportJson, 'writeTargets'> & ReturnType<typeof runOutputBlocks>
+} & Pick<EvidenceReportJson, 'writeTargets'> & Omit<RunBlocks, 'metrics' | 'effectiveConf'>
+  // The compact view leaves out the per-stage rows and effectiveConf unless `include` asks for them.
+  & { metrics: Omit<RunMetrics, 'stages'> & Partial<Pick<RunMetrics, 'stages'>>; effectiveConf?: RunBlocks['effectiveConf'] }
   & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string };
+
+const withoutStages = ({ stages: _stages, ...totals }: RunMetrics) => totals;
+
+export type DiagnoseInclude = 'summary' | 'evidenceAvailability' | 'detectors' | 'stages' | 'effectiveConf';
 
 // `thresholds` on every analyzing tool below: the server's --thresholds overrides, fixed for the
 // process by createMcpServer(). A client can't set them per call; the dashboard never has them.
 // `view` defaults to `full` here; the MCP tool defaults it to `compact`.
 export function diagnoseRun(runId: string, opts?: {
-  redact?: boolean; include?: Array<'summary' | 'evidenceAvailability' | 'detectors'>; markdown?: boolean;
+  redact?: boolean; include?: DiagnoseInclude[]; confKeys?: string[]; markdown?: boolean;
   impactBand?: string[]; type?: string[]; stageId?: number; thresholds?: ThresholdOverrides; generator?: ReportGenerator;
   view?: DiagnoseView; maxFindings?: number; minBand?: ImpactBand;
 }): DiagnoseRunResult {
@@ -300,14 +314,19 @@ export function diagnoseRun(runId: string, opts?: {
   const { json, markdown, findingsMatched, notesHidden } = buildEvidenceReport(appModel, {
     redact: opts?.redact, markdown: opts?.markdown, findingsFilter, thresholds: opts?.thresholds,
   });
-  // The lead rows come from the unfiltered report (cached, so this costs no second analysis).
-  const allRows = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json.findings;
-  const shape = (row: FindingRow): FindingRow | CompactFindingRow => (view === 'compact' ? compactFindingRow(row) : row);
+  const compact = view === 'compact';
+  // The full view's lead rows come from the unfiltered report (cached, so this costs no second analysis).
+  const allRows = compact ? [] : buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json.findings;
+  const shape = (row: FindingRow): FindingRow | CompactFindingRow => (compact ? compactFindingRow(row) : row);
   const steps = json.verdict.steps.map((step): DiagnoseVerdictStep => {
+    if (compact) return step;
     const lead = step.leadFindingId == null ? undefined : allRows.find((row) => row.id === step.leadFindingId && row.type === step.type);
-    return { ...step, leadFinding: lead ? shape(lead) : null };
+    return { ...step, leadFinding: lead ?? null };
   });
   const include = opts?.include ?? [];
+  const { metrics, effectiveConf, ...blocks } = runOutputBlocks(appModel, {
+    redact: opts?.redact, thresholds: opts?.thresholds, generator: opts?.generator, confKeys: opts?.confKeys,
+  });
   const tuned = json.summary.tunedThresholds;
   return {
     runId, view, verdict: { ...json.verdict, steps }, findings: json.findings.map(shape), findingsOmitted: findingsMatched - json.findings.length, notesHidden,
@@ -315,7 +334,9 @@ export function diagnoseRun(runId: string, opts?: {
     ...(view === 'full' ? { cleanChecks: json.cleanChecks, notRunChecks: json.notRunChecks } : {}),
     // The CLI report's own blocks, so a run reads the same through either surface.
     writeTargets: json.writeTargets,
-    ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds, generator: opts?.generator }),
+    ...blocks,
+    metrics: !compact || include.includes('stages') ? metrics : withoutStages(metrics),
+    ...(!compact || include.includes('effectiveConf') || opts?.confKeys ? { effectiveConf } : {}),
     runComplete: !runTiming(appModel.app).incomplete,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),
@@ -467,7 +488,8 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
     : rawApp;
   return {
     runId,
-    app: redactedApp,
+    // Only cluster-mode runs have an attempt id; it is not an identifier, so redaction keeps it.
+    app: { ...redactedApp, attemptId: app?.attemptId ?? null },
     stageCount: stages.size,
     jobCount: jobs.size,
     sqlExecutionCount: sql.size,
