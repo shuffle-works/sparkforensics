@@ -176,9 +176,12 @@ finding:
 - `retryWaste` only: `executorLosses`: the `ExecutorLostFailure` attempts
   among the discarded ones, one group per executor, loss reason and
   `exitCausedByApp` value, with a `count`, most frequent first. Counts cover
-  every discarded attempt, not only the 20 sampled. When the dominant group
-  has `exitCausedByApp: false`, the recommendation says the losses are
-  unrelated to the running tasks and give no application fix.
+  every discarded attempt of the first 50 groups seen per stage
+  (`MAX_FAILURE_DETAILS_PER_STAGE`); later groups are not listed. The
+  recommendation says the losses are unrelated to the running tasks and gives
+  no application fix only when every discarded attempt is a listed loss with
+  `exitCausedByApp: false`. When only some losses are, it keeps the
+  application advice and adds a caveat.
 
 Both sample arrays are capped at 20 entries, filled in first-encountered
 order (finalize order for `failedTaskDetails`, discard order for

@@ -221,15 +221,28 @@ describe('failure advice from parsed events', () => {
     expect(finding.retriedTaskDetails.every((t) => t.lossReason === PREEMPTED && t.exitCausedByApp === false)).toBe(true);
   });
 
-  it('retryWaste keeps both exit-cause values apart and advises from the dominant group', () => {
-    const finding = parseLosses([...app('3', 4), ...cluster('4', 2)]);
+  it('retryWaste keeps the application advice and adds a caveat when only some losses are cluster-side', () => {
+    const finding = parseLosses([...cluster('4', 3), ...app('3', 2)]);
     expect(finding.recommendation).toMatch(/spark\.executor\.memoryOverhead/);
-    expect(finding.recommendation).not.toMatch(/maxFailures/);
+    expect(finding.recommendation).toMatch(/not caused by the application.*do not count toward spark\.task\.maxFailures/);
+    expect(finding.remediation?.length).toBeGreaterThan(0);
     expect(finding.executorLosses).toEqual([
-      { executorId: '3', lossReason: CONTAINER_KILL, exitCausedByApp: true, count: 4 },
-      { executorId: '4', lossReason: PREEMPTED, exitCausedByApp: false, count: 2 },
+      { executorId: '4', lossReason: PREEMPTED, exitCausedByApp: false, count: 3 },
+      { executorId: '3', lossReason: CONTAINER_KILL, exitCausedByApp: true, count: 2 },
     ]);
     expect(new Set(finding.retriedTaskDetails.map((t) => t.exitCausedByApp))).toEqual(new Set([true, false]));
+  });
+
+  it('retryWaste gives no caveat when every loss counts toward maxFailures', () => {
+    const finding = parseLosses(app('3', 4));
+    expect(finding.recommendation).toMatch(/spark\.executor\.memoryOverhead/);
+    expect(finding.recommendation).not.toMatch(/maxFailures/);
+  });
+
+  it('failures advice is unchanged by exitCausedByApp', () => {
+    const group = { reason: 'ExecutorLostFailure', className: null, message: null, lossReason: CONTAINER_KILL, exitCausedByApp: false, stackExcerpt: null, count: 5 };
+    expect(adviseFailureGroup(group)?.id).toBe(adviseFailureGroup({ ...group, exitCausedByApp: true })?.id);
+    expect(adviseFailureGroup(group)).not.toBeNull();
   });
 
   it('reads a container memory kill from the TaskEnd loss reason into failures and retryWaste', () => {
