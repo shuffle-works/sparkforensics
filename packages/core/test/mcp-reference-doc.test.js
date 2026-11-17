@@ -15,6 +15,6 @@ describe('getReferenceDoc', () => {
     expect(getReferenceDoc('#bottleneck-skew').content).toMatch(/\S/);
   });
   it('throws on an unknown anchor', () => {
-    expect(() => getReferenceDoc('#nonsense')).toThrow();
+    expect(() => getReferenceDoc('#nonsense')).toThrow(/Valid anchors: #intro, .*and \d+ more/);
   });
 });

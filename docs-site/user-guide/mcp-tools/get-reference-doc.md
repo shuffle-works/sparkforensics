@@ -32,4 +32,4 @@ passed: `"#metric-task-duration"` returns the Metrics Glossary page with
 `"anchor": "metrics"`.
 
 An anchor that resolves to no known page returns the `invalid-anchor` error
-code (see [Errors](../mcp-tools.md#errors)).
+code, and its message lists the valid anchors (see [Errors](../mcp-tools.md#errors)).

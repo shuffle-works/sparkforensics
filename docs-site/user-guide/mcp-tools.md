@@ -197,7 +197,7 @@ The codes:
 - `finding-not-found`: that `findingId` isn't on that run.
 - `invalid-date-filter`: `list_runs`'s `minDate` or `maxDate` isn't a
   parseable date.
-- `invalid-type`: that finding `type` isn't one `get_finding_documentation` recognizes.
+- `invalid-type`: that finding `type` isn't one `get_finding_documentation` recognizes; the message lists the valid types.
 - `invalid-anchor`: that `anchor` doesn't resolve to a known `get_reference_doc` page.
 - `invalid-event-log`: the file doesn't exist or can't be read (the text
   names the system error, such as `EACCES`, without the path), the file isn't a decodable

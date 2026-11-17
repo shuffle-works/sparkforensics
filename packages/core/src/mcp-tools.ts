@@ -21,6 +21,7 @@ import type { RunMetrics } from './run-metrics.ts';
 import { evaluateBudgets, regressionPairingError, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { findingName, titleCase } from './finding-names.ts';
+import { FINDING_TYPES } from './cli/flag-values.ts';
 import { docAnchorForType } from './detector-docs.ts';
 import { DETECTORS } from './detector-catalog.ts';
 import type { ThresholdOverrides } from './detectors.ts';
@@ -378,6 +379,15 @@ export interface FindingDocumentation {
   tuningDoc: { anchor: string; title: string; content: string } | null;
 }
 
+const MAX_LISTED_VALUES = 15;
+
+/** The "valid values" tail of an unknown-value error: the first values, then how many more exist. */
+function validValuesHint(values: readonly string[]): string {
+  const shown = values.slice(0, MAX_LISTED_VALUES).join(', ');
+  const more = values.length - MAX_LISTED_VALUES;
+  return more > 0 ? `${shown}, and ${more} more` : shown;
+}
+
 // A finding type documents itself; a detector-level type that never appears on a finding
 // (broadcastSizing) documents the types its entry emits.
 function documentedTypes(type: string): readonly string[] {
@@ -391,7 +401,10 @@ function documentedTypes(type: string): readonly string[] {
 export function getFindingDocumentation(type: string): FindingDocumentation {
   const types = documentedTypes(type);
   const [docType] = types;
-  if (docType === undefined) throw mcpError('invalid-type', `Unknown finding type: ${type}`);
+  if (docType === undefined) {
+    const detectorTypes = DETECTORS.map((entry) => entry.type).filter((t) => !FINDING_TYPES.includes(t));
+    throw mcpError('invalid-type', `Unknown finding type: ${type}. Valid types: ${validValuesHint([...FINDING_TYPES, ...detectorTypes])}.`);
+  }
 
   const tag = typeTag(docType);
   const detectionContent = readFileSync(join(DOCS_CONTENT_DIR, 'detection', `${tag.toLowerCase()}.md`), 'utf8');
@@ -438,7 +451,10 @@ export interface ReferenceDoc { anchor: string; title: string; content: string; 
 export function getReferenceDoc(anchor: string): ReferenceDoc {
   const page = pageForAnchor(String(anchor).replace(/^#/, ''));
   const entry = findNavEntry(page);
-  if (!entry) throw mcpError('invalid-anchor', `Unknown reference anchor: ${anchor}`);
+  if (!entry) {
+    const anchors = (JSON.parse(readFileSync(CHAPTERS_NAV_FILE, 'utf8')) as NavEntry[]).map((e) => `#${e.anchor}`);
+    throw mcpError('invalid-anchor', `Unknown reference anchor: ${anchor}. Valid anchors: ${validValuesHint(anchors)}.`);
+  }
   return { anchor: page, title: entry.title, content: readNavEntryContent(entry) };
 }
 
