@@ -548,7 +548,7 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     const f = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('info'); // no cost estimate behind the ratio
-    expect(f[0].recommendation).toMatch(/^Executor e1's input read is 10× the median: /);
+    expect(f[0].recommendation).toMatch(/^Executor e1's input read per task is 10× the median: its tasks got larger partitions than the rest \(data skew\); investigate uneven partition assignment\.$/);
   });
 
   // A stage under 0.5% of the run is skipped, however large the imbalance.

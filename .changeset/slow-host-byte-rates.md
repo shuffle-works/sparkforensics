@@ -7,4 +7,4 @@
 "sparkforensics-web": patch
 ---
 
-The slow-host (`HOST`) detector compares input and shuffle bytes per task instead of per executor total, so executors that lived for different spans of a stage (dynamic allocation, executor loss) no longer flag each other. Executor findings on every dimension stay at `info` and carry `medianValue` and `executorCount` in their evidence.
+The slow-host (`HOST`) detector compares input and shuffle bytes per task instead of per executor total, so executors that lived for different spans of a stage (dynamic allocation, executor loss) no longer flag each other. Executor findings on every dimension stay at `info` and carry `medianValue` and `executorCount` in their evidence. Their byte-dimension text says the figure is per task and names larger partitions (data skew), not a degraded executor, as the cause.

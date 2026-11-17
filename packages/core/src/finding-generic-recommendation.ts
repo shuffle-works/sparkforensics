@@ -36,3 +36,11 @@ export const SLOW_HOST_DIMENSION_LABEL: Record<SlowHostMultiDimEvidence['dimensi
   shuffleBytes: 'shuffle read and write',
   storageMemory: 'storage memory',
 };
+
+/** ' per task' for the byte dimensions slowHost compares as bytes per task, '' for the rest. */
+export const SLOW_HOST_DIMENSION_PER_TASK: Record<SlowHostMultiDimEvidence['dimension'], string> = {
+  taskTime: '',
+  inputBytes: ' per task',
+  shuffleBytes: ' per task',
+  storageMemory: '',
+};

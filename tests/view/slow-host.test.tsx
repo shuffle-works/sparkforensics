@@ -77,14 +77,14 @@ test('surfaces the per-executor multiDim detail with its variant\'s fix always v
     { type: 'slowHost', variant: 'multiDim', stageId: 4, impactBand: 'info', metric: 'execMaxMedianRatio', value: 3.5, executorId: '7', dimension: 'shuffleBytes', recommendation: 'Executor 7 deviates on shuffleBytes: check for a hot key.' } as Finding,
   ];
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getByText(/Executor 7: 3\.5× the median shuffle read and write/)).toBeInTheDocument();
-  expect(screen.getByText('Investigate uneven partition assignment or a degraded executor.')).toBeInTheDocument();
+  expect(screen.getByText(/Executor 7: 3\.5× the median shuffle read and write per task/)).toBeInTheDocument();
+  expect(screen.getByText('Investigate uneven partition assignment: one executor\'s tasks got larger partitions than the rest (data skew).')).toBeInTheDocument();
 
   // Density doesn't change anything for this sub-rule: still visible at Advanced.
   const { store } = await import('@/store/store');
   store.getState().setWidgetDensity('advanced');
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getAllByText('Investigate uneven partition assignment or a degraded executor.').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Investigate uneven partition assignment: one executor\'s tasks got larger partitions than the rest (data skew).').length).toBeGreaterThan(0);
   store.getState().setWidgetDensity('basic');
 });
 

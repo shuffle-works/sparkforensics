@@ -1,6 +1,6 @@
 import { medianOfSorted } from '../../median.ts';
 import { costOnly, singleStageImpact } from '../../impact-model.ts';
-import { SLOW_HOST_DIMENSION_LABEL } from '../../finding-generic-recommendation.ts';
+import { SLOW_HOST_DIMENSION_LABEL, SLOW_HOST_DIMENSION_PER_TASK } from '../../finding-generic-recommendation.ts';
 import type { Finding, ImpactEstimate } from '../../types.ts';
 import type { FindingOf, AllKeys } from '../../finding-types.ts';
 import { loggedAs } from '../conf.ts';
@@ -235,7 +235,7 @@ export const slowHostDetector = defineStageDetector({
         execMaxValue: r.value, medianValue: r.median, executorCount: d.samples.length,
         executorId: r.key,
         ...(d.dimension === 'taskTime' ? executorTaskTimeCaveat(r.key, r.ratio, d.samples.length, stage.taskCount) : {}),
-        recommendation: `Executor ${r.key}'s ${SLOW_HOST_DIMENSION_LABEL[d.dimension]} is ${Math.round(r.ratio * 10) / 10}× the median: investigate uneven partition assignment or a degraded executor.`,
+        recommendation: `Executor ${r.key}'s ${SLOW_HOST_DIMENSION_LABEL[d.dimension]}${SLOW_HOST_DIMENSION_PER_TASK[d.dimension]} is ${Math.round(r.ratio * 10) / 10}× the median: ${SLOW_HOST_DIMENSION_PER_TASK[d.dimension] ? 'its tasks got larger partitions than the rest (data skew); investigate uneven partition assignment.' : 'investigate uneven partition assignment or a degraded executor.'}`,
       });
     }
     return out;

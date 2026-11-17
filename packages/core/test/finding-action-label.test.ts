@@ -61,6 +61,7 @@ test('branches on the rule field for partitionSizing', () => {
 test('branches on the variant field for slowHost, falling back to a generic label for any other variant', () => {
   expect(findingActionLabel(finding({ type: 'slowHost', variant: 'durationShare' }))).toBe('Fix data locality');
   expect(findingActionLabel(finding({ type: 'slowHost', variant: 'multiDim' }))).toBe('Investigate degraded executor');
+  expect(findingActionLabel(finding({ type: 'slowHost', variant: 'multiDim', dimension: 'inputBytes' }))).toBe('Investigate partition skew');
   expect(findingActionLabel(finding({ type: 'slowHost' }))).toBe('Check slow host');
 });
 
