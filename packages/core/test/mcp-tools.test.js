@@ -186,7 +186,11 @@ describe('resolveOrCreateRun (SHS source)', () => {
 
   it('rejects with upstream-unreachable when the archive body stalls past the idle timeout', async () => {
     // Emits one chunk then stalls forever: headers arrived, body went idle.
-    const fetchImpl = async () => new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 });
+    // The attempt lookup gets a 404, so only the logs request stalls.
+    /** @param {string | URL | Request} url */
+    const fetchImpl = async (url) => (String(url).endsWith('/logs')
+      ? new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 })
+      : new Response(null, { status: 404 }));
     await expect(resolveOrCreateRun(
       { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_6' } },
       { fetchImpl, idleTimeoutMs: 20 },
@@ -746,6 +750,25 @@ describe('getRunSummary', () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('reports app.attemptId when the log names one, and omits it otherwise', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const withAttempt = join(dir, 'with-attempt');
+    const withoutAttempt = join(dir, 'without-attempt');
+    /** @param {string} extra */
+    const start = (extra) => `{"Event":"SparkListenerApplicationStart","App ID":"app-summary-attempt","App Name":"t","Timestamp":0${extra}}\n`;
+    writeFileSync(withAttempt, start(',"App Attempt ID":"2"'));
+    writeFileSync(withoutAttempt, start(''));
+    try {
+      const a = await resolveOrCreateRun({ source: { path: withAttempt } });
+      const b = await resolveOrCreateRun({ source: { path: withoutAttempt } });
+      expect(getRunSummary(a.runId).app.attemptId).toBe('2');
+      expect(getRunSummary(a.runId, { redact: true }).app.attemptId).toBe('2');
+      expect(getRunSummary(b.runId).app).not.toHaveProperty('attemptId');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

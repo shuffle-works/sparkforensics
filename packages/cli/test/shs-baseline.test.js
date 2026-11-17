@@ -43,13 +43,17 @@ const LOGS = {
 };
 
 // A fake History Server: serves the log of the application named in /api/v1/applications/<id>[/<attempt>]/logs
-// and 404s any other. Every requested URL is recorded.
+// and 404s any other. It lists one attempt for each application at /api/v1/applications/<id>. Every
+// requested log URL is recorded.
 function fakeShs() {
   /** @type {string[]} */
   const requested = [];
   const fetchImpl = vi.fn(async (/** @type {string | URL | Request} */ url) => {
-    requested.push(String(url));
     const appId = new URL(String(url)).pathname.split('/')[4];
+    if (!String(url).endsWith('/logs')) {
+      return LOGS[appId] ? Response.json({ id: appId, attempts: [{}] }) : new Response(null, { status: 404 });
+    }
+    requested.push(String(url));
     if (!LOGS[appId]) return new Response(null, { status: 404 });
     return new Response(zipSync({ eventlog: strToU8(LOGS[appId]) }), { status: 200 });
   });

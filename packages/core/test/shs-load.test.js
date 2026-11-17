@@ -25,4 +25,62 @@ describe('resolveFromShs', () => {
     const result = await resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl: shsZipFetch(ndjson) });
     expect(result.skippedLines).toBe(0);
   });
+
+  describe('attempt handling', () => {
+    const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-shs-attempts","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
+
+    // A History Server double: the application endpoint lists `attempts`; the logs endpoint serves the archive.
+    /** @param {Array<{ attemptId?: string }>} attempts */
+    function historyServer(attempts) {
+      /** @type {string[]} */
+      const urls = [];
+      /** @param {string | URL | Request} url */
+      const fetchImpl = async (url) => {
+        urls.push(String(url));
+        if (String(url).endsWith('/logs')) return shsZipFetch(ndjson)();
+        return Response.json({ id: 'application_1_1', name: 't', attempts });
+      };
+      return { fetchImpl, urls };
+    }
+
+    it('fails before downloading logs when the application has several attempts, listing the ids', async () => {
+      const { fetchImpl, urls } = historyServer([{ attemptId: '2' }, { attemptId: '1' }]);
+      await expect(resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl }))
+        .rejects.toMatchObject({ code: 'invalid-argument', message: expect.stringMatching(/2 attempts: 2, 1\. Pass source\.attemptId/) });
+      expect(urls).toEqual(['http://shs:18080/api/v1/applications/application_1_1']);
+    });
+
+    it('downloads the logs when the application has one attempt', async () => {
+      const { fetchImpl, urls } = historyServer([{ attemptId: '1' }]);
+      const { appModel } = await resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl });
+      expect(appModel.app?.id).toBe('app-shs-attempts');
+      expect(urls).toEqual(['http://shs:18080/api/v1/applications/application_1_1', 'http://shs:18080/api/v1/applications/application_1_1/logs']);
+    });
+
+    it('downloads the logs when the application has attempts without ids', async () => {
+      const { fetchImpl } = historyServer([{}]);
+      await expect(resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl })).resolves.toBeDefined();
+    });
+
+    it('skips the lookup when an attempt id is given', async () => {
+      const { fetchImpl, urls } = historyServer([{ attemptId: '1' }, { attemptId: '2' }]);
+      await resolveFromShs('http://shs:18080', 'application_1_1', '2', { fetchImpl });
+      expect(urls).toEqual(['http://shs:18080/api/v1/applications/application_1_1/2/logs']);
+    });
+
+    it('goes on to the logs request when the lookup fails, so that request reports the failure', async () => {
+      /** @param {string | URL | Request} url */
+      const fetchImpl = async (url) => (String(url).endsWith('/logs') ? shsZipFetch(ndjson)() : new Response(null, { status: 500 }));
+      await expect(resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl })).resolves.toBeDefined();
+    });
+  });
+
+  it('names each invalid argument in the error', async () => {
+    await expect(resolveFromShs('ftp://shs', 'not-an-app', 'bad/attempt', { fetchImpl: shsZipFetch('') }))
+      .rejects.toMatchObject({
+        code: 'invalid-argument',
+        message: expect.stringMatching(/source\.shsBaseUrl: Enter an absolute HTTP\(S\) base URL.*source\.appId: Enter a supported Spark application ID.*source\.attemptId: Enter a URL-path-safe attempt ID/),
+      });
+  });
 });

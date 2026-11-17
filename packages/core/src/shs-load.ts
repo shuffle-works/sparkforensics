@@ -99,6 +99,28 @@ async function readArchiveBytes(upstream: Response, maxBytes: number, idleTimeou
 // widening every downstream read.
 type ShsFetchOutcome = { ok: true; upstream: Response } | { ok: false; code: string };
 
+// Tool argument each validateShsRequest field comes from, so an error names what the caller passed.
+const SHS_ARGUMENT_BY_FIELD = { baseUrl: 'source.shsBaseUrl', appId: 'source.appId', attemptId: 'source.attemptId' };
+
+// The attempt ids the History Server lists for an application. Without an attempt id its logs
+// endpoint zips every attempt, so a multi-attempt application is caught here, before the download.
+// A failed or unreadable lookup returns null: the log request that follows reports the real failure.
+async function listShsAttemptIds(
+  baseUrl: string, appId: string, fetchImpl: typeof fetch, timeoutMs: number,
+): Promise<string[] | null> {
+  try {
+    const res = await fetchImpl(new URL(`api/v1/applications/${encodeURIComponent(appId)}`, baseUrl).toString(), {
+      redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    const { attempts } = await res.json() as { attempts?: Array<{ attemptId?: unknown }> };
+    if (!Array.isArray(attempts)) return null;
+    return attempts.flatMap((a) => (typeof a?.attemptId === 'string' ? [a.attemptId] : []));
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveFromShs(
   shsBaseUrl: string,
   appId: string,
@@ -107,7 +129,20 @@ export async function resolveFromShs(
 ): Promise<{ appModel: AppModel; skippedLines: number }> {
   const { fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS } = opts;
   const validated = validateShsRequest({ baseUrl: shsBaseUrl, appId, attemptId: attemptId ?? '' });
-  if (!validated.request) throw mcpError('invalid-argument', 'Invalid SHS request parameters.');
+  if (!validated.request) {
+    const problems = Object.entries(validated.errors)
+      .flatMap(([field, message]) => (message ? [`${SHS_ARGUMENT_BY_FIELD[field as keyof typeof SHS_ARGUMENT_BY_FIELD]}: ${message}`] : []));
+    throw mcpError('invalid-argument', `Invalid SHS request parameters. ${problems.join(' ')}`);
+  }
+  if (!validated.request.attemptId) {
+    const attemptIds = await listShsAttemptIds(validated.request.baseUrl, validated.request.appId, fetchImpl, idleTimeoutMs);
+    if (attemptIds && attemptIds.length > 1) {
+      throw mcpError(
+        'invalid-argument',
+        `Application ${validated.request.appId} has ${attemptIds.length} attempts: ${attemptIds.join(', ')}. Pass source.attemptId to choose one.`,
+      );
+    }
+  }
   const fetched = await fetchShsEventLog(validated.request, { fetchImpl }) as ShsFetchOutcome;
   if (!fetched.ok) throw mcpError(toMcpErrorCode(fetched.code, 'access-or-upstream-failure'), `SHS fetch failed: ${fetched.code}`);
   const zipBytes = await readArchiveBytes(fetched.upstream, maxArchiveBytes, idleTimeoutMs);
