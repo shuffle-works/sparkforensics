@@ -423,7 +423,7 @@ describe('impactFigure', () => {
   });
 
   it('drops a raw figure that rounds to zero instead of printing "0.0 core-h"', () => {
-    expect(impactFigure(withRawWaste(0.04))).toBeNull();
+    expect(impactFigure(withRawWaste(0))).toBeNull();
   });
 });
 

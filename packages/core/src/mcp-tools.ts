@@ -257,6 +257,7 @@ export interface CompactFindingRow {
   impactBand: FindingRow['impactBand']; stageId: number | null; actionLabel: string;
   metric: string | null; value: number | null; valueText?: string;
   impact?: string; impactMeaning?: string | null;
+  rankImpactMs: FindingRow['rankImpactMs'];
   tunedThresholds?: TunedThresholds;
 }
 
@@ -267,6 +268,7 @@ export function compactFindingRow(row: FindingRow): CompactFindingRow {
     metric: row.metric ?? null, value: row.value ?? null,
     ...(row.valueText !== undefined ? { valueText: row.valueText } : {}),
     ...(row.impact !== undefined ? { impact: row.impact, impactMeaning: row.impactMeaning ?? null } : {}),
+    rankImpactMs: row.rankImpactMs,
     // Kept: a tuned finding's impact figure is uncalibrated, and a reader must see that on its row.
     ...(row.tunedThresholds !== undefined ? { tunedThresholds: row.tunedThresholds } : {}),
   };

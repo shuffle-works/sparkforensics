@@ -258,7 +258,7 @@ describe('ExecutorUtilization', () => {
     installInterpretation(findings);
     renderPanel(<ExecutorUtilization appModel={emptyAppModel()} catalog={findings} defaultCollapsed={false} />, ['u-1']);
     expect(screen.queryByText('30%')).not.toBeInTheDocument();
-    expect(screen.getByText(/2 cores at peak over 10\.0s: 100\.0 core-s allocated, 30\.0 core-s busy, 70\.0 core-s idle\. CPU time was 12% of the allocation\./)).toBeInTheDocument();
+    expect(screen.getByText(/2 cores at peak over 10\.0s: 0\.028 core-h allocated, 0\.0083 core-h busy, 0\.019 core-h idle\. CPU time was 12% of the allocation\./)).toBeInTheDocument();
     expect(screen.getByText('55%')).toBeInTheDocument();
   });
 
@@ -304,9 +304,9 @@ describe('MemoryUtilization', () => {
     expect(container.textContent).not.toContain('of allocated heap used');
     expect(container.textContent).not.toContain('The busiest of 4 sampled executors');
     expect(container.textContent).not.toContain('wasted');
-    expect(container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
+    expect(container.textContent).toContain('0.011 GB-h of executor memory-time allocated.');
     expect(container.textContent).toMatch(/Peak heap .* of .* allocated, across 4 sampled executors\./);
-    expect(container.textContent).toContain('50,000 MB-s of executor memory-time allocated, 37,655 MB-s used.');
+    expect(container.textContent).toContain('0.014 GB-h of executor memory-time allocated, 0.010 GB-h used.');
   });
 
   it('shows the idle-cores chart only when it has 3 or more points, else the memory-time line', () => {
@@ -314,12 +314,12 @@ describe('MemoryUtilization', () => {
     installInterpretation(findings, busyRun(60_000));
     const short = renderPanel(<MemoryUtilization appModel={busyRun(60_000)} catalog={findings} defaultCollapsed={false} />, ['m-idle']);
     expect(coreChart()).not.toBeInTheDocument();
-    expect(short.container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
+    expect(short.container.textContent).toContain('0.011 GB-h of executor memory-time allocated.');
     short.unmount();
     installInterpretation(findings, busyRun(180_000));
     const long = renderPanel(<MemoryUtilization appModel={busyRun(180_000)} catalog={findings} defaultCollapsed={false} />, ['m-idle']);
     expect(coreChart()).toBeInTheDocument();
-    expect(long.container.textContent).not.toContain('40,000 MB-s of executor memory-time allocated.');
+    expect(long.container.textContent).not.toContain('0.011 GB-h of executor memory-time allocated.');
   });
 
   it('keeps every figure of a finding the line above does not state', () => {

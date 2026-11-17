@@ -109,32 +109,27 @@ export function formatWallClockRange(low: number, high: number): string {
 
 const MS_PER_HOUR = 3_600_000;
 const MB_SECONDS_PER_GB_HOUR = 1024 * 3600;
-/** Below this many hours a figure keeps its small unit, so "0.0 GB-h" never
- * hides a real but small amount. */
-const MIN_HOURS_SHOWN = 0.1;
 
-const oneDecimal = (value: number): string =>
-  (Math.round(value * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+/** An hours figure to one decimal, or to two significant digits below 0.1 so a small amount never
+ * reads as 0.0. Only a value under 5e-9 rounds to zero. */
+function hoursText(hours: number): string {
+  const decimals = hours >= 0.1 || hours <= 0 ? 1 : Math.min(8, 1 - Math.floor(Math.log10(hours)));
+  return hours.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
 
+/** Each category prints in one unit whatever its size: bytes, ms and core time never switch. */
 export function formatRawWaste(rawWaste: RawWasteFigure): string {
-  const rounded = Math.round(rawWaste.value * 10) / 10;
   switch (rawWaste.unit) {
     case 'bytes':
       return formatBytes(rawWaste.value);
     case 'ms':
       return fmtMs(rawWaste.value);
-    case 'mbSeconds': {
-      // A whole run's idle memory reaches millions of MB-seconds; GB-hours
-      // keeps it a number a reader can compare.
-      const gbHours = rawWaste.value / MB_SECONDS_PER_GB_HOUR;
-      return gbHours >= MIN_HOURS_SHOWN ? `${oneDecimal(gbHours)} GB-h` : `${rounded.toLocaleString('en-US')} MB-s`;
-    }
+    case 'mbSeconds':
+      return `${hoursText(rawWaste.value / MB_SECONDS_PER_GB_HOUR)} GB-h`;
     case 'coreHours':
-      return `${rounded.toFixed(1)} core-h`;
-    case 'coreMs': {
-      const coreHours = rawWaste.value / MS_PER_HOUR;
-      return coreHours >= MIN_HOURS_SHOWN ? `${oneDecimal(coreHours)} core-h` : `${oneDecimal(rawWaste.value / 1000)} core-s`;
-    }
+      return `${hoursText(rawWaste.value)} core-h`;
+    case 'coreMs':
+      return `${hoursText(rawWaste.value / MS_PER_HOUR)} core-h`;
     default:
       return String(rawWaste.value);
   }

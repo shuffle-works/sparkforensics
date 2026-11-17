@@ -133,8 +133,8 @@ waste only when there is no range, followed by what it counts ("of run time", "o
 unused executor memory", "of task time (modeled)") and `estimateMethod`, and nothing for an informational or
 zero estimate. A `- estimate: ` line carries the Advanced view's provenance sentence
 (`estimateProvenance`). Both come from `packages/core/src/impact-format.ts`, the
-formatters every dashboard surface uses, so memory reads in GB-h from 0.1 GB-h up,
-core time in core-s or core-h, and a time figure has no "Estimated" prefix. JSON finding
+formatters every dashboard surface uses, so memory always reads in GB-h,
+core time in core-h, and a time figure has no "Estimated" prefix. JSON finding
 rows carry the same figure as `impact`/`impactMeaning` when there is one, plus the provenance
 sentence as `estimateProvenance` (with the model's assumptions), and each
 `recommendations` row an `impactMeaning` next to its `impact`, which is null for a
@@ -149,7 +149,8 @@ documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-att
 columns (`id`, `key`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
-`name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning`, `estimateProvenance` and, on a tuned run,
+`name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning`, `rankImpactMs` (`rankImpactMs()` in
+`recommendation-rollup.ts`: a millisecond ranking figure on the axis of `rankCostMs`, null without one), `estimateProvenance` and, on a tuned run,
 `tunedThresholds`.
 
 The report carries the same recommendation data the dashboard's "Fix These First" view shows,

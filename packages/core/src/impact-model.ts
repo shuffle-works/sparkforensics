@@ -36,14 +36,14 @@ export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.5;
 export const SPILL_TASK_TIME_SHARE_MAX = 0.6;
 
 // A stage's task wall time, summed per executor by finalizeStage; 0 without executorStats.
-function summedTaskWallMs(stage: Stage): number {
+function summedTaskWallMs(stage: Pick<Stage, 'executorStats'>): number {
   const executorStats = Array.isArray(stage.executorStats)
     ? (stage.executorStats as { totalDuration?: number }[]) : [];
   return executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
 }
 
 // A stage's task time in ms: its summed task wall time, else executorRunTime. 0 when it has neither.
-export function stageTaskMs(stage: Stage): number {
+export function stageTaskMs(stage: Pick<Stage, 'executorStats' | 'executorRunTime'>): number {
   const summed = summedTaskWallMs(stage);
   return summed > 0 ? summed : (stage.executorRunTime ?? 0);
 }

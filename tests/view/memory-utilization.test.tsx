@@ -218,8 +218,8 @@ test('renders the wasted MB-seconds raw-waste figure for a wasteModel finding', 
   ];
   installInterpretation(catalog);
   render(<MemoryUtilization appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
-  // formatRawWaste pins locale to en-US so the figure doesn't drift with the host locale.
-  expect(screen.getByText(`${(12345).toLocaleString('en-US')} MB-s`)).toBeInTheDocument();
+  
+  expect(screen.getByText("0.0033 GB-h")).toBeInTheDocument();
 });
 
 test('stays domain-agnostic: no company/industry copy leaks', () => {

@@ -103,7 +103,7 @@ test('renders the task-time raw-waste figure as core time when the finding carri
   renderCachingOpportunity([finding({
     impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 800, unit: 'ms' } },
   })]);
-  expect(screen.getByText('0.8 core-s')).toBeInTheDocument();
+  expect(screen.getByText('0.00022 core-h')).toBeInTheDocument();
 });
 
 test('renders the recommendation text', async () => {

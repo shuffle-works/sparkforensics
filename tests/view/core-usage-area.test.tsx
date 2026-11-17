@@ -268,7 +268,7 @@ test('renders the core-time raw-waste figure when a coreLocality finding carries
     </DocsProvider>,
   );
 
-  expect(screen.getByText('4.2 core-s')).toBeInTheDocument();
+  expect(screen.getByText('0.0012 core-h')).toBeInTheDocument();
 });
 
 test('renders no LOCAL badge when catalog has no coreLocality finding; the chart still renders', async () => {
