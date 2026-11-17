@@ -56,7 +56,9 @@ export function adviseStageFailure(stageId: number, reason: string, abortTexts: 
   return adviseFailure([...own, ...abortTexts.filter((t) => abortedStageId(t) === stageId)]);
 }
 
-/** The advice for one failed-task group, read from its loss reason, message and class name. */
+/** The advice for one failed-task group, read from its loss reason, message and class name. A loss
+ * Spark does not blame on the application (exitCausedByApp false) gets none: the fixes here
+ * change application settings. */
 export function adviseFailureGroup(group: TaskFailureGroup | undefined): FailureAdvice | null {
-  return group ? adviseFailure([group.lossReason, group.message, group.className]) : null;
+  return group && group.exitCausedByApp !== false ? adviseFailure([group.lossReason, group.message, group.className]) : null;
 }

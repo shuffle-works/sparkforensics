@@ -19,7 +19,7 @@ export type DetectorStage = Pick<FinalizedStage,
   | 'shuffleReadBytes' | 'shuffleReadP50' | 'shuffleReadMax' | 'memoryBytesSpilled' | 'peakExecutionMemoryMax'
   | 'spillClassification' | 'spillDiskMax' | 'spillMemMax' | 'spillDiskP50' | 'spillMemP50'
   | 'gcPct' | 'executorRunTime' | 'executorCpuTime' | 'taskDurationP50' | 'taskDurationP95' | 'taskDurationMax'
-  | 'hostStats' | 'executorStats' | 'executorMetrics' | 'failureReasons' | 'failureGroups' | 'retryFailureGroups'
+  | 'hostStats' | 'executorStats' | 'executorMetrics' | 'failureReasons' | 'failureGroups' | 'retryFailureGroups' | 'retryExecutorLosses'
   | 'localityStats' | 'stragglerCount' | 'stragglerExcessMs' | 'longestNonStragglerMs' | 'peakConcurrentTasks'
   | 'tailAttribution' | 'speculativeTasks' | 'speculationWastedAttempts' | 'speculationWasteMs'
   | 'wastedAttempts' | 'retryWasteMs' | 'stageFailureReason' | 'failedTaskSamples' | 'retryTaskSamples'>;

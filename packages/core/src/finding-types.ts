@@ -49,6 +49,10 @@ export interface TaskAttemptSample {
   host: string;
   executorId: string;
   reason: string | null;
+  // ExecutorLostFailure attempts only: Spark's loss reason and whether the loss counts toward
+  // spark.task.maxFailures (exitCausedByApp true) or not (false).
+  lossReason?: string | null;
+  exitCausedByApp?: boolean | null;
   peakExecMem: number;
   memSpilled: number;
   shuffleWrite: number;

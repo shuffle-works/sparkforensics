@@ -185,6 +185,53 @@ describe('failure advice from parsed events', () => {
     return analyzedRunFrom({ app: makeApp(), stages: new Map([[1, stage]]) }).catalog;
   }
 
+  /** One lost attempt per entry, each retried successfully; 20 tasks in all. @param {{ executorId: string, lossReason: string, exitCausedByApp: boolean }[]} losses */
+  function parseLosses(losses) {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    let taskId = 0;
+    /** @param {number} index @param {{ executorId: string, lossReason: string, exitCausedByApp: boolean } | null} loss */
+    const taskEnd = (index, loss) => processEvent({
+      Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Task Info': { 'Task ID': taskId++, Index: index, 'Executor ID': loss?.executorId ?? '9', 'Launch Time': 0, 'Finish Time': 10000, Failed: loss != null },
+      'Task End Reason': loss
+        ? { Reason: 'ExecutorLostFailure', 'Executor ID': loss.executorId, 'Exit Caused By App': loss.exitCausedByApp, 'Loss Reason': loss.lossReason }
+        : { Reason: 'Success' },
+      'Task Metrics': {},
+    }, s);
+    losses.forEach((loss, i) => taskEnd(i, loss));
+    for (let i = 0; i < 20; i++) taskEnd(i, null);
+    const stage = stageOf(processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 20000 } }, s));
+    return present(firstOfType(analyzedRunFrom({ app: makeApp(), stages: new Map([[1, stage]]) }).catalog, 'retryWaste'));
+  }
+
+  const PREEMPTED = 'Container preempted by scheduler';
+  const cluster = (executorId, n) => Array.from({ length: n }, () => ({ executorId, lossReason: PREEMPTED, exitCausedByApp: false }));
+  const app = (executorId, n) => Array.from({ length: n }, () => ({ executorId, lossReason: CONTAINER_KILL, exitCausedByApp: true }));
+
+  it('retryWaste says cluster-side losses are unrelated to the tasks and do not count toward maxFailures', () => {
+    const finding = parseLosses([...cluster('4', 3), ...cluster('5', 2)]);
+    expect(finding.recommendation).toMatch(/unrelated to the running tasks.*preemption, node loss.*do not count toward spark\.task\.maxFailures/);
+    expect(finding.recommendation).not.toMatch(/memoryOverhead/);
+    expect(finding.remediation ?? []).toEqual([]);
+    expect(finding.executorLosses).toEqual([
+      { executorId: '4', lossReason: PREEMPTED, exitCausedByApp: false, count: 3 },
+      { executorId: '5', lossReason: PREEMPTED, exitCausedByApp: false, count: 2 },
+    ]);
+    expect(finding.retriedTaskDetails.every((t) => t.lossReason === PREEMPTED && t.exitCausedByApp === false)).toBe(true);
+  });
+
+  it('retryWaste keeps both exit-cause values apart and advises from the dominant group', () => {
+    const finding = parseLosses([...app('3', 4), ...cluster('4', 2)]);
+    expect(finding.recommendation).toMatch(/spark\.executor\.memoryOverhead/);
+    expect(finding.recommendation).not.toMatch(/maxFailures/);
+    expect(finding.executorLosses).toEqual([
+      { executorId: '3', lossReason: CONTAINER_KILL, exitCausedByApp: true, count: 4 },
+      { executorId: '4', lossReason: PREEMPTED, exitCausedByApp: false, count: 2 },
+    ]);
+    expect(new Set(finding.retriedTaskDetails.map((t) => t.exitCausedByApp))).toEqual(new Set([true, false]));
+  });
+
   it('reads a container memory kill from the TaskEnd loss reason into failures and retryWaste', () => {
     const findings = parseStage({ lostTasks: 5 });
     for (const type of /** @type {('failures' | 'retryWaste')[]} */ (['failures', 'retryWaste'])) {

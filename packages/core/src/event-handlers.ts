@@ -26,7 +26,7 @@ import { isExchangeNode } from './plan-node-detail.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { assertNever } from './assert-never.ts';
 import { finalizeStage } from './stage-quantiles.ts';
-import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
+import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type ExecutorLossGroup, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf } from './spark-conf.ts';
@@ -74,6 +74,9 @@ export interface FailedTaskSample {
   host: string;
   executorId: string;
   reason: string | null;
+  // ExecutorLostFailure attempts only: Spark's loss reason and its exit-cause flag.
+  lossReason?: string | null;
+  exitCausedByApp?: boolean | null;
   peakExecMem: number;
   memSpilled: number;
   shuffleWrite: number;
@@ -168,6 +171,8 @@ export interface StageRecord {
   // Failure detail of each retried attempt, by interned detail: the retried failures a completed
   // stage no longer holds in taskAttempts. Summarized as retryFailureGroups at finalize.
   retryFailures: Map<TaskFailureDetail, number>;
+  // The ExecutorLostFailure retries of retryFailures, by executor and cause (JSON key).
+  retryExecutorLosses: Map<string, ExecutorLossGroup>;
   retryWasteMs: number;
   wastedAttempts: number;
   speculationWasteMs: number;
@@ -560,12 +565,24 @@ function appMessage(state: ParserState): { type: 'app'; data: Record<string, unk
 function taskRecordToSample(t: TaskRecord): FailedTaskSample {
   return {
     taskId: t.taskId, attemptNumber: t.attemptNumber, host: t.host, executorId: t.executorId,
-    reason: t.reason, peakExecMem: t.peakExecMem, memSpilled: t.memSpilled, shuffleWrite: t.shuffleWrite,
+    reason: t.reason, lossReason: t.failure?.lossReason ?? null, exitCausedByApp: t.failure?.exitCausedByApp ?? null,
+    peakExecMem: t.peakExecMem, memSpilled: t.memSpilled, shuffleWrite: t.shuffleWrite,
   };
 }
 
 function countRetryFailure(stage: StageRecord, t: TaskRecord): void {
-  if (t.failure) stage.retryFailures.set(t.failure, (stage.retryFailures.get(t.failure) ?? 0) + 1);
+  const failure = t.failure;
+  if (!failure) return;
+  stage.retryFailures.set(failure, (stage.retryFailures.get(failure) ?? 0) + 1);
+  if (failure.reason !== 'ExecutorLostFailure') return;
+  const key = JSON.stringify([t.executorId, failure.lossReason, failure.exitCausedByApp]);
+  const known = stage.retryExecutorLosses.get(key);
+  if (known) known.count++;
+  else if (stage.retryExecutorLosses.size < MAX_FAILURE_DETAILS_PER_STAGE) {
+    stage.retryExecutorLosses.set(key, {
+      executorId: t.executorId, lossReason: failure.lossReason, exitCausedByApp: failure.exitCausedByApp, count: 1,
+    });
+  }
 }
 
 // One shared detail object per distinct failure, so a stage with thousands of failed attempts
@@ -1061,6 +1078,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     failureDetails: new Map(),
     retryTaskSamples: [],
     retryFailures: new Map(),
+    retryExecutorLosses: new Map(),
     retryWasteMs: 0,
     wastedAttempts: 0,
     speculationWasteMs: 0,

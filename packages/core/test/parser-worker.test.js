@@ -3000,14 +3000,14 @@ describe('finalizeStage: failureGroups', () => {
   }
 
   it('groups surviving failed tasks by distinct error, most frequent first, one excerpt each', () => {
-    const lost = { Reason: 'ExecutorLostFailure', 'Executor ID': '3', 'Loss Reason': 'Container killed by YARN for exceeding memory limits.' };
+    const lost = { Reason: 'ExecutorLostFailure', 'Executor ID': '3', 'Exit Caused By App': true, 'Loss Reason': 'Container killed by YARN for exceeding memory limits.' };
     const data = runStage([
       failedEnd(0, lost), failedEnd(1, exception('bad row')), failedEnd(2, lost), failedEnd(3, lost),
     ]);
     expect(data.failureGroups).toEqual([
-      { reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Container killed by YARN for exceeding memory limits.', stackExcerpt: null, count: 3 },
+      { reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Container killed by YARN for exceeding memory limits.', exitCausedByApp: true, stackExcerpt: null, count: 3 },
       {
-        reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', message: 'bad row', lossReason: null,
+        reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', message: 'bad row', lossReason: null, exitCausedByApp: null,
         stackExcerpt: 'java.lang.IllegalStateException: bad row\n\tat com.example.Job.run(Job.scala:10)', count: 1,
       },
     ]);
@@ -3031,7 +3031,7 @@ describe('finalizeStage: failureGroups', () => {
   it('ignores a non-string end-reason field instead of dropping the task', () => {
     const data = runStage([failedEnd(0, { Reason: 'ExceptionFailure', 'Class Name': 42, Description: ['x'] })]);
     expect(data.failedTasks).toBe(1);
-    expect(data.failureGroups).toEqual([{ reason: 'ExceptionFailure', className: null, message: null, lossReason: null, stackExcerpt: null, count: 1 }]);
+    expect(data.failureGroups).toEqual([{ reason: 'ExceptionFailure', className: null, message: null, lossReason: null, exitCausedByApp: null, stackExcerpt: null, count: 1 }]);
   });
 });
 
@@ -4276,7 +4276,7 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
     const finding = findingOfType(catalog, 'stageFailed');
     expect(finding).toBeDefined();
     expect(finding.failedTaskDetails).toEqual([
-      { taskId: 200, attemptNumber: 0, host: 'worker-9.internal', executorId: 'exec-1', reason: 'ExecutorLostFailure', peakExecMem: 100, memSpilled: 0, shuffleWrite: 0 },
+      { taskId: 200, attemptNumber: 0, host: 'worker-9.internal', executorId: 'exec-1', reason: 'ExecutorLostFailure', lossReason: null, exitCausedByApp: null, peakExecMem: 100, memSpilled: 0, shuffleWrite: 0 },
     ]);
   });
 });

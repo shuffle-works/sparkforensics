@@ -1741,6 +1741,7 @@
      "variant"
     ],
     "retryWaste": [
+     "executorLosses",
      "memoryBytesSpilled",
      "numTasks",
      "retriedTaskDetails"
@@ -1969,6 +1970,7 @@
      "variant"
     ],
     "retryWaste": [
+     "executorLosses",
      "memoryBytesSpilled",
      "numTasks",
      "retriedTaskDetails"
@@ -2082,6 +2084,7 @@
      "variant"
     ],
     "retryWaste": [
+     "executorLosses",
      "memoryBytesSpilled",
      "numTasks",
      "retriedTaskDetails"
