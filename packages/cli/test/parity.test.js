@@ -45,7 +45,7 @@ const RUN_REPORT_ALLOWED = [
   { path: 'runComplete', only: 'mcp', reason: 'Convenience copy of summary.outcome\'s end-of-run signal that MCP clients read without asking for the summary.' },
   { path: 'view', only: 'mcp', reason: 'Says which view the MCP tool answered in (compact or full). The CLI has one shape.' },
   { path: 'findingsOmitted', only: 'mcp', reason: 'Counts the findings a maxFindings limit left out. The CLI report has no such limit.' },
-  { path: /^verdict\.steps\[\d+\]\.leadFinding(\.|\[|$)/, only: 'mcp', reason: 'MCP puts each step\'s lead finding row in the step, so the row is there when maxFindings or minBand leaves it out of `findings`. The CLI lists every finding.' },
+  { path: /^verdict\.steps\[\d+\]\.leadFinding(\.|\[|$)/, only: 'mcp', reason: 'Only the full view carries the lead finding row, which MCP adds to each step so the row is there when maxFindings or minBand leaves it out of `findings`; the compact view omits it. The CLI lists every finding.' },
 ];
 
 // CLI `comparison` against MCP compare_runs.
@@ -236,18 +236,26 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
       expect(viaMcp.finding).toEqual(row);
     });
 
-    it('returns writeTargets, metrics and effectiveConf in diagnose_run\'s default view', async () => {
+    it('returns writeTargets and the metrics totals in diagnose_run\'s default view, and the rest on request', async () => {
       const viaMcp = await mcpCall('diagnose_run', { source: { path: candidate } });
       expect(viaMcp.view).toBe('compact');
-      expect(Object.keys(viaMcp)).toEqual(expect.arrayContaining(['writeTargets', 'metrics', 'effectiveConf']));
+      expect(Object.keys(viaMcp)).toEqual(expect.arrayContaining(['writeTargets', 'metrics']));
+      expect(viaMcp).not.toHaveProperty('effectiveConf');
+      expect(viaMcp.metrics).not.toHaveProperty('stages');
+      const asked = await mcpCall('diagnose_run', { source: { path: candidate }, include: ['stages', 'effectiveConf'] });
+      expect(asked.metrics).toHaveProperty('stages');
+      expect(asked).toHaveProperty('effectiveConf');
     });
 
     it('lists in the compact view the same findings, blocks and keys as the full view', async () => {
       const compact = await mcpCall('diagnose_run', { source: { path: candidate } });
       const full = await mcpCall('diagnose_run', { source: { path: candidate }, view: 'full' });
-      for (const block of ['recommendations', 'writeTargets', 'metrics', 'effectiveConf', 'runComplete', 'runId']) {
+      for (const block of ['recommendations', 'writeTargets', 'runComplete', 'runId']) {
         expect(compact[block]).toEqual(full[block]);
       }
+      const metricTotals = { ...full.metrics };
+      delete metricTotals.stages;
+      expect(compact.metrics).toEqual(metricTotals);
       const withoutLead = (/** @type {{ leadFinding?: unknown }[]} */ steps) => steps.map((step) => ({ ...step, leadFinding: undefined }));
       expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
       expect(compact.findings).toHaveLength(full.findings.length);
@@ -393,7 +401,7 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
   ])('reports the same stage budget results (%j) through the CLI and evaluate_budgets', async (flags, mcpBudgets) => {
     const [line] = await cliLines([REPLAN_CANDIDATE, '--baseline', REPLAN_BASELINE, '--format', 'ndjson', ...flags]);
     const viaMcp = await mcpCall('evaluate_budgets', { source: { path: REPLAN_BASELINE }, sourceB: { path: REPLAN_CANDIDATE }, ...mcpBudgets });
-    expect(line.budgets.every((r) => r.name === 'max-stage-regression')).toBe(true);
+    expect(line.budgets.every((r) => r.name === 'max-stage-regression' || r.name === 'no-failed-jobs')).toBe(true);
     expect(diffSurfaces(line.budgets, viaMcp.results, BUDGETS_ALLOWED)).toEqual([]);
     expect(viaMcp.violated).toBe(line.exitCode === 1);
   });

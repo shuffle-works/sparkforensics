@@ -77,7 +77,7 @@ whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
-a configured budget was violated, `2` a usage error (unknown or value-less
+a budget was violated (a configured one or the always-on `no-failed-jobs`), `2` a usage error (unknown or value-less
 flag, unknown `--regression-metric` key, an unreadable or invalid `--thresholds`
 or `--budgets` file, an `--out` whose folder is missing or that names a folder), `3` no violations but at least one budget was inconclusive,
 `4` the candidate could not be read or parsed (or its SHS fetch failed), `5` the
@@ -86,13 +86,15 @@ failure, a failed `--export-html` export). `main` catches anything unhandled and
 exits `6` rather than letting Node exit `1`, which would read as a violation.
 When several apply the worst wins: `6`, `5`, `4`, `1`, `3`, `0`; a violation
 always wins over an inconclusive result in the same run (exit `1`, not `3`).
-`evaluateBudgets()` also always adds an inconclusive `run-complete` result
+`evaluateBudgets()` always adds a `no-failed-jobs` result, a violation when
+`summarizeRunOutcome` counts a failed job, so such a run exits `1` even with no
+budget flags. It also always adds an inconclusive `run-complete` result
 when the catalog has an `incompleteRun` finding, so a run with no
 `ApplicationEnd` exits `3` even with no budget flags. It adds a
 `parse-incomplete` inconclusive result the same way when `appModel.skippedLines`
 or the comparison's `baselineSkippedLines` is above `0`, and its detail names
 which run lost lines. With `--baseline`, the
-absolute budgets and the `run-complete` check apply to the candidate run; the MCP
+absolute budgets and the `no-failed-jobs` and `run-complete` checks apply to the candidate run; the MCP
 `evaluate_budgets` tool below uses the same function with the same roles.
 
 ## MCP server
@@ -129,7 +131,10 @@ re-implement detector logic: `list_runs` lists candidates
 from `packages/core/src/mcp-tools.ts`, which resolves a `source` (event-log `path`, or an SHS
 `shsBaseUrl`/`appId`/`attemptId` triple) into a cached `AnalyzedRun`. The SHS
 source path calls `resolveFromShs` (`packages/core/src/shs-load.ts`, also used directly by
-the CLI's `--shs-base-url` mode above), which reuses two extractions shared
+the CLI's `--shs-base-url` mode above). With no attempt id it first asks
+`/api/v1/applications/<appId>` for the attempts and throws `ShsAttemptsError` (attempt ids
+listed; each surface appends its own argument hint) when there are several, before any
+download. It reuses two extractions shared
 with the browser ingestion flow: `fetchShsEventLog` (`packages/core/src/proxy.js`, the
 same upstream fetch the local server's `/shs-proxy` route uses) fetches the zip, and
 `decodeShsArchive` (`packages/core/src/shs-fetch.ts`, re-exported from
@@ -164,8 +169,10 @@ nor `minBand` is given, so the CLI and `diagnose_run` list critical and warning 
 `buildEvidenceReport()` also returns `notesHidden`, the info rows that default dropped and every
 other filter kept, which the CLI JSON, `diagnose_run` and the Markdown header report. A call
 without a filter (the dashboard's evidence export) lists every row. The `compact` view maps each `FindingRow` through `compactFindingRow()`
-and leaves out `cleanChecks` and `notRunChecks`. Each verdict step gets its lead row
-from the unfiltered report, which is cached, so a limit never hides it. The factory's
+and leaves out `cleanChecks`, `notRunChecks`, `metrics.stages` and `effectiveConf` (`include`
+adds the last two back, and `confKeys` adds `effectiveConf`). Its verdict steps name their lead
+by `leadFindingId` only. In the `full` view each step gets its lead row as `leadFinding` from the
+unfiltered report, which is cached, so a limit never hides it. The factory's
 `diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
 `full`. With `format: 'md'` the handler returns `diagnoseHeadline()` plus the `markdown`
 as `structuredContent`.

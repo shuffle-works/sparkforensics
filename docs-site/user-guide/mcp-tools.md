@@ -43,7 +43,9 @@ other parameters.
   History Server run. `shsBaseUrl` is optional when the server has a default
   History Server (see [Default History Server](#default-history-server)). An `appId` must have one of Spark's id forms
   (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
-  `driver-<digits>`). A run loaded this way gets a `runId`.
+  `driver-<digits>`). A run loaded this way gets a `runId`. Without
+  `attemptId`, an application with several attempts fails before any
+  download, with an error that lists its attempt ids.
 - `runId`: a run already loaded in this server process, as returned by an
   earlier call. Pass `source` or `runId`. When you pass both, `runId` wins.
 - `redact`: `boolean`, default `false`. `list_runs`, `diagnose_run`,
@@ -68,7 +70,7 @@ The CLI and the two MCP tools that take two runs give the runs different roles:
 | `evaluate_budgets` with one run | None | `runId` / `source` |
 | `evaluate_budgets` with two runs | `runId` / `source` | `runIdB` / `sourceB` |
 
-Absolute budgets and the `run-complete` check apply to the candidate. With
+Absolute budgets and the `no-failed-jobs` and `run-complete` checks apply to the candidate. With
 two runs, `evaluate_budgets` returns `baselineRunId` and `candidateRunId`, so a result is never
 read as the wrong run's. With one run it returns `candidateRunId` alone: the run the budgets
 were evaluated on.

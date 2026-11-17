@@ -88,6 +88,32 @@ describe('comparability', () => {
     expect(buildComparison(base, cand).comparability.conf.differences.map((d) => d.key)).toContain('spark.out.path');
   });
 
+  it('leaves out the keys a run sets from its driver port, UI address and application id', () => {
+    const proxyBases = 'spark.org.apache.hadoop.yarn.server.webproxy.amfilter.AmIpFilter.param.PROXY_URI_BASES';
+    const proxyHosts = 'spark.org.apache.hadoop.yarn.server.webproxy.amfilter.AmIpFilter.param.PROXY_HOSTS';
+    /** @param {number} n */
+    const perRun = (n) => ({
+      'spark.app.initial.jar.urls': `spark://driver-${n}:4000${n}/jars/job.jar`,
+      'spark.driver.appUIAddress': `http://driver-${n}:404${n}`,
+      [proxyBases]: `http://rm-host:8088/proxy/application_0000000000000_000${n}`,
+      [proxyHosts]: 'rm-host',
+    });
+    const built = buildComparison(
+      baseRun({ config: { ...SAME_CONF, ...perRun(1) } }),
+      candRun({ config: { ...SAME_CONF, ...perRun(2) } }),
+    );
+    const { conf } = built.comparability;
+    expect(conf).toMatchObject({ equal: true, differences: [] });
+    expect(conf.ignoredKeys).toEqual(['spark.app.initial.jar.urls', 'spark.driver.appUIAddress', proxyBases]);
+    expect(comparisonVerdict(built).title).toMatch(/^Same configuration, plan and output\. Time differs by 50\.0s/);
+
+    const hostsMoved = buildComparison(
+      baseRun({ config: { ...SAME_CONF, [proxyHosts]: 'rm-a' } }),
+      candRun({ config: { ...SAME_CONF, [proxyHosts]: 'rm-b' } }),
+    ).comparability.conf;
+    expect(hostsMoved.differences.map((d) => d.key)).toEqual([proxyHosts]);
+  });
+
   it('withholds a key the run output withholds, with and without a user redact pattern', () => {
     const base = baseRun({ config: { ...SAME_CONF, 'spark.foo.internal.path': '/a', 'spark.db.password': 'p1' } });
     const cand = candRun({ config: { ...SAME_CONF, 'spark.foo.internal.path': '/b', 'spark.db.password': 'p2' } });

@@ -27,7 +27,8 @@ Output is JSON by default; `--format md` writes the Markdown report instead.
 - `comparison` is present only with a baseline.
 - `budgets` lists every budget result, passes included, each with `name`,
   `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric`
-  on `max-regression` and `max-stage-regression`. It is empty without budgets.
+  on `max-regression` and `max-stage-regression`. Without budget flags it holds
+  the always-on results only.
   The `[violation]` and `[inconclusive]` lines on stderr and the exit code
   stay as described below.
 
@@ -39,7 +40,11 @@ output and `$defs/ndjsonLine` validates one line of the
 top-level keys of `run` and `comparison`; it does not list every field inside them.
 
 Budget violations and inconclusive budgets print to stderr as
-`[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
+`[violation] ...` and `[inconclusive] ...` lines. A run with one or more failed
+jobs always violates the `no-failed-jobs` budget, with or without budget flags:
+its detail gives the count and the failed job ids, and the exit code is 1. A
+run whose jobs all succeeded passes it, even when it retried failed tasks
+(`--max-failed-task-rate` counts those). The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one
 is inconclusive, 2 for a usage error (bad flags or arguments, a budget value
 that is not a non-negative decimal, an unknown `--impact`, `--type` or
@@ -272,6 +277,8 @@ dynamic-allocation property when it is `off`. `underBroadcast` and
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file.
+An application with several attempts needs an attempt id: without one the
+fetch fails before any download and the message lists the attempt ids.
 `--shs-base-url` defaults to the `SPARKFORENSICS_SHS_BASE_URL` environment
 variable when `--app-id` is given; the flag takes precedence. It also supports
 comparing a candidate run against a baseline with regression gating
@@ -797,7 +804,7 @@ opposite ways, the tone is `mixed`.
 Pass `--ignore-conf <regex>`, repeatable, for configuration keys that differ by
 design, such as a per-run output path. A key that matches is left out of
 `conf.differences` and listed in `conf.ignoredKeys`. The application id, start
-time and driver address are always left out. With a baseline, a property withheld
+time, driver address and other keys the cluster sets per run are always left out. With a baseline, a property withheld
 from `effectiveConf` (including by `--conf-redact-regex`) is also withheld from
 the comparison: it is listed in `conf.withheldKeys` and never compared. Limits and errors are those of
 `--normalize-path`. Pass `--noise-band-pct <pct>` (default `2`) to set the share

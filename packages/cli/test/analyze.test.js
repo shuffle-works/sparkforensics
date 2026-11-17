@@ -353,6 +353,26 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 
+  it('exits 1 by default (no budget flags) when a job failed, naming the failed job', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-failedjob-'));
+    const path = join(dir, 'eventlog');
+    const lines = [
+      { Event: 'SparkListenerApplicationStart', 'App ID': 'app-f', 'App Name': 't', Timestamp: 0 },
+      { Event: 'SparkListenerJobStart', 'Job ID': 7, 'Submission Time': 10, 'Stage IDs': [], Properties: {} },
+      { Event: 'SparkListenerJobEnd', 'Job ID': 7, 'Completion Time': 20, 'Job Result': { Result: 'JobFailed', Exception: { Message: 'boom' } } },
+      { Event: 'SparkListenerApplicationEnd', Timestamp: 1000 },
+    ];
+    writeFileSync(path, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+    try {
+      const { status, stdout, stderr } = runCli([path]);
+      expect(status).toBe(1);
+      expect(stderr).toMatch(/\[violation\] no-failed-jobs: 1 job failed \(job id 7\)/);
+      expect(parseEnvelope(stdout).budgets).toEqual([{ name: 'no-failed-jobs', status: 'violation', detail: '1 job failed (job id 7).' }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('exits 1 when a budget is violated with --format md', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-md-budget-'));
     const path = join(dir, 'eventlog');
@@ -625,7 +645,7 @@ describe('sparkforensics-analyze CLI', () => {
         const parsed = parseEnvelope(stdout);
         expect(Object.keys(parsed)).toEqual(['schemaVersion', 'run', 'comparison', 'budgets']);
         expect(parsed.schemaVersion).toBe(1);
-        expect(parsed.budgets).toEqual([]);
+        expect(parsed.budgets).toEqual([{ name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' }]);
         expect(Array.isArray(parsed.run.findings)).toBe(true);
         expect(parsed.comparison).toMatchObject({ confidence: expect.any(String) });
         expect(parsed.comparison?.verdict).toMatchObject({ title: expect.any(String), tone: expect.any(String) });
@@ -659,7 +679,7 @@ describe('sparkforensics-analyze CLI', () => {
         expect(Object.keys(parsed)).toEqual(['schemaVersion', 'run', 'budgets']);
         expect(parsed.schemaVersion).toBe(1);
         expect(parsed.comparison).toBeUndefined();
-        expect(parsed.budgets).toEqual([]);
+        expect(parsed.budgets).toEqual([{ name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' }]);
         expect(Array.isArray(parsed.run.findings)).toBe(true);
       });
     });
@@ -1267,7 +1287,7 @@ describe('sparkforensics-analyze JSON envelope', () => {
       const envelope = parseEnvelope(stdout);
       expect(Object.keys(envelope)).toEqual(['schemaVersion', 'run', 'budgets']);
       expect(envelope.schemaVersion).toBe(1);
-      expect(envelope.budgets).toEqual([]);
+      expect(envelope.budgets).toEqual([{ name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' }]);
       expect(envelope.run.schemaVersion).toEqual(expect.any(Number));
     });
   });
@@ -1306,7 +1326,7 @@ describe('sparkforensics-analyze JSON envelope', () => {
       const { stdout, stderr, status } = runCli([candidate, '--max-runtime', '100000', '--max-skew', '1.5']);
       expect(status).toBe(1);
       const { budgets } = parseEnvelope(stdout);
-      expect(budgets.map((b) => [b.name, b.status])).toEqual([['max-runtime', 'pass'], ['max-skew', 'violation']]);
+      expect(budgets.map((b) => [b.name, b.status])).toEqual([['max-runtime', 'pass'], ['max-skew', 'violation'], ['no-failed-jobs', 'pass']]);
       // The human summary on stderr names the violation only; the JSON lists every result.
       expect(stderr).toMatch(/\[violation\] max-skew/);
       expect(stderr).not.toMatch(/max-runtime/);

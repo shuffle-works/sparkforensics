@@ -237,9 +237,10 @@ jobs:
         run: |
           bin="$RUNNER_TEMP/smoke/node_modules/.bin/sparkforensics-analyze"
           for log in dev/log-corpus/logs/*.ndjson dev/log-corpus/logs/external/*.ndjson; do
-            # Exit 3 (inconclusive) is a completed analysis: failure-killed-run never records ApplicationEnd.
+            # Exits 1 (violation: failure-job has a failed job) and 3 (inconclusive: failure-killed-run
+            # never records ApplicationEnd) are completed analyses.
             rc=0; "$bin" "$log" --format json > /dev/null || rc=$?
-            [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || { echo "failed ($rc): $log"; exit 1; }
+            [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || [ "$rc" -eq 3 ] || { echo "failed ($rc): $log"; exit 1; }
           done
           zstd -q -o "$RUNNER_TEMP/sample.zstd" dev/log-corpus/logs/spark-4.1-parquet-baseline.ndjson
           "$bin" "$RUNNER_TEMP/sample.zstd" --format json > /dev/null

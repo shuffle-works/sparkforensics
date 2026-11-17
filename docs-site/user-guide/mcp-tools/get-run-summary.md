@@ -34,7 +34,7 @@ Example response:
 ```json
 {
   "runId": "3f9c2b7e-...",
-  "app": { "id": "application_0000000000000_0001", "name": "t", "sparkVersion": null },
+  "app": { "id": "application_0000000000000_0001", "attemptId": null, "name": "t", "sparkVersion": null },
   "stageCount": 0,
   "jobCount": 0,
   "sqlExecutionCount": 0,

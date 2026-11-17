@@ -186,11 +186,36 @@ describe('resolveOrCreateRun (SHS source)', () => {
 
   it('rejects with upstream-unreachable when the archive body stalls past the idle timeout', async () => {
     // Emits one chunk then stalls forever: headers arrived, body went idle.
-    const fetchImpl = async () => new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 });
+    // The attempt lookup gets a 404, so only the logs request stalls.
+    /** @param {string | URL | Request} url */
+    const fetchImpl = async (url) => (String(url).endsWith('/logs')
+      ? new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 })
+      : new Response(null, { status: 404 }));
     await expect(resolveOrCreateRun(
       { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_6' } },
       { fetchImpl, idleTimeoutMs: 20 },
     )).rejects.toMatchObject({ code: 'upstream-unreachable' });
+  });
+
+  it('names source.attemptId for an application with several attempts, and that field picks one', async () => {
+    const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-shs-two","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
+    /** @param {string | URL | Request} url */
+    const fetchImpl = async (url) => (String(url).endsWith('/logs')
+      ? shsZipFetch(ndjson)()
+      : Response.json({ id: 'application_1_7', attempts: [{ attemptId: '2' }, { attemptId: '1' }] }));
+    await expect(resolveOrCreateRun(
+      { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_7' } },
+      { fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'invalid-argument',
+      message: 'Application application_1_7 has 2 attempts: 2, 1. Pass source.attemptId to choose one.',
+    });
+    const { appModel } = await resolveOrCreateRun(
+      { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_7', attemptId: '2' } },
+      { fetchImpl },
+    );
+    expect(present(appModel.app).id).toBe('app-shs-two');
   });
 
   it('surfaces invalid-event-log on a corrupt archive', async () => {
@@ -498,7 +523,8 @@ describe('diagnoseRun / getFindingEvidence', () => {
       expect(first.findings.map((f) => f.key)).toEqual(second.findings.map((f) => f.key));
       const straggler = first.findings.find((f) => f.type === 'straggler');
       // A stage's fingerprint is the key of its `metrics.stages` entry, so the two join without a table.
-      const fingerprint = Object.keys(first.metrics.stages).find((k) => first.metrics.stages[k].stageIds.includes(1));
+      const stages = present(first.metrics.stages);
+      const fingerprint = Object.keys(stages).find((k) => stages[k].stageIds.includes(1));
       expect(present(straggler).key).toBe(`straggler|straggler|stage:${fingerprint}`);
       // A run-level finding has no stage to name.
       expect(present(first.findings.find((f) => f.type === 'memoryUtilization')).key).toMatch(/^memoryUtilization\|[^|]+\|run$/);
@@ -515,31 +541,58 @@ describe('diagnoseRun / getFindingEvidence', () => {
       }
       expect('cleanChecks' in compact).toBe(false);
       expect('notRunChecks' in compact).toBe(false);
-      for (const kept of ['verdict', 'recommendations', 'metrics', 'writeTargets', 'effectiveConf']) expect(compact).toHaveProperty(kept);
+      for (const kept of ['verdict', 'recommendations', 'metrics', 'writeTargets']) expect(compact).toHaveProperty(kept);
+      expect(compact.metrics).not.toHaveProperty('stages');
+      expect(compact).not.toHaveProperty('effectiveConf');
+      expect(full.metrics).toHaveProperty('stages');
+      expect(full).toHaveProperty('effectiveConf');
       expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length);
     });
 
-    it('keeps the tuned thresholds on a compact row of a tuned detector', async () => {
-      const { dir, path } = tmpEventLogWithFindings();
+    it('adds the stage rows and effectiveConf to the compact view when include asks for them', async () => {
+      const full = await diagnose({ view: 'full' });
+      const stages = await diagnose({ view: 'compact', include: ['stages'] });
+      expect(stages.metrics).toEqual(full.metrics);
+      expect(stages).not.toHaveProperty('effectiveConf');
+      const conf = await diagnose({ view: 'compact', include: ['effectiveConf'] });
+      expect(conf.effectiveConf).toEqual(full.effectiveConf);
+      expect(conf.metrics).not.toHaveProperty('stages');
+    });
+
+    it('adds effectiveConf, narrowed to confKeys, to the compact view without include', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
       try {
+        const path = join(dir, 'eventlog');
+        writeFileSync(path, [
+          '{"Event":"SparkListenerApplicationStart","App ID":"app-conf","App Name":"t","Timestamp":0}',
+          '{"Event":"SparkListenerEnvironmentUpdate","Spark Properties":{"spark.executor.memory":"4g","spark.sql.shuffle.partitions":"200"}}',
+          '{"Event":"SparkListenerApplicationEnd","Timestamp":10}',
+        ].join('\n') + '\n');
         const { runId } = await resolveOrCreateRun({ source: { path } });
-        const thresholds = parseThresholdOverrides({ straggler: { minTasks: 2 } });
-        const { findings } = diagnoseRun(runId, { view: 'compact', thresholds });
-        expect(present(findings.find((f) => f.type === 'straggler')).tunedThresholds).toEqual({ minTasks: { value: 2, default: 10 } });
+        expect(diagnoseRun(runId, { view: 'compact' })).not.toHaveProperty('effectiveConf');
+        const narrowed = diagnoseRun(runId, { view: 'compact', confKeys: ['spark.executor.memory'] });
+        expect(present(narrowed.effectiveConf).values).toEqual({ 'spark.executor.memory': '4g' });
+        const included = diagnoseRun(runId, { view: 'compact', include: ['effectiveConf'], confKeys: ['spark.executor.memory'] });
+        expect(included.effectiveConf).toEqual(narrowed.effectiveConf);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
     });
 
-    it('puts the lead finding row in each verdict step, in the shape of the view', async () => {
-      for (const view of /** @type {const} */ (['compact', 'full'])) {
-        const result = await diagnose({ view });
-        expect(result.verdict.steps.length).toBeGreaterThan(0);
-        for (const step of result.verdict.steps) {
-          expect(present(step.leadFinding).id).toBe(step.leadFindingId);
-          expect(present(step.leadFinding).type).toBe(step.type);
-          expect('evidence' in present(step.leadFinding)).toBe(view === 'full');
-        }
+    it('names the lead finding by leadFindingId only in the compact view and carries its full row in the full view', async () => {
+      const compact = await diagnose({ view: 'compact' });
+      expect(compact.verdict.steps.length).toBeGreaterThan(0);
+      for (const step of compact.verdict.steps) {
+        expect(step).not.toHaveProperty('leadFinding');
+        expect(typeof step.leadFindingId).toBe('string');
+      }
+
+      const full = await diagnose({ view: 'full' });
+      for (const step of full.verdict.steps) {
+        const lead = present(step.leadFinding);
+        expect(lead.id).toBe(step.leadFindingId);
+        expect(lead.type).toBe(step.type);
+        expect(lead).toHaveProperty('evidence');
       }
     });
 
@@ -746,6 +799,26 @@ describe('getRunSummary', () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('reports app.attemptId when the log names one, and null as diagnose_run does otherwise', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const withAttempt = join(dir, 'with-attempt');
+    const withoutAttempt = join(dir, 'without-attempt');
+    /** @param {string} extra */
+    const start = (extra) => `{"Event":"SparkListenerApplicationStart","App ID":"app-summary-attempt","App Name":"t","Timestamp":0${extra}}\n`;
+    writeFileSync(withAttempt, start(',"App Attempt ID":"2"'));
+    writeFileSync(withoutAttempt, start(''));
+    try {
+      const a = await resolveOrCreateRun({ source: { path: withAttempt } });
+      const b = await resolveOrCreateRun({ source: { path: withoutAttempt } });
+      expect(getRunSummary(a.runId).app.attemptId).toBe('2');
+      expect(getRunSummary(a.runId, { redact: true }).app.attemptId).toBe('2');
+      expect(getRunSummary(b.runId).app.attemptId).toBeNull();
+      expect(getRunSummary(b.runId).app.attemptId).toBe(diagnoseRun(b.runId).app.attemptId);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -973,7 +1046,53 @@ describe('compareRuns', () => {
   });
 });
 
+const NO_FAILED_JOBS_PASS = { name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' };
+
+/** A finished log with one succeeded job and one failed job.
+ * @param {string} appId */
+function tmpEventLogWithFailedJob(appId) {
+  const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+  const path = join(dir, 'eventlog');
+  const lines = [
+    { Event: 'SparkListenerApplicationStart', 'App ID': appId, 'App Name': 't', Timestamp: 0 },
+    { Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 10, 'Stage IDs': [], Properties: {} },
+    { Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 20, 'Job Result': { Result: 'JobSucceeded' } },
+    { Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 30, 'Stage IDs': [], Properties: {} },
+    { Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 40, 'Job Result': { Result: 'JobFailed', Exception: { Message: 'boom' } } },
+    { Event: 'SparkListenerApplicationEnd', Timestamp: 1000 },
+  ];
+  writeFileSync(path, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+  return { dir, path };
+}
+
 describe('evaluateBudgetsForRun', () => {
+  it('reports a run with a failed job as violated, with no budgets set', async () => {
+    const { dir, path } = tmpEventLogWithFailedJob('app-f');
+    try {
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path } }, {});
+      expect(results).toEqual([{ name: 'no-failed-jobs', status: 'violation', detail: '1 job failed (job id 1).' }]);
+      expect(violated).toBe(true);
+      expect(inconclusive).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('checks the candidate for failed jobs, not the baseline, when given two runs', async () => {
+    const baseline = tmpEventLogWithFailedJob('app-f');
+    const candidate = tmpEventLogWithDuration('app-b', 1000);
+    try {
+      const { results, violated } = await evaluateBudgetsForRun(
+        { source: { path: baseline.path } }, {}, { source: { path: candidate.path } },
+      );
+      expect(results).toEqual([NO_FAILED_JOBS_PASS]);
+      expect(violated).toBe(false);
+    } finally {
+      rmSync(baseline.dir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
+
   it('evaluates a single-run budget against a freshly resolved source', async () => {
     const { dir, path } = tmpEventLogWithDuration('app-a', 1000);
     try {
@@ -984,7 +1103,7 @@ describe('evaluateBudgetsForRun', () => {
       expect(typeof candidateRunId).toBe('string');
       expect(evaluated).not.toHaveProperty('baselineRunId');
       expect(evaluated).not.toHaveProperty('runId');
-      expect(results).toEqual([{ name: 'max-runtime', status: 'violation', detail: 'Runtime 1000ms exceeds budget 500ms.' }]);
+      expect(results).toEqual([{ name: 'max-runtime', status: 'violation', detail: 'Runtime 1000ms exceeds budget 500ms.' }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(true);
       expect(inconclusive).toBe(false);
     } finally {
@@ -996,7 +1115,7 @@ describe('evaluateBudgetsForRun', () => {
     const { dir, path } = tmpEventLogWithDuration('app-a', 1000);
     try {
       const { results, violated } = await evaluateBudgetsForRun({ source: { path } }, { maxRuntimeMs: 5000 });
-      expect(results).toEqual([{ name: 'max-runtime', status: 'pass', detail: 'Runtime 1000ms within budget 5000ms.' }]);
+      expect(results).toEqual([{ name: 'max-runtime', status: 'pass', detail: 'Runtime 1000ms within budget 5000ms.' }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1027,7 +1146,7 @@ describe('evaluateBudgetsForRun', () => {
       expect(results).toEqual([{
         name: 'max-regression', metric: 'wallClock', status: 'violation',
         detail: 'Metric "wallClock" regressed 100.0%, exceeding budget 10%.',
-      }]);
+      }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(true);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
@@ -1045,7 +1164,7 @@ describe('evaluateBudgetsForRun', () => {
       expect(result).toEqual({
         baselineRunId: baselineId,
         candidateRunId: candidateId,
-        results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }],
+        results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }, NO_FAILED_JOBS_PASS],
         violated: true,
         inconclusive: false,
       });
@@ -1061,7 +1180,7 @@ describe('evaluateBudgetsForRun', () => {
     writeFileSync(path, '{"Event":"SparkListenerApplicationStart","App ID":"app-i","App Name":"t","Timestamp":0}\n');
     try {
       const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path } }, {});
-      expect(results).toMatchObject([{ name: 'run-complete', status: 'inconclusive' }]);
+      expect(results).toMatchObject([{ name: 'no-failed-jobs', status: 'pass' }, { name: 'run-complete', status: 'inconclusive' }]);
       expect(violated).toBe(false);
       expect(inconclusive).toBe(true);
     } finally {
@@ -1078,7 +1197,7 @@ describe('evaluateBudgetsForRun', () => {
       const { results, inconclusive } = await evaluateBudgetsForRun(
         { source: { path: baselinePath } }, {}, { source: { path: candidate.path } },
       );
-      expect(results).toEqual([]);
+      expect(results).toEqual([NO_FAILED_JOBS_PASS]);
       expect(inconclusive).toBe(false);
     } finally {
       rmSync(baselineDir, { recursive: true, force: true });
@@ -1093,7 +1212,7 @@ describe('evaluateBudgetsForRun', () => {
       const { results, violated } = await evaluateBudgetsForRun(
         { source: { path: a.path } }, { failOnIntroduced: 'all' }, { source: { path: b.path } },
       );
-      expect(results).toEqual([{ name: 'fail-on-introduced', status: 'pass', detail: 'No introduced findings match "all".' }]);
+      expect(results).toEqual([{ name: 'fail-on-introduced', status: 'pass', detail: 'No introduced findings match "all".' }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(false);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
@@ -1107,7 +1226,7 @@ describe('evaluateBudgetsForRun', () => {
       const { results, inconclusive, violated } = await evaluateBudgetsForRun({ source: { path } }, { maxRegressionPct: 10 });
       expect(results).toEqual([{
         name: 'max-regression', metric: 'wallClock', status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.',
-      }]);
+      }, NO_FAILED_JOBS_PASS]);
       expect(inconclusive).toBe(true);
       expect(violated).toBe(false);
     } finally {
@@ -1186,6 +1305,7 @@ describe('evaluateBudgetsForRun several regression budgets', () => {
         ['max-regression', 'wallClock', 'violation'],
         ['max-regression', 'gcTime', expect.any(String)],
         ['max-regression', 'taskCount', 'inconclusive'],
+        ['no-failed-jobs', undefined, 'pass'],
       ]);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
@@ -1279,8 +1399,8 @@ describe('skipped lines in MCP output', () => {
     try {
       corruptLog(baseline.path);
       const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path: baseline.path } }, {}, { source: { path: candidate.path } });
-      expect(results).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') })]);
-      expect(results[0].detail).not.toContain('candidate');
+      expect(results).toEqual([NO_FAILED_JOBS_PASS, expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') })]);
+      expect(results[1].detail).not.toContain('candidate');
       expect(violated).toBe(false);
       expect(inconclusive).toBe(true);
     } finally {

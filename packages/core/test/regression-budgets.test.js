@@ -89,7 +89,11 @@ describe('evaluateBudgets regressionBudgets', () => {
    * @param {import('../src/cli/budgets.ts').BudgetsConfig} budgets
    * @param {import('../src/run-comparison.ts').CompareRunsResult | undefined} cmp
    */
-  const run = (budgets, cmp) => evaluateBudgets({ appModel, catalog: [], budgets, comparison: cmp });
+  const run = (budgets, cmp) => {
+    const evaluated = evaluateBudgets({ appModel, catalog: [], budgets, comparison: cmp });
+    // The always-on no-failed-jobs row is tested in cli-budgets.test.js.
+    return { ...evaluated, results: evaluated.results.filter((r) => r.name !== 'no-failed-jobs') };
+  };
 
   it('evaluates each budget and tags the result with its metric', () => {
     const cmp = comparison([row('wallClock', 100, 105, 'regression'), row('gcTime', 10, 30, 'regression')]);
