@@ -94,10 +94,12 @@ export function rankCostMs(finding: Finding): number {
   return estimate?.stageTaskMs ?? estimate?.idleCoreTimeMs?.high ?? 0;
 }
 
-/** A finding's own cost in core-milliseconds, the unit of `rankCostMs`: its core-time figure, else
- * its idle core time. Null when the estimate states neither (a wall-clock-only or informational
- * finding). Unlike `rankCostMs` it does not depend on the band or the stage's size. */
-export function impactCoreMs(finding: Pick<Finding, 'impactEstimate'>): number | null {
+/** A ranking figure on the same millisecond axis as `rankCostMs`: the finding's raw-waste value when
+ * its unit is core milliseconds, core hours (converted to ms) or milliseconds, else its idle core
+ * time high figure. Task-time and wall-clock raw waste both appear as plain milliseconds, so this
+ * is not core time. Null when the estimate is memory (MB-seconds), bytes, a wall-clock range only
+ * or informational. Unlike `rankCostMs` it does not depend on the band or the stage's size. */
+export function rankImpactMs(finding: Pick<Finding, 'impactEstimate'>): number | null {
   const estimate = finding.impactEstimate;
   const rawWaste = estimate?.rawWaste;
   switch (rawWaste?.unit) {

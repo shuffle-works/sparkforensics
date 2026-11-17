@@ -260,11 +260,11 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
       expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
       expect(compact.findings).toHaveLength(full.findings.length);
       compact.findings.forEach((/** @type {Record<string, unknown>} */ row, /** @type {number} */ i) => {
-        // Every compact field is the full row's own, but `impactCoreMs`, which the compact row derives.
+        // Every compact field is the full row's own, but `rankImpactMs`, which the compact row derives.
         for (const [field, value] of Object.entries(row)) {
-          if (field !== 'impactCoreMs') expect(full.findings[i][field]).toEqual(value);
+          if (field !== 'rankImpactMs') expect(full.findings[i][field]).toEqual(value);
         }
-        expect(row.impactCoreMs === null || typeof row.impactCoreMs === 'number').toBe(true);
+        expect(row.rankImpactMs === null || typeof row.rankImpactMs === 'number').toBe(true);
         expect(row.key).toEqual(expect.any(String));
       });
       // One finding is one key in the CLI report too.
