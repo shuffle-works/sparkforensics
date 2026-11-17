@@ -7,8 +7,8 @@ dashboard opens with. `verdict` gives a `title` ("Start with
 Stage 3", "1 of 3 jobs failed in this run"), `summary` sentences, `steps`, the
 first three places to look in the dashboard's order (each with its action, what
 to try, the potential savings and what that figure counts, the other
-finding types flagged at the same place, and `leadFinding`, the row of the
-finding that leads the step), `costSteps`, the same places ranked by the
+finding types flagged at the same place, and `leadFinding`, the finding that
+leads the step: its `id` in the compact view, its full row in the full view), `costSteps`, the same places ranked by the
 busy core time a fix removes (only findings that carry one), `idle`, the
 core-hours and share of the allocation that ran no task, `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
@@ -26,16 +26,18 @@ per tool by design (`compare_runs` returns `baselineRunId` and `candidateRunId`,
 server process, so match runs by `app.id` and `app.attemptId`.
 
 The answer has two views. `compact` (the default) is an index: the verdict,
-`recommendations`, `metrics`, `writeTargets`, `effectiveConf` and one short row
-per finding, with no `cleanChecks` or `notRunChecks`. A compact row holds `id`,
+`recommendations`, `metrics` (the run totals, without the per-stage rows),
+`writeTargets` and one short row per finding, with no `cleanChecks`,
+`notRunChecks` or `effectiveConf`. Add `"stages"` or `"effectiveConf"` to
+`include` for the per-stage rows or the Spark properties. A compact row holds `id`,
 `key`, `type`, `tag`, `name`, `impactBand`, `stageId`, `actionLabel`, `metric`,
 `value` (or `valueText`), `impact` and `impactMeaning` when the finding has a
 savings figure, and `tunedThresholds` on a tuned server. Pass the row's `id` to
 [`get_finding_evidence`](./get-finding-evidence.md) for its remediation text,
 evidence and estimate. `full` returns every finding as the CLI report
-writes it, with `cleanChecks` and `notRunChecks`. The `view` field of the
-response names the view. On the bundled sample run the compact answer is about
-40% smaller than the full one.
+writes it, with `cleanChecks`, `notRunChecks`, `metrics.stages` and `effectiveConf`. The `view` field of the
+response names the view. The per-stage rows and the Spark
+properties are most of a full answer, so the compact one is far smaller.
 
 Each finding row has a `key` that is the same for the same finding in a rerun
 of the job: the finding's type, its rule and where it sits. A finding on a stage
@@ -48,16 +50,16 @@ whether the finding's value or impact band stayed the same. The rows of
 [`compare_runs`](./compare-runs.md) list the same keys. `id` stays the handle
 within one run.
 
-The response also carries the three machine-readable blocks of the CLI's JSON
-report, with the same content: `writeTargets` (every SQL write with its path or
+The full view and the `include` values above carry the machine-readable blocks of
+the CLI's JSON report, with the same content: `writeTargets` (every SQL write with its path or
 table, see [Write targets](../getting-started/ci-and-automation.md#write-targets)), `metrics`
 (run totals and one row per stage, see
 [Metrics block](../getting-started/ci-and-automation.md#metrics-block)) and `effectiveConf` (the Spark
 properties the run started with, `null` when the log records none, see
 [Effective conf](../getting-started/ci-and-automation.md#effective-conf)). With `redact` they are
-built from the redacted run, as in the CLI. The tool has no counterpart of
-the CLI's `--conf-keys` and `--conf-redact-regex`: `effectiveConf` always lists
-every property, withholding Spark's default secret pattern and the job's own
+built from the redacted run, as in the CLI. `confKeys` narrows `effectiveConf` as the
+CLI's `--conf-keys` does. The tool has no counterpart of `--conf-redact-regex`:
+`effectiveConf` withholds Spark's default secret pattern and the job's own
 `spark.redaction.regex`.
 
 Parameters (all optional, but pass either a `source` to load a fresh run, or
@@ -69,10 +71,10 @@ error, and when both are given `runId` wins):
 - `redact`: `boolean` (default `false`), pseudonymizes the app id, host
   names and user names in the response, and replaces the app name with the
   app id's pseudonym. See [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
-- `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
-  (default omitted, i.e. none). Each requested value adds one extra top-level
-  field to the response, on top of the default `verdict`/`findings`/`recommendations`/
-  `runComplete`/`writeTargets`/`generator`/`app`/`metrics`/`effectiveConf` (and `cleanChecks`/`notRunChecks`
+- `include`: array of `"summary" | "evidenceAvailability" | "detectors" | "stages" | "effectiveConf"`
+  (default omitted, i.e. none). Each requested value adds one extra block to the
+  response, on top of the default `verdict`/`findings`/`recommendations`/
+  `runComplete`/`writeTargets`/`generator`/`app`/`metrics` (and `cleanChecks`/`notRunChecks`/`metrics.stages`/`effectiveConf`
   in the `full` view):
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts,
     `skippedLines` (as in `get_run_summary`), a finding count broken down by impact band, the same counts without evidence
@@ -85,8 +87,13 @@ error, and when both are given `runId` wins):
     couldn't run because the log is missing data"
   - `detectors`: the full catalog of checks this tool can run: type, version,
     scope (stage/sql/app/config), current thresholds, and a doc-page anchor
+  - `stages`: the per-stage rows, as `metrics.stages` (always present in the `full` view)
+  - `effectiveConf`: the Spark properties the run started with (always present in the `full` view)
+
   This is opt-in because `detectors` in particular is a large, mostly-static
   catalog that would bloat a routine "what's wrong with this run" call.
+- `confKeys`: array of Spark property names, lists only these in `effectiveConf`
+  (the response names the ones the log lacks in `absentKeys`)
 - `impactBand`: array of impact bands (`"critical"`, `"warning"`, `"info"`, e.g.
   `["critical", "warning"]`), narrows the `findings` array to only these bands
 - `type`: array of finding `type` values, narrows `findings` to only these
@@ -114,14 +121,15 @@ error, and when both are given `runId` wins):
 `verdict`, `recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
 requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
-Each verdict step keeps its `leadFinding` row whatever the limit, so the rows the
-verdict points at are always in the answer.
+Each verdict step keeps its `leadFinding` whatever the limit, so the findings the
+verdict points at are always named. A compact step carries the `id`: pass it to
+[`get_finding_evidence`](./get-finding-evidence.md) for the row.
 
 ## Pages
 
 A JSON answer longer than 50,000 characters comes in pages. These lists are
 paged, in this order: `findings`, `cleanChecks`, `notRunChecks`,
-`metrics.stages` and `writeTargets.writes`. The first page keeps
+`metrics.stages` (when present) and `writeTargets.writes`. The first page keeps
 the shape of the whole answer: the fixed blocks (`verdict`, `recommendations`,
 `app`, `generator`, `effectiveConf`, `runComplete`, `findingsOmitted`, `notesHidden`, the
 other fields of `metrics` and `writeTargets`) and as many rows as fit. The fixed

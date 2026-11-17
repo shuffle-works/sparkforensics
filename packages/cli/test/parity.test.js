@@ -236,18 +236,25 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
       expect(viaMcp.finding).toEqual(row);
     });
 
-    it('returns writeTargets, metrics and effectiveConf in diagnose_run\'s default view', async () => {
+    it('returns writeTargets and the metrics totals in diagnose_run\'s default view, and the rest on request', async () => {
       const viaMcp = await mcpCall('diagnose_run', { source: { path: candidate } });
       expect(viaMcp.view).toBe('compact');
-      expect(Object.keys(viaMcp)).toEqual(expect.arrayContaining(['writeTargets', 'metrics', 'effectiveConf']));
+      expect(Object.keys(viaMcp)).toEqual(expect.arrayContaining(['writeTargets', 'metrics']));
+      expect(viaMcp).not.toHaveProperty('effectiveConf');
+      expect(viaMcp.metrics).not.toHaveProperty('stages');
+      const asked = await mcpCall('diagnose_run', { source: { path: candidate }, include: ['stages', 'effectiveConf'] });
+      expect(asked.metrics).toHaveProperty('stages');
+      expect(asked).toHaveProperty('effectiveConf');
     });
 
     it('lists in the compact view the same findings, blocks and keys as the full view', async () => {
       const compact = await mcpCall('diagnose_run', { source: { path: candidate } });
       const full = await mcpCall('diagnose_run', { source: { path: candidate }, view: 'full' });
-      for (const block of ['recommendations', 'writeTargets', 'metrics', 'effectiveConf', 'runComplete', 'runId']) {
+      for (const block of ['recommendations', 'writeTargets', 'runComplete', 'runId']) {
         expect(compact[block]).toEqual(full[block]);
       }
+      const { stages: _stages, ...metricTotals } = full.metrics;
+      expect(compact.metrics).toEqual(metricTotals);
       const withoutLead = (/** @type {{ leadFinding?: unknown }[]} */ steps) => steps.map((step) => ({ ...step, leadFinding: undefined }));
       expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
       expect(compact.findings).toHaveLength(full.findings.length);

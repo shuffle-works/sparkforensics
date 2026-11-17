@@ -129,11 +129,11 @@ describe('diagnose_run pagination', () => {
 
   it('keeps every compact page of a large run under the default budget and loses no row', async () => {
     const client = await connectedClient();
-    const whole = await wholeDiagnosis(path);
+    const whole = await wholeDiagnosis(path, { include: ['stages'] });
     expect(whole.findings.length).toBeGreaterThan(100);
     expect(JSON.stringify(whole).length).toBeGreaterThan(DEFAULT_PAGE_CHARS);
 
-    const pages = await allPages(client, { source: { path } });
+    const pages = await allPages(client, { source: { path }, include: ['stages'] });
     expect(pages.length).toBeGreaterThan(1);
     for (const page of pages) expect(page.content[0].text.length).toBeLessThanOrEqual(DEFAULT_PAGE_CHARS);
 
@@ -150,6 +150,14 @@ describe('diagnose_run pagination', () => {
     expect(findings).toEqual(whole.findings);
     const stages = Object.assign({}, ...[first, ...rest].map((page) => page.metrics?.stages ?? {}));
     expect(stages).toEqual(whole.metrics.stages);
+  });
+
+  it('leaves the stage rows out of a compact answer unless asked, so a many-stage run with few findings fits one page', async () => {
+    const client = await connectedClient();
+    const result = (await diagnose(client, { source: { path }, type: ['memoryUtilization'] })).structuredContent;
+    expect(result.metrics).not.toHaveProperty('stages');
+    expect(result).not.toHaveProperty('effectiveConf');
+    expect(result.pagination).toBeUndefined();
   });
 
   it('pages the full view too, with its clean and not-run check lists', async () => {
