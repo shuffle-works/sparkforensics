@@ -699,7 +699,7 @@ describe('getFindingDocumentation', () => {
       getFindingDocumentation('zetaSignal');
     } catch (err) {
       expect(/** @type {{ code?: string }} */ (err).code).toBe('invalid-type');
-      expect(/** @type {Error} */ (err).message).toMatch(/Valid types: .*skew/);
+      expect(/** @type {Error} */ (err).message).toMatch(/Valid types: .*skew.*and \d+ more \(call list_detectors for every type\)/);
     }
   });
 });
