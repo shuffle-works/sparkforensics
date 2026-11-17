@@ -797,7 +797,7 @@ opposite ways, the tone is `mixed`.
 Pass `--ignore-conf <regex>`, repeatable, for configuration keys that differ by
 design, such as a per-run output path. A key that matches is left out of
 `conf.differences` and listed in `conf.ignoredKeys`. The application id, start
-time and driver address are always left out. With a baseline, a property withheld
+time, driver address and other keys the cluster sets per run are always left out. With a baseline, a property withheld
 from `effectiveConf` (including by `--conf-redact-regex`) is also withheld from
 the comparison: it is listed in `conf.withheldKeys` and never compared. Limits and errors are those of
 `--normalize-path`. Pass `--noise-band-pct <pct>` (default `2`) to set the share
