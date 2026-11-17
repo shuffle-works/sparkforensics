@@ -104,7 +104,7 @@ describe('evidence panel on a Findings row', () => {
     expect(button).toHaveAttribute('aria-expanded', 'true');
     const table = within(screen.getByRole('table'));
     expect(await table.findByRole('heading', { name: 'Executor Utilization' })).toBeInTheDocument();
-    expect(table.getByText(/4 cores at peak over 1m 0s: 240\.0 core-s allocated, 79\.2 core-s busy, 160\.8 core-s idle\. CPU time was 33% of the allocation\./)).toBeInTheDocument();
+    expect(table.getByText(/4 cores at peak over 1m 0s: 0\.067 core-h allocated, 0\.022 core-h busy, 0\.045 core-h idle\. CPU time was 33% of the allocation\./)).toBeInTheDocument();
   });
 
   it('keeps an open panel\'s widget props when the board re-renders with the same inputs', async () => {

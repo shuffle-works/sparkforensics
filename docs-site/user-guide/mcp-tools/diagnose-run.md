@@ -31,8 +31,10 @@ The answer has two views. `compact` (the default) is an index: the verdict,
 `notRunChecks` or `effectiveConf`. Add `"stages"` or `"effectiveConf"` to
 `include` for the per-stage rows or the Spark properties. A compact row holds `id`,
 `key`, `type`, `tag`, `name`, `impactBand`, `stageId`, `actionLabel`, `metric`,
-`value` (or `valueText`), `impact` and `impactMeaning` when the finding has a
-savings figure, and `tunedThresholds` on a tuned server. Pass the row's `id` to
+`value` (or `valueText`), `impactCoreMs`, `impact` and `impactMeaning` when the
+finding has a savings figure, and `tunedThresholds` on a tuned server. `impactCoreMs` is the
+finding's core time in milliseconds, null when it has none, so findings of any type rank on
+one number. Pass the row's `id` to
 [`get_finding_evidence`](./get-finding-evidence.md) for its remediation text,
 evidence and estimate. `full` returns every finding as the CLI report
 writes it, with `cleanChecks`, `notRunChecks`, `metrics.stages` and `effectiveConf`. The `view` field of the

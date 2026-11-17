@@ -10,6 +10,7 @@ import {
   buildEvidenceReport, toFindingsFilter,
   type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type RunOutcomeSummary, type VerdictJson, type VerdictStepRow,
 } from './evidence-report.ts';
+import { impactCoreMs } from './recommendation-rollup.ts';
 import { runTiming } from './run-timing.ts';
 import { renderComparisonMarkdown, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
 import { comparedFindings, type ComparedRunInput } from './compared-run.ts';
@@ -257,6 +258,8 @@ export interface CompactFindingRow {
   impactBand: FindingRow['impactBand']; stageId: number | null; actionLabel: string;
   metric: string | null; value: number | null; valueText?: string;
   impact?: string; impactMeaning?: string | null;
+  /** The finding's core time in ms, one unit across finding types, for ranking by impact; null without one. */
+  impactCoreMs: number | null;
   tunedThresholds?: TunedThresholds;
 }
 
@@ -267,6 +270,7 @@ export function compactFindingRow(row: FindingRow): CompactFindingRow {
     metric: row.metric ?? null, value: row.value ?? null,
     ...(row.valueText !== undefined ? { valueText: row.valueText } : {}),
     ...(row.impact !== undefined ? { impact: row.impact, impactMeaning: row.impactMeaning ?? null } : {}),
+    impactCoreMs: impactCoreMs(row),
     // Kept: a tuned finding's impact figure is uncalibrated, and a reader must see that on its row.
     ...(row.tunedThresholds !== undefined ? { tunedThresholds: row.tunedThresholds } : {}),
   };

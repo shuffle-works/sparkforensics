@@ -94,6 +94,19 @@ export function rankCostMs(finding: Finding): number {
   return estimate?.stageTaskMs ?? estimate?.idleCoreTimeMs?.high ?? 0;
 }
 
+/** A finding's own cost in core-milliseconds, the unit of `rankCostMs`: its core-time figure, else
+ * its idle core time. Null when the estimate states neither (a wall-clock-only or informational
+ * finding). Unlike `rankCostMs` it does not depend on the band or the stage's size. */
+export function impactCoreMs(finding: Pick<Finding, 'impactEstimate'>): number | null {
+  const estimate = finding.impactEstimate;
+  const rawWaste = estimate?.rawWaste;
+  switch (rawWaste?.unit) {
+    case 'coreMs': case 'ms': return rawWaste.value;
+    case 'coreHours': return rawWaste.value * 3_600_000;
+    default: return estimate?.idleCoreTimeMs?.high ?? null;
+  }
+}
+
 export function buildRecommendationRollup(
   findings: Finding[],
   stages: Map<number, { submittedAt?: number; completedAt?: number }>,

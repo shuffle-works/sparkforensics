@@ -64,7 +64,7 @@ describe('ImpactEstimate component', () => {
   it('renders nothing for a rawWaste value that rounds to a zero-looking figure ("0.0 core-h")', () => {
     const testFinding = finding({
       type: 'utilization', impactBand: 'info',
-      impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.04, unit: 'coreHours' } },
+      impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0, unit: 'coreHours' } },
     });
     installInterpretation([testFinding]);
     const { container } = render(<ImpactEstimate finding={testFinding} />);

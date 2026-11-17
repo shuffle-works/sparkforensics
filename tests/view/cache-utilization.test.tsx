@@ -251,7 +251,7 @@ test('renders the task-time raw-waste figure as core time when a cacheUtilizatio
   })];
   renderWidget(buildAppModel(rddInfo), catalog);
 
-  expect(screen.getByText('1.2 core-s')).toBeInTheDocument();
+  expect(screen.getByText('0.00033 core-h')).toBeInTheDocument();
 });
 
 test('passes the worst impact band across all findings to WidgetCard for the header dot', () => {

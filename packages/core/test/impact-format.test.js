@@ -39,17 +39,14 @@ describe('formatRawWaste', () => {
 
   it('formats mbSeconds', () => {
     // formatRawWaste pins locale to en-US, so assert against that, not the ambient default.
-    expect(formatRawWaste({ value: 1000, unit: 'mbSeconds' })).toBe(`${(1000).toLocaleString('en-US')} MB-s`);
+    expect(formatRawWaste({ value: 1024 * 3600 * 2.5, unit: 'mbSeconds' })).toBe('2.5 GB-h');
   });
 
-  it('formats a small coreMs value as core-seconds', () => {
-    expect(formatRawWaste({ value: 4200, unit: 'coreMs' })).toBe('4.2 core-s');
-  });
-
-  it('formats a coreMs value of a tenth of a core-hour or more as core-hours', () => {
-    expect(formatRawWaste({ value: 360_000, unit: 'coreMs' })).toBe('0.1 core-h');
+  it('prints coreMs in core-hours at every size, with two significant digits below a tenth', () => {
     expect(formatRawWaste({ value: 9_000_000, unit: 'coreMs' })).toBe('2.5 core-h');
-    expect(formatRawWaste({ value: 359_999, unit: 'coreMs' })).toBe('360.0 core-s');
+    expect(formatRawWaste({ value: 360_000, unit: 'coreMs' })).toBe('0.1 core-h');
+    expect(formatRawWaste({ value: 359_999, unit: 'coreMs' })).toBe('0.100 core-h');
+    expect(formatRawWaste({ value: 4200, unit: 'coreMs' })).toBe('0.0012 core-h');
   });
 
   it('turns a run-sized mbSeconds value into GB-hours instead of millions of MB-s', () => {
@@ -59,8 +56,8 @@ describe('formatRawWaste', () => {
     expect(formatRawWaste({ value: 1024 * 3600 * 1500, unit: 'mbSeconds' })).toBe('1,500.0 GB-h');
   });
 
-  it('keeps MB-s below a tenth of a GB-hour, so a small figure never reads as 0.0 GB-h', () => {
-    expect(formatRawWaste({ value: 368_639, unit: 'mbSeconds' })).toBe(`${(368_639).toLocaleString('en-US')} MB-s`);
+  it('prints mbSeconds in GB-hours at every size, so a small figure never reads as a large MB-s count', () => {
+    expect(formatRawWaste({ value: 257_633, unit: 'mbSeconds' })).toBe('0.070 GB-h');
     expect(formatRawWaste({ value: 368_640, unit: 'mbSeconds' })).toBe('0.1 GB-h');
   });
 
@@ -68,9 +65,9 @@ describe('formatRawWaste', () => {
     expect(formatRawWaste({ value: 0, unit: 'ms' })).toBe('0s');
   });
 
-  it('rounds a small nonzero coreHours value down to the same text as a genuine zero', () => {
-    // 0.04 core-h * 10 = 0.4, rounds to 0 -> "0.0 core-h", identical to formatRawWaste({value: 0, ...}).
-    expect(formatRawWaste({ value: 0.04, unit: 'coreHours' })).toBe('0.0 core-h');
+  it('keeps a small nonzero coreHours value visible', () => {
+    expect(formatRawWaste({ value: 0.0004, unit: 'coreHours' })).toBe('0.00040 core-h');
+    expect(formatRawWaste({ value: 0, unit: 'coreHours' })).toBe('0.0 core-h');
   });
 });
 
@@ -87,13 +84,13 @@ describe('impactEstimateFigure', () => {
   });
 
   it('shows nothing for a figure that reads as zero or an informational estimate', () => {
-    expect(impactEstimateFigure({ basis: 'resourceOnly', estimateMethod: 'measured', wallClock: null, rawWaste: { value: 0.01, unit: 'coreHours' } })).toBeNull();
+    expect(impactEstimateFigure({ basis: 'resourceOnly', estimateMethod: 'measured', wallClock: null, rawWaste: { value: 0, unit: 'coreHours' } })).toBeNull();
     expect(impactEstimateFigure({ basis: 'serial', estimateMethod: 'measured', wallClock: { low: 0, high: 0 } })).toBeNull();
     expect(impactEstimateFigure({ basis: 'informational', estimateMethod: 'none', wallClock: null })).toBeNull();
   });
 
-  it('reads core time in core-s below a tenth of a core-hour', () => {
-    expect(formatRawWaste({ value: 12_300, unit: 'coreMs' })).toBe('12.3 core-s');
+  it('reads small core time in core-hours', () => {
+    expect(formatRawWaste({ value: 12_300, unit: 'coreMs' })).toBe('0.0034 core-h');
     expect(rawWasteMeaning({ value: 12_300, unit: 'coreMs' })).toBe('of core time');
   });
 
@@ -151,12 +148,12 @@ describe('estimateProvenance', () => {
 
   it('says nothing for a figure that reads as zero, like the step itself', () => {
     expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 0, high: 0 }, estimateMethod: 'measured' }))).toBeNull();
-    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 0.04, unit: 'coreHours' } }))).toBeNull();
+    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 0, unit: 'coreHours' } }))).toBeNull();
   });
 
   it('makes no run-time claim for a resource-only figure, and says nothing without a model', () => {
     expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5000, unit: 'coreMs' } })))
-      .toBe('Modeled; 5.0 core-s of core time, which may not shorten the run.');
+      .toBe('Modeled; 0.0014 core-h of core time, which may not shorten the run.');
     expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
     expect(estimateProvenance(withEstimate(undefined))).toBeNull();
   });
@@ -233,7 +230,7 @@ describe('impactEstimateCompact', () => {
 
   it('returns null for a rawWaste value that rounds to a zero-looking string, not the misleading "0.0 core-h"', () => {
     expect(
-      impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.04, unit: 'coreHours' } }),
+      impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0, unit: 'coreHours' } }),
     ).toBeNull();
   });
 
@@ -242,10 +239,10 @@ describe('impactEstimateCompact', () => {
     expect(impactEstimateCompact({ basis: 'serial', wallClock: { low: 0, high: 0.4 }, estimateMethod: 'measured' })).toBeNull();
   });
 
-  it('returns the formatted figure for a genuinely nonzero rawWaste value that rounds to one decimal digit ("0.3 MB-s")', () => {
-    // A real "0.3" value must not be treated as a rounded-to-zero figure.
+  it('returns the formatted figure for a genuinely nonzero rawWaste value ("0.0010 core-h")', () => {
+    // A real small value must not be treated as a rounded-to-zero figure.
     expect(
-      impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.3, unit: 'mbSeconds' } }),
-    ).toBe('0.3 MB-s');
+      impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.001, unit: 'coreHours' } }),
+    ).toBe('0.0010 core-h');
   });
 });
