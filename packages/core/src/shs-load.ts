@@ -125,9 +125,12 @@ export async function resolveFromShs(
   shsBaseUrl: string,
   appId: string,
   attemptId?: string,
-  opts: { fetchImpl?: typeof fetch; maxArchiveBytes?: number; idleTimeoutMs?: number } = {},
+  opts: { fetchImpl?: typeof fetch; maxArchiveBytes?: number; idleTimeoutMs?: number; attemptArgName?: string } = {},
 ): Promise<{ appModel: AppModel; skippedLines: number }> {
-  const { fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS } = opts;
+  const {
+    fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+    attemptArgName = SHS_ARGUMENT_BY_FIELD.attemptId,
+  } = opts;
   const validated = validateShsRequest({ baseUrl: shsBaseUrl, appId, attemptId: attemptId ?? '' });
   if (!validated.request) {
     const problems = Object.entries(validated.errors)
@@ -139,7 +142,7 @@ export async function resolveFromShs(
     if (attemptIds && attemptIds.length > 1) {
       throw mcpError(
         'invalid-argument',
-        `Application ${validated.request.appId} has ${attemptIds.length} attempts: ${attemptIds.join(', ')}. Pass source.attemptId to choose one.`,
+        `Application ${validated.request.appId} has ${attemptIds.length} attempts: ${attemptIds.join(', ')}. Pass ${attemptArgName} to choose one.`,
       );
     }
   }

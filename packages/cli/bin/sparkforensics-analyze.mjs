@@ -731,13 +731,13 @@ async function runCli(argv, { fetchImpl } = {}) {
 
   const shsOpts = fetchImpl !== undefined ? { fetchImpl } : {};
   const loadBaseline = () => (usingBaselineShs
-    ? resolveFromShs(/** @type {string} */ (values['baseline-shs-base-url']), /** @type {string} */ (values['baseline-app-id']), values['baseline-attempt-id'], shsOpts)
+    ? resolveFromShs(/** @type {string} */ (values['baseline-shs-base-url']), /** @type {string} */ (values['baseline-app-id']), values['baseline-attempt-id'], { ...shsOpts, attemptArgName: BASELINE_SHS_FLAG_BY_FIELD.attemptId })
     : collectRun(/** @type {string} */ (values.baseline)));
 
   if (multiLog) {
     const candidates = usingShs
       ? shsCandidates.map(({ appId, attemptId, name }) => ({
-        name, load: () => resolveFromShs(/** @type {string} */ (values['shs-base-url']), appId, attemptId, shsOpts),
+        name, load: () => resolveFromShs(/** @type {string} */ (values['shs-base-url']), appId, attemptId, { ...shsOpts, attemptArgName: SHS_FLAG_BY_FIELD.attemptId }),
       }))
       : positionals.map((path) => ({ name: path, load: () => collectRun(path) }));
     return runMultiLog({
@@ -754,7 +754,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     if (usingShs || usingBaselineShs) {
       const [{ appId, attemptId }] = usingShs ? shsCandidates : [{}];
       const candidatePromise = unreadable(usingShs
-        ? resolveFromShs(/** @type {string} */ (values['shs-base-url']), /** @type {string} */ (appId), attemptId, shsOpts)
+        ? resolveFromShs(/** @type {string} */ (values['shs-base-url']), /** @type {string} */ (appId), attemptId, { ...shsOpts, attemptArgName: SHS_FLAG_BY_FIELD.attemptId })
         : collectRun(positionals[0]), EXIT.CANDIDATE_UNREADABLE);
       // An SHS fetch (network) and a local parse (disk) are independent, so run them concurrently.
       // Local+local below is CPU work on both sides, so collectRunPair uses a worker thread for it.

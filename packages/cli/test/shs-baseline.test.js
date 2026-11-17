@@ -483,3 +483,30 @@ describe('SPARKFORENSICS_SHS_BASE_URL', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+describe('an application with more than one attempt and no attempt id', () => {
+  // A History Server that lists attempts 1 and 2 for every application it knows.
+  function twoAttemptShs() {
+    const shs = fakeShs();
+    const fetchImpl = vi.fn(async (/** @type {string | URL | Request} */ url) => {
+      const appId = new URL(String(url)).pathname.split('/')[4];
+      if (!String(url).endsWith('/logs') && LOGS[appId]) {
+        return Response.json({ id: appId, attempts: [{ attemptId: '2' }, { attemptId: '1' }] });
+      }
+      return shs.fetchImpl(url);
+    });
+    return { fetchImpl, requested: shs.requested };
+  }
+
+  it.each([
+    ['a candidate --app-id', [...candidateShs(SLOW_ID)], '--attempt-id', SLOW_ID],
+    ['a --baseline-app-id', [p('slow'), ...baselineShs()], '--baseline-attempt-id', BASE_ID],
+  ])('names the CLI flag for %s and downloads no log', async (_label, argv, flag, appId) => {
+    const { fetchImpl, requested } = twoAttemptShs();
+    const { status, stderr } = await run(argv, { fetchImpl });
+    expect(status).not.toBe(0);
+    expect(stderr).toContain(`Application ${appId} has 2 attempts: 2, 1. Pass ${flag} to choose one.`);
+    expect(stderr).not.toContain('source.attemptId');
+    expect(requested).toEqual([]);
+  });
+});
