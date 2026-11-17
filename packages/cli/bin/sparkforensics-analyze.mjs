@@ -22,7 +22,7 @@ const { loadNodeCore } = await import(pathToFileURL(bootstrapPath).href);
 const { core, buildId: coreBuildId } = await loadNodeCore(pkgDir);
 
 const {
-  collectRun, collectRunPair, resolveFromShs, validateShsRequest, analyzeRun,
+  collectRun, collectRunPair, resolveFromShs, isShsAttemptsError, validateShsRequest, analyzeRun,
   buildEvidenceReport, toFindingsFilter, evaluateBudgets, regressionPairingError,
   renderComparisonMarkdown, COMPARISON_METRIC_KEYS, DEFAULT_NOISE_BAND, buildComparisonOutput, comparedFindings,
   compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS, compileConfIgnorePatterns,
@@ -336,6 +336,17 @@ const EXIT_SEVERITY = Object.fromEntries([0, 3, 1, 4, 5, 6].map((code, rank) => 
 // Marks a read/parse failure with the exit code of the log it came from.
 /** @template T @param {Promise<T>} promise @param {number} exitCode @returns {Promise<T>} */
 const unreadable = (promise, exitCode) => promise.catch((/** @type {CaughtError} */ e) => { e.exitCode = exitCode; throw e; });
+
+// resolveFromShs, with the CLI argument that picks an attempt named in its multi-attempt error.
+/**
+ * @param {string} baseUrl @param {string} appId @param {string | undefined} attemptId
+ * @param {{ fetchImpl?: typeof fetch }} opts @param {string} attemptArg
+ */
+const fetchFromShs = (baseUrl, appId, attemptId, opts, attemptArg) => resolveFromShs(baseUrl, appId, attemptId, opts)
+  .catch((/** @type {unknown} */ e) => {
+    if (isShsAttemptsError(e)) e.message += ` Pass ${attemptArg} to choose one.`;
+    throw e;
+  });
 
 // The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
 /** @param {string} role @param {number} exitCode */
@@ -731,13 +742,13 @@ async function runCli(argv, { fetchImpl } = {}) {
 
   const shsOpts = fetchImpl !== undefined ? { fetchImpl } : {};
   const loadBaseline = () => (usingBaselineShs
-    ? resolveFromShs(/** @type {string} */ (values['baseline-shs-base-url']), /** @type {string} */ (values['baseline-app-id']), values['baseline-attempt-id'], { ...shsOpts, attemptArgName: BASELINE_SHS_FLAG_BY_FIELD.attemptId })
+    ? fetchFromShs(/** @type {string} */ (values['baseline-shs-base-url']), /** @type {string} */ (values['baseline-app-id']), values['baseline-attempt-id'], shsOpts, BASELINE_SHS_FLAG_BY_FIELD.attemptId)
     : collectRun(/** @type {string} */ (values.baseline)));
 
   if (multiLog) {
     const candidates = usingShs
       ? shsCandidates.map(({ appId, attemptId, name }) => ({
-        name, load: () => resolveFromShs(/** @type {string} */ (values['shs-base-url']), appId, attemptId, { ...shsOpts, attemptArgName: SHS_FLAG_BY_FIELD.attemptId }),
+        name, load: () => fetchFromShs(/** @type {string} */ (values['shs-base-url']), appId, attemptId, shsOpts, `--app-id ${appId}:<attempt>`),
       }))
       : positionals.map((path) => ({ name: path, load: () => collectRun(path) }));
     return runMultiLog({
@@ -754,7 +765,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     if (usingShs || usingBaselineShs) {
       const [{ appId, attemptId }] = usingShs ? shsCandidates : [{}];
       const candidatePromise = unreadable(usingShs
-        ? resolveFromShs(/** @type {string} */ (values['shs-base-url']), /** @type {string} */ (appId), attemptId, { ...shsOpts, attemptArgName: SHS_FLAG_BY_FIELD.attemptId })
+        ? fetchFromShs(/** @type {string} */ (values['shs-base-url']), /** @type {string} */ (appId), attemptId, shsOpts, SHS_FLAG_BY_FIELD.attemptId)
         : collectRun(positionals[0]), EXIT.CANDIDATE_UNREADABLE);
       // An SHS fetch (network) and a local parse (disk) are independent, so run them concurrently.
       // Local+local below is CPU work on both sides, so collectRunPair uses a worker thread for it.

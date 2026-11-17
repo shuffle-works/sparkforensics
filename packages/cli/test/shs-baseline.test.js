@@ -498,15 +498,28 @@ describe('an application with more than one attempt and no attempt id', () => {
     return { fetchImpl, requested: shs.requested };
   }
 
+  // Each case: the arguments, the application with two attempts, the hint, and the arguments with the hint followed.
   it.each([
-    ['a candidate --app-id', [...candidateShs(SLOW_ID)], '--attempt-id', SLOW_ID],
-    ['a --baseline-app-id', [p('slow'), ...baselineShs()], '--baseline-attempt-id', BASE_ID],
-  ])('names the CLI flag for %s and downloads no log', async (_label, argv, flag, appId) => {
+    [
+      'a single --app-id', candidateShs(SLOW_ID), SLOW_ID, '--attempt-id',
+      [...candidateShs(SLOW_ID), '--attempt-id', '2'],
+    ],
+    [
+      'several --app-id values', [...candidateShs(SLOW_ID, FAST_ID), '--baseline', p('baseline')], SLOW_ID, `--app-id ${SLOW_ID}:<attempt>`,
+      [...candidateShs(`${SLOW_ID}:2`, `${FAST_ID}:1`), '--baseline', p('baseline')],
+    ],
+    [
+      'a --baseline-app-id', [p('slow'), ...baselineShs()], BASE_ID, '--baseline-attempt-id',
+      [p('slow'), ...baselineShs(), '--baseline-attempt-id', '2'],
+    ],
+  ])('for %s, lists the attempts and names an argument the CLI accepts', async (_label, argv, appId, hint, followed) => {
     const { fetchImpl, requested } = twoAttemptShs();
     const { status, stderr } = await run(argv, { fetchImpl });
     expect(status).not.toBe(0);
-    expect(stderr).toContain(`Application ${appId} has 2 attempts: 2, 1. Pass ${flag} to choose one.`);
-    expect(stderr).not.toContain('source.attemptId');
-    expect(requested).toEqual([]);
+    expect(stderr).toContain(`Application ${appId} has 2 attempts: 2, 1. Pass ${hint} to choose one.`);
+    expect(requested.some((url) => url.includes(`/${appId}/`))).toBe(false);
+    const retry = await run(followed, { fetchImpl: twoAttemptShs().fetchImpl });
+    expect(retry.stderr).not.toMatch(/Usage|attempts:/);
+    expect(retry.status).not.toBe(2);
   });
 });

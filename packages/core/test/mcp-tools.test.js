@@ -197,6 +197,27 @@ describe('resolveOrCreateRun (SHS source)', () => {
     )).rejects.toMatchObject({ code: 'upstream-unreachable' });
   });
 
+  it('names source.attemptId for an application with several attempts, and that field picks one', async () => {
+    const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-shs-two","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
+    /** @param {string | URL | Request} url */
+    const fetchImpl = async (url) => (String(url).endsWith('/logs')
+      ? shsZipFetch(ndjson)()
+      : Response.json({ id: 'application_1_7', attempts: [{ attemptId: '2' }, { attemptId: '1' }] }));
+    await expect(resolveOrCreateRun(
+      { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_7' } },
+      { fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'invalid-argument',
+      message: 'Application application_1_7 has 2 attempts: 2, 1. Pass source.attemptId to choose one.',
+    });
+    const { appModel } = await resolveOrCreateRun(
+      { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_7', attemptId: '2' } },
+      { fetchImpl },
+    );
+    expect(present(appModel.app).id).toBe('app-shs-two');
+  });
+
   it('surfaces invalid-event-log on a corrupt archive', async () => {
     const fetchImpl = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 });
     await expect(resolveOrCreateRun(

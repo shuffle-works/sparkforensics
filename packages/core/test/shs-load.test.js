@@ -47,7 +47,10 @@ describe('resolveFromShs', () => {
     it('fails before downloading logs when the application has several attempts, listing the ids', async () => {
       const { fetchImpl, urls } = historyServer([{ attemptId: '2' }, { attemptId: '1' }]);
       await expect(resolveFromShs('http://shs:18080', 'application_1_1', undefined, { fetchImpl }))
-        .rejects.toMatchObject({ code: 'invalid-argument', message: expect.stringMatching(/2 attempts: 2, 1\. Pass source\.attemptId/) });
+        .rejects.toMatchObject({
+          code: 'invalid-argument', appId: 'application_1_1', attemptIds: ['2', '1'],
+          message: 'Application application_1_1 has 2 attempts: 2, 1.',
+        });
       expect(urls).toEqual(['http://shs:18080/api/v1/applications/application_1_1']);
     });
 

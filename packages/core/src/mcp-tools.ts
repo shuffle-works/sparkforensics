@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { collectRun } from './cli/collect-run.ts';
 import { analyzeRun, runFindings, type AnalyzedRun } from './analyzed-run.ts';
-import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
+import { resolveFromShs, isShsAttemptsError, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
 import {
   buildEvidenceReport, toFindingsFilter,
@@ -221,7 +221,11 @@ export async function resolveOrCreateRun(
     try {
       const { appModel: parsed } = 'path' in source
         ? await collectRun(source.path)
-        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs });
+        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs })
+          .catch((e: unknown) => {
+            if (isShsAttemptsError(e)) e.message += ' Pass source.attemptId to choose one.';
+            throw e;
+          });
       // The attempt the caller asked the History Server for, when the log itself does not name one.
       if (!('path' in source) && source.attemptId && parsed.app && !parsed.app.attemptId) parsed.app.attemptId = source.attemptId;
       const run = analyzeRun(parsed, { thresholds });

@@ -121,16 +121,21 @@ async function listShsAttemptIds(
   }
 }
 
+/** The error `resolveFromShs` throws for an application with several attempts and no attempt id. Its
+ * message lists the attempts; each surface adds the argument that picks one. */
+export type ShsAttemptsError = Error & { code: 'invalid-argument'; appId: string; attemptIds: string[] };
+
+export function isShsAttemptsError(e: unknown): e is ShsAttemptsError {
+  return e instanceof Error && Array.isArray((e as Partial<ShsAttemptsError>).attemptIds);
+}
+
 export async function resolveFromShs(
   shsBaseUrl: string,
   appId: string,
   attemptId?: string,
-  opts: { fetchImpl?: typeof fetch; maxArchiveBytes?: number; idleTimeoutMs?: number; attemptArgName?: string } = {},
+  opts: { fetchImpl?: typeof fetch; maxArchiveBytes?: number; idleTimeoutMs?: number } = {},
 ): Promise<{ appModel: AppModel; skippedLines: number }> {
-  const {
-    fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
-    attemptArgName = SHS_ARGUMENT_BY_FIELD.attemptId,
-  } = opts;
+  const { fetchImpl = fetch, maxArchiveBytes = DEFAULT_MAX_ARCHIVE_BYTES, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS } = opts;
   const validated = validateShsRequest({ baseUrl: shsBaseUrl, appId, attemptId: attemptId ?? '' });
   if (!validated.request) {
     const problems = Object.entries(validated.errors)
@@ -140,10 +145,12 @@ export async function resolveFromShs(
   if (!validated.request.attemptId) {
     const attemptIds = await listShsAttemptIds(validated.request.baseUrl, validated.request.appId, fetchImpl, idleTimeoutMs);
     if (attemptIds && attemptIds.length > 1) {
-      throw mcpError(
-        'invalid-argument',
-        `Application ${validated.request.appId} has ${attemptIds.length} attempts: ${attemptIds.join(', ')}. Pass ${attemptArgName} to choose one.`,
+      const { appId: multiAttemptAppId } = validated.request;
+      const error: ShsAttemptsError = Object.assign(
+        mcpError('invalid-argument', `Application ${multiAttemptAppId} has ${attemptIds.length} attempts: ${attemptIds.join(', ')}.`),
+        { code: 'invalid-argument' as const, appId: multiAttemptAppId, attemptIds },
       );
+      throw error;
     }
   }
   const fetched = await fetchShsEventLog(validated.request, { fetchImpl }) as ShsFetchOutcome;
