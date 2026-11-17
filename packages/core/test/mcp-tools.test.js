@@ -186,11 +186,36 @@ describe('resolveOrCreateRun (SHS source)', () => {
 
   it('rejects with upstream-unreachable when the archive body stalls past the idle timeout', async () => {
     // Emits one chunk then stalls forever: headers arrived, body went idle.
-    const fetchImpl = async () => new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 });
+    // The attempt lookup gets a 404, so only the logs request stalls.
+    /** @param {string | URL | Request} url */
+    const fetchImpl = async (url) => (String(url).endsWith('/logs')
+      ? new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array(16)); } }), { status: 200 })
+      : new Response(null, { status: 404 }));
     await expect(resolveOrCreateRun(
       { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_6' } },
       { fetchImpl, idleTimeoutMs: 20 },
     )).rejects.toMatchObject({ code: 'upstream-unreachable' });
+  });
+
+  it('names source.attemptId for an application with several attempts, and that field picks one', async () => {
+    const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-shs-two","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
+    /** @param {string | URL | Request} url */
+    const fetchImpl = async (url) => (String(url).endsWith('/logs')
+      ? shsZipFetch(ndjson)()
+      : Response.json({ id: 'application_1_7', attempts: [{ attemptId: '2' }, { attemptId: '1' }] }));
+    await expect(resolveOrCreateRun(
+      { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_7' } },
+      { fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'invalid-argument',
+      message: 'Application application_1_7 has 2 attempts: 2, 1. Pass source.attemptId to choose one.',
+    });
+    const { appModel } = await resolveOrCreateRun(
+      { source: { shsBaseUrl: 'http://shs:18080', appId: 'application_1_7', attemptId: '2' } },
+      { fetchImpl },
+    );
+    expect(present(appModel.app).id).toBe('app-shs-two');
   });
 
   it('surfaces invalid-event-log on a corrupt archive', async () => {
@@ -774,6 +799,26 @@ describe('getRunSummary', () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    }
+  });
+
+  it('reports app.attemptId when the log names one, and null as diagnose_run does otherwise', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const withAttempt = join(dir, 'with-attempt');
+    const withoutAttempt = join(dir, 'without-attempt');
+    /** @param {string} extra */
+    const start = (extra) => `{"Event":"SparkListenerApplicationStart","App ID":"app-summary-attempt","App Name":"t","Timestamp":0${extra}}\n`;
+    writeFileSync(withAttempt, start(',"App Attempt ID":"2"'));
+    writeFileSync(withoutAttempt, start(''));
+    try {
+      const a = await resolveOrCreateRun({ source: { path: withAttempt } });
+      const b = await resolveOrCreateRun({ source: { path: withoutAttempt } });
+      expect(getRunSummary(a.runId).app.attemptId).toBe('2');
+      expect(getRunSummary(a.runId, { redact: true }).app.attemptId).toBe('2');
+      expect(getRunSummary(b.runId).app.attemptId).toBeNull();
+      expect(getRunSummary(b.runId).app.attemptId).toBe(diagnoseRun(b.runId).app.attemptId);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

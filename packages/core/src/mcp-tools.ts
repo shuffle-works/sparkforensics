@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { collectRun } from './cli/collect-run.ts';
 import { analyzeRun, runFindings, type AnalyzedRun } from './analyzed-run.ts';
-import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
+import { resolveFromShs, isShsAttemptsError, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
 import {
   buildEvidenceReport, toFindingsFilter,
@@ -38,7 +38,7 @@ export type RunRef = { runId?: string; source?: RunSource };
 export interface RunSummary extends RunOutcomeSummary {
   runId: string;
   // string | null (not undefined): getRunSummary always sets these via `?? null`, never omits them.
-  app: { id: string | null; name: string | null; sparkVersion: string | null };
+  app: { id: string | null; attemptId: string | null; name: string | null; sparkVersion: string | null };
   stageCount: number; jobCount: number; sqlExecutionCount: number;
   executorCount: { added: number; removed: number };
   durationMs: number | null;
@@ -222,7 +222,11 @@ export async function resolveOrCreateRun(
     try {
       const { appModel: parsed } = 'path' in source
         ? await collectRun(source.path)
-        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs });
+        : await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs })
+          .catch((e: unknown) => {
+            if (isShsAttemptsError(e)) e.message += ' Pass source.attemptId to choose one.';
+            throw e;
+          });
       // The attempt the caller asked the History Server for, when the log itself does not name one.
       if (!('path' in source) && source.attemptId && parsed.app && !parsed.app.attemptId) parsed.app.attemptId = source.attemptId;
       const run = analyzeRun(parsed, { thresholds });
@@ -484,7 +488,8 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
     : rawApp;
   return {
     runId,
-    app: redactedApp,
+    // Only cluster-mode runs have an attempt id; it is not an identifier, so redaction keeps it.
+    app: { ...redactedApp, attemptId: app?.attemptId ?? null },
     stageCount: stages.size,
     jobCount: jobs.size,
     sqlExecutionCount: sql.size,

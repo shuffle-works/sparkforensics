@@ -43,7 +43,9 @@ other parameters.
   History Server run. `shsBaseUrl` is optional when the server has a default
   History Server (see [Default History Server](#default-history-server)). An `appId` must have one of Spark's id forms
   (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
-  `driver-<digits>`). A run loaded this way gets a `runId`.
+  `driver-<digits>`). A run loaded this way gets a `runId`. Without
+  `attemptId`, an application with several attempts fails before any
+  download, with an error that lists its attempt ids.
 - `runId`: a run already loaded in this server process, as returned by an
   earlier call. Pass `source` or `runId`. When you pass both, `runId` wins.
 - `redact`: `boolean`, default `false`. `list_runs`, `diagnose_run`,
