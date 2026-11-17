@@ -195,7 +195,7 @@ describe('failure advice from parsed events', () => {
       Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
       'Task Info': { 'Task ID': taskId++, Index: index, 'Executor ID': loss?.executorId ?? '9', 'Launch Time': 0, 'Finish Time': 10000, Failed: loss != null },
       'Task End Reason': loss
-        ? { Reason: 'ExecutorLostFailure', 'Executor ID': loss.executorId, 'Exit Caused By App': loss.exitCausedByApp, 'Loss Reason': loss.lossReason }
+        ? { Reason: 'ExecutorLostFailure', 'Exit Caused By App': loss.exitCausedByApp, 'Loss Reason': loss.lossReason }
         : { Reason: 'Success' },
       'Task Metrics': {},
     }, s);
@@ -206,7 +206,9 @@ describe('failure advice from parsed events', () => {
   }
 
   const PREEMPTED = 'Container preempted by scheduler';
+  /** @param {string} executorId @param {number} n */
   const cluster = (executorId, n) => Array.from({ length: n }, () => ({ executorId, lossReason: PREEMPTED, exitCausedByApp: false }));
+  /** @param {string} executorId @param {number} n */
   const app = (executorId, n) => Array.from({ length: n }, () => ({ executorId, lossReason: CONTAINER_KILL, exitCausedByApp: true }));
 
   it('retryWaste says cluster-side losses are unrelated to the tasks and do not count toward maxFailures', () => {
