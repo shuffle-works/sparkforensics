@@ -80,8 +80,9 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   stage's `stage.localityStats` (pure reducer `computeCoreLocalityRatio`,
   `packages/core/src/core-locality-ratio.ts`). `NO_PREF` stays in the denominator only,
   since it's what shuffle-read stages legitimately report with no locality
-  problem. Below 50 total tasks or below a 15% non-local ratio: no finding;
-  15%-35%: warning; >= 35%: critical; these thresholds are unvalidated estimates
+  problem. Below 50 total tasks or below a 15% non-local ratio: no finding.
+  The band follows the modeled fetch cost, not the ratio alone (see
+  [threshold tables](./detector-contract/threshold-tables.md)); these thresholds are unvalidated estimates
   (`confidence` scales `low`/`medium`/`high` via
   `coreLocalityConfidence`, off whichever is weaker of the non-local ratio
   and the sampled task count, the same evidence-strength convention as the

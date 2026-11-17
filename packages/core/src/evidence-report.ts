@@ -91,7 +91,7 @@ export interface RecommendationRow {
   unit?: RawWasteUnit;
   total?: number;
   byImpactBand?: Partial<Record<ImpactBand, number>>;
-  // The group's savings figure in the dashboard's units ("26.1s", "0.4 GB-h", "12.3 core-s"), or
+  // The group's savings figure in the dashboard's units ("26.1s", "0.4 GB-h", "12.3 core-h"), or
   // null for a count group or a resource figure that rounds to zero; `impactMeaning` says what it
   // counts ("of run time", "of core time", ...).
   impact: string | null;

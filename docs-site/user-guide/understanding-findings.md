@@ -415,7 +415,8 @@ the stages with non-local tasks reached process- or node-local placement, no
 data-local executor exists and a longer wait only delays each task, so the
 finding does not suggest it and `remediation` is empty. The core-time figure
 assumes a fixed fetch cost per non-local task, because the log carries no
-measured one.
+measured one. The band follows that modeled cost as a share of the run's task
+time, so a high non-local share on a cheap run is not critical.
 Self-flags a confidence that scales with the non-local ratio and sample
 size: the thresholds are our own noise floor for this metric.
 

@@ -258,7 +258,7 @@ export interface CompactFindingRow {
   impactBand: FindingRow['impactBand']; stageId: number | null; actionLabel: string;
   metric: string | null; value: number | null; valueText?: string;
   impact?: string; impactMeaning?: string | null;
-  /** The finding's core time in ms, one unit across finding types, for ranking by impact; null without one. */
+  /** A ranking figure in ms on the axis of `rankCostMs` (see `rankImpactMs`); not core time. Null without one. */
   rankImpactMs: number | null;
   tunedThresholds?: TunedThresholds;
 }
