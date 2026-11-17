@@ -44,40 +44,58 @@ describe('summarizeComparison', () => {
     expect(sentences).toEqual(['Worse in the candidate: GC time.', 'Better in the candidate: Disk spill.']);
   });
 
-  it('nets finding categories across impact bands, so a rule is never both more and less frequent', () => {
+  it('names introduced and resolved findings with their impact bands', () => {
     const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
       introduced: [
-        { type: 'gc', baseCount: 0, candCount: 2 },
-        // skew moved from critical to warning: +1 warning, -1 critical, net 0.
-        { type: 'skew', baseCount: 0, candCount: 1 },
+        { type: 'gc', impactBand: 'warning', baseCount: 0, candCount: 2 },
+        { type: 'skew', impactBand: 'warning', baseCount: 0, candCount: 1 },
       ],
       resolved: [
-        { type: 'skew', baseCount: 1, candCount: 0 },
-        { type: 'spill', baseCount: 3, candCount: 1 },
+        { type: 'skew', impactBand: 'critical', baseCount: 1, candCount: 0 },
+        { type: 'spill', impactBand: 'info', baseCount: 3, candCount: 1 },
       ],
     });
-    expect(sentences).toContain('New or more frequent in the candidate: Garbage collection pressure.');
-    expect(sentences).toContain('Less frequent in the candidate: Memory and disk spill.');
-    expect(sentences.join(' ')).not.toContain('Task skew');
+    expect(sentences).toContain('Introduced in the candidate: Garbage collection pressure (warning), Task skew (warning).');
+    expect(sentences).toContain('Resolved in the candidate: Task skew (critical), Memory and disk spill (info).');
   });
 
-  it('nets rules that share a category name, so Plan advisor never reads as both', () => {
+  it('keeps a resolved critical finding visible next to a new one of the same category', () => {
     const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
-      introduced: [{ type: 'overBroadcast', baseCount: 0, candCount: 1 }],
-      resolved: [{ type: 'smallFiles', baseCount: 2, candCount: 1 }],
+      introduced: [{ type: 'skew', impactBand: 'info', baseCount: 0, candCount: 1 }],
+      resolved: [{ type: 'skew', impactBand: 'critical', baseCount: 1, candCount: 0 }],
     });
-    expect(sentences.join(' ')).not.toContain('Plan advisor');
+    expect(sentences).toEqual([
+      'Introduced in the candidate: Task skew (info).',
+      'Resolved in the candidate: Task skew (critical).',
+    ]);
   });
 
-  it('names sub-rule findings by their category, netting sub-rules of one type', () => {
+  it('lists sub-rules of one category once per band', () => {
     const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
       introduced: [
-        { type: 'partitionSizing', baseCount: 0, candCount: 1 },
-        { type: 'memoryUtilization', baseCount: 0, candCount: 1 },
+        { type: 'partitionSizing', impactBand: 'warning', baseCount: 0, candCount: 1 },
+        { type: 'partitionSizing', impactBand: 'warning', baseCount: 0, candCount: 2 },
       ],
-      resolved: [{ type: 'memoryUtilization', baseCount: 1, candCount: 0 }],
+      resolved: [],
     });
-    expect(sentences).toEqual(['New or more frequent in the candidate: Partition sizing.']);
+    expect(sentences).toEqual(['Introduced in the candidate: Partition sizing (warning).']);
+  });
+
+  it('keeps a low-confidence verdict to one sentence that states why the match is weak', () => {
+    const reason = 'Only 40% of executor run time is in matched stages, so per-stage rows mostly compare unrelated work.';
+    const verdict = summarizeComparison(
+      [metric('wallClock', 'Wall-clock duration', 10_000, 20_000, 'regression'), metric('gcTime', 'GC time', 1, 5, 'regression')],
+      { introduced: [{ type: 'gc', impactBand: 'warning', baseCount: 0, candCount: 1 }], resolved: [] },
+      undefined, undefined, { confidence: 'low', reason },
+    );
+    expect(verdict).toEqual({ title: `Low confidence: ${reason}`, tone: 'unknown', sentences: [] });
+  });
+
+  it('keeps the full narrative when confidence is ok', () => {
+    const verdict = summarizeComparison(
+      [metric('wallClock', 'Wall-clock duration', 10_000, 20_000, 'regression')], noFindings, undefined, undefined, { confidence: 'ok', reason: null },
+    );
+    expect(verdict.title).toMatch(/^The candidate finished/);
   });
 
   it('says nothing about cost metrics when none has values in both runs', () => {
@@ -228,6 +246,13 @@ describe('summarizeComparison with comparability', () => {
     const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, equal: null } });
     expect(verdict.tone).toBe('worse');
     expect(verdict.title).toMatch(/^Same configuration and plan\. Output was not compared\. Time differs by 49\.0s \(49%\): executors averaged/);
+  });
+
+  it('states a large input-bytes change even when no output figure is measured', () => {
+    const inputBytes = { baseline: 1e9, candidate: 2e9, relativeDifference: 1 };
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, inputBytes, equal: null } });
+    expect(verdict.sentences.join(' ')).toMatch(/The data volume differs.*input bytes .* -> .* \(\+100%\)/);
+    expect(summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, equal: null } }).sentences.join(' ')).not.toContain('data volume');
   });
 
   it('says the wall-clock change is executor availability when mean executors differ past the threshold', () => {

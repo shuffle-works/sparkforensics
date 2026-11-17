@@ -584,7 +584,7 @@ function renderChangedSection(changed: FindingsChangedRow[]): string[] {
 }
 
 // Markdown unit per metric key; a key with none prints its number as is.
-const bytesText = (bytes: number): string => (bytes === 0 ? '0 B' : bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB` : formatBytes(bytes));
+export const bytesText = (bytes: number): string => (bytes === 0 ? '0 B' : bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB` : formatBytes(bytes));
 const METRIC_TEXT: Record<string, (value: number) => string> = {
   wallClock: fmtMs, gcTime: fmtMs, executorRunTime: fmtMs, executorCpuTime: fmtMs,
   shuffleSpill: bytesText, diskSpill: bytesText, inputBytes: bytesText, outputBytes: bytesText,
@@ -596,7 +596,7 @@ const METRIC_TEXT: Record<string, (value: number) => string> = {
 const orNa = (value: number | null, format: (value: number) => string): string => (value == null ? 'n/a' : format(value));
 
 /** "+63%" for a relative change, one decimal under 1%; null when there is no change to state. */
-function changeText(relative: number | null): string | null {
+export function changeText(relative: number | null): string | null {
   if (relative == null) return null;
   const percent = relative * 100;
   const text = Math.abs(percent) < 1 ? percent.toFixed(1) : String(Math.round(percent));

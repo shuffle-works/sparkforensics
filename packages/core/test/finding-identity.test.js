@@ -101,7 +101,7 @@ describe('comparison across runs', () => {
     })]);
     for (const band of ['critical', 'warning', 'info']) expect(budgetFor(comparison, band).status).toBe('pass');
     expect(budgetFor(comparison, 'all').status).toBe('pass');
-    expect(comparisonVerdict(comparison).sentences.join(' ')).not.toMatch(/New or more frequent|Less frequent/);
+    expect(comparisonVerdict(comparison).sentences.join(' ')).not.toMatch(/Introduced in the candidate|Resolved in the candidate/);
   });
 
   it('reports a finding only the candidate has as introduced, so the budget fails', () => {
@@ -109,7 +109,7 @@ describe('comparison across runs', () => {
     expect(comparison.findings.introduced).toEqual([expect.objectContaining({ rule: 'skew', impactBand: 'warning', candCount: 1 })]);
     expect(comparison.findings.changed).toEqual([]);
     expect(budgetFor(comparison, 'warning').status).toBe('violation');
-    expect(comparisonVerdict(comparison).sentences.join(' ')).toMatch(/New or more frequent in the candidate: /);
+    expect(comparisonVerdict(comparison).sentences.join(' ')).toMatch(/Introduced in the candidate: .*\(\w+\)/);
   });
 
   it('reports a finding only the baseline has as resolved, so the budget passes', () => {
@@ -117,7 +117,7 @@ describe('comparison across runs', () => {
     expect(comparison.findings.resolved).toEqual([expect.objectContaining({ rule: 'skew', impactBand: 'critical', baseCount: 1 })]);
     expect(comparison.findings.introduced).toEqual([]);
     expect(budgetFor(comparison, 'all').status).toBe('pass');
-    expect(comparisonVerdict(comparison).sentences.join(' ')).toMatch(/Less frequent in the candidate: /);
+    expect(comparisonVerdict(comparison).sentences.join(' ')).toMatch(/Resolved in the candidate: .*\(\w+\)/);
   });
 
   it('reports a finding that moves to another stage as one resolved plus one introduced', () => {

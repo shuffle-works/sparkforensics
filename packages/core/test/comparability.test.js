@@ -162,6 +162,36 @@ describe('comparability', () => {
     expect(buildComparison(baseRun(), candRun({ outputBytes: 2200 }), { noiseBand: 0.2 }).comparability.volume.equal).toBe(true);
   });
 
+  it('applies the noise band to output rows', () => {
+    expect(buildComparison(baseRun(), candRun({ outputRows: 1010 })).comparability.volume.equal).toBe(true);
+    expect(buildComparison(baseRun(), candRun({ outputRows: 1100 })).comparability.volume.equal).toBe(false);
+    expect(buildComparison(baseRun(), candRun({ outputRows: 1100 }), { noiseBand: 0.2 }).comparability.volume.equal).toBe(true);
+  });
+
+  it('compares a run that measured output bytes but no output rows by bytes alone', () => {
+    const unmeasured = { outputRows: null };
+    expect(buildComparison(baseRun(unmeasured), candRun({ ...unmeasured, outputBytes: 2020 })).comparability.volume.equal).toBe(true);
+    expect(buildComparison(baseRun(unmeasured), candRun({ ...unmeasured, outputBytes: 2200 })).comparability.volume.equal).toBe(false);
+    expect(buildComparison(baseRun({ outputRows: null }), candRun({ outputBytes: 2020 })).comparability.volume.equal).toBe(true);
+  });
+
+  it('states the input and output change in the verdict when the volume differs', () => {
+    const verdict = comparisonVerdict(buildComparison(baseRun(), candRun({ inputBytes: 10_000, outputRows: 900 })));
+    expect(verdict.sentences.join(' ')).toMatch(/The data volume differs.*: input bytes .+ -> .+ \(\+100%\), output rows 1000 -> 900 \(-10%\)\./);
+  });
+
+  it('leaves the volume out of the verdict when it stays within the noise band', () => {
+    const verdict = comparisonVerdict(buildComparison(baseRun(), candRun({ inputBytes: 5050, outputRows: 1010 })));
+    expect(verdict.sentences.join(' ')).not.toMatch(/data volume/);
+  });
+
+  it('shortens the verdict to the reason when the stages barely pair', () => {
+    const built = buildComparison(baseRun(), candRun({ stageName: 'unrelated' }));
+    expect(built.confidence).toBe('low');
+    const verdict = comparisonVerdict(built);
+    expect(verdict).toEqual({ title: `Low confidence: ${built.reason}`, tone: 'unknown', sentences: [] });
+  });
+
   it('leaves volume equality unknown when neither run measured an output figure', () => {
     const built = buildComparison(baseRun({ outputRows: null, outputBytes: null }), candRun({ outputRows: null, outputBytes: null }));
     expect(built.comparability.volume.equal).toBeNull();

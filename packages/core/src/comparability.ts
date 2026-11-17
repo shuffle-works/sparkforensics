@@ -41,8 +41,8 @@ export interface VolumeComparability {
   inputBytes: VolumeFigure;
   outputRows: VolumeFigure;
   outputBytes: VolumeFigure;
-  /** Output rows are equal, and input and output bytes are within the noise band. Null when no
-   * figure is measured on both sides. */
+  /** Input bytes, output rows and output bytes are each within the noise band; a figure measured
+   * on one side only is ignored. Null when no output figure is measured on both sides. */
   equal: boolean | null;
 }
 
@@ -220,10 +220,9 @@ function compareVolume(
   const outputBytes = figure(row('outputBytes')?.baseline ?? null, row('outputBytes')?.candidate ?? null);
   const outputRows = figure(totalOutputRows(baseStages), totalOutputRows(candStages));
   const verdicts: boolean[] = [];
-  for (const fig of [inputBytes, outputBytes]) {
+  for (const fig of [inputBytes, outputRows, outputBytes]) {
     if (fig.baseline != null && fig.candidate != null) verdicts.push(withinBand(fig.baseline, fig.candidate, noiseBand));
   }
-  if (outputRows.baseline != null && outputRows.candidate != null) verdicts.push(outputRows.baseline === outputRows.candidate);
   const outputMeasured = [outputRows, outputBytes].some((fig) => fig.baseline != null && fig.candidate != null);
   return { inputBytes, outputRows, outputBytes, equal: !outputMeasured ? null : verdicts.every(Boolean) };
 }
