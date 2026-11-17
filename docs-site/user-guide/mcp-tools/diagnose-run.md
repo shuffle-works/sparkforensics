@@ -133,7 +133,7 @@ A JSON answer longer than 50,000 characters comes in pages. These lists are
 paged, in this order: `findings`, `cleanChecks`, `notRunChecks`,
 `metrics.stages` (when present) and `writeTargets.writes`. The first page keeps
 the shape of the whole answer: the fixed blocks (`verdict`, `recommendations`,
-`app`, `generator`, `effectiveConf`, `runComplete`, `findingsOmitted`, `notesHidden`, the
+`app`, `generator`, `effectiveConf` (when present), `runComplete`, `findingsOmitted`, `notesHidden`, the
 other fields of `metrics` and `writeTargets`) and as many rows as fit. The fixed
 blocks count toward the budget, so `include: ["detectors"]` can push the first
 page over 50,000 characters.
@@ -164,8 +164,8 @@ Example call:
 ```
 
 Example response in the `compact` view (an event log with no `ApplicationEnd`
-event; fields trimmed: `verdict`, `recommendations`, `metrics`, `writeTargets`,
-`effectiveConf` and the other findings are left out):
+event; fields trimmed: `verdict`, `recommendations`, `metrics`, `writeTargets`
+and the other findings are left out):
 
 ```json
 {

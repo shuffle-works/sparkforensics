@@ -164,8 +164,10 @@ nor `minBand` is given, so the CLI and `diagnose_run` list critical and warning 
 `buildEvidenceReport()` also returns `notesHidden`, the info rows that default dropped and every
 other filter kept, which the CLI JSON, `diagnose_run` and the Markdown header report. A call
 without a filter (the dashboard's evidence export) lists every row. The `compact` view maps each `FindingRow` through `compactFindingRow()`
-and leaves out `cleanChecks` and `notRunChecks`. Each verdict step gets its lead row
-from the unfiltered report, which is cached, so a limit never hides it. The factory's
+and leaves out `cleanChecks`, `notRunChecks`, `metrics.stages` and `effectiveConf` (`include`
+adds the last two back, and `confKeys` adds `effectiveConf`). Its verdict steps name their lead
+by `leadFindingId` only. In the `full` view each step gets its lead row as `leadFinding` from the
+unfiltered report, which is cached, so a limit never hides it. The factory's
 `diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
 `full`. With `format: 'md'` the handler returns `diagnoseHeadline()` plus the `markdown`
 as `structuredContent`.
