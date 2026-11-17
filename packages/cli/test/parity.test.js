@@ -253,7 +253,8 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
       for (const block of ['recommendations', 'writeTargets', 'runComplete', 'runId']) {
         expect(compact[block]).toEqual(full[block]);
       }
-      const { stages: _stages, ...metricTotals } = full.metrics;
+      const metricTotals = { ...full.metrics };
+      delete metricTotals.stages;
       expect(compact.metrics).toEqual(metricTotals);
       const withoutLead = (/** @type {{ leadFinding?: unknown }[]} */ steps) => steps.map((step) => ({ ...step, leadFinding: undefined }));
       expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
