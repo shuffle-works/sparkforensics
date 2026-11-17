@@ -27,7 +27,8 @@ Output is JSON by default; `--format md` writes the Markdown report instead.
 - `comparison` is present only with a baseline.
 - `budgets` lists every budget result, passes included, each with `name`,
   `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric`
-  on `max-regression` and `max-stage-regression`. It is empty without budgets.
+  on `max-regression` and `max-stage-regression`. Without budget flags it holds
+  the always-on results only.
   The `[violation]` and `[inconclusive]` lines on stderr and the exit code
   stay as described below.
 
@@ -39,7 +40,11 @@ output and `$defs/ndjsonLine` validates one line of the
 top-level keys of `run` and `comparison`; it does not list every field inside them.
 
 Budget violations and inconclusive budgets print to stderr as
-`[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
+`[violation] ...` and `[inconclusive] ...` lines. A run with one or more failed
+jobs always violates the `no-failed-jobs` budget, with or without budget flags:
+its detail gives the count and the failed job ids, and the exit code is 1. A
+run whose jobs all succeeded passes it, even when it retried failed tasks
+(`--max-failed-task-rate` counts those). The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one
 is inconclusive, 2 for a usage error (bad flags or arguments, a budget value
 that is not a non-negative decimal, an unknown `--impact`, `--type` or

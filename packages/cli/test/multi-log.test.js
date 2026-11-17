@@ -105,7 +105,7 @@ describe('several candidate logs', () => {
     expect(status).toBe(0);
     expect(lines.map((l) => l.log)).toEqual([p('same'), p('slower')]);
     for (const l of lines) {
-      expect(l).toMatchObject({ status: 'pass', exitCode: 0, error: null, budgets: [] });
+      expect(l).toMatchObject({ status: 'pass', exitCode: 0, error: null, budgets: [{ name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' }] });
       expect(Object.keys(l.comparison ?? {})).toEqual([
         'generator', 'verdict', 'baselineApp', 'candidateApp', 'baselineSkippedLines', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
         'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment', 'comparability',
@@ -136,7 +136,7 @@ describe('several candidate logs', () => {
       p('same'), p('slower'), p('cut-off'), '--baseline', p('baseline'), '--regression-budget', 'executorRunTime:10',
     ]);
     expect(lines.map((l) => l.status)).toEqual(['pass', 'violation', 'inconclusive']);
-    expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'max-regression', metric: 'executorRunTime', status: 'violation' })]);
+    expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'max-regression', metric: 'executorRunTime', status: 'violation' }), expect.objectContaining({ name: 'no-failed-jobs', status: 'pass' })]);
     expect(stderr).toContain(`${p('slower')}: [violation] max-regression`);
     expect(status).toBe(1);
   });
@@ -282,20 +282,21 @@ describe('several regression budgets', () => {
     expect(lines[0].budgets).toEqual([
       expect.objectContaining({ metric: 'wallClock', status: 'pass' }),
       expect.objectContaining({ metric: 'executorRunTime', status: 'violation' }),
+      expect.objectContaining({ name: 'no-failed-jobs', status: 'pass' }),
     ]);
     expect(status).toBe(1);
   });
 
   it('counts the legacy pair as one more budget', async () => {
     const { lines } = await run([...base(), '--max-regression-pct', '150', '--regression-budget', 'executorRunTime:10', '--format', 'ndjson']);
-    expect(lines[0].budgets.map((b) => [b.metric, b.status])).toEqual([['wallClock', 'pass'], ['executorRunTime', 'violation']]);
+    expect(lines[0].budgets.map((b) => [b.metric, b.status])).toEqual([['wallClock', 'pass'], ['executorRunTime', 'violation'], [undefined, 'pass']]);
   });
 
   it('reads --budgets from a file', async () => {
     const file = p('budgets.json');
     writeFileSync(file, JSON.stringify({ regression: { wallClock: 150, gcTime: 10 } }));
     const { status, lines } = await run([...base(), '--budgets', file, '--format', 'ndjson']);
-    expect(lines[0].budgets.map((b) => [b.metric, b.status])).toEqual([['wallClock', 'pass'], ['gcTime', 'violation']]);
+    expect(lines[0].budgets.map((b) => [b.metric, b.status])).toEqual([['wallClock', 'pass'], ['gcTime', 'violation'], [undefined, 'pass']]);
     expect(status).toBe(1);
   });
 
@@ -419,7 +420,7 @@ describe('skipped log lines across several candidates', () => {
     const { status, lines } = await run([p('same'), p('damaged'), '--baseline', p('baseline')]);
     expect(lines.map((l) => l.run?.summary.skippedLines)).toEqual([0, 1]);
     expect(lines.map((l) => l.status)).toEqual(['pass', 'inconclusive']);
-    expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive' })]);
+    expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'no-failed-jobs', status: 'pass' }), expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive' })]);
     expect(status).toBe(3);
   });
 
@@ -430,7 +431,7 @@ describe('skipped log lines across several candidates', () => {
     expect(lines.map((l) => l.comparison?.baselineSkippedLines)).toEqual([1, 1]);
     expect(lines.map((l) => l.run?.summary.skippedLines)).toEqual([0, 0]);
     expect(lines.map((l) => l.status)).toEqual(['inconclusive', 'inconclusive']);
-    expect(lines[0].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', detail: expect.stringContaining('baseline 1 line') })]);
+    expect(lines[0].budgets).toEqual([expect.objectContaining({ name: 'no-failed-jobs', status: 'pass' }), expect.objectContaining({ name: 'parse-incomplete', detail: expect.stringContaining('baseline 1 line') })]);
     expect(status).toBe(3);
   });
 });

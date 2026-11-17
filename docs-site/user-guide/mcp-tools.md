@@ -70,7 +70,7 @@ The CLI and the two MCP tools that take two runs give the runs different roles:
 | `evaluate_budgets` with one run | None | `runId` / `source` |
 | `evaluate_budgets` with two runs | `runId` / `source` | `runIdB` / `sourceB` |
 
-Absolute budgets and the `run-complete` check apply to the candidate. With
+Absolute budgets and the `no-failed-jobs` and `run-complete` checks apply to the candidate. With
 two runs, `evaluate_budgets` returns `baselineRunId` and `candidateRunId`, so a result is never
 read as the wrong run's. With one run it returns `candidateRunId` alone: the run the budgets
 were evaluated on.

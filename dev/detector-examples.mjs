@@ -64,8 +64,9 @@ function analyze(path) {
   const r = spawnSync(process.execPath, [
     CLI, path, '--impact', IMPACT_BANDS.join(','), '--format', 'json',
   ], { encoding: 'utf8', maxBuffer: 1 << 30 });
-  // Exit 3 is an inconclusive run (no ApplicationEnd): the report is still complete.
-  if (r.status !== 0 && r.status !== 3) return null;
+  // Exit 1 (a failed job is a budget violation) and 3 (inconclusive, no ApplicationEnd) still
+  // carry a complete report.
+  if (r.status !== 0 && r.status !== 1 && r.status !== 3) return null;
   return JSON.parse(r.stdout).run;
 }
 

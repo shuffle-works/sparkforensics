@@ -29,6 +29,7 @@ function baseAppModel(overrides = {}) {
   const base = {
     app: { id: 'a', name: 'n', startTime: 0, endTime: 10_000 },
     stages: new Map(),
+    jobs: new Map(),
     executors: { added: [/** @type {AppModel['executors']['added'][number]} */ ({ executorId: '1', timestamp: 0, totalCores: 4 })], removed: [] },
     runAggregates: { busyCoreMs: 30_000, perStage: { 1: { taskCount: 10, totalTaskDurationSum: 30_000 } } },
     evidenceAvailability: /** @type {AppModel['evidenceAvailability']} */ ({
@@ -39,10 +40,16 @@ function baseAppModel(overrides = {}) {
   return /** @type {AppModel} */ ({ ...base, ...overrides });
 }
 
+/** The results other than the always-on no-failed-jobs row, so a test reads the check it targets.
+ * @param {import('../src/cli/budgets.js').BudgetResult[]} results */
+function withoutFailedJobsRow(results) {
+  return results.filter((r) => r.name !== 'no-failed-jobs');
+}
+
 describe('evaluateBudgets', () => {
   it('passes when no budgets are configured', () => {
     const { results, violated } = evaluateBudgets({ appModel: baseAppModel(), catalog: [], budgets: {} });
-    expect(results).toEqual([]);
+    expect(results).toEqual([{ name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' }]);
     expect(violated).toBe(false);
   });
 
@@ -85,7 +92,7 @@ describe('evaluateBudgets', () => {
   it('reports run-complete inconclusive with no budgets set when the catalog has an incompleteRun finding', () => {
     const catalog = [/** @type {import('../src/types.ts').Finding} */ ({ type: 'incompleteRun', impactBand: 'warning', recommendation: 'No ApplicationEnd.' })];
     const { results, violated, inconclusive } = evaluateBudgets({ appModel: baseAppModel(), catalog, budgets: {} });
-    expect(results).toEqual([{ name: 'run-complete', status: 'inconclusive', detail: 'No ApplicationEnd.' }]);
+    expect(withoutFailedJobsRow(results)).toEqual([{ name: 'run-complete', status: 'inconclusive', detail: 'No ApplicationEnd.' }]);
     expect(violated).toBe(false);
     expect(inconclusive).toBe(true);
   });
@@ -475,10 +482,52 @@ describe('evaluateBudgets', () => {
     });
     expect(violated).toBe(false);
     expect(inconclusive).toBe(true);
-    expect(results).toMatchObject([
+    expect(withoutFailedJobsRow(results)).toMatchObject([
       { name: 'max-regression', status: 'inconclusive' },
       { name: 'fail-on-introduced', status: 'inconclusive' },
     ]);
+  });
+});
+
+describe('evaluateBudgets no-failed-jobs', () => {
+  /** @param {[number, boolean | null][]} jobs */
+  function jobMap(jobs) {
+    return /** @type {AppModel['jobs']} */ (/** @type {unknown} */ (new Map(jobs.map(([id, succeeded]) => [id, { id, stageIds: [], result: succeeded === null ? null : succeeded ? 'JobSucceeded' : 'JobFailed', succeeded }]))));
+  }
+
+  it('violates with the count and the failed job ids, with no budgets set', () => {
+    const appModel = baseAppModel({ jobs: jobMap([[0, true], [3, false], [1, false]]) });
+    const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
+    expect(results).toEqual([{ name: 'no-failed-jobs', status: 'violation', detail: '2 jobs failed (job ids 1, 3).' }]);
+    expect(violated).toBe(true);
+    expect(inconclusive).toBe(false);
+  });
+
+  it('violates beside a runtime budget the run meets', () => {
+    const appModel = baseAppModel({ jobs: jobMap([[4, false]]) });
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxRuntimeMs: 20_000 } });
+    expect(results.map((r) => [r.name, r.status])).toEqual([['max-runtime', 'pass'], ['no-failed-jobs', 'violation']]);
+    expect(results[1].detail).toBe('1 job failed (job id 4).');
+    expect(violated).toBe(true);
+  });
+
+  it('passes when every ended job succeeded and ignores a job still running', () => {
+    const appModel = baseAppModel({ jobs: jobMap([[0, true], [1, null]]) });
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
+    expect(results).toEqual([{ name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' }]);
+    expect(violated).toBe(false);
+  });
+
+  it('lists ten job ids and counts the rest', () => {
+    const appModel = baseAppModel({ jobs: jobMap(Array.from({ length: 12 }, (_, id) => [id, false])) });
+    const { results } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
+    expect(results[0].detail).toBe('12 jobs failed (job ids 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, and 2 more).');
+  });
+
+  it('leaves the failed-task-rate budget to count task attempts only', () => {
+    const appModel = baseAppModel({ jobs: jobMap([[0, false]]), stages: stageMap([[1, { id: 1, taskCount: 10, failedTasks: 0 }]]) });
+    const { results } = evaluateBudgets({ appModel, catalog: [], budgets: { maxFailedTaskRatePct: 5 } });
+    expect(results.map((r) => [r.name, r.status])).toEqual([['max-failed-task-rate', 'pass'], ['no-failed-jobs', 'violation']]);
   });
 });
 
@@ -491,7 +540,7 @@ describe('evaluateBudgets parse-incomplete', () => {
   it('reports inconclusive, never a violation, when the parse skipped lines, even with no budgets set', async () => {
     const appModel = await parsedAppModel([complete[0], '{corrupt', complete[1]]);
     const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
-    expect(results).toEqual([{ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('1 line') }]);
+    expect(withoutFailedJobsRow(results)).toEqual([{ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('1 line') }]);
     expect(violated).toBe(false);
     expect(inconclusive).toBe(true);
   });
@@ -500,29 +549,31 @@ describe('evaluateBudgets parse-incomplete', () => {
     const appModel = await parsedAppModel(complete);
     expect(appModel.skippedLines).toBe(0);
     const { results, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
-    expect(results).toEqual([]);
+    expect(withoutFailedJobsRow(results)).toEqual([]);
     expect(inconclusive).toBe(false);
   });
 
   it('keeps the row beside a passing budget', () => {
     const appModel = baseAppModel({ skippedLines: 6 });
     const { results } = evaluateBudgets({ appModel, catalog: [], budgets: { maxRuntimeMs: 60_000 } });
-    expect(results.map((r) => [r.name, r.status])).toEqual([['max-runtime', 'pass'], ['parse-incomplete', 'inconclusive']]);
-    expect(results[1].detail).toContain('6 lines');
+    expect(results.map((r) => [r.name, r.status])).toEqual([['max-runtime', 'pass'], ['no-failed-jobs', 'pass'], ['parse-incomplete', 'inconclusive']]);
+    expect(results[2].detail).toContain('6 lines');
   });
 
   it('flags a damaged baseline and names it, with a clean candidate', () => {
     const appModel = baseAppModel({ skippedLines: 0 });
     const { results, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: /** @type {import('../src/run-comparison.ts').CompareRunsResult} */ ({ baselineSkippedLines: 6 }) });
-    expect(results).toEqual([{ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') }]);
-    expect(results[0].detail).not.toContain('candidate');
+    const [row] = withoutFailedJobsRow(results);
+    expect(row).toMatchObject({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') });
+    expect(row.detail).not.toContain('candidate');
     expect(inconclusive).toBe(true);
   });
 
   it('names both runs in one row when both lost lines', () => {
     const appModel = baseAppModel({ skippedLines: 1 });
     const { results } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: /** @type {import('../src/run-comparison.ts').CompareRunsResult} */ ({ baselineSkippedLines: 2 }) });
-    expect(results).toHaveLength(1);
-    expect(results[0].detail).toContain('candidate 1 line, baseline 2 lines');
+    const rows = withoutFailedJobsRow(results);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].detail).toContain('candidate 1 line, baseline 2 lines');
   });
 });

@@ -266,6 +266,7 @@ describe('createMcpServer', () => {
       expect(result.isError).toBeFalsy();
       expect(structuredOf('evaluate_budgets', result).results).toEqual([
         { name: 'max-runtime', status: 'pass', detail: 'Runtime 100ms within budget 5000ms.' },
+        { name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' },
       ]);
       expect(structuredOf('evaluate_budgets', result).violated).toBe(false);
     } finally {

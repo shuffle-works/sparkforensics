@@ -3,6 +3,7 @@ import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { ENTRY_BY_TYPE } from '../detector-catalog.ts';
 import { computeSkewRatio } from '../detectors/tail.ts';
 import { runTiming } from '../run-timing.ts';
+import { summarizeRunOutcome } from '../run-outcome.ts';
 import type { ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { withEarlierAttempts } from '../run-totals.ts';
@@ -31,7 +32,7 @@ export const DEFAULT_STAGE_BUDGET_QUALITIES: readonly StagePair['quality'][] = [
 export const NEUTRAL_PAIR_METRICS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes']);
 export interface BudgetResult {
   name: 'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency'
-    | 'max-regression' | 'max-stage-regression' | 'fail-on-introduced' | 'run-complete' | 'parse-incomplete';
+    | 'max-regression' | 'max-stage-regression' | 'fail-on-introduced' | 'no-failed-jobs' | 'run-complete' | 'parse-incomplete';
   status: 'pass' | 'violation' | 'inconclusive';
   detail: string;
   /** Set on `max-regression` and `max-stage-regression` results: the metric key that budget checks. */
@@ -118,6 +119,18 @@ function checkFailedTaskRate(appModel: AppModel, maxPct: number): BudgetResult {
   return pct > maxPct
     ? { name: 'max-failed-task-rate', status: 'violation', detail: `Task failure rate ${rate} exceeds budget ${maxPct}%.` }
     : { name: 'max-failed-task-rate', status: 'pass', detail: `Task failure rate ${rate} within budget ${maxPct}%.` };
+}
+
+const MAX_LISTED_JOB_IDS = 10;
+
+// Jobs that ended unsuccessfully, as `summarizeRunOutcome` counts them. Task attempts a retry
+// recovered are not jobs, so they stay with max-failed-task-rate.
+function checkNoFailedJobs(appModel: AppModel): BudgetResult {
+  const { failedJobs, failedJobIds } = summarizeRunOutcome(appModel.jobs, []);
+  if (failedJobs === 0) return { name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' };
+  const listed = failedJobIds.slice(0, MAX_LISTED_JOB_IDS).join(', ');
+  const more = failedJobs > MAX_LISTED_JOB_IDS ? `, and ${failedJobs - MAX_LISTED_JOB_IDS} more` : '';
+  return { name: 'no-failed-jobs', status: 'violation', detail: `${failedJobs} job${failedJobs === 1 ? '' : 's'} failed (job id${failedJobs === 1 ? '' : 's'} ${listed}${more}).` };
 }
 
 // Busy core time: the share of available executor core time that ran tasks, 100 minus the
@@ -280,7 +293,10 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
     pushComparisonBudget(results, comparison, 'fail-on-introduced',
       (c) => checkFailOnIntroduced(c, budgets.failOnIntroduced!));
   }
-  // Always checked, unlike the opt-in budgets above: a run with no ApplicationEnd is
+  // Always checked, unlike the opt-in budgets above: a run with a failed job did not do its work,
+  // so it can't pass on runtime or spill figures alone.
+  results.push(checkNoFailedJobs(appModel));
+  // Always checked too: a run with no ApplicationEnd is
   // inconclusive by default, so a passing budget can't hide a truncated log.
   const incompleteRunFinding = catalog.find((f) => f.type === 'incompleteRun');
   if (incompleteRunFinding) {
