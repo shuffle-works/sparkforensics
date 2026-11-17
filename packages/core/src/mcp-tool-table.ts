@@ -167,7 +167,7 @@ const diagnoseRunOutput = {
 const getRunSummaryOutput = {
   runId: outputRunId,
   app: z.object({
-    id: z.string().nullable(), attemptId: z.string().optional(), name: z.string().nullable(), sparkVersion: z.string().nullable(),
+    id: z.string().nullable(), attemptId: z.string().nullable(), name: z.string().nullable(), sparkVersion: z.string().nullable(),
   }),
   stageCount: z.number(), jobCount: z.number(), sqlExecutionCount: z.number(),
   executorCount: z.object({ added: z.number(), removed: z.number() }),

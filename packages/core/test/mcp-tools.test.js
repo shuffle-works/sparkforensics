@@ -774,7 +774,7 @@ describe('getRunSummary', () => {
     }
   });
 
-  it('reports app.attemptId when the log names one, and omits it otherwise', async () => {
+  it('reports app.attemptId when the log names one, and null as diagnose_run does otherwise', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
     const withAttempt = join(dir, 'with-attempt');
     const withoutAttempt = join(dir, 'without-attempt');
@@ -787,7 +787,8 @@ describe('getRunSummary', () => {
       const b = await resolveOrCreateRun({ source: { path: withoutAttempt } });
       expect(getRunSummary(a.runId).app.attemptId).toBe('2');
       expect(getRunSummary(a.runId, { redact: true }).app.attemptId).toBe('2');
-      expect(getRunSummary(b.runId).app).not.toHaveProperty('attemptId');
+      expect(getRunSummary(b.runId).app.attemptId).toBeNull();
+      expect(getRunSummary(b.runId).app.attemptId).toBe(diagnoseRun(b.runId).app.attemptId);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

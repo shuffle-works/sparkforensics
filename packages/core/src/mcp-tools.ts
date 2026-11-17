@@ -37,7 +37,7 @@ export type RunRef = { runId?: string; source?: RunSource };
 export interface RunSummary extends RunOutcomeSummary {
   runId: string;
   // string | null (not undefined): getRunSummary always sets these via `?? null`, never omits them.
-  app: { id: string | null; attemptId?: string; name: string | null; sparkVersion: string | null };
+  app: { id: string | null; attemptId: string | null; name: string | null; sparkVersion: string | null };
   stageCount: number; jobCount: number; sqlExecutionCount: number;
   executorCount: { added: number; removed: number };
   durationMs: number | null;
@@ -472,7 +472,7 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
   return {
     runId,
     // Only cluster-mode runs have an attempt id; it is not an identifier, so redaction keeps it.
-    app: { ...redactedApp, ...(app?.attemptId ? { attemptId: app.attemptId } : {}) },
+    app: { ...redactedApp, attemptId: app?.attemptId ?? null },
     stageCount: stages.size,
     jobCount: jobs.size,
     sqlExecutionCount: sql.size,
