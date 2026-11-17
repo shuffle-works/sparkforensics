@@ -225,16 +225,85 @@ describe('listRunsShs', () => {
     const fetchImpl = applicationsPayload([
       {
         id: 'application_1_1', name: 'JobOne',
-        attempts: [{ attemptId: '2', startTime: '2026-01-01T00:00:00.000GMT', duration: 5000, appSparkVersion: '3.5.0' }],
+        attempts: [{ attemptId: '2', startTime: '2026-01-01T00:00:00.000GMT', duration: 5000, appSparkVersion: '3.5.0', completed: true }],
       },
     ]);
     const result = await listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl });
     expect(result.truncated).toBe(false);
     expect(result.runs).toEqual([{
       appId: 'application_1_1', name: 'JobOne', sparkVersion: '3.5.0',
-      startTime: '2026-01-01T00:00:00.000Z', durationMs: 5000,
+      startTime: '2026-01-01T00:00:00.000Z', durationMs: 5000, completed: true, attemptCount: 1,
       source: { shsBaseUrl: 'http://shs:18080/', appId: 'application_1_1', attemptId: '2' },
     }]);
+  });
+
+  it('reports the latest attempt state and lists every attempt id when there are several', async () => {
+    const fetchImpl = applicationsPayload([{
+      id: 'application_1_3', name: 'Retried',
+      attempts: [{ attemptId: '2', completed: false, startTime: '2026-01-02T00:00:00.000GMT' }, { attemptId: '1', completed: true }],
+    }]);
+    const [run] = (await listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl })).runs;
+    expect(run).toMatchObject({ completed: false, attemptCount: 2, attemptIds: ['2', '1'], source: { attemptId: '2' } });
+  });
+
+  it('omits completed when the History Server does not report it', async () => {
+    const fetchImpl = applicationsPayload([{ id: 'application_1_4', name: 'Bare', attempts: [{ startTime: '2026-01-01T00:00:00.000GMT' }] }]);
+    const [run] = (await listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl })).runs;
+    expect(run).not.toHaveProperty('completed');
+    expect(run).not.toHaveProperty('attemptIds');
+    expect(run.attemptCount).toBe(1);
+  });
+
+  describe('includeFailedJobs', () => {
+    const apps = [
+      { id: 'application_1_5', name: 'A', attempts: [{ attemptId: '1', startTime: '2026-01-03T00:00:00.000GMT' }] },
+      { id: 'application_1_6', name: 'B', attempts: [{ startTime: '2026-01-02T00:00:00.000GMT' }] },
+      { id: 'application_1_7', name: 'C', attempts: [{ attemptId: '1', startTime: '2026-01-01T00:00:00.000GMT' }] },
+    ];
+
+    /** @param {string[]} urls */
+    function shsWithJobs(urls) {
+      return async (/** @type {RequestInfo | URL} */ input) => {
+        const url = String(input);
+        urls.push(url);
+        if (url.endsWith('/api/v1/applications')) return new Response(JSON.stringify(apps), { status: 200 });
+        if (url.includes('application_1_5/1/jobs')) return new Response(JSON.stringify([{ jobId: 1 }, { jobId: 2 }]), { status: 200 });
+        if (url.includes('application_1_6/jobs')) return new Response('[]', { status: 200 });
+        return new Response('nope', { status: 500 });
+      };
+    }
+
+    it('makes no job requests by default', async () => {
+      /** @type {string[]} */
+      const urls = [];
+      const result = await listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl: shsWithJobs(urls) });
+      expect(urls).toHaveLength(1);
+      expect(result.runs.every((r) => !('failedJobs' in r))).toBe(true);
+    });
+
+    it('adds the failed-job count per row and leaves a failed lookup without the field', async () => {
+      /** @type {string[]} */
+      const urls = [];
+      const result = await listRunsShs({ shsBaseUrl: 'http://shs:18080', includeFailedJobs: true }, { fetchImpl: shsWithJobs(urls) });
+      expect(result.runs.map((r) => r.failedJobs)).toEqual([2, 0, undefined]);
+      expect(urls.filter((u) => u.includes('/jobs'))).toEqual(expect.arrayContaining([
+        'http://shs:18080/api/v1/applications/application_1_5/1/jobs?status=failed',
+        'http://shs:18080/api/v1/applications/application_1_6/jobs?status=failed',
+      ]));
+    });
+
+    it('requests jobs only for the rows that survive maxResults', async () => {
+      /** @type {string[]} */
+      const urls = [];
+      const result = await listRunsShs({ shsBaseUrl: 'http://shs:18080', includeFailedJobs: true, maxResults: 2 }, { fetchImpl: shsWithJobs(urls) });
+      expect(result.truncated).toBe(true);
+      expect(urls.filter((u) => u.includes('/jobs'))).toHaveLength(2);
+    });
+
+    it('keeps the count on redacted rows', async () => {
+      const result = await listRunsShs({ shsBaseUrl: 'http://shs:18080', includeFailedJobs: true, redact: true }, { fetchImpl: shsWithJobs([]) });
+      expect(result.runs[0]).toMatchObject({ appId: 'app-1', failedJobs: 2 });
+    });
   });
 
   it('skips an application with no attempts', async () => {

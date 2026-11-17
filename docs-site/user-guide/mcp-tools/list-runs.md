@@ -22,6 +22,9 @@ Parameters:
   unparseable value first (`access-or-upstream-failure`).
 - `maxResults` (number, optional, default 100): caps the number of runs
   returned; when more candidates matched, `truncated` is `true`.
+- `includeFailedJobs` (boolean, optional, default `false`, History Server
+  mode only): adds `failedJobs` to each row. This costs one extra History
+  Server request per returned row, made after `maxResults` is applied.
 - `redact` (boolean, optional, default `false`): pseudonymizes every run's
   app id, name and `source` (see [`redact` in the MCP tools reference](../mcp-tools.md)).
 
@@ -52,5 +55,17 @@ Each entry's `source` has the shape the other tools accept as `source`
 (see [Common parameters](../mcp-tools.md#common-parameters)), so a result row can be passed straight into those tools
 without re-deriving anything, unless `redact` is on: redaction replaces
 `source.path` (or `source.appId`) with the pseudonym, so a redacted row can't
-be loaded. A row can also carry `durationMs` (History Server mode only) and
-`source.attemptId`.
+be loaded. A row can also carry `source.attemptId`.
+
+History Server rows also carry:
+
+- `durationMs`: the run's duration.
+- `completed`: whether the latest attempt finished. Absent when the server does not report it.
+- `attemptCount`: how many attempts the application has.
+- `attemptIds`: every attempt id, only when the application has more than one.
+  An application with several attempts needs `source.attemptId` in the other
+  tools, so pick one from this list.
+- `failedJobs`: the number of failed jobs in the listed attempt, only with
+  `includeFailedJobs`. A row whose lookup fails has no `failedJobs`.
+
+Local-file rows have none of these fields.

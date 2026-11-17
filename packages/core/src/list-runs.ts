@@ -14,6 +14,13 @@ export interface RunListEntry {
   sparkVersion?: string;
   startTime?: string;
   durationMs?: number;
+  // History Server rows only: absent on local-file rows.
+  completed?: boolean;
+  attemptCount?: number;
+  /** Every attempt id, listed only when the application has more than one. */
+  attemptIds?: string[];
+  /** Failed jobs of the listed attempt, present only when `includeFailedJobs` is on and the lookup worked. */
+  failedJobs?: number;
   source: { path: string; attemptId?: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
 }
 
@@ -30,6 +37,10 @@ interface ListRunsFilters {
   redact?: boolean;
 }
 
+interface ShsListFilters extends ListRunsFilters {
+  includeFailedJobs?: boolean;
+}
+
 // Local-mode-only convention: a plain file named `<name>_<n>.<ext>` is one attempt of a
 // multi-attempt run (e.g. `external-local-1430917381535_1.ndjson`), the `_<n>` disambiguating two
 // otherwise-identical appIds. Deliberately anchored on a file extension so a rolling-log
@@ -37,6 +48,9 @@ interface ListRunsFilters {
 const LOCAL_ATTEMPT_SUFFIX_RE = /^.+_(\d+)\.[^./\\]+$/;
 
 const DEFAULT_MAX_RESULTS = 100;
+
+// Concurrent per-application job lookups, so a full listing does not open one request per row at once.
+const FAILED_JOBS_CONCURRENCY = 10;
 
 // SHS's own timestamp format ends in a literal "GMT" suffix instead of "Z"/an offset, which
 // Date.parse cannot parse (returns NaN), normalize before storing, so minDate/maxDate filtering
@@ -190,7 +204,7 @@ export async function listRunsLocal(input: { dir: string } & ListRunsFilters): P
 }
 
 export async function listRunsShs(
-  input: { shsBaseUrl: string } & ListRunsFilters,
+  input: { shsBaseUrl: string } & ShsListFilters,
   opts?: { fetchImpl?: typeof fetch },
 ): Promise<ListRunsResult> {
   const fetchImpl = opts?.fetchImpl ?? fetch;
@@ -247,21 +261,59 @@ export async function listRunsShs(
     const startTime = typeof attempt.startTime === 'string' ? normalizeShsTimestamp(attempt.startTime) : undefined;
     const durationMs = typeof attempt.duration === 'number' ? attempt.duration : undefined;
     const attemptId = typeof attempt.attemptId === 'string' ? attempt.attemptId : undefined;
+    const completed = typeof attempt.completed === 'boolean' ? attempt.completed : undefined;
+    const attemptIds = attempts.flatMap((a) => (typeof a?.attemptId === 'string' ? [a.attemptId] : []));
     entries.push({
       appId: id,
       name,
       ...(sparkVersion ? { sparkVersion } : {}),
       ...(startTime ? { startTime } : {}),
       ...(durationMs != null ? { durationMs } : {}),
+      ...(completed != null ? { completed } : {}),
+      attemptCount: attempts.length,
+      ...(attempts.length > 1 ? { attemptIds } : {}),
       source: { shsBaseUrl: normalized, appId: id, ...(attemptId ? { attemptId } : {}) },
     });
   }
 
-  return applyFiltersAndCap(entries, input);
+  // Failed jobs are counted after the cap, so the extra requests never exceed maxResults, and
+  // before redaction, which replaces the app id the request needs.
+  const capped = applyFiltersAndCap(entries, { ...input, redact: false });
+  const runs = input.includeFailedJobs
+    ? await addFailedJobCounts(capped.runs, normalized, fetchImpl)
+    : capped.runs;
+  return { runs: input.redact ? redactRunListEntries(runs) : runs, truncated: capped.truncated };
+}
+
+// A lookup that fails or returns an unexpected body leaves that row without `failedJobs`.
+async function countFailedJobs(entry: RunListEntry, baseUrl: string, fetchImpl: typeof fetch): Promise<number | undefined> {
+  if (!('shsBaseUrl' in entry.source)) return undefined;
+  const { appId, attemptId } = entry.source;
+  const path = `api/v1/applications/${encodeURIComponent(appId)}${attemptId ? `/${encodeURIComponent(attemptId)}` : ''}/jobs`;
+  try {
+    const res = await fetchImpl(new URL(`${path}?status=failed`, baseUrl).toString(), {
+      redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(DEFAULT_IDLE_TIMEOUT_MS),
+    });
+    if (!res.ok) return undefined;
+    const jobs: unknown = await res.json();
+    return Array.isArray(jobs) ? jobs.length : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function addFailedJobCounts(runs: RunListEntry[], baseUrl: string, fetchImpl: typeof fetch): Promise<RunListEntry[]> {
+  const result: RunListEntry[] = [];
+  for (let i = 0; i < runs.length; i += FAILED_JOBS_CONCURRENCY) {
+    const batch = runs.slice(i, i + FAILED_JOBS_CONCURRENCY);
+    const counts = await Promise.all(batch.map((run) => countFailedJobs(run, baseUrl, fetchImpl)));
+    batch.forEach((run, j) => result.push(counts[j] == null ? run : { ...run, failedJobs: counts[j] }));
+  }
+  return result;
 }
 
 export async function listRuns(
-  input: { dir?: string; shsBaseUrl?: string } & ListRunsFilters,
+  input: { dir?: string; shsBaseUrl?: string } & ShsListFilters,
   opts?: { fetchImpl?: typeof fetch },
 ): Promise<ListRunsResult> {
   if (input.dir) {
@@ -271,7 +323,7 @@ export async function listRuns(
   }
   if (input.shsBaseUrl) {
     return listRunsShs(
-      { shsBaseUrl: input.shsBaseUrl, namePattern: input.namePattern, minDate: input.minDate, maxDate: input.maxDate, maxResults: input.maxResults, redact: input.redact },
+      { shsBaseUrl: input.shsBaseUrl, namePattern: input.namePattern, minDate: input.minDate, maxDate: input.maxDate, maxResults: input.maxResults, redact: input.redact, includeFailedJobs: input.includeFailedJobs },
       opts,
     );
   }

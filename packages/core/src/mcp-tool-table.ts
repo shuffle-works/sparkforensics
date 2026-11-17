@@ -44,6 +44,7 @@ const listRunsInputSchema = z.object({
   maxDate: z.string().optional(),
   maxResults: z.number().int().positive().optional(),
   redact: z.boolean().optional(),
+  includeFailedJobs: z.boolean().optional(),
 }).refine((v) => !(v.dir && v.shsBaseUrl), { message: 'Provide only one of dir or shsBaseUrl, not both.' });
 
 function toCallToolResult(text: string, structuredContent: Record<string, unknown>): CallToolResult {
@@ -207,7 +208,7 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
   return [
     tool({
       name: 'list_runs',
-      description: 'List candidate Spark event-log runs from a local directory or a Spark History Server, before diagnosing one with the other tools.',
+      description: 'List candidate Spark event-log runs from a local directory or a Spark History Server, before diagnosing one with the other tools. History Server rows also carry completed and attemptCount, and attemptIds when the application has several attempts (pass one as source.attemptId); includeFailedJobs adds failedJobs, one extra History Server request per listed row.',
       inputSchema: listRunsInputSchema,
       outputSchema: listRunsOutput,
       cli: { none: 'The CLI takes a log path or directory as its input and has no listing mode; list_runs finds the candidates to pass to the other tools.' },
