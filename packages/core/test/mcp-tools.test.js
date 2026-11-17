@@ -973,7 +973,53 @@ describe('compareRuns', () => {
   });
 });
 
+const NO_FAILED_JOBS_PASS = { name: 'no-failed-jobs', status: 'pass', detail: 'No job failed.' };
+
+/** A finished log with one succeeded job and one failed job.
+ * @param {string} appId */
+function tmpEventLogWithFailedJob(appId) {
+  const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+  const path = join(dir, 'eventlog');
+  const lines = [
+    { Event: 'SparkListenerApplicationStart', 'App ID': appId, 'App Name': 't', Timestamp: 0 },
+    { Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 10, 'Stage IDs': [], Properties: {} },
+    { Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 20, 'Job Result': { Result: 'JobSucceeded' } },
+    { Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 30, 'Stage IDs': [], Properties: {} },
+    { Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 40, 'Job Result': { Result: 'JobFailed', Exception: { Message: 'boom' } } },
+    { Event: 'SparkListenerApplicationEnd', Timestamp: 1000 },
+  ];
+  writeFileSync(path, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+  return { dir, path };
+}
+
 describe('evaluateBudgetsForRun', () => {
+  it('reports a run with a failed job as violated, with no budgets set', async () => {
+    const { dir, path } = tmpEventLogWithFailedJob('app-f');
+    try {
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path } }, {});
+      expect(results).toEqual([{ name: 'no-failed-jobs', status: 'violation', detail: '1 job failed (job id 1).' }]);
+      expect(violated).toBe(true);
+      expect(inconclusive).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('checks the candidate for failed jobs, not the baseline, when given two runs', async () => {
+    const baseline = tmpEventLogWithFailedJob('app-f');
+    const candidate = tmpEventLogWithDuration('app-b', 1000);
+    try {
+      const { results, violated } = await evaluateBudgetsForRun(
+        { source: { path: baseline.path } }, {}, { source: { path: candidate.path } },
+      );
+      expect(results).toEqual([NO_FAILED_JOBS_PASS]);
+      expect(violated).toBe(false);
+    } finally {
+      rmSync(baseline.dir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
+
   it('evaluates a single-run budget against a freshly resolved source', async () => {
     const { dir, path } = tmpEventLogWithDuration('app-a', 1000);
     try {
@@ -984,7 +1030,7 @@ describe('evaluateBudgetsForRun', () => {
       expect(typeof candidateRunId).toBe('string');
       expect(evaluated).not.toHaveProperty('baselineRunId');
       expect(evaluated).not.toHaveProperty('runId');
-      expect(results).toEqual([{ name: 'max-runtime', status: 'violation', detail: 'Runtime 1000ms exceeds budget 500ms.' }]);
+      expect(results).toEqual([{ name: 'max-runtime', status: 'violation', detail: 'Runtime 1000ms exceeds budget 500ms.' }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(true);
       expect(inconclusive).toBe(false);
     } finally {
@@ -996,7 +1042,7 @@ describe('evaluateBudgetsForRun', () => {
     const { dir, path } = tmpEventLogWithDuration('app-a', 1000);
     try {
       const { results, violated } = await evaluateBudgetsForRun({ source: { path } }, { maxRuntimeMs: 5000 });
-      expect(results).toEqual([{ name: 'max-runtime', status: 'pass', detail: 'Runtime 1000ms within budget 5000ms.' }]);
+      expect(results).toEqual([{ name: 'max-runtime', status: 'pass', detail: 'Runtime 1000ms within budget 5000ms.' }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1027,7 +1073,7 @@ describe('evaluateBudgetsForRun', () => {
       expect(results).toEqual([{
         name: 'max-regression', metric: 'wallClock', status: 'violation',
         detail: 'Metric "wallClock" regressed 100.0%, exceeding budget 10%.',
-      }]);
+      }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(true);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
@@ -1045,7 +1091,7 @@ describe('evaluateBudgetsForRun', () => {
       expect(result).toEqual({
         baselineRunId: baselineId,
         candidateRunId: candidateId,
-        results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }],
+        results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }, NO_FAILED_JOBS_PASS],
         violated: true,
         inconclusive: false,
       });
@@ -1061,7 +1107,7 @@ describe('evaluateBudgetsForRun', () => {
     writeFileSync(path, '{"Event":"SparkListenerApplicationStart","App ID":"app-i","App Name":"t","Timestamp":0}\n');
     try {
       const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path } }, {});
-      expect(results).toMatchObject([{ name: 'run-complete', status: 'inconclusive' }]);
+      expect(results).toMatchObject([{ name: 'no-failed-jobs', status: 'pass' }, { name: 'run-complete', status: 'inconclusive' }]);
       expect(violated).toBe(false);
       expect(inconclusive).toBe(true);
     } finally {
@@ -1078,7 +1124,7 @@ describe('evaluateBudgetsForRun', () => {
       const { results, inconclusive } = await evaluateBudgetsForRun(
         { source: { path: baselinePath } }, {}, { source: { path: candidate.path } },
       );
-      expect(results).toEqual([]);
+      expect(results).toEqual([NO_FAILED_JOBS_PASS]);
       expect(inconclusive).toBe(false);
     } finally {
       rmSync(baselineDir, { recursive: true, force: true });
@@ -1093,7 +1139,7 @@ describe('evaluateBudgetsForRun', () => {
       const { results, violated } = await evaluateBudgetsForRun(
         { source: { path: a.path } }, { failOnIntroduced: 'all' }, { source: { path: b.path } },
       );
-      expect(results).toEqual([{ name: 'fail-on-introduced', status: 'pass', detail: 'No introduced findings match "all".' }]);
+      expect(results).toEqual([{ name: 'fail-on-introduced', status: 'pass', detail: 'No introduced findings match "all".' }, NO_FAILED_JOBS_PASS]);
       expect(violated).toBe(false);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
@@ -1107,7 +1153,7 @@ describe('evaluateBudgetsForRun', () => {
       const { results, inconclusive, violated } = await evaluateBudgetsForRun({ source: { path } }, { maxRegressionPct: 10 });
       expect(results).toEqual([{
         name: 'max-regression', metric: 'wallClock', status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.',
-      }]);
+      }, NO_FAILED_JOBS_PASS]);
       expect(inconclusive).toBe(true);
       expect(violated).toBe(false);
     } finally {
@@ -1186,6 +1232,7 @@ describe('evaluateBudgetsForRun several regression budgets', () => {
         ['max-regression', 'wallClock', 'violation'],
         ['max-regression', 'gcTime', expect.any(String)],
         ['max-regression', 'taskCount', 'inconclusive'],
+        ['no-failed-jobs', undefined, 'pass'],
       ]);
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
@@ -1279,8 +1326,8 @@ describe('skipped lines in MCP output', () => {
     try {
       corruptLog(baseline.path);
       const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path: baseline.path } }, {}, { source: { path: candidate.path } });
-      expect(results).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') })]);
-      expect(results[0].detail).not.toContain('candidate');
+      expect(results).toEqual([NO_FAILED_JOBS_PASS, expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') })]);
+      expect(results[1].detail).not.toContain('candidate');
       expect(violated).toBe(false);
       expect(inconclusive).toBe(true);
     } finally {

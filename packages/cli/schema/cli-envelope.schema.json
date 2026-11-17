@@ -112,7 +112,7 @@
         "name": {
           "enum": [
             "max-runtime", "max-spill", "max-skew", "max-failed-task-rate", "min-efficiency",
-            "max-regression", "max-stage-regression", "fail-on-introduced", "run-complete", "parse-incomplete"
+            "max-regression", "max-stage-regression", "fail-on-introduced", "no-failed-jobs", "run-complete", "parse-incomplete"
           ]
         },
         "status": { "enum": ["pass", "violation", "inconclusive"] },

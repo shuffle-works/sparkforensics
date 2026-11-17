@@ -18,6 +18,8 @@ export const FAILURE_REASON_MAX_CHARS = 240;
 export interface RunOutcome {
   failedJobs: number;
   totalJobs: number;
+  /** Ids of the failed jobs, ascending. */
+  failedJobIds: number[];
   /** Stages of the failed jobs: a failure there is what stopped a job. */
   failedJobStageIds: ReadonlySet<number>;
   /** Spark's own recorded reason for the failure, first line only, or null
@@ -57,6 +59,7 @@ export function summarizeRunOutcome(jobs: Map<number, Job>, findings: Finding[])
   return {
     failedJobs: failed.length,
     totalJobs: ended.length,
+    failedJobIds: failed.map((job) => job.id),
     failedJobStageIds: failedStageIds,
     reason: failed.length > 0 && rawReason != null ? firstLine(rawReason) : null,
     reasonStageId: stageSource?.stageId ?? null,

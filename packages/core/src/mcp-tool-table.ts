@@ -283,7 +283,7 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
 
     tool({
       name: 'evaluate_budgets',
-      description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. The candidateRunId in the result names the run the budgets were evaluated on; baselineRunId is present when two runs are given. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
+      description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. The candidateRunId in the result names the run the budgets were evaluated on; baselineRunId is present when two runs are given. Every run gets a no-failed-jobs result: a violation naming the count and ids of its failed jobs, otherwise a pass. A run with no ApplicationEnd always adds an inconclusive run-complete result, and a run with skipped log lines an inconclusive parse-incomplete result. ' + RUN_ID_NOTE,
       inputSchema: {
         source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
         runId: runRefSchema.runId.describe('Same as `source`, referencing an already-resolved run by id.'),

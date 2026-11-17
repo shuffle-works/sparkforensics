@@ -393,7 +393,7 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
   ])('reports the same stage budget results (%j) through the CLI and evaluate_budgets', async (flags, mcpBudgets) => {
     const [line] = await cliLines([REPLAN_CANDIDATE, '--baseline', REPLAN_BASELINE, '--format', 'ndjson', ...flags]);
     const viaMcp = await mcpCall('evaluate_budgets', { source: { path: REPLAN_BASELINE }, sourceB: { path: REPLAN_CANDIDATE }, ...mcpBudgets });
-    expect(line.budgets.every((r) => r.name === 'max-stage-regression')).toBe(true);
+    expect(line.budgets.every((r) => r.name === 'max-stage-regression' || r.name === 'no-failed-jobs')).toBe(true);
     expect(diffSurfaces(line.budgets, viaMcp.results, BUDGETS_ALLOWED)).toEqual([]);
     expect(viaMcp.violated).toBe(line.exitCode === 1);
   });

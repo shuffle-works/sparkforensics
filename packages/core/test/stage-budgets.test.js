@@ -40,7 +40,9 @@ function pair(pairId, quality, runTime, extra = {}) {
 function run(stagePairs, budgets) {
   const emptyRun = { label: 'run', appModel: emptyAppModel(), catalog: [] };
   const comparison = { ...buildComparison(emptyRun, emptyRun), stagePairs: stagePairs.map((p) => ({ ...p, stageLabel: p.pairId })) };
-  return evaluateBudgets({ appModel, catalog: [], budgets, comparison });
+  const evaluated = evaluateBudgets({ appModel, catalog: [], budgets, comparison });
+  // The always-on no-failed-jobs row is tested in cli-budgets.test.js.
+  return { ...evaluated, results: evaluated.results.filter((r) => r.name !== 'no-failed-jobs') };
 }
 
 const RUN_TIME_20 = { stageRegressionBudgets: [{ metric: 'executorRunTime', maxPct: 20 }] };

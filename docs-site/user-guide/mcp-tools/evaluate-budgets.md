@@ -69,6 +69,11 @@ regression budget, or a run with no trustworthy task-level evidence) reports
 `inconclusive`, not a false pass. The tool has no `redact` input: the
 budgets read figures and impact bands, never the stage text redaction rewrites,
 so a redacted comparison gives the same results. Independent of which budgets you pass, an
+evaluated run always gets a `no-failed-jobs` result: `violation` when one or more
+of its jobs failed, with the count and the failed job ids in `detail`, otherwise
+`pass`. The CLI exits `1` on that violation. A run whose jobs all succeeded
+passes it even when tasks failed and were retried; `maxFailedTaskRatePct`
+counts those. An
 evaluated run with no ApplicationEnd event adds a `run-complete` result with
 status `inconclusive`, the same check that makes the CLI exit `3`. A run
 whose parser skipped malformed or invalid log lines adds a `parse-incomplete`
@@ -79,8 +84,8 @@ and how many (for example `baseline 6 lines`).
 
 Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-failed-task-rate`, `min-efficiency`, `max-regression`,
-`max-stage-regression`, `fail-on-introduced`, `run-complete` and
-`parse-incomplete`. A
+`max-stage-regression`, `fail-on-introduced`, `no-failed-jobs`, `run-complete`
+and `parse-incomplete`. A
 `max-regression` or `max-stage-regression` result also carries `metric`, the
 key it checked. `candidateRunId` is the run the
 budgets were evaluated on, and `baselineRunId` is present with two runs.
