@@ -545,7 +545,7 @@ function renderRunShape(shape: RunShape): string[] {
   if (shape.peakBusyCores != null) lines.push(`- Peak busy cores: ${formatCores(shape.peakBusyCores)}`);
   if (shape.etlPhasesMs) {
     const { extract, transform, load } = shape.etlPhasesMs;
-    lines.push(`- ETL phases (summed stage time): extract ${formatDuration(extract)}, transform ${formatDuration(transform)}, load ${formatDuration(load)}`);
+    lines.push(`- ETL phases (stage time, concurrent stages counted once): extract ${formatDuration(extract)}, transform ${formatDuration(transform)}, load ${formatDuration(load)}`);
   }
   return lines;
 }
