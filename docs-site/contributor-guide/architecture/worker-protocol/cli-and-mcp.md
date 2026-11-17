@@ -129,7 +129,10 @@ re-implement detector logic: `list_runs` lists candidates
 from `packages/core/src/mcp-tools.ts`, which resolves a `source` (event-log `path`, or an SHS
 `shsBaseUrl`/`appId`/`attemptId` triple) into a cached `AnalyzedRun`. The SHS
 source path calls `resolveFromShs` (`packages/core/src/shs-load.ts`, also used directly by
-the CLI's `--shs-base-url` mode above), which reuses two extractions shared
+the CLI's `--shs-base-url` mode above). With no attempt id it first asks
+`/api/v1/applications/<appId>` for the attempts and throws `ShsAttemptsError` (attempt ids
+listed; each surface appends its own argument hint) when there are several, before any
+download. It reuses two extractions shared
 with the browser ingestion flow: `fetchShsEventLog` (`packages/core/src/proxy.js`, the
 same upstream fetch the local server's `/shs-proxy` route uses) fetches the zip, and
 `decodeShsArchive` (`packages/core/src/shs-fetch.ts`, re-exported from
