@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { rankImpactMs } from '../src/recommendation-rollup.ts';
 
+/** @param {any} impactEstimate */
 const row = (impactEstimate) => ({ impactEstimate });
 
 describe('rankImpactMs', () => {
