@@ -32,7 +32,8 @@ the run-time line follows. When either log has no end-of-run record (the run
 was killed or the log cut off), the verdict says how much run time each log
 covers, in a neutral tone, instead of calling the shorter run faster. It then
 lists which cost metrics got worse or better in the candidate (again ignoring changes
-under 2%), and which finding categories became more or less frequent. Volume and count metrics (input,
+under 2%), and which findings were introduced or resolved, each named by category and impact
+band (a resolved critical finding stays visible next to a new one of the same category). Volume and count metrics (input,
 output, tasks, executors) are left out, since more or less of them is not
 better or worse on its own. **See where to start in the candidate** opens the
 candidate's dashboard, whose own verdict names the first thing to fix.
@@ -49,6 +50,13 @@ verdict reads "Same configuration and plan. Output was not compared." and keeps
 the tone from the wall clock. When configuration or plan differs and the wall clock moves
 one way and executor run-time or allocated core-hours move the other, the
 verdict reads as a mixed result and names both.
+
+When the input or output volume differs past the noise band, the verdict states the figures
+the Comparability section shows, for example "input bytes 1.0 GB -> 2.0 GB (+100%), output
+rows 1000 -> 900 (-10%)".
+
+When the confidence is `low` (see the banner below), the verdict is one sentence that gives the
+reason the comparison is weak, and the sections after it hold the rest.
 
 When configuration, plan or output differs, the verdict adds a sentence for each difference
 that makes the time gap hard to read:
@@ -81,9 +89,9 @@ the mean-executor ratio and the task-time share ratio, for runs whose executors
 have the same core count. Configuration keys the cluster sets per run (the
 application id, start time, driver address and the UI, proxy and jar URLs
 that embed them) are never compared, and a key
-whose value is a secret is withheld from both sides and not compared, as in the run output's effective configuration; the CLI's `--conf-redact-regex` matches are withheld too. Output rows must be equal for the output to read as the same; input and
-output bytes may differ within the noise band. The output reads as the same only
-when output rows or output bytes are measured on both sides.
+whose value is a secret is withheld from both sides and not compared, as in the run output's effective configuration; the CLI's `--conf-redact-regex` matches are withheld too. Input bytes, output rows and output bytes may each differ within the noise band for the
+output to read as the same; a figure measured on one side only is ignored. The output reads
+as the same only when output rows or output bytes are measured on both sides.
 
 The **Metrics** table covers the whole run: wall-clock duration, memory
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,

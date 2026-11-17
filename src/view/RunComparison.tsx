@@ -196,7 +196,7 @@ function LowConfidenceBanner({ reason, confidence }: { reason: string; confidenc
  * cost metrics moved each way, which finding categories came or went, and
  * where to go next. The tables below stay the evidence for each claim. */
 function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDrillIn?: (which: 'baseline' | 'candidate') => void }) {
-  const verdict = summarizeComparison(model.metrics, model.findings, model.jobOutcomes, model.comparability);
+  const verdict = summarizeComparison(model.metrics, model.findings, model.jobOutcomes, model.comparability, model);
   return (
     <section
       aria-labelledby="comparison-verdict-title"

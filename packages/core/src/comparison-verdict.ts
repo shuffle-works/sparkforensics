@@ -1,8 +1,8 @@
 import { typeTag } from './finding-presentation.ts';
 import { formatDuration } from './units.ts';
 import { tagHelp } from './finding-tag-help.ts';
-import { DEFAULT_NOISE_BAND, isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
-import type { Caveats, Comparability } from './comparability.ts';
+import { bytesText, changeText, DEFAULT_NOISE_BAND, isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
+import { withinBand, type Caveats, type Comparability, type VolumeFigure } from './comparability.ts';
 
 /** The slice of a comparison metric row the verdict reads. */
 export interface VerdictMetric {
@@ -22,6 +22,8 @@ export type VerdictComparability = Pick<Comparability, 'noiseBand' | 'conf' | 'p
 /** The slice of an introduced or resolved finding row the verdict reads. */
 export interface VerdictCategory {
   type: string;
+  /** The finding's impact band: the candidate's for an introduced row, the baseline's for a resolved one. */
+  impactBand: string;
   baseCount: number;
   candCount: number;
 }
@@ -140,22 +142,28 @@ function categoryName(type: string): string {
   return tagHelp(tag)?.expansion ?? tag;
 }
 
-/** Net count change per displayed category name. Several rules share one name (every Plan Advisor
- * type reads "Plan advisor", every stage-shape sub-rule "Stage shape"), so two rules under one
- * name moving opposite ways net out rather than read as both "new" and "less frequent". Findings
- * that only changed impact band are not in `introduced` or `resolved`, so they do not move a
- * category. Order follows first appearance, introduced before resolved. */
-function netByCategory(findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] }): Map<string, number> {
-  const net = new Map<string, number>();
-  for (const item of [...findings.introduced, ...findings.resolved]) {
-    const name = categoryName(item.type);
-    net.set(name, (net.get(name) ?? 0) + item.candCount - item.baseCount);
-  }
-  return net;
+/** Each finding category once per impact band, as "Memory and disk spill (critical)", in order of
+ * first appearance. Several rules share one category name (every Plan Advisor type reads "Plan
+ * advisor"), so rows are listed by name and band instead of netted: a resolved critical finding and
+ * a new one of the same category both stay visible. */
+function namedWithBands(rows: VerdictCategory[]): string[] {
+  return [...new Set(rows.map((row) => `${categoryName(row.type)} (${row.impactBand})`))];
 }
 
-function namesWhere(net: Map<string, number>, keep: (change: number) => boolean): string[] {
-  return [...net].filter(([, change]) => keep(change)).map(([name]) => name);
+/** The volume figures that differ between the runs, as the comparison's markdown prints them
+ * ("input bytes 1.0 GB -> 2.0 GB (+100%)"). A figure is stated when both sides are measured and
+ * the difference passes the noise band. */
+function volumeSentence({ volume, noiseBand }: VerdictComparability): string | null {
+  const figures: Array<[string, VolumeFigure, (value: number) => string]> = [
+    ['input bytes', volume.inputBytes, bytesText],
+    ['output rows', volume.outputRows, String],
+    ['output bytes', volume.outputBytes, bytesText],
+  ];
+  const changed = figures
+    .filter(([, f]) => f.baseline != null && f.candidate != null && !withinBand(f.baseline, f.candidate, noiseBand))
+    .map(([label, f, format]) => `${label} ${format(f.baseline!)} -> ${format(f.candidate!)}${f.relativeDifference == null ? '' : ` (${changeText(f.relativeDifference)})`}`);
+  if (changed.length === 0) return null;
+  return `The data volume differs, so the runs did not process the same amount of data: ${changed.join(', ')}.`;
 }
 
 /** "The candidate had 2 of 5 jobs fail", or, when every job failed, "The candidate's only
@@ -197,7 +205,12 @@ export function summarizeComparison(
   findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[]; changed?: VerdictChange[] },
   jobs?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome },
   comparability?: VerdictComparability,
+  confidence?: Pick<CompareRunsResult, 'confidence' | 'reason'>,
 ): ComparisonVerdictText {
+  // A weak match makes the deltas below it unreliable, so the verdict says why and stops.
+  if (confidence && confidence.confidence === 'low' && confidence.reason) {
+    return { title: `Low confidence: ${confidence.reason}`, tone: 'unknown', sentences: [] };
+  }
   const wall = metrics.find((metric) => metric.key === 'wallClock');
   let title = 'Run time could not be compared between the baseline and the candidate';
   let tone: ComparisonTone = 'unknown';
@@ -268,11 +281,12 @@ export function summarizeComparison(
   if (better.length > 0) sentences.push(`Better in the candidate: ${better.join(', ')}.`);
   if (cost.length > 0 && worse.length === 0 && better.length === 0) sentences.push('Other measured cost metrics look about the same.');
 
-  const net = netByCategory(findings);
-  const introduced = namesWhere(net, (change) => change > 0);
-  const resolved = namesWhere(net, (change) => change < 0);
-  if (introduced.length > 0) sentences.push(`New or more frequent in the candidate: ${introduced.join(', ')}.`);
-  if (resolved.length > 0) sentences.push(`Less frequent in the candidate: ${resolved.join(', ')}.`);
+  const volume = comparability ? volumeSentence(comparability) : null;
+  if (volume) sentences.push(volume);
+  const introduced = namedWithBands(findings.introduced);
+  const resolved = namedWithBands(findings.resolved);
+  if (introduced.length > 0) sentences.push(`Introduced in the candidate: ${introduced.join(', ')}.`);
+  if (resolved.length > 0) sentences.push(`Resolved in the candidate: ${resolved.join(', ')}.`);
   const escalated = [...new Set((findings.changed ?? []).filter(isEscalation).map((c) => categoryName(c.type)))];
   if (escalated.length > 0) sentences.push(`More severe in the candidate: ${escalated.join(', ')}.`);
   return { title, tone, sentences };
@@ -280,6 +294,6 @@ export function summarizeComparison(
 
 /** The comparison verdict for a core comparison result: the one the dashboard's comparison page
  * leads with, and the one the CLI's --baseline report and MCP compare_runs carry. */
-export function comparisonVerdict(result: Pick<CompareRunsResult, 'metrics' | 'findings' | 'jobOutcomes'> & { comparability?: VerdictComparability }): ComparisonVerdictText {
-  return summarizeComparison(result.metrics, result.findings, result.jobOutcomes, result.comparability);
+export function comparisonVerdict(result: Pick<CompareRunsResult, 'metrics' | 'findings' | 'jobOutcomes' | 'confidence' | 'reason'> & { comparability?: VerdictComparability }): ComparisonVerdictText {
+  return summarizeComparison(result.metrics, result.findings, result.jobOutcomes, result.comparability, result);
 }
