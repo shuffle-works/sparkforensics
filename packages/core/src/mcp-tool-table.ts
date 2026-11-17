@@ -247,7 +247,7 @@ export function mcpToolEntries({ thresholds, generator, defaultShsBaseUrl }: Mcp
 
     tool({
       name: 'get_run_summary',
-      description: 'App/stage/job/sql counts, duration, and how the run ended (failed/total jobs and Spark\'s first-line failure reason) for a run, no findings.',
+      description: 'App/stage/job/sql counts, duration, and how the run ended (failed/total jobs and Spark\'s first-line failure reason) for a run, no findings. runShape.etlPhasesMs assigns stages to phases by byte flow: extract is a scan-only stage, transform a stage that moves shuffle bytes, load a stage that writes output bytes. Each bucket counts concurrent stages once, a stage can sit in two buckets, and a zero bucket means no stage showed that byte flow (a run that wrote nothing has load 0).',
       inputSchema: { ...runRefSchema, redact: z.boolean().optional() },
       outputSchema: getRunSummaryOutput,
       cli: { twin: 'sparkforensics-analyze <log>' },

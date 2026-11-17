@@ -21,4 +21,13 @@ describe('attributeEtlPhases (Onehouse Spark Analyzer, phase-bucketing only)', (
     expect(r.load).toBe(300);
     expect(r.extract).toBe(0);
   });
+
+  it('counts concurrent stages in the same phase once', () => {
+    const r = attributeEtlPhases(stagesMap([
+      { submittedAt: 0, completedAt: 100, shuffleReadBytes: 5 },
+      { submittedAt: 50, completedAt: 150, shuffleReadBytes: 5 },
+      { submittedAt: 300, completedAt: 320, shuffleReadBytes: 5 },
+    ]));
+    expect(r.transform).toBe(170);
+  });
 });

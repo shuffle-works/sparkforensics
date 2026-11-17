@@ -25,8 +25,8 @@ export interface RunShape {
   efficiencyFlag: ScorecardFlag;
   /** How bad `unusedCoreTimePct` is, graded by the `utilization` detector's thresholds. */
   unusedCoreTimeFlag: ScorecardFlag;
-  /** Summed stage time per ETL phase (a stage can count in more than one), in ms. Null when no
-   * stage time is attributable to any phase. */
+  /** Time per ETL phase in ms: the union of the intervals of the stages classified into it (a stage can
+   * count in more than one phase). Null when no stage time is attributable to any phase. */
   etlPhasesMs: { extract: number; transform: number; load: number } | null;
   /** Busy cores at the peak of the Core Usage by Locality chart, or null with no plottable
    * stage activity. */

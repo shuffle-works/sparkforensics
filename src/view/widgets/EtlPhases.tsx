@@ -42,11 +42,9 @@ export function EtlPhases() {
             <strong>{label}</strong>: {formatDuration(phases[key])}
           </div>
         ))}
-        {/* Plain in both views: a phase can read longer than the whole run,
-            which looks like a bug unless the reader knows the times are summed. */}
+        {/* Plain in both views: explains how overlapping stages are counted. */}
         <div className="text-xs text-muted-foreground">
-          Sums the run time of each phase's stages, so overlapping stages count twice and a phase can exceed
-          the wall-clock.
+          Concurrent stages in a phase count once, so no phase exceeds the wall-clock.
         </div>
         <AdvancedOnly>
           <div className="text-xs text-muted-foreground">

@@ -24,7 +24,7 @@ describe('EtlPhases', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders the widget heading and all three phase labels with an overlap note', () => {
+  it('renders the widget heading and all three phase labels with a concurrency note', () => {
     const appModel = makeAppModel([
       [0, { submittedAt: 0, completedAt: 300, shuffleWriteBytes: 10, outputBytes: 20, inputBytes: 0, shuffleReadBytes: 0 }],
     ]);
@@ -36,7 +36,7 @@ describe('EtlPhases', () => {
     expect(screen.getByText(/^Extract$/)).toBeInTheDocument();
     expect(screen.getByText(/^Transform$/)).toBeInTheDocument();
     expect(screen.getByText(/^Load$/)).toBeInTheDocument();
-    expect(screen.getByText(/overlap/i)).toBeInTheDocument();
+    expect(screen.getByText(/concurrent stages in a phase count once/i)).toBeInTheDocument();
     store.getState().setWidgetDensity('basic');
   });
 

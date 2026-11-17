@@ -15,7 +15,9 @@ job's exception).
 Efficiency), `unusedCoreTimePct` (the share of executor core time that ran no task,
 against the run's allocation, cores times the time each executor was alive; `minEfficiencyPct` checks 100 minus this),
 `efficiencyFlag` and `unusedCoreTimeFlag` (`critical`, `warning` or `null`: how the Scorecard grades each of those two figures), `etlPhasesMs`
-(`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
+(`extract`/`transform`/`load` time, each the union of its stages' intervals, so concurrent stages count once and no phase exceeds the run;
+stages are assigned by byte flow: `extract` is a scan-only stage, `transform` a stage that moves shuffle bytes, `load` a stage that writes output bytes;
+a stage can count in two phases, and a zero phase means no stage showed that byte flow)
 and `peakBusyCores` (busy cores at the peak of the Core Locality chart,
 averaged over one chart bucket, so it can be fractional). Each is `null` where the
 dashboard shows "Not measured" or "Unavailable".
