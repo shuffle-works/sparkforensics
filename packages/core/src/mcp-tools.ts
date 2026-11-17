@@ -267,10 +267,10 @@ export function compactFindingRow(row: FindingRow): CompactFindingRow {
   };
 }
 
-/** A verdict step with its lead finding: the full row in the full view (which `findings` may not
- * list under `maxFindings` or `minBand`), the finding id in the compact view. Null for a step
- * whose lead has no id. */
-export type DiagnoseVerdictStep = VerdictStepRow & { leadFinding: FindingRow | string | null };
+/** A verdict step. The full view adds its lead finding's row, which `findings` may not list under
+ * `maxFindings` or `minBand` (null for a step whose lead has no id); the compact view names the
+ * lead by `leadFindingId` only. */
+export type DiagnoseVerdictStep = VerdictStepRow & { leadFinding?: FindingRow | null };
 
 type RunBlocks = ReturnType<typeof runOutputBlocks>;
 
@@ -315,7 +315,7 @@ export function diagnoseRun(runId: string, opts?: {
   const allRows = compact ? [] : buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json.findings;
   const shape = (row: FindingRow): FindingRow | CompactFindingRow => (compact ? compactFindingRow(row) : row);
   const steps = json.verdict.steps.map((step): DiagnoseVerdictStep => {
-    if (compact) return { ...step, leadFinding: step.leadFindingId };
+    if (compact) return step;
     const lead = step.leadFindingId == null ? undefined : allRows.find((row) => row.id === step.leadFindingId && row.type === step.type);
     return { ...step, leadFinding: lead ?? null };
   });
@@ -332,7 +332,7 @@ export function diagnoseRun(runId: string, opts?: {
     writeTargets: json.writeTargets,
     ...blocks,
     metrics: !compact || include.includes('stages') ? metrics : withoutStages(metrics),
-    ...(!compact || include.includes('effectiveConf') ? { effectiveConf } : {}),
+    ...(!compact || include.includes('effectiveConf') || opts?.confKeys ? { effectiveConf } : {}),
     runComplete: !runTiming(appModel.app).incomplete,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),

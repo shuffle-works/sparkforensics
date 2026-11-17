@@ -45,7 +45,7 @@ const RUN_REPORT_ALLOWED = [
   { path: 'runComplete', only: 'mcp', reason: 'Convenience copy of summary.outcome\'s end-of-run signal that MCP clients read without asking for the summary.' },
   { path: 'view', only: 'mcp', reason: 'Says which view the MCP tool answered in (compact or full). The CLI has one shape.' },
   { path: 'findingsOmitted', only: 'mcp', reason: 'Counts the findings a maxFindings limit left out. The CLI report has no such limit.' },
-  { path: /^verdict\.steps\[\d+\]\.leadFinding(\.|\[|$)/, only: 'mcp', reason: 'MCP puts each step\'s lead finding row in the step, so the row is there when maxFindings or minBand leaves it out of `findings`. The CLI lists every finding.' },
+  { path: /^verdict\.steps\[\d+\]\.leadFinding(\.|\[|$)/, only: 'mcp', reason: 'Only the full view carries the lead finding row, which MCP adds to each step so the row is there when maxFindings or minBand leaves it out of `findings`; the compact view omits it. The CLI lists every finding.' },
 ];
 
 // CLI `comparison` against MCP compare_runs.

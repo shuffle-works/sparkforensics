@@ -7,8 +7,8 @@ dashboard opens with. `verdict` gives a `title` ("Start with
 Stage 3", "1 of 3 jobs failed in this run"), `summary` sentences, `steps`, the
 first three places to look in the dashboard's order (each with its action, what
 to try, the potential savings and what that figure counts, the other
-finding types flagged at the same place, and `leadFinding`, the finding that
-leads the step: its `id` in the compact view, its full row in the full view), `costSteps`, the same places ranked by the
+finding types flagged at the same place, and `leadFindingId`, the finding that
+leads the step; the full view adds that finding's row as `leadFinding`), `costSteps`, the same places ranked by the
 busy core time a fix removes (only findings that carry one), `idle`, the
 core-hours and share of the allocation that ran no task, `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
@@ -93,7 +93,8 @@ error, and when both are given `runId` wins):
   This is opt-in because `detectors` in particular is a large, mostly-static
   catalog that would bloat a routine "what's wrong with this run" call.
 - `confKeys`: array of Spark property names, lists only these in `effectiveConf`
-  (the response names the ones the log lacks in `absentKeys`)
+  (the response names the ones the log lacks in `absentKeys`). In the compact view
+  it also adds `effectiveConf`, without `include: ["effectiveConf"]`
 - `impactBand`: array of impact bands (`"critical"`, `"warning"`, `"info"`, e.g.
   `["critical", "warning"]`), narrows the `findings` array to only these bands
 - `type`: array of finding `type` values, narrows `findings` to only these
@@ -121,8 +122,9 @@ error, and when both are given `runId` wins):
 `verdict`, `recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
 requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
-Each verdict step keeps its `leadFinding` whatever the limit, so the findings the
-verdict points at are always named. A compact step carries the `id`: pass it to
+Each verdict step keeps its `leadFindingId` (and, in the full view, its `leadFinding`
+row) whatever the limit, so the findings the verdict points at are always named. In the
+compact view, pass the `leadFindingId` to
 [`get_finding_evidence`](./get-finding-evidence.md) for the row.
 
 ## Pages

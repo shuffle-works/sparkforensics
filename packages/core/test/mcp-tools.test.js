@@ -534,7 +534,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       expect(conf.metrics).not.toHaveProperty('stages');
     });
 
-    it('narrows effectiveConf to confKeys', async () => {
+    it('adds effectiveConf, narrowed to confKeys, to the compact view without include', async () => {
       const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
       try {
         const path = join(dir, 'eventlog');
@@ -544,21 +544,27 @@ describe('diagnoseRun / getFindingEvidence', () => {
           '{"Event":"SparkListenerApplicationEnd","Timestamp":10}',
         ].join('\n') + '\n');
         const { runId } = await resolveOrCreateRun({ source: { path } });
-        const narrowed = diagnoseRun(runId, { view: 'compact', include: ['effectiveConf'], confKeys: ['spark.executor.memory'] });
+        expect(diagnoseRun(runId, { view: 'compact' })).not.toHaveProperty('effectiveConf');
+        const narrowed = diagnoseRun(runId, { view: 'compact', confKeys: ['spark.executor.memory'] });
         expect(present(narrowed.effectiveConf).values).toEqual({ 'spark.executor.memory': '4g' });
+        const included = diagnoseRun(runId, { view: 'compact', include: ['effectiveConf'], confKeys: ['spark.executor.memory'] });
+        expect(included.effectiveConf).toEqual(narrowed.effectiveConf);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
     });
 
-    it('names the lead finding by id in the compact view and carries its full row in the full view', async () => {
+    it('names the lead finding by leadFindingId only in the compact view and carries its full row in the full view', async () => {
       const compact = await diagnose({ view: 'compact' });
       expect(compact.verdict.steps.length).toBeGreaterThan(0);
-      for (const step of compact.verdict.steps) expect(step.leadFinding).toBe(step.leadFindingId);
+      for (const step of compact.verdict.steps) {
+        expect(step).not.toHaveProperty('leadFinding');
+        expect(typeof step.leadFindingId).toBe('string');
+      }
 
       const full = await diagnose({ view: 'full' });
       for (const step of full.verdict.steps) {
-        const lead = /** @type {Exclude<typeof step.leadFinding, string | null>} */ (present(step.leadFinding));
+        const lead = present(step.leadFinding);
         expect(lead.id).toBe(step.leadFindingId);
         expect(lead.type).toBe(step.type);
         expect(lead).toHaveProperty('evidence');
