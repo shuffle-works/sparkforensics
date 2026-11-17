@@ -114,9 +114,13 @@ export interface ComparabilityOptions {
   caveatThresholds: CaveatThresholds;
 }
 
-/** Keys the cluster sets per run (application id, start time, driver address). Two runs of one job
- * always differ here, so they never count as a configuration difference. */
-const RUN_IDENTITY_CONF = /^spark\.(app\.(id|startTime|submitTime)|driver\.(host|port)|yarn\.app\.id|ui\.port)$/;
+/** Keys the cluster sets per run (application id, start time, driver address and UI URL, the proxy
+ * URI bases, the staged jar URLs). Two runs of one job always differ here, so they never count as a
+ * configuration difference. `PROXY_HOSTS` is static per cluster and stays compared. */
+const RUN_IDENTITY_CONF = new RegExp(
+  '^spark\\.(app\\.(id|startTime|submitTime|initial\\.jar\\.urls)|driver\\.(host|port|appUIAddress)|yarn\\.app\\.id|ui\\.port'
+  + '|org\\.apache\\.hadoop\\.yarn\\.server\\.webproxy\\.amfilter\\.AmIpFilter\\.param\\.PROXY_URI_BASES)$',
+);
 
 /** Compiles the caller's ignore patterns, matched against configuration keys. Throws on a
  * non-string or empty pattern, an over-long one, an invalid one, or too many. */
