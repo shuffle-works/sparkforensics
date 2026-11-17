@@ -497,14 +497,16 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     expect(f.validationRequired).toMatch(/^One of 3 executors: the largest of 3 per-executor mean task times reaches 100x the median by chance when/);
   });
 
-  it('gives a byte dimension no confidence caveat', () => {
+  it('gives a byte dimension no confidence caveat, but its median and executor count', () => {
     const executorStats = [
       { executorId: 'e1', ...base, inputBytes: 5_000_000_000 }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },
     ];
     const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
     const [f] = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
     expect(f.confidence).toBeUndefined();
-    expect(f.executorCount).toBeUndefined();
+    expect(f.taskCount).toBeUndefined();
+    expect(f.executorCount).toBe(3);
+    expect(f.medianValue).toBe(100); // 500 bytes over 5 tasks
   });
 
   it('skips the storage-memory dimension when executorMetrics is empty (no crash)', () => {
@@ -545,13 +547,12 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     const stages = new Map([[1, makeTypedStage({ taskCount: 15, executorStats, hostStats: [] })]]);
     const f = analyze(makeApp(), stages, [], []).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes'));
     expect(f).toHaveLength(1);
-    expect(f[0].impactBand).toBe('critical');
+    expect(f[0].impactBand).toBe('info'); // no cost estimate behind the ratio
     expect(f[0].recommendation).toMatch(/^Executor e1's input read is 10× the median: /);
   });
 
-  // Byte imbalance carries no time estimate, so its ratio tier is its band. A stage too short
-  // (under 0.5% of the run) to cost that much is skipped, since everything there graded info.
-  it('skips a slow host on a stage under 0.5% of the run, and keeps its tier on a longer one', () => {
+  // A stage under 0.5% of the run is skipped, however large the imbalance.
+  it('skips a slow host on a stage under 0.5% of the run, and keeps it on a longer one', () => {
     const executorStats = [
       { executorId: 'e1', ...base, inputBytes: 200 * 1024 * 1024 },
       { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
@@ -564,7 +565,6 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     expect(at(1000)).toHaveLength(0); // 0.25% of the run: the imbalance is real, the floor drops it
     const kept = at(4000).filter(ofField('slowHost', 'variant', 'multiDim', b => b.dimension === 'inputBytes')); // 1%
     expect(kept).toHaveLength(1);
-    expect(kept[0].impactBand).not.toBe('info');
   });
 });
 

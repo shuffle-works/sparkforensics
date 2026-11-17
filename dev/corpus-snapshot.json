@@ -2181,9 +2181,9 @@
     {
      "key": "slowHost|9|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
      "type": "slowHost",
-     "band": "warning",
+     "band": "info",
      "confidence": null,
-     "value": 4.2,
+     "value": 7.8,
      "basis": "informational",
      "method": "none",
      "wcLow": null,
@@ -2411,6 +2411,7 @@
      "execMaxValue",
      "executorCount",
      "executorId",
+     "medianValue",
      "taskCount",
      "variant"
     ],
@@ -2542,35 +2543,11 @@
      }
     },
     {
-     "key": "slowHost|5|execMaxMedianRatio||multiDim||1|inputBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 1.3,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "slowHost|5|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "info",
-     "confidence": null,
-     "value": 1.3,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "slowHost|9|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
      "type": "slowHost",
-     "band": "critical",
+     "band": "info",
      "confidence": null,
-     "value": 12.1,
+     "value": 13.1,
      "basis": "informational",
      "method": "none",
      "wcLow": null,
@@ -2698,7 +2675,9 @@
     "slowHost": [
      "dimension",
      "execMaxValue",
+     "executorCount",
      "executorId",
+     "medianValue",
      "variant"
     ],
     "smallFiles": [
@@ -2795,9 +2774,9 @@
     {
      "key": "slowHost|6|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
      "type": "slowHost",
-     "band": "warning",
+     "band": "info",
      "confidence": null,
-     "value": 3,
+     "value": 3.7,
      "basis": "informational",
      "method": "none",
      "wcLow": null,
@@ -2903,6 +2882,7 @@
      "execMaxValue",
      "executorCount",
      "executorId",
+     "medianValue",
      "taskCount",
      "variant"
     ],
@@ -3155,23 +3135,11 @@
      }
     },
     {
-     "key": "slowHost|2|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
+     "key": "slowHost|3|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
      "type": "slowHost",
      "band": "info",
      "confidence": null,
-     "value": 1.3,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "slowHost|3|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "warning",
-     "confidence": null,
-     "value": 9.3,
+     "value": 26.3,
      "basis": "informational",
      "method": "none",
      "wcLow": null,
@@ -3274,7 +3242,9 @@
     "slowHost": [
      "dimension",
      "execMaxValue",
+     "executorCount",
      "executorId",
+     "medianValue",
      "variant"
     ],
     "spill": [
@@ -3342,9 +3312,9 @@
     {
      "key": "slowHost|3|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
      "type": "slowHost",
-     "band": "warning",
+     "band": "info",
      "confidence": null,
-     "value": 9.6,
+     "value": 7.5,
      "basis": "informational",
      "method": "none",
      "wcLow": null,
@@ -3507,6 +3477,7 @@
      "execMaxValue",
      "executorCount",
      "executorId",
+     "medianValue",
      "taskCount",
      "variant"
     ],
@@ -3608,23 +3579,11 @@
      }
     },
     {
-     "key": "slowHost|4|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
+     "key": "slowHost|5|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
      "type": "slowHost",
      "band": "info",
      "confidence": null,
-     "value": 1.3,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "slowHost|5|execMaxMedianRatio||multiDim||1|shuffleBytes||||||",
-     "type": "slowHost",
-     "band": "warning",
-     "confidence": null,
-     "value": 2,
+     "value": 2.1,
      "basis": "informational",
      "method": "none",
      "wcLow": null,
@@ -3759,7 +3718,9 @@
     "slowHost": [
      "dimension",
      "execMaxValue",
+     "executorCount",
      "executorId",
+     "medianValue",
      "variant"
     ],
     "spill": [

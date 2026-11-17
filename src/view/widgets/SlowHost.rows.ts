@@ -49,10 +49,10 @@ function slowHostUnstatedDetail(f: SlowHostFinding): string | null {
 function slowHostMeasurement(f: SlowHostFinding): string | null {
   if (f.variant === 'multiDim') {
     if (f.execMaxValue == null || !f.dimension) return null;
-    const amount = f.dimension === 'taskTime' ? formatDuration(f.execMaxValue) : formatBytes(f.execMaxValue);
-    const of = f.executorCount != null ? `, the most of ${f.executorCount} executors` : '';
+    const format = f.dimension === 'taskTime' ? formatDuration : formatBytes;
+    const perTask = f.dimension === 'inputBytes' || f.dimension === 'shuffleBytes' ? ' per task' : '';
     const tasks = f.taskCount != null ? ` (${f.taskCount} tasks in the stage)` : '';
-    return `Executor ${f.executorId}: ${amount} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}${of}${tasks}.`;
+    return `Executor ${f.executorId}: ${format(f.execMaxValue)}${perTask} of ${SLOW_HOST_DIMENSION_LABEL[f.dimension]}, the most of ${f.executorCount} executors (median ${format(f.medianValue)}${perTask})${tasks}.`;
   }
   return f.hostMeanMs != null ? `${f.host}: mean task time ${formatDuration(f.hostMeanMs)}.` : null;
 }

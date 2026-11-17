@@ -55,11 +55,11 @@ The generated table holds every number. The notes below name threshold keys only
 
 #### slowHost multi-dimensional chance test
 
-The multi-dimensional rule compares each executor with the median on task time, input bytes, shuffle bytes and storage memory. A sample must also clear `floorMs` (task time) or `floorBytes` (the byte dimensions). The ratio grades against `ratioTiers`: index 0 is the `info` cut, index 1 `warning` and index 3 `critical`; index 2 is not read.
+The multi-dimensional rule compares each executor with the median on task time, input bytes, shuffle bytes and storage memory. Task time compares each executor's mean task duration. Input and shuffle bytes compare bytes per task, because Spark's per-executor stage summary has no executor lifetime and a byte total grows with how long an executor lived. Executors that ran no task are left out. The executor must also clear `floorMs` (task time) or hold at least `floorBytes` in total (the byte dimensions). A ratio reports from `ratioTiers[0]`; the other indexes do not set a band. Each finding carries the compared value, its median and the executor count.
 
 The task-time dimension also has to pass a chance test, because the slowest of many executors always tops the median. On the log scale of task duration, the executor's mean minus the median executor's mean, over the stage's task spread divided by the root of the executor's task count, must reach √(2 ln(executors ÷ (2 × `outlierAlpha`))). An executor with fewer tasks, or a stage with more executors, needs a larger gap. The spread is rebuilt from each executor's `logDurationSum` and `logDurationM2`. A stage with under two tasks, no spread, or an executor missing either field flags no executor on task time. Of the executors that pass, the one with the largest mean is reported.
 
-The task-time dimension carries a wallClock estimate, so its band is the fixed fallback below until `gradeFinding` replaces it. The byte dimensions never get one and keep their ratio tier.
+Task time carries a wallClock estimate, so its band is the fixed fallback below until `gradeFinding` replaces it. The byte and storage-memory dimensions never get one, so they stay at `info`.
 
 #### Findings that are never wallClock-derived
 
@@ -96,7 +96,7 @@ These rules have no *band* tiers in `packages/core/src/detectors/` (`gradeFindin
 | Cold start | `warning` |
 | Slow host: mean-duration ratio | `warning` |
 | Slow host: duration-share | `warning` |
-| Slow host: multi-dimensional, task-time dimension | `info` |
+| Slow host: multi-dimensional, every dimension | `info` |
 | Stage slowness: absolute fallback, suppressed when `slowHost` already fired | `info` |
 | Straggler / speculative-execution | `info` |
 | Retry waste | `warning` |

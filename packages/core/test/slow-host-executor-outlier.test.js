@@ -136,12 +136,52 @@ describe('slowHost task time: an executor must stand out from the stage\'s own s
     });
   });
 
-  it('keeps the byte dimensions on the plain ratio test', () => {
-    const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 16, logSpread: 0.05, slowdown: 1 });
-    firstStage(stages).executorStats.forEach((/** @type {LooseExecutorRow} */ e, i) => { e.inputBytes = i === 0 ? 200 * 1024 * 1024 : 20 * 1024 * 1024; delete e.logDurationM2; });
-    const found = analyzedRunFrom({ app, stages }).catalog.filter(isMultiDim).filter((f) => f.dimension === 'inputBytes');
-    expect(found).toHaveLength(1);
-    expect(found[0].executorId).toBe('exec-0');
+  describe('byte dimensions compare per-task rates, not executor totals', () => {
+    const MB = 1024 * 1024;
+    /**
+     * @param {string} dimension
+     * @param {{ app: import('../src/types.ts').SparkAppInfo, stages: Map<number, Stage> }} fixture
+     */
+    const byteFindings = (dimension, { app, stages }) =>
+      analyzedRunFrom({ app, stages }).catalog.filter(isMultiDim).filter((f) => f.dimension === dimension);
+
+    // Three executors lived the whole stage (16 tasks each); seven were short-lived (2 tasks each).
+    // Every task reads 10 MB, so the long-lived executors hold 8x the bytes at the same rate.
+    /** @param {number} [outlierRate] bytes per task of the first long-lived executor */
+    function mixedLifetimeStage(outlierRate = 10 * MB) {
+      const { app, stages } = slowExecutorStage({ executors: 10, tasksEach: 2, logSpread: 0.05, slowdown: 1 });
+      firstStage(stages).executorStats.forEach((/** @type {LooseExecutorRow} */ e, i) => {
+        const long = i < 3;
+        e.taskCount = long ? 16 : 2;
+        e.inputBytes = e.taskCount * (i === 0 ? outlierRate : 10 * MB);
+        e.shuffleReadBytes = e.inputBytes;
+        e.shuffleWriteBytes = 0;
+      });
+      firstStage(stages).taskCount = 3 * 16 + 7 * 2;
+      return { app, stages };
+    }
+
+    it('does not flag long-lived executors that read more bytes at the same per-task rate', () => {
+      const fixture = mixedLifetimeStage();
+      expect(byteFindings('inputBytes', fixture)).toEqual([]);
+      expect(byteFindings('shuffleBytes', fixture)).toEqual([]);
+    });
+
+    it('flags an executor whose per-task rate is high, at info, with the median and executor count', () => {
+      const found = byteFindings('inputBytes', mixedLifetimeStage(60 * MB));
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatchObject({ executorId: 'exec-0', value: 6, impactBand: 'info', executorCount: 10 });
+      expect(found[0].execMaxValue).toBe(60 * MB);
+      expect(found[0].medianValue).toBe(10 * MB);
+    });
+
+    it('leaves out executors that ran no task', () => {
+      const { app, stages } = mixedLifetimeStage(60 * MB);
+      firstStage(stages).executorStats.push(executorRow('exec-idle', []));
+      const found = byteFindings('inputBytes', { app, stages });
+      expect(found).toHaveLength(1);
+      expect(found[0].executorCount).toBe(10);
+    });
   });
 
   describe('on stages whose tasks are all alike', () => {
