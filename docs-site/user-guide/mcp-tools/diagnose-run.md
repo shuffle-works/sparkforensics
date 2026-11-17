@@ -32,7 +32,8 @@ The answer has two views. `compact` (the default) is an index: the verdict,
 `include` for the per-stage rows or the Spark properties. A compact row holds `id`,
 `key`, `type`, `tag`, `name`, `impactBand`, `stageId`, `actionLabel`, `metric`,
 `value` (or `valueText`), `rankImpactMs`, `impact` and `impactMeaning` when the
-finding has a savings figure, and `tunedThresholds` on a tuned server. `rankImpactMs` is a
+finding has a savings figure, and `tunedThresholds` on a tuned server. Every finding row, in
+both views and in the CLI's JSON report, carries `rankImpactMs`, a
 ranking figure on the same millisecond axis as `rankCostMs`. It holds the finding's raw-waste
 value when its unit is core milliseconds, core hours (converted to milliseconds) or
 milliseconds of task time, else its idle core time high figure. Task-time and wall-clock raw

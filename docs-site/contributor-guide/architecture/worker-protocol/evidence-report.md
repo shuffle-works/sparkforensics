@@ -149,7 +149,8 @@ documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-att
 columns (`id`, `key`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
-`name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning`, `estimateProvenance` and, on a tuned run,
+`name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning`, `rankImpactMs` (`rankImpactMs()` in
+`recommendation-rollup.ts`: a millisecond ranking figure on the axis of `rankCostMs`, null without one), `estimateProvenance` and, on a tuned run,
 `tunedThresholds`.
 
 The report carries the same recommendation data the dashboard's "Fix These First" view shows,

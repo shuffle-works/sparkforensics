@@ -260,16 +260,17 @@ describe.skipIf(!CORPUS_BASELINE)('CLI, MCP and dashboard parity on public corpu
       expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
       expect(compact.findings).toHaveLength(full.findings.length);
       compact.findings.forEach((/** @type {Record<string, unknown>} */ row, /** @type {number} */ i) => {
-        // Every compact field is the full row's own, but `rankImpactMs`, which the compact row derives.
-        for (const [field, value] of Object.entries(row)) {
-          if (field !== 'rankImpactMs') expect(full.findings[i][field]).toEqual(value);
-        }
+        // Every compact field is the full row's own.
+        for (const [field, value] of Object.entries(row)) expect(full.findings[i][field]).toEqual(value);
         expect(row.rankImpactMs === null || typeof row.rankImpactMs === 'number').toBe(true);
         expect(row.key).toEqual(expect.any(String));
       });
       // One finding is one key in the CLI report too.
-      const cliKeys = (await cliRun([candidate, '--format', 'json'])).findings.map((f) => f.key);
-      expect(compact.findings.map((/** @type {{ key: string }} */ f) => f.key)).toEqual(cliKeys);
+      const cliFindings = (await cliRun([candidate, '--format', 'json'])).findings;
+      expect(compact.findings.map((/** @type {{ key: string }} */ f) => f.key)).toEqual(cliFindings.map((f) => f.key));
+      // The CLI report, the full view and the compact view list one ranking figure per finding.
+      expect(cliFindings.map((f) => f.rankImpactMs)).toEqual(full.findings.map((/** @type {{ rankImpactMs: unknown }} */ f) => f.rankImpactMs));
+      expect(cliFindings.map((f) => f.rankImpactMs)).toEqual(compact.findings.map((/** @type {{ rankImpactMs: unknown }} */ f) => f.rankImpactMs));
     });
 
     it.each([[false], [true]])('reports the same comparison (redact: %s) through the CLI and compare_runs', async (redact) => {

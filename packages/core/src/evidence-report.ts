@@ -17,7 +17,7 @@ import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure
 import { findingActionLabel } from './finding-action-label.ts';
 import { findingKeyer } from './run-comparison.ts';
 import { countHiddenNotes, DEFAULT_MIN_BAND, matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isActionable, isEligible, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
+import { buildRecommendationRollup, isActionable, isEligible, rankFindings, rankImpactMs, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { isCleanRun, partitionChecks, type CheckEntry, type NotRunCheck } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
@@ -63,6 +63,9 @@ interface FindingRowColumns {
   // when there is a figure to show (none for an informational or zero estimate).
   impact?: string;
   impactMeaning?: string | null;
+  // A ranking figure in ms on the axis of `rankCostMs` (see `rankImpactMs`); not core time. Null
+  // when the estimate has none. Always present, so every surface lists it.
+  rankImpactMs: number | null;
   // How the estimate was derived and what its model assumes (estimateProvenance); only when the
   // estimate has a figure to explain.
   estimateProvenance?: string;
@@ -241,6 +244,7 @@ function findingRow(f: Finding, key: string): FindingRow {
     evidence: projectEvidence(f),
     remediation: f.remediation ?? [],
     actionLabel: findingActionLabel(f),
+    rankImpactMs: rankImpactMs(f),
   } as FindingRow;
   // Threshold/confidence provenance, only when the detector emitted it.
   if (f.confidence != null) row.confidence = f.confidence;
