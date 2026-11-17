@@ -77,7 +77,7 @@ whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
-a configured budget was violated, `2` a usage error (unknown or value-less
+a budget was violated (a configured one or the always-on `no-failed-jobs`), `2` a usage error (unknown or value-less
 flag, unknown `--regression-metric` key, an unreadable or invalid `--thresholds`
 or `--budgets` file, an `--out` whose folder is missing or that names a folder), `3` no violations but at least one budget was inconclusive,
 `4` the candidate could not be read or parsed (or its SHS fetch failed), `5` the
@@ -86,13 +86,15 @@ failure, a failed `--export-html` export). `main` catches anything unhandled and
 exits `6` rather than letting Node exit `1`, which would read as a violation.
 When several apply the worst wins: `6`, `5`, `4`, `1`, `3`, `0`; a violation
 always wins over an inconclusive result in the same run (exit `1`, not `3`).
-`evaluateBudgets()` also always adds an inconclusive `run-complete` result
+`evaluateBudgets()` always adds a `no-failed-jobs` result, a violation when
+`summarizeRunOutcome` counts a failed job, so such a run exits `1` even with no
+budget flags. It also always adds an inconclusive `run-complete` result
 when the catalog has an `incompleteRun` finding, so a run with no
 `ApplicationEnd` exits `3` even with no budget flags. It adds a
 `parse-incomplete` inconclusive result the same way when `appModel.skippedLines`
 or the comparison's `baselineSkippedLines` is above `0`, and its detail names
 which run lost lines. With `--baseline`, the
-absolute budgets and the `run-complete` check apply to the candidate run; the MCP
+absolute budgets and the `no-failed-jobs` and `run-complete` checks apply to the candidate run; the MCP
 `evaluate_budgets` tool below uses the same function with the same roles.
 
 ## MCP server

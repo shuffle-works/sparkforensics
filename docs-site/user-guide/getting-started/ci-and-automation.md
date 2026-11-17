@@ -953,8 +953,7 @@ Each line is one JSON object:
 
 A line's `status` follows the single-candidate rules: `violation` if any
 budget result is a violation, else `inconclusive` if any is inconclusive
-(including the `no-failed-jobs` check for a candidate with a failed job, the
-`run-complete` check for a log with no `ApplicationEnd` and the
+(including the `run-complete` check for a log with no `ApplicationEnd` and the
 `parse-incomplete` check for a candidate or baseline log with skipped lines),
 else `pass`.
 
