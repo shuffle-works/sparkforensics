@@ -248,6 +248,13 @@ describe('summarizeComparison with comparability', () => {
     expect(verdict.title).toMatch(/^Same configuration and plan\. Output was not compared\. Time differs by 49\.0s \(49%\): executors averaged/);
   });
 
+  it('states a large input-bytes change even when no output figure is measured', () => {
+    const inputBytes = { baseline: 1e9, candidate: 2e9, relativeDifference: 1 };
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, inputBytes, equal: null } });
+    expect(verdict.sentences.join(' ')).toMatch(/The data volume differs.*input bytes .* -> .* \(\+100%\)/);
+    expect(summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, equal: null } }).sentences.join(' ')).not.toContain('data volume');
+  });
+
   it('says the wall-clock change is executor availability when mean executors differ past the threshold', () => {
     const plan = { ...agree.plan, equal: false };
     const caveats = { ...agree.caveats, executors: { baseline: 217.2, candidate: 91 } };

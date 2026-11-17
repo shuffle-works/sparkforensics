@@ -153,7 +153,7 @@ function namedWithBands(rows: VerdictCategory[]): string[] {
 /** The volume figures that differ between the runs, as the comparison's markdown prints them
  * ("input bytes 1.0 GB -> 2.0 GB (+100%)"). A figure is stated when both sides are measured and
  * the difference passes the noise band. */
-function volumeSentence({ volume, noiseBand }: VerdictComparability): string {
+function volumeSentence({ volume, noiseBand }: VerdictComparability): string | null {
   const figures: Array<[string, VolumeFigure, (value: number) => string]> = [
     ['input bytes', volume.inputBytes, bytesText],
     ['output rows', volume.outputRows, String],
@@ -162,6 +162,7 @@ function volumeSentence({ volume, noiseBand }: VerdictComparability): string {
   const changed = figures
     .filter(([, f]) => f.baseline != null && f.candidate != null && !withinBand(f.baseline, f.candidate, noiseBand))
     .map(([label, f, format]) => `${label} ${format(f.baseline!)} -> ${format(f.candidate!)}${f.relativeDifference == null ? '' : ` (${changeText(f.relativeDifference)})`}`);
+  if (changed.length === 0) return null;
   return `The data volume differs, so the runs did not process the same amount of data: ${changed.join(', ')}.`;
 }
 
@@ -280,7 +281,8 @@ export function summarizeComparison(
   if (better.length > 0) sentences.push(`Better in the candidate: ${better.join(', ')}.`);
   if (cost.length > 0 && worse.length === 0 && better.length === 0) sentences.push('Other measured cost metrics look about the same.');
 
-  if (comparability?.volume.equal === false) sentences.push(volumeSentence(comparability));
+  const volume = comparability ? volumeSentence(comparability) : null;
+  if (volume) sentences.push(volume);
   const introduced = namedWithBands(findings.introduced);
   const resolved = namedWithBands(findings.resolved);
   if (introduced.length > 0) sentences.push(`Introduced in the candidate: ${introduced.join(', ')}.`);
