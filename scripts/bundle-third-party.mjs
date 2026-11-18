@@ -8,9 +8,7 @@
 // import those bundles by relative path, and THIRD-PARTY-LICENSES.txt in the package directory
 // carries the license text of every package that went into a bundle.
 //
-// Usage: node scripts/bundle-third-party.mjs <package-dir> [vendor-core file to leave out...]
-// A package leaves out the vendored files it never loads (the CLI's lazy MCP server factory), so
-// their third-party imports are not bundled.
+// Usage: node scripts/bundle-third-party.mjs <package-dir>
 import { build } from 'esbuild';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -61,15 +59,13 @@ function readLicenseEntry(packageDir) {
 
 /**
  * @param {string} packageDir
- * @param {string[]} [omitFiles] vendor-core-relative paths removed before bundling
  */
-async function bundleThirdParty(packageDir, omitFiles = []) {
+async function bundleThirdParty(packageDir) {
   const pkgDir = resolve(packageDir);
   const vendorDir = join(pkgDir, 'vendor-core');
   const outDir = join(vendorDir, THIRD_PARTY_DIR);
   if (!existsSync(vendorDir)) throw new Error(`${vendorDir} does not exist; run scripts/vendor-core.mjs first`);
 
-  for (const file of omitFiles) rmSync(join(vendorDir, file));
   const files = listJsFiles(vendorDir);
   const specifiers = [...new Set(files.flatMap((f) => bareSpecifiers(readFileSync(f, 'utf8'))))].sort();
 
@@ -115,5 +111,5 @@ if (!targetPackageDir) {
   console.error('Usage: node scripts/bundle-third-party.mjs <path-to-package-dir>');
   process.exit(1);
 }
-const { specifiers, packages } = await bundleThirdParty(targetPackageDir, process.argv.slice(3));
+const { specifiers, packages } = await bundleThirdParty(targetPackageDir);
 console.log(`Bundled ${specifiers.length} entries (${packages} packages) into ${join(targetPackageDir, 'vendor-core', THIRD_PARTY_DIR)}`);

@@ -273,8 +273,7 @@ after `vendor-core.mjs`, so their tarballs declare no runtime `dependencies`.
 It bundles every bare specifier the vendored files import (`zod`, the MCP SDK)
 into `vendor-core/third-party/` with esbuild, one entry per specifier so the
 bundles share one copy of common code, and rewrites those imports to relative
-paths. The CLI omits `mcp-server-factory.js`, which only the MCP bin loads, so
-it carries no SDK. It also writes `THIRD-PARTY-LICENSES.txt` from the bundled
+paths. It also writes `THIRD-PARTY-LICENSES.txt` from the bundled
 inputs. A bin imports third-party code only through `packages/core/src/`
 (the MCP bin takes `StdioServerTransport` from `mcp-server-factory.ts`), and the
 bundled packages are `devDependencies` of the package. The pack tests install
