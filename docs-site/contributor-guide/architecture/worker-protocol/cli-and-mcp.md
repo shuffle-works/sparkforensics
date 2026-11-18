@@ -280,6 +280,11 @@ server takes `StreamableHTTPServerTransport` from `mcp-http-transport.ts`), and
 the bundled packages are `devDependencies` of the package. The pack tests install
 each tarball alone and fail when an import is left unresolved.
 
+A bundled package must run on the published `engines` (Node 18): the root
+`overrides` holds `@hono/node-server` (an MCP SDK dependency) on 1.x, because
+2.x needs Node 20 and no longer sets `globalThis.crypto`, which the SDK's
+HTTP transport uses. The `node18` CI job runs the packed bins on Node 18.
+
 `packages/analyze` and `packages/sparkforensics` pin `sparkforensics-cli` to an
 exact version, and `tests/alias-packages.test.js` fails on a range.
 `changeset version` keeps the pin exact and moves it with each cli release.
