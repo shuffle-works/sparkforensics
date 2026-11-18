@@ -15,8 +15,8 @@ import { build } from 'esbuild';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
-export const THIRD_PARTY_DIR = 'third-party';
-export const LICENSES_FILE = 'THIRD-PARTY-LICENSES.txt';
+const THIRD_PARTY_DIR = 'third-party';
+const LICENSES_FILE = 'THIRD-PARTY-LICENSES.txt';
 
 // Static (`from '...'`) and dynamic (`import('...')`) specifiers that are neither relative nor node: builtins.
 const BARE_SPECIFIER = /((?:from\s+|import\(\s*)['"])([^'".][^'"]*)(['"])/g;
@@ -63,7 +63,7 @@ function readLicenseEntry(packageDir) {
  * @param {string} packageDir
  * @param {string[]} [omitFiles] vendor-core-relative paths removed before bundling
  */
-export async function bundleThirdParty(packageDir, omitFiles = []) {
+async function bundleThirdParty(packageDir, omitFiles = []) {
   const pkgDir = resolve(packageDir);
   const vendorDir = join(pkgDir, 'vendor-core');
   const outDir = join(vendorDir, THIRD_PARTY_DIR);
@@ -110,12 +110,10 @@ export async function bundleThirdParty(packageDir, omitFiles = []) {
   return { specifiers, packages: packageDirs.size };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const targetPackageDir = process.argv[2];
-  if (!targetPackageDir) {
-    console.error('Usage: node scripts/bundle-third-party.mjs <path-to-package-dir>');
-    process.exit(1);
-  }
-  const { specifiers, packages } = await bundleThirdParty(targetPackageDir, process.argv.slice(3));
-  console.log(`Bundled ${specifiers.length} entries (${packages} packages) into ${join(targetPackageDir, 'vendor-core', THIRD_PARTY_DIR)}`);
+const targetPackageDir = process.argv[2];
+if (!targetPackageDir) {
+  console.error('Usage: node scripts/bundle-third-party.mjs <path-to-package-dir>');
+  process.exit(1);
 }
+const { specifiers, packages } = await bundleThirdParty(targetPackageDir, process.argv.slice(3));
+console.log(`Bundled ${specifiers.length} entries (${packages} packages) into ${join(targetPackageDir, 'vendor-core', THIRD_PARTY_DIR)}`);
