@@ -15,6 +15,7 @@ packages/server/public/
 packages/server/node_modules/
 packages/*/node_modules/
 packages/*/vendor-core/
+packages/*/THIRD-PARTY-LICENSES.txt
 packages/*/export-template/
 
 docs-site/.vitepress/cache/

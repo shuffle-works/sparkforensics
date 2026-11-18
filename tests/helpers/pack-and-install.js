@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 // Packs and installs a package's real published tarball into a scratch dir,
 // the only way to exercise its `files` allowlist, `prepack` vendoring, and the
@@ -37,4 +37,11 @@ export function packAndInstall(packageDir, binName, cleanupDirs) {
     throw new Error(`expected installed bin at ${binPath} after npm pack + npm install`);
   }
   return binPath;
+}
+
+// The installed packages in the scratch dir's node_modules. A self-contained package installs
+// alone; an import it left unresolved would need a dependency here.
+/** @param {string} binPath the path packAndInstall returned */
+export function installedPackageNames(binPath) {
+  return readdirSync(dirname(dirname(binPath))).filter((name) => !name.startsWith('.'));
 }

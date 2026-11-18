@@ -267,3 +267,24 @@ checkout a leftover `vendor-core/` is used only while its `core-source-hash.txt`
 on stderr and loads `packages/core/src` (`packages/server/index.js` mirrors
 `resolveStaticRoot`'s `public/`-vs-`../dist` pattern for this same
 fallback).
+
+`packages/cli`, `packages/mcp` and `packages/server` run `scripts/bundle-third-party.mjs` right
+after `vendor-core.mjs`, so their tarballs declare no runtime `dependencies`.
+It bundles every bare specifier the vendored files import (`zod`, the MCP SDK)
+into `vendor-core/third-party/` with esbuild, one entry per specifier so the
+bundles share one copy of common code, and rewrites those imports to relative
+paths. It also writes `THIRD-PARTY-LICENSES.txt` from the bundled
+inputs. A bin imports third-party code only through `packages/core/src/`
+(the MCP bin takes `StdioServerTransport` from `mcp-server-factory.ts`, the
+server takes `StreamableHTTPServerTransport` from `mcp-http-transport.ts`), and
+the bundled packages are `devDependencies` of the package. The pack tests install
+each tarball alone and fail when an import is left unresolved.
+
+A bundled package must run on the published `engines` (Node 18): the root
+`overrides` holds `@hono/node-server` (an MCP SDK dependency) on 1.x, because
+2.x needs Node 20 and no longer sets `globalThis.crypto`, which the SDK's
+HTTP transport uses. The `node18` CI job runs the packed bins on Node 18.
+
+`packages/analyze` and `packages/sparkforensics` pin `sparkforensics-cli` to an
+exact version, and `tests/alias-packages.test.js` fails on a range.
+`changeset version` keeps the pin exact and moves it with each cli release.

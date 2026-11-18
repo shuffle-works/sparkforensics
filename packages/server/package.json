@@ -31,18 +31,17 @@
     "index.js",
     "lib/",
     "public/",
-    "vendor-core/"
+    "vendor-core/",
+    "THIRD-PARTY-LICENSES.txt"
   ],
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "prepack": "node ../../scripts/vendor-core.mjs . && node scripts/copy-frontend.js"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "zod": "^4.6.7"
+    "prepack": "node ../../scripts/vendor-core.mjs . && node ../../scripts/bundle-third-party.mjs . && node scripts/copy-frontend.js"
   },
   "devDependencies": {
-    "vitest": "^5.0.3"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "vitest": "^5.0.3",
+    "zod": "^4.6.7"
   }
 }
