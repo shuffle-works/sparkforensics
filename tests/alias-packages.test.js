@@ -55,11 +55,12 @@ afterAll(() => {
 });
 
 describe('alias packages', () => {
-  it('depend on sparkforensics-cli at their own version and expose only sparkforensics-analyze', () => {
+  it('pin sparkforensics-cli to their own exact version and expose only sparkforensics-analyze', () => {
     for (const [name, dir] of Object.entries(ALIASES)) {
       const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
       expect(manifest.name).toBe(name);
-      expect(manifest.dependencies).toEqual({ 'sparkforensics-cli': `^${manifest.version}` });
+      // Exact, not a range: an install never pairs a wrapper with a different cli release.
+      expect(manifest.dependencies).toEqual({ 'sparkforensics-cli': manifest.version });
       expect(manifest.bin).toEqual({ 'sparkforensics-analyze': 'bin/sparkforensics-analyze.mjs' });
     }
   });

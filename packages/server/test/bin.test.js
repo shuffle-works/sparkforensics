@@ -1,12 +1,12 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
+import { packAndInstall, installedPackageNames } from '../../../tests/helpers/pack-and-install.js';
 import { MCP_TOOL_NAMES } from '../../core/src/mcp-server-factory.ts';
 
 const execFileAsync = promisify(execFile);
@@ -34,6 +34,10 @@ describe('published bin entrypoint', () => {
     'starts and serves the frontend when invoked via the installed .bin symlink',
     async () => {
       const binPath = packAndInstall(serverDir, 'sparkforensics-server', cleanupDirs);
+      // Installed alone: the SDK and zod are bundled, so no dependency resolves at install time.
+      expect(installedPackageNames(binPath)).toEqual(['sparkforensics-server']);
+      const licenses = readFileSync(join(dirname(dirname(binPath)), 'sparkforensics-server', 'THIRD-PARTY-LICENSES.txt'), 'utf8');
+      expect(licenses).toMatch(/^@modelcontextprotocol\/sdk@\S+ \(MIT\)$/m);
 
       const port = 20000 + Math.floor(Math.random() * 10000);
       const child = spawn(binPath, ['--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });

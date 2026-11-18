@@ -5,10 +5,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { resolveStaticRoot, serveStatic } from './lib/static-files.js';
-// No install-mode fallback needed for the sdk package (unlike core below):
-// packages/server/package.json declares '@modelcontextprotocol/sdk' as a direct
-// dependency, so node resolution finds it in both published and monorepo layouts.
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 /** @typedef {typeof import('../core/src/mcp-server-factory.js').createMcpServer} CreateMcpServer */
 
@@ -39,6 +35,12 @@ async function loadGenerator(dir) {
 async function loadCreateMcpServer(dir) {
   const mod = await loadVendoredCore(dir, 'mcp-server-factory');
   return mod.createMcpServer;
+}
+
+/** @param {string} dir */
+async function loadStreamableHttpTransport(dir) {
+  const mod = await loadVendoredCore(dir, 'mcp-http-transport');
+  return mod.StreamableHTTPServerTransport;
 }
 
 /** @param {string} dir */
@@ -81,6 +83,7 @@ export function createServer({
   createMcpServerPromise.catch(() => {});
   // Hashing core's sources is not free: started on the first /mcp request, then shared.
   let generatorPromise;
+  let transportClassPromise;
 
   return http.createServer(async (req, res) => {
     try {
@@ -102,6 +105,8 @@ export function createServer({
         const createMcpServer = await createMcpServerPromise;
         generatorPromise ??= loadGenerator(dir);
         const mcpServer = createMcpServer({ generator: await generatorPromise });
+        transportClassPromise ??= loadStreamableHttpTransport(dir);
+        const StreamableHTTPServerTransport = await transportClassPromise;
         const mcpTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableDnsRebindingProtection: true,

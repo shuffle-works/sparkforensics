@@ -31,6 +31,6 @@
     "bin/"
   ],
   "dependencies": {
-    "sparkforensics-cli": "^0.13.0"
+    "sparkforensics-cli": "0.13.0"
   }
 }
