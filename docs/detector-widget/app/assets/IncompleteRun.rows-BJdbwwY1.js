@@ -1,0 +1,1 @@
+import{ct as e}from"./finding-widget-DrVvF49_.js";var t={type:`incompleteRun`,rows:({findings:t,stated:n})=>t.filter(t=>!e(t,n)).slice(0,1).map(e=>({findings:[e],finding:e})),stageOf:()=>null,rowClassName:`flex flex-col gap-1`};export{t};

@@ -1,0 +1,1 @@
+function e(e,t=2e3){if(e.length<=t)return e;if(t<=1)return e.length?[e[0]]:[];let n=e.length-1,r=n/(t-1),i=Array(t);for(let a=0;a<t;a++)i[a]=e[Math.min(n,Math.round(a*r))];return i}export{e as t};
