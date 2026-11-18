@@ -1,5 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+
+// Re-exported so the MCP bin has no third-party import of its own: every package it needs is
+// imported from core, where the prepack bundler finds and bundles it.
+export { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { ThresholdOverrides } from './detectors.ts';
 import type { ReportGenerator } from './run-output.ts';
 import { mcpToolEntries } from './mcp-tool-table.ts';

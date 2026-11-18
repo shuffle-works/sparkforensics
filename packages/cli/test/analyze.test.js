@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { collectRun } from '@sparkforensics/core/cli';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/view-model';
@@ -11,7 +11,7 @@ import { main } from '../bin/sparkforensics-analyze.mjs';
 // tests/helpers/ stays at the repo root because packages/core/test/mcp-tools.test.js
 // shares this same fixture helper.
 import { shsZipFetch, historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
-import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
+import { packAndInstall, installedPackageNames } from '../../../tests/helpers/pack-and-install.js';
 import { parseEnvelope, parseRun, parseNdjsonLines } from './envelope-helpers.js';
 
 // Regression coverage for the published `sparkforensics-analyze` bin, not just
@@ -90,6 +90,12 @@ async function runMainInProcess(argv, mainOpts) {
 }
 
 describe('sparkforensics-analyze CLI', () => {
+  it('installs with no dependencies and ships the license notices of what it bundles', () => {
+    expect(installedPackageNames(binPath)).toEqual(['sparkforensics-cli']);
+    const licenses = readFileSync(join(dirname(dirname(binPath)), 'sparkforensics-cli', 'THIRD-PARTY-LICENSES.txt'), 'utf8');
+    expect(licenses).toMatch(/^zod@\S+ \(MIT\)$/m);
+  });
+
 
   it('reports Delta MERGE, UPDATE and DELETE targets of a log whose command nodes are bare', () => {
     const log = join(process.cwd(), '..', 'core', 'test', 'fixtures', 'delta-write-events.ndjson');

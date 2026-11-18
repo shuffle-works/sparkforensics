@@ -31,19 +31,18 @@
     "bin/",
     "schema/",
     "vendor-core/",
-    "export-template/"
+    "export-template/",
+    "THIRD-PARTY-LICENSES.txt"
   ],
   "scripts": {
-    "prepack": "node ../../scripts/vendor-core.mjs . && node ../../scripts/vendor-export-template.mjs",
+    "prepack": "node ../../scripts/vendor-core.mjs . && node ../../scripts/bundle-third-party.mjs . mcp-server-factory.js && node ../../scripts/vendor-export-template.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
-  },
-  "dependencies": {
-    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@sparkforensics/core": "*",
     "ajv": "^8.20.0",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "zod": "^4.6.7"
   }
 }

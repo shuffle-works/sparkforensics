@@ -3,10 +3,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
+import { packAndInstall, installedPackageNames } from '../../../tests/helpers/pack-and-install.js';
 import { MCP_TOOL_NAMES } from '../../core/src/mcp-server-factory.ts';
 
 const execFileAsync = promisify(execFile);
@@ -46,6 +46,13 @@ afterAll(() => {
 });
 
 describe('published sparkforensics-mcp stdio bin entrypoint', () => {
+  it('installs with no dependencies and ships the license notices of what it bundles', () => {
+    expect(installedPackageNames(binPath)).toEqual(['sparkforensics-mcp']);
+    const licenses = readFileSync(join(dirname(dirname(binPath)), 'sparkforensics-mcp', 'THIRD-PARTY-LICENSES.txt'), 'utf8');
+    expect(licenses).toMatch(/^zod@\S+ \(MIT\)$/m);
+    expect(licenses).toMatch(/^@modelcontextprotocol\/sdk@\S+ \(MIT\)$/m);
+  });
+
   it('starts and lists all 9 tools over stdio via the installed .bin symlink', async () => {
     const transport = new StdioClientTransport({ command: binPath, args: [] });
     client = new Client({ name: 'test-client', version: '1.0.0' });

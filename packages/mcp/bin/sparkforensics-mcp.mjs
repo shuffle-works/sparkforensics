@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
@@ -93,7 +92,7 @@ async function main() {
       return;
     }
   }
-  const createMcpServer = await loadCreateMcpServer();
+  const { createMcpServer, StdioServerTransport } = await loadMcpServerFactory();
   const defaultShsBaseUrl = values['shs-base-url'] ?? process.env.SPARKFORENSICS_SHS_BASE_URL;
   const server = createMcpServer({ thresholds, generator: generatorInfo(), defaultShsBaseUrl });
   const transport = new StdioServerTransport();

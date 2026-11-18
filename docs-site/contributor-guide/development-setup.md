@@ -129,6 +129,9 @@ npm run docs:preview   # serves the built docs site locally
   It loads `packages/core/src/node.ts` once, and the bin reads every core name
   it uses from that module. `packages/core/test/node-entry.test.js` runs each
   bin with `--help` and fails when it does not start.
+- `packages/{cli,mcp}/THIRD-PARTY-LICENSES.txt` (gitignored) and
+  `vendor-core/third-party/` are generated at `prepack` by
+  `scripts/bundle-third-party.mjs`.
 - The CLI's `export-template/` has no such check. Without it,
   `--export-html` from source uses the repo-root `dist-export/` from
   `npm run build:export` (not produced by `npm run build`); a leftover
